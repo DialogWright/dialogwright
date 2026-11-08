@@ -1,4 +1,4 @@
-import { loadConfig } from './config';
+import { agentSettings, loadConfig } from './config';
 import { resolveJevProvider } from '../jev/provider';
 import { renderSettings, resolveRenderProvider } from '../render/providers';
 
@@ -41,6 +41,7 @@ const READERS: readonly ((env: Record<string, string | undefined>) => unknown)[]
   (env) => resolveJevProvider(env, { needKey: true }),
   (env) => resolveRenderProvider(env, { needKey: true }),
   (env) => renderSettings(env),
+  (env) => agentSettings(env),
 ];
 
 /** A setting's name, as a message from a reader names one. */

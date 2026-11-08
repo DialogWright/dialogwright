@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { loadConfig, describeConfig, consoleExposure, publicBase, recognitionFor, startParametersFrom } from './config';
+import { agentSettings, loadConfig, describeConfig, consoleExposure, publicBase, recognitionFor, startParametersFrom } from './config';
 import { defaultTimeZone } from '../run/clock';
 
 /** A Telnyx public key as Telnyx shows it: 32 bytes, base64. Made up; nothing signs with it. */
@@ -538,5 +538,22 @@ describe("the console's daily figures' own retention (FIGURES_RETENTION_DAYS)", 
     expect(describeConfig(c)).toContain('console figures kept 400 days');
     expect(() => loadConfig({ ...base, FIGURES_RETENTION_DAYS: '0' })).toThrow('FIGURES_RETENTION_DAYS must be a positive whole number of days, got "0"');
     expect(() => loadConfig({ ...base, FIGURES_RETENTION_DAYS: 'a year' })).toThrow('FIGURES_RETENTION_DAYS');
+  });
+});
+
+describe('the agent model\'s budgets (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS)', () => {
+  it('default to 1200 ms on a call and 3000 in a chat', () => {
+    expect(agentSettings({})).toEqual({ timeoutMs: { voice: 1200, chat: 3000 } });
+  });
+
+  it('are each set on their own', () => {
+    expect(agentSettings({ AGENT_TIMEOUT_VOICE_MS: '900' })).toEqual({ timeoutMs: { voice: 900, chat: 3000 } });
+    expect(agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15000' })).toEqual({ timeoutMs: { voice: 1200, chat: 15000 } });
+  });
+
+  it('refuse a value outside 300 to 15000, or not a whole number', () => {
+    expect(() => agentSettings({ AGENT_TIMEOUT_VOICE_MS: '299' })).toThrow('AGENT_TIMEOUT_VOICE_MS must be a whole number of ms from 300 to 15000, got "299"');
+    expect(() => agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15001' })).toThrow('AGENT_TIMEOUT_CHAT_MS must be a whole number of ms from 300 to 15000');
+    expect(() => agentSettings({ AGENT_TIMEOUT_VOICE_MS: '1.5' })).toThrow('AGENT_TIMEOUT_VOICE_MS');
   });
 });

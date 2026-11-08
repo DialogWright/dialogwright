@@ -9,7 +9,9 @@ import { checkJwksUrl, jwksKeys } from './chat/jwks';
 import { calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
 import type { NumberLocale } from '../core/numberLocales';
 import { defaultLocaleOf } from '../core/locale';
-import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { appAgentClient, agentKeyVar } from '../agent/provider';
+import type { AgentRunner } from '../agent/types';
+import { agentSettings, type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPEECH_OVER_LINE, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
 import { createRequestHandler, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
@@ -123,6 +125,12 @@ export interface ServerOverrides {
    * then its fixed text. An app that generates no line never has one.
    */
   renderer?: Renderer;
+  /**
+   * The agent model of an app in agent mode, for every such app (a test's fake). Left out, each has one
+   * from style.yaml's `agent` with its own settings (its provider's key, AGENT_TIMEOUT_VOICE_MS,
+   * AGENT_TIMEOUT_CHAT_MS), and none with its key unset: every turn then says its fixed fallback.
+   */
+  agent?: AgentRunner;
   now?: () => number;
   log?: (line: string) => void;
   /**
@@ -445,6 +453,25 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (clamped.length > 0) log(`WARNING: ${tag(a.id)}generated wording: ${clamped.join(', ')}, as Inception takes 0.5 to 1`);
   }
   const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;
+  // Agent mode: each app in it asks its agent model (style.yaml's `agent`) through its own settings.
+  const agents = new Map<string, AgentRunner>();
+  for (const a of appsRun) {
+    if (a.app.mode !== 'agent' || a.app.agent === undefined) continue;
+    const settings = forApp(a.id, () => agentSettings(a.env));
+    if (overrides.agent) {
+      agents.set(a.id, { ...overrides.agent, timeoutMs: overrides.agent.timeoutMs ?? settings.timeoutMs });
+      continue;
+    }
+    const model = a.app.agent.model;
+    const keyVar = agentKeyVar(model);
+    if (!a.env[keyVar]?.trim()) {
+      log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: every turn says its fixed question`);
+      continue;
+    }
+    agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs });
+    log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat`);
+  }
+  const agentOf = (id: string): AgentRunner | null => agents.get(appRun(id).id) ?? null;
 
   const serviceUrls = overrides.serviceUrls ?? {};
   // Each app's services' URLs: a server of one's from its launcher (ServerOverrides.serviceUrls); on a host,
@@ -655,7 +682,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
         trace,
         frames,
       };
@@ -809,7 +836,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
       // No render context: a chat shows a line's words, never a recorded clip.
       return {
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
         frames,
       };
     },

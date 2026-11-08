@@ -1,8 +1,8 @@
-import { apiError, mayThink, openRouterReasoningBody, safeErrorText, type RenderProvider, type RenderThinking } from '../render/providers';
+import { apiError, mayThink, openRouterReasoningBody, resolveRenderProvider, safeErrorText, type RenderProvider, type RenderThinking } from '../render/providers';
 import type { RenderUsage } from '../render/types';
 import { agentMessages } from './prompt';
 import { AGENT_SCHEMA_NAME, agentJsonSchema, parseAgentAnswer } from './schema';
-import type { AgentClient, AgentContext, AgentRequest, AgentResult } from './types';
+import type { AgentClient, AgentContext, AgentModelChoice, AgentRequest, AgentResult } from './types';
 
 /**
  * Where the agent model is asked: OpenRouter (any model it serves, the render provider's settings and
@@ -180,4 +180,21 @@ export function inceptionAgent(p: InceptionAgentOptions, fetchFn: typeof fetch =
 /** inceptionAgent with its key read from INCEPTION_API_KEY; throws, naming the variable (never a value), when it is unset. */
 export function resolveInceptionAgent(env: Env, p: InceptionRequestOptions, fetchFn: typeof fetch = fetch): AgentClient {
   return inceptionAgent({ ...p, apiKey: env[INCEPTION_KEY_VAR]?.trim() || null }, fetchFn);
+}
+
+/** The variable an app's agent model's key is read from (style.yaml's `agent.provider`). */
+export function agentKeyVar(model: Pick<AgentModelChoice, 'provider'>): string {
+  return model.provider === 'inception' ? INCEPTION_KEY_VAR : 'OPENROUTER_API_KEY';
+}
+
+/**
+ * The client of an app's agent model (App.agent.model, style.yaml's `agent`), its key read from `env` (the
+ * app's own settings): Mercury on Inception's API with its effort and `realtime`, or a model through
+ * OpenRouter at its effort (`instant` there asks for no reasoning setting, the model's own default).
+ * Throws, naming the variable (never a value), when the key is unset.
+ */
+export function appAgentClient(env: Env, model: AgentModelChoice, fetchFn: typeof fetch = fetch): AgentClient {
+  if (model.provider === 'inception') return resolveInceptionAgent(env, { model: model.model, effort: model.effort, realtime: true }, fetchFn);
+  const provider = resolveRenderProvider({ ...env, RENDER_PROVIDER: 'openrouter', RENDER_MODEL: model.model, RENDER_THINKING: undefined, RENDER_EFFORT: model.effort === 'instant' ? undefined : model.effort });
+  return openRouterAgent(provider!, fetchFn);
 }

@@ -1,4 +1,5 @@
 import { defaultTimeZone, localDateIso } from '../run/clock';
+import { AGENT_TIMEOUT_RANGE, DEFAULT_AGENT_TIMEOUT_MS } from '../agent/types';
 import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
@@ -640,6 +641,23 @@ export function integer(env: Env, name: string, fallback: number): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer, got "${raw}"`);
   return n;
+}
+
+/**
+ * An app in agent mode's settings (core/agentTurn.ts; guide 14.12): how long a turn waits for the agent
+ * model's answer, AGENT_TIMEOUT_VOICE_MS on a call (default 1200) and AGENT_TIMEOUT_CHAT_MS in a chat
+ * (default 3000), each a whole number of ms from 300 to 15000, each channel set on its own. Past it the
+ * turn says its fixed fallback (the next field's question). Read per app, as the renderer's settings are.
+ */
+export function agentSettings(env: Env): { timeoutMs: { voice: number; chat: number } } {
+  const one = (name: string, fallback: number): number => {
+    const raw = env[name]?.trim();
+    if (raw === undefined || raw === '') return fallback;
+    const n = Number(raw);
+    if (!/^\d+$/.test(raw) || n < AGENT_TIMEOUT_RANGE.min || n > AGENT_TIMEOUT_RANGE.max) throw new Error(`${name} must be a whole number of ms from ${AGENT_TIMEOUT_RANGE.min} to ${AGENT_TIMEOUT_RANGE.max}, got "${raw}"`);
+    return n;
+  };
+  return { timeoutMs: { voice: one('AGENT_TIMEOUT_VOICE_MS', DEFAULT_AGENT_TIMEOUT_MS.voice), chat: one('AGENT_TIMEOUT_CHAT_MS', DEFAULT_AGENT_TIMEOUT_MS.chat) } };
 }
 
 /** An IANA zone name the runtime actually knows; `Intl` is the only authority worth asking. */

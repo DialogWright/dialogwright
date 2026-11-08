@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveRenderProvider } from '../render/providers';
-import { INCEPTION_URL, inceptionAgent, openRouterAgent, resolveInceptionAgent } from './provider';
+import { agentKeyVar, appAgentClient, INCEPTION_URL, inceptionAgent, openRouterAgent, resolveInceptionAgent } from './provider';
 import type { AgentContext } from './types';
 
 /**
@@ -171,5 +171,24 @@ describe('inceptionAgent', () => {
   it('names the variable a missing key is read from, never a key', () => {
     expect(() => resolveInceptionAgent({}, { model: 'mercury-3', realtime: false })).toThrow('missing required environment variable INCEPTION_API_KEY');
     expect(() => inceptionAgent({ model: 'mercury-3', apiKey: null, realtime: false })).toThrow('INCEPTION_API_KEY');
+  });
+});
+
+describe('an app\'s agent client (style.yaml\'s agent)', () => {
+  it('on Inception: its model and effort, realtime, its key from INCEPTION_API_KEY', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    await appAgentClient({ INCEPTION_API_KEY: KEY }, { provider: 'inception', model: 'mercury-3', effort: 'instant' }, fetchFn).answer(ctx, 5000);
+    expect(sent[0]!.url).toBe(INCEPTION_URL);
+    expect(sent[0]!.body).toMatchObject({ model: 'mercury-3', reasoning_effort: 'instant', realtime: true });
+    expect(agentKeyVar({ provider: 'inception' })).toBe('INCEPTION_API_KEY');
+  });
+
+  it('on OpenRouter: its model, no reasoning setting at instant, its key from OPENROUTER_API_KEY', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    await appAgentClient({ OPENROUTER_API_KEY: KEY }, { provider: 'openrouter', model: 'vendor/model', effort: 'instant' }, fetchFn).answer(ctx, 5000);
+    expect(sent[0]!.body).toMatchObject({ model: 'vendor/model' });
+    expect(sent[0]!.body).not.toHaveProperty('reasoning');
+    expect(agentKeyVar({ provider: 'openrouter' })).toBe('OPENROUTER_API_KEY');
+    expect(() => appAgentClient({}, { provider: 'openrouter', model: 'vendor/model', effort: 'low' })).toThrow('OPENROUTER_API_KEY');
   });
 });
