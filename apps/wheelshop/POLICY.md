@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `85d99e828d264ac5a25dd6cd58404209b374c5d12895d511238643b7b445cccc` |
+| `business.yaml` | `8a24cb6ae53e790d22d1a1b2a08eb8c6dc4d04d9cc0f9fb7d5b9b220aa2a5d7f` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -80,6 +80,8 @@ Said in fixed words, never worded by a model:
 ### Recognized by the number calling
 
 A call from a number on file for one account (business.yaml's `accounts`) is recognized as that account at level 1 ('recognized by the number calling') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, book the cars into the drop-off window (`book`), still only once the caller confirms its read-back; and text the shop a summary of the booking (`notify_owner_booking`), still only once the caller confirms its read-back. That risk is the business's to accept (the agent-mode design's call 14). A number the caller withheld still recognizes the account it is on file for (app.yaml's `callerNumber.withheld: use`, the default); `ignore` treats such a call as one with no number.
+
+Some numbers on file are read from the app's own settings, by name: `DEALER_TEST_LINE` (Rivergate Motors). Each is the number of the setting of that name where the app runs (its value never in a file of the app); unset, it is left out, and the account is recognized by its other numbers.
 
 `booking` is offered only to a caller recognized by the number calling, so in practice only on a phone call: a chat carries no number to recognize, and a caller on it who asks hears `booking_for_accounts`.
 

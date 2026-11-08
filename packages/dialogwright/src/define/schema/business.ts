@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { checkAlways, identifier, matching, name, text, unique } from './common';
 import { E164 } from '../../core/numberLocales';
+import { ENV_REFERENCE } from '../../core/app/envReference';
 
 /**
  * business.yaml: the facts of an app in agent mode (app.yaml's `mode: agent`;
@@ -40,6 +41,17 @@ export type BusinessFormName = (typeof BUSINESS_FORMS)[number];
 /** A phone number as a carrier sends it (E.164: +, then up to 15 digits). */
 const phone = () =>
   matching(E164, 'is not a phone number in E.164 form ("+15555550142")', 'write the number as + and its country code and digits, with no spaces or dashes, for example "+15555550142"');
+
+/**
+ * An account's number: one written out (E.164), or env.<NAME>, a setting of the app's own holding one. The
+ * pattern, its message and its fix are app.yaml's voice.numbers' own (the schema keeps one fix per pattern).
+ */
+const accountNumber = () =>
+  matching(
+    new RegExp(`(?:${E164.source})|(?:${ENV_REFERENCE.source})`),
+    'must be an E.164 number like +15555550142, or env.<NAME>',
+    'write env.<NAME> (capitals, digits and underscores) and set the variable to the number in the app\'s settings (.env), or write the number with + and the country code, in quotes ("+15555550142")',
+  );
 
 const field = z
   .strictObject({
@@ -172,7 +184,7 @@ const window = z
 const account = z
   .strictObject({
     name: text().describe('The account\'s name, as the line and the read-back say it ({account}).'),
-    numbers: unique(phone(), 'number').min(1, { error: 'must list at least one number' }).describe('The numbers the account calls from (E.164): a call from one of them is recognized as the account, by caller ID. Caller ID can be forged: the policy card says what a forged number could do.'),
+    numbers: unique(accountNumber(), 'number').min(1, { error: 'must list at least one number' }).describe('The numbers the account calls from: each written out (E.164, in quotes) or env.<NAME>, a setting of the app\'s own (its settings file under a host, or the environment) holding one, for a number that stays out of the file (a tester\'s own phone). A setting unset is left out, with a note as the server starts; one set to anything but an E.164 number stops the server. A call from one of them is recognized as the account, by caller ID. Caller ID can be forged: the policy card says what a forged number could do.'),
   })
   .describe('One regular account, booked straight in.');
 

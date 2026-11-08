@@ -2,7 +2,7 @@
 
 Example Wheel Works is invented: a small wheel repair and refinishing shop inside a detailing shop at 400 Commerce Drive, Rivergate. Its line is the demo of [agent mode](../../docs/designs/2026-11-08-agent-mode.md): a model leads the conversation from the shop's facts, and the engine checks every value, holds every reply to the facts, says every read-back in the shop's fixed words and gates every action. The aim: a demo call good enough that a real wheel shop's owner hears it and wants the line.
 
-No real business, place, person or number is in this folder: the dealerships are invented and the numbers are in the 555 range. The shop's real number and phone are settings (`TEXT_FROM`, `SHOP_PHONE`), never in the folder.
+No real business, place, person or number is in this folder: the dealerships are invented and the numbers are in the 555 range. The shop's real number and phone are settings (`TEXT_FROM`, `SHOP_PHONE`), never in the folder, and so is a tester's phone recognized as Rivergate Motors (`DEALER_TEST_LINE`, `env.DEALER_TEST_LINE` among the account's numbers: set privately on a host so the dealer flow can be heard on a real call; unset, left out).
 
 ## The two demo calls
 

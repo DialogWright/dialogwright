@@ -1,3 +1,4 @@
+import { accountSettingsOf } from '../define/accountNumbers';
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
@@ -338,6 +339,14 @@ function agentSection(app: App, source: PolicySource): string[] {
       '',
       `A call from a number on file for one account (business.yaml's \`accounts\`) is recognized as that account at level 1 ('${levelName(app, 1)}') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, ${booked.length > 0 ? booked.length === 1 ? booked[0] : `${booked.slice(0, -1).join('; ')}; and ${booked.at(-1)!}` : 'take no action above level 0'}. That risk is the business's to accept (the agent-mode design's call 14). ${(app.callerNumber?.withheld ?? 'use') === 'use' ? "A number the caller withheld still recognizes the account it is on file for (app.yaml's `callerNumber.withheld: use`, the default); `ignore` treats such a call as one with no number." : "A number the caller withheld recognizes no account (app.yaml's `callerNumber.withheld: ignore`)."}`,
     );
+    // Numbers read from the app's settings (business.yaml's env.<NAME>): named, never their values.
+    const settings = Object.values(app.agent?.accounts ?? {}).flatMap((a) => accountSettingsOf({ [a.name]: a.numbers }).map((s) => `${code(s.variable)} (${a.name})`));
+    if (settings.length > 0) {
+      out.push(
+        '',
+        `Some numbers on file are read from the app's own settings, by name: ${andList(settings)}. Each is the number of the setting of that name where the app runs (its value never in a file of the app); unset, it is left out, and the account is recognized by its other numbers.`,
+      );
+    }
     const only = Object.entries(app.forms).filter(([, f]) => f.recognizedOnly !== undefined).map(([id]) => code(id));
     if (only.length > 0) {
       out.push(

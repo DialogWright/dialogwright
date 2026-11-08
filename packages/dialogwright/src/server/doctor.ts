@@ -599,6 +599,13 @@ function referenceChecks(refs: readonly EnvReference[], env: Env): CheckResult[]
   return refs.map(({ path, variable, file, kind }) => {
     const value = env[variable];
     const where = `${file ?? 'app.yaml'}'s ${path} reads ${variable}`;
+    // An account's number (business.yaml): unset, it is left out (the account is recognized by its other numbers); set, an E.164 number.
+    if (kind === 'account') {
+      if (value === undefined || value.trim() === '') return { id: 'variables', status: 'ok', message: `${where}, which is not set: left out, the account recognized by its other numbers` };
+      return E164.test(value.trim())
+        ? { id: 'variables', status: 'ok', message: `${where}: set, a phone number (a call from it is recognized as the account)` }
+        : { id: 'variables', status: 'fail', message: `${where}: set, but it is not an E.164 number: the server will not start`, fix: `set ${variable} to the number the account calls from, like +15551234567, or leave it unset` };
+    }
     if (value === undefined || value.trim() === '') return { id: 'variables', status: 'fail', message: `${where}, which is not set: the server will not start`, fix: `set ${variable} in the settings file` };
     // A called condition (a route's or a transfer target's): the E.164 number callers dial, as the server holds it (server/transfer.ts calledVariablesFrom).
     if (kind === 'called') {

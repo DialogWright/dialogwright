@@ -7,6 +7,7 @@ import { writableValue } from '../channel/callData';
 import { DEFAULT_RECORDS, maskNumber, type NumberRecords } from '../channel/maskByName';
 import { fitHeaders, isSipTarget, SIP_URI_MAX, type DialTarget } from './voice/dial';
 import type { Env } from './config';
+import { accountNumbersOf } from '../define/accountNumbers';
 
 /**
  * The server's side of transfer targets (app.yaml's `transfer`, core/transfer.ts): the engine chooses
@@ -105,6 +106,25 @@ export function voiceNumbersFrom(app: Pick<App, 'voice'> | undefined, env: Env):
     throw new Error(`app.yaml's voice.numbers starts ${numberName(a)} in ${a.locale} and ${numberName(b)}, the same number, in ${b.locale}: give each locale a number of its own`);
   }
   return Object.freeze(numbers.map((n) => Object.freeze({ ...n })));
+}
+
+/**
+ * The settings an agent-mode app's accounts' numbers name (business.yaml's `accounts[].numbers`, `env.<NAME>`),
+ * read from `env` (on a host, the app's own) as the server starts: the ones set, and the ones unset, which are
+ * left out (the account is recognized by its other numbers) and named in the startup note, never an error. One
+ * set to anything but an E.164 number stops the server, naming the setting; so does one whose number is on file
+ * for another account too. Names only: a value is never logged.
+ */
+export function accountSettingsFrom(app: Pick<App, 'agent'> | undefined, env: Env): { set: string[]; unset: string[] } {
+  const accounts = app?.agent?.accounts;
+  if (accounts === undefined) return { set: [], unset: [] };
+  const read = accountNumbersOf(Object.fromEntries(Object.entries(accounts).map(([key, a]) => [key, a.numbers])), (name) => env[name]);
+  for (const variable of read.invalid) throw new Error(`${variable} (an account's number in business.yaml) is not an E.164 number: set it to the number the account calls from, like +15551234567, or leave it unset`);
+  for (const { a, b } of read.clashes) {
+    const which = (n: typeof a): string => (n.variable !== undefined ? n.variable : `the number ${maskNumber(n.number)}`);
+    throw new Error(`business.yaml's accounts ${a.account} and ${b.account} both have ${which(a)}${a.variable !== b.variable ? ` and ${which(b)}` : ''}, one number: a call from it would match neither account; set the setting to a number of its own, or leave it unset`);
+  }
+  return { set: read.numbers.flatMap((n) => (n.variable !== undefined ? [n.variable] : [])), unset: read.unset };
 }
 
 /** A number of voice.numbers as the server's log names it: its last four, and the variable it was read from. */

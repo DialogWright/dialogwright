@@ -216,9 +216,9 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^\\+\\d{8,15}$"
+              "pattern": "(?:^\\+\\d{8,15}$)|(?:^env\\.([A-Z][A-Z0-9_]*)$)"
             },
-            "description": "The numbers the account calls from (E.164): a call from one of them is recognized as the account, by caller ID. Caller ID can be forged: the policy card says what a forged number could do."
+            "description": "The numbers the account calls from: each written out (E.164, in quotes) or env.<NAME>, a setting of the app's own (its settings file under a host, or the environment) holding one, for a number that stays out of the file (a tester's own phone). A setting unset is left out, with a note as the server starts; one set to anything but an E.164 number stops the server. A call from one of them is recognized as the account, by caller ID. Caller ID can be forged: the policy card says what a forged number could do."
           }
         },
         "required": [

@@ -6,7 +6,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { KeyObject } from 'node:crypto';
 import { checkJwksUrl, jwksKeys } from './chat/jwks';
-import { calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
+import { accountSettingsFrom, calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
 import type { NumberLocale } from '../core/numberLocales';
 import { defaultLocaleOf } from '../core/locale';
 import { appAgentClient, agentKeyVar } from '../agent/provider';
@@ -798,6 +798,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // voice.numbers, each env.<NAME> read from the app's environment: an unset one, or not E.164, stops the server here.
     const numbers = forApp(a.id, () => voiceNumbersFrom(a.app, a.env));
     if (numbers.length > 0) log(`${tag(a.id)}numbers by language: ${describeVoiceNumbers(numbers)}; any other number starts in ${defaultLocaleOf(a.app)}`);
+    // An agent-mode app's accounts' numbers that name a setting: one unset is left out with a note; one not E.164 stops the server here.
+    const accountSettings = forApp(a.id, () => accountSettingsFrom(a.app, a.env));
+    if (accountSettings.set.length > 0) log(`${tag(a.id)}account numbers from settings: ${accountSettings.set.join(', ')}`);
+    if (accountSettings.unset.length > 0) log(`${tag(a.id)}account numbers left out, their settings unset: ${accountSettings.unset.join(', ')}`);
     // On Telnyx, a language with no voice of its own beside one with a voice may keep the start language's
     // voice after a switch (http.ts telnyxUnvoicedLocales): worth saying until a live call shows otherwise.
     const unvoiced = config.voiceProviders.includes('telnyx') ? telnyxUnvoicedLocales(a.app, config.telnyxVoice) : [];

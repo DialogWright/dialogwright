@@ -244,6 +244,11 @@ export interface AgentApp {
   lineForms?: Readonly<Record<string, readonly string[]>>;
   /** How an agent line is held (render/agentLine.ts): its word budget on each channel, style.yaml's `avoid` and the judge's `refuseAt`. */
   style: RenderStyle;
+  /**
+   * The accounts by key, each with its name and its numbers as business.yaml writes them: each E.164 or
+   * `env.<NAME>`, a setting of the app's own (define/accountNumbers.ts). Absent for a business with no accounts.
+   */
+  accounts?: Readonly<Record<string, { readonly name: string; readonly numbers: readonly string[] }>>;
 }
 
 /**

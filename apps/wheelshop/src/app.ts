@@ -261,7 +261,9 @@ export function ownerSummary(vars: Readonly<Record<string, string>>): string {
 /** The account a booking is for, by its key (the account slot's value): its name and the first number it calls from. */
 export function accountOf(key: string): { name: string; number: string } {
   const a = (BUSINESS.accounts ?? []).find((x) => optionKey(x.name) === key);
-  return { name: a?.name ?? key, number: (a?.numbers[0] ?? '').replace(/^\+1/, '') };
+  // The first number written out: one read from a setting (env.<NAME>, a tester's phone) is never in the summary.
+  const number = a?.numbers.find((n) => !n.startsWith('env.')) ?? '';
+  return { name: a?.name ?? key, number: number.replace(/^\+1/, '') };
 }
 
 /** A name as the owner reads it: the name slot keeps it in lower case ("jordan lee" is Jordan Lee). */

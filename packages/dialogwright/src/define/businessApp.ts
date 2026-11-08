@@ -5,6 +5,8 @@ import { openPart, replyShape, shapeOf } from '../core/replyShape';
 import { isAnonymous, passed, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, optionKey, readsThroughHook, saysFor, slotIdOf, stepTool, thenTools, whenOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
+import { accountByNumber } from './accountNumbers';
+import { envVariableOf } from '../core/app/envReference';
 import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, fieldSlotConfig, formParams, PRICE_PROMPT, wordsOf } from './businessFiles';
 import { buildSlot } from '../slots/defineSlot';
 import type { BuiltSlotSpec } from '../slots/types';
@@ -87,6 +89,8 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
     ...(b.prices?.forms !== undefined ? { lineForms: { price: [...b.prices.forms] } } : {}),
     // How a reply is held: style.yaml's word budget, its phrases to avoid and its judge's cutoff (render/agentLine.ts).
     style: styleOf(style),
+    // The accounts' numbers as written (a setting by its name, read at call time and as the server starts).
+    ...(b.accounts !== undefined ? { accounts: Object.fromEntries(Object.entries(accountNumbersWritten(b)).map(([key, numbers]) => [key, { name: accountOptions(b)[key]!, numbers }])) } : {}),
   };
 }
 
@@ -106,20 +110,32 @@ const ENGINE_WRITES: Readonly<Record<(typeof ENGINE_PARTS)[number], string>> = {
 /** The session's facts in an agent-mode app with accounts: the accounts the number calling is on file for, once the call-start lookup found any. */
 type AccountFacts = SessionFacts & { numberAccounts?: string[] };
 
-/** The tools the engine writes for an app with accounts: the call-start lookup and the recognition, over business.yaml's accounts. */
+/** The accounts' numbers as business.yaml writes them, by account key (a setting as `env.<NAME>`). */
+function accountNumbersWritten(b: BusinessYaml): Record<string, string[]> {
+  const keys = accountOptions(b);
+  const ids = Object.keys(keys);
+  const out: Record<string, string[]> = {};
+  for (const a of b.accounts ?? []) {
+    const key = ids.find((k) => keys[k] === a.name)!;
+    out[key] = [...(out[key] ?? []), ...a.numbers];
+  }
+  return out;
+}
+
+/**
+ * The tools the engine writes for an app with accounts: the call-start lookup and the recognition, over business.yaml's accounts.
+ * An account's number that names a setting (`env.<NAME>`) is read at call time from the app's own settings
+ * (ToolContext.env), as the call needs it: unset, or not an E.164 number, it is no number (define/accountNumbers.ts).
+ */
 export function accountTools(b: BusinessYaml): Record<string, ToolDef> {
   const keys = accountOptions(b);
   const ids = Object.keys(keys);
-  const byNumber = new Map<string, string>();
-  for (const a of b.accounts ?? []) {
-    const key = ids.find((k) => keys[k] === a.name)!;
-    for (const n of a.numbers) byNumber.set(n, key);
-  }
+  const written = accountNumbersWritten(b);
   return {
     [BUSINESS_TOOLS.lookup]: {
       params: ['callerNumber'],
-      run(call) {
-        const key = byNumber.get(call.params.callerNumber ?? '');
+      run(call, _sys, ctx) {
+        const key = accountByNumber(written, (name) => ctx.env(name)).get(call.params.callerNumber ?? '');
         return key === undefined ? { value: null, summary: 'no account for the number' } : { value: { accounts: [key] }, summary: 'an account on file' };
       },
       // Only an account's key: nothing of it is said before it is recognized.
@@ -136,7 +152,7 @@ export function accountTools(b: BusinessYaml): Record<string, ToolDef> {
         const slot = ctx.s.slots[ACCOUNT_SLOT];
         const found = (ctx.s.facts as AccountFacts).numberAccounts ?? [];
         const byCallerId = slot?.by === 'caller-id' && slot.value === key;
-        const ofNumber = ctx.s.callerNumber !== undefined && byNumber.get(ctx.s.callerNumber) === key;
+        const ofNumber = ctx.s.callerNumber !== undefined && accountByNumber(written, (name) => ctx.env(name)).get(ctx.s.callerNumber) === key;
         return name === undefined || !byCallerId || !found.includes(key) || !ofNumber
           ? { value: { ok: false }, summary: 'no account' }
           : { value: { ok: true, principal: { kind: ACCOUNT_SLOT, level: 1, id: key, first: name } }, summary: 'recognized' };
@@ -315,7 +331,9 @@ export function defaultSeed(b: BusinessYaml, code: AppCode): NonNullable<NonNull
   const key = first === undefined ? undefined : Object.keys(keys).find((k) => keys[k] === first.name);
   if (first !== undefined && key !== undefined && b.booking !== undefined) {
     placeholders[ACCOUNT_SLOT] = { value: key, display: first.name };
-    return { caller: () => ({ kind: ACCOUNT_SLOT, level: 1, id: key, first: first.name }), placeholders, ...(first.numbers[0] !== undefined ? { callerNumber: first.numbers[0] } : {}) };
+    // The first number written out: a setting (env.<NAME>) is no number a seed can call from.
+    const number = first.numbers.find((n) => envVariableOf(n) === null);
+    return { caller: () => ({ kind: ACCOUNT_SLOT, level: 1, id: key, first: first.name }), placeholders, ...(number !== undefined ? { callerNumber: number } : {}) };
   }
   return { caller: () => ANONYMOUS, placeholders };
 }

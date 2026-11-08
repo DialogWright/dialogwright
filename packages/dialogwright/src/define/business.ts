@@ -264,7 +264,8 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
     if (!sayableParty({ kind: ACCOUNT_SLOT, level: 1, id: optionKey(a.name), first: a.name })) report(['accounts', i, 'name'], `the account name "${a.name}" is not one a line can say: letters, spaces, hyphens and apostrophes, at most four words and 40 characters`, 'shorten it, or write it without digits or symbols');
     a.numbers.forEach((n, j) => {
       const other = byNumber.get(n);
-      if (other !== undefined && other !== i) report(['accounts', i, 'numbers', j], `the number ${n} is on file for "${b.accounts![other]!.name}" too, so a call from it would match neither account`, 'list the number under one account only');
+      // A setting (env.<NAME>) counts as a number written out: one setting on two accounts is one number on both.
+      if (other !== undefined && other !== i) report(['accounts', i, 'numbers', j], `${n.startsWith('env.') ? 'the setting' : 'the number'} ${n} is on file for "${b.accounts![other]!.name}" too, so a call from it would match neither account`, 'list the number under one account only');
       byNumber.set(n, i);
     });
   });

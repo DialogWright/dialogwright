@@ -76,7 +76,9 @@ windows: # assumption: the owner corrects these (drop-off windows, each with roo
 
 accounts: # regular dealership accounts, booked straight in, recognized by the number they call from
   - name: Rivergate Motors
-    numbers: ["+15555550142", "+15555550143"]
+    # env.DEALER_TEST_LINE: a tester's own phone, set privately on a host (the app's settings, never this
+    # file), so the dealer flow can be heard on a real call. Unset, it is left out with a note as the server starts.
+    numbers: ["+15555550142", "+15555550143", "env.DEALER_TEST_LINE"]
   - name: Northside Auto Sales
     numbers: ["+15555550150"]
   - name: Lakeview Imports
