@@ -128,7 +128,8 @@ export interface ServerOverrides {
   /**
    * The agent model of an app in agent mode, for every such app (a test's fake). Left out, each has one
    * from style.yaml's `agent` with its own settings (its provider's key, AGENT_TIMEOUT_VOICE_MS,
-   * AGENT_TIMEOUT_CHAT_MS), and none with its key unset: every turn then says its fixed fallback.
+   * AGENT_TIMEOUT_CHAT_MS), and none with its key unset: each call then runs as a scripted app (its fields'
+   * fixed questions, the decision model understanding the answers; core/agentTurn.ts scriptedFromNow).
    */
   agent?: AgentRunner;
   now?: () => number;
