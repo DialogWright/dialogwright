@@ -26,6 +26,18 @@ chat:
     intro: |
       Example Wheel Works is an invented one-person wheel repair shop, answered by DialogWright's agent mode: a model words the conversation from the shop's facts, every value is checked, and nothing is sent until you confirm the read-back. Try describing some curb rash, ask whether your wheel is diamond cut, or push for a price. The shop's hours, windows and turnaround are demo assumptions.
 
+# The console's header: a button that opens the shop page (src/shopPage.ts, /wheelshop/shop): the requests,
+# bookings, texts and callback notes the line took in, served as the console is (on this machine, or behind
+# the console's sign-in with CONSOLE_AUTH=token).
+console:
+  links:
+    - id: shop
+      label: Shop
+      title: "What the line took in: requests, bookings, texts and callback notes"
+      href: /wheelshop/shop
+      target: wheelshop-shop
+      features: width=480,height=900
+
 fixtures:
   dir: fixtures
 

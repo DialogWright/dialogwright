@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url';
+import { ShopLog, type ShopEntry } from './shopLog';
+import { shopPages } from './shopPage';
 import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, type AppCode, type BusinessYaml, type IncomingText, type TextContext, type Texts, type ToolDef } from 'dialogwright';
 
 /**
@@ -12,7 +14,10 @@ import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, 
  * - `availability`: the free drop-off windows on a day, from a calendar held in memory, two windows a
  *   weekday each with the capacity business.yaml gives. Its result is shown to the model (business.yaml's
  *   `sees`), so its reply check is closed: the day, and the windows by name.
- * - `request`, `book`, `callback`: the writes a read-back's yes makes, kept in memory.
+ * - `request`, `book`, `callback`: the writes a read-back's yes makes, kept in memory and, where the app's
+ *   setting SHOP_DATA_DIR names a folder, in the shop's log there (src/shopLog.ts), which the server reads
+ *   back as it starts. The shop page (src/shopPage.ts, `/wheelshop/shop`, behind the console's sign-in)
+ *   shows them.
  * - `send_photo_link`: a text to the caller asking them to reply with a photo of the damage, in business.yaml's
  *   words (`texts.photoRequest`), sent only with their yes to being texted (business.yaml's `when`: the
  *   gate refuses it otherwise, never this code).
@@ -21,6 +26,7 @@ import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, 
  *   A text to the business, not to a caller, so no caller's consent applies.
  * - `onText`: a text that comes in. A photo from a number with a recent request is sent on to the shop's
  *   phone with a line naming the request, and the caller thanked; any other text is sent on as it came.
+ *   Each is kept (whole, with its photos' URLs) for the shop page.
  *
  * Each text goes through the server's sender (ctx.texts, TEXT_FROM) and is printed where there is none (or
  * no SHOP_PHONE): the server and the text CLI print, the tests and the regression stay quiet. Each is shown
@@ -49,7 +55,7 @@ export const WINDOW_NAMES: readonly string[] = (BUSINESS.windows ?? []).map((w) 
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
 /** A choice's words as a count ("three" is 3). */
-const COUNTS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+export const COUNTS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
 
 /**
  * The stand-in calendar's one booking already in: a standing dealership drop-off that fills every Friday
@@ -60,7 +66,7 @@ export function standingCars(day: string, window: string): number {
 }
 
 /** How many cars a window takes (business.yaml's capacity; a window that gives none takes any number). */
-function capacityOf(window: string): number {
+export function capacityOf(window: string): number {
   return BUSINESS.windows?.find((w) => w.name === window)?.capacity ?? Number.POSITIVE_INFINITY;
 }
 
@@ -69,12 +75,14 @@ function opensOn(day: string): boolean {
   return (BUSINESS.days ?? []).includes(WEEKDAY_NAMES[new Date(parseIso(day)).getUTCDay()]! as never);
 }
 
-/** A record a write kept, by its params, with its reference. */
-export type Kept = Readonly<Record<string, string>> & { readonly ref: string };
+/** A record a write kept, by its params, with its reference and when it was made (ISO). */
+export type Kept = Readonly<Record<string, string>> & { readonly ref: string; readonly at: string };
 
 /** A text the line sent (or printed, with no sender): whole here, masked where it is printed or recorded. */
 export interface Text {
   ref: string;
+  /** When it was sent (ISO). */
+  at: string;
   to: string;
   text: string;
   /** The media it carried, by URL (a photo sent on to the shop). */
@@ -83,8 +91,24 @@ export interface Text {
   status: string;
 }
 
-/** A request on file for the number a caller may text from: who, which car, whether they said yes to being texted, and when it was sent. */
+/** A text that came in to the shop's number, whole, as the shop page shows it. */
+export interface Received {
+  ref: string;
+  /** When it came (ISO). */
+  at: string;
+  /** The number it came from, whole (E.164). */
+  from: string;
+  /** The caller's own words ("" for a photo alone). */
+  text: string;
+  /** Its photos, by the provider's URLs (the engine keeps only Twilio's own); nothing is downloaded. */
+  media: string[];
+  /** The request it was matched to (a recent request from its number), by its reference. */
+  request?: string;
+}
+
+/** A request on file for the number a caller may text from: which request, who, which car, whether they said yes to being texted, and when it was sent. */
 export interface OnFile {
+  ref: string;
   name: string;
   vehicle: string;
   /** The request's textOk ("yes" or "no"): only a yes is ever texted back. */
@@ -115,26 +139,97 @@ export function printTexts(on: boolean): void {
 }
 
 /**
- * The app's systems for one call (App.systems builds a fresh one per call): the stand-in calendar (the
- * cars booked into each window, beside the standing drop-off), the requests, bookings and callback notes
- * kept, the texts the line would send, and each write's key, so a write repeated is done once. Replace
- * these with clients for the shop's real calendar and a texting service once the owner says what the shop uses.
+ * The app's systems (App.systems builds them: a server once, shared by every call and by onText; a test or a
+ * scripted call its own): the stand-in calendar (the cars booked into each window, beside the standing
+ * drop-off), the requests, bookings and callback notes kept, the texts sent and received, and each write's
+ * key, so a write repeated is done once. In memory, and in the shop's log once the server opens it
+ * (openLog, SHOP_DATA_DIR). Replace these with clients for the shop's real calendar once the owner says what
+ * the shop uses.
  */
 export class Systems {
   readonly requests: Kept[] = [];
   readonly bookings: Kept[] = [];
   readonly callbacks: Kept[] = [];
   readonly texts: Text[] = [];
+  /** The texts that came in, each whole, matched to a request where one was on file. */
+  readonly received: Received[] = [];
+  /** The shop's log (SHOP_DATA_DIR), once opened; null keeps everything in memory alone. */
+  private log: ShopLog | null = null;
   /**
    * The requests on file by the ten digits of their callback number, so a photo texted in is matched to its
-   * request. In memory, the demo's stand-in: a server restarted forgets them, and a photo is then sent on as
-   * from a number with no request on file. A real line keeps them where it keeps its requests.
+   * request. Read back from the shop's log as the server starts (SHOP_DATA_DIR); with no log, in memory
+   * alone, and a server restarted forgets them (a photo is then sent on as from a number with no request on file).
    */
   readonly onFile = new Map<string, OnFile>();
   /** The cars booked into each window on this calendar, by `<day> <window>`. */
   readonly booked = new Map<string, number>();
   /** The reference each write's key was given. */
   readonly written = new Map<string, string>();
+
+  /** Where the records are kept: the log's file, or null for memory alone. */
+  get logFile(): string | null {
+    return this.log?.file ?? null;
+  }
+
+  /**
+   * Keeps the records in the log in `dir` from now on, after reading back what it holds (the server does
+   * this once, as it starts: src/shopPage.ts). Returns how many records were read (a write's key is not
+   * one) and how many lines skipped. Opened once: a second call does nothing.
+   */
+  openLog(dir: string): { read: number; skipped: number } {
+    if (this.log !== null) return { read: 0, skipped: 0 };
+    const { log, read } = ShopLog.open(dir);
+    for (const line of read.lines) this.replay(line);
+    this.log = log;
+    return { read: read.lines.filter((l) => l.kind !== 'written').length, skipped: read.skipped };
+  }
+
+  /** A record kept: in memory, and in the log where there is one. */
+  keep(kind: 'request' | 'booking' | 'callback', record: Kept, atMs: number): void;
+  keep(kind: 'text', record: Text, atMs: number): void;
+  keep(kind: 'received', record: Received, atMs: number): void;
+  keep(kind: 'request' | 'booking' | 'callback' | 'text' | 'received', record: Kept | Text | Received, atMs: number): void {
+    const entry = { kind, record } as ShopEntry;
+    this.replay(entry);
+    this.log?.append(entry, atMs);
+  }
+
+  /** A write's key and the reference it was given, kept so a repeat (after a restart too) is done once. */
+  remember(name: string, ref: string, atMs: number): void {
+    this.written.set(name, ref);
+    this.log?.append({ kind: 'written', name, ref }, atMs);
+  }
+
+  /** One entry into memory: what keep does, and what reading the log back does for each line. */
+  private replay(e: ShopEntry): void {
+    switch (e.kind) {
+      case 'request': {
+        this.requests.push(e.record);
+        // On file by its callback number, so a photo texted in from it is matched to this request.
+        const number = tenDigits(e.record.callbackNumber ?? '');
+        if (number !== '') this.onFile.set(number, { ref: e.record.ref, name: nameWords(e.record.callerName ?? ''), vehicle: e.record.vehicle ?? '', textOk: e.record.textOk ?? '', atMs: Date.parse(e.record.at) });
+        return;
+      }
+      case 'booking': {
+        this.bookings.push(e.record);
+        const at = `${e.record.day ?? ''} ${e.record.window ?? ''}`;
+        this.booked.set(at, (this.booked.get(at) ?? 0) + (COUNTS[e.record.cars ?? ''] ?? 1));
+        return;
+      }
+      case 'callback':
+        this.callbacks.push(e.record);
+        return;
+      case 'text':
+        this.texts.push(e.record);
+        return;
+      case 'received':
+        this.received.push(e.record);
+        return;
+      case 'written':
+        this.written.set(e.name, e.ref);
+        return;
+    }
+  }
 
   /** The windows with room left on a day: none on a day the shop is closed. */
   freeWindows(day: string): string[] {
@@ -159,41 +254,44 @@ export function ownerSummary(vars: Readonly<Record<string, string>>): string {
 }
 
 /** The account a booking is for, by its key (the account slot's value): its name and the first number it calls from. */
-function accountOf(key: string): { name: string; number: string } {
+export function accountOf(key: string): { name: string; number: string } {
   const a = (BUSINESS.accounts ?? []).find((x) => optionKey(x.name) === key);
   return { name: a?.name ?? key, number: (a?.numbers[0] ?? '').replace(/^\+1/, '') };
 }
 
 /** A name as the owner reads it: the name slot keeps it in lower case ("jordan lee" is Jordan Lee). */
-const nameWords = (name: string): string => name.replace(/(^|[\s'-])(\p{Ll})/gu, (_m, b: string, c: string) => b + c.toUpperCase());
+export const nameWords = (name: string): string => name.replace(/(^|[\s'-])(\p{Ll})/gu, (_m, b: string, c: string) => b + c.toUpperCase());
 
 /** A day as the owner reads it ("Wednesday, November 11"). */
-const dayWords = (iso: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? describeDay(iso) : iso);
+export const dayWords = (iso: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? describeDay(iso) : iso);
 
 /**
  * A write done once for its key: `make` runs the first time and its reference is kept; a call repeated
  * with the same key returns the same reference and does nothing again.
  */
-function once(sys: Systems, key: string | undefined, prefix: string, count: number, make: (ref: string) => string): { value: { ref: string }; summary: string; ref: string } {
+function once(sys: Systems, key: string | undefined, prefix: string, count: number, nowMs: number, make: (ref: string) => string): { value: { ref: string }; summary: string; ref: string } {
   const seen = key === undefined ? undefined : sys.written.get(`${prefix} ${key}`);
   if (seen !== undefined) return { value: { ref: seen }, summary: `${seen} (already done)`, ref: seen };
   const ref = `${prefix}${101 + count}`;
   const summary = make(ref);
-  if (key !== undefined) sys.written.set(`${prefix} ${key}`, ref);
+  if (key !== undefined) sys.remember(`${prefix} ${key}`, ref, nowMs);
   return { value: { ref }, summary, ref };
 }
 
 /** `once` for a write that waits on a system (a text): its key taken before it waits, so a repeat on the same turn does nothing again. */
-async function onceAsync(sys: Systems, key: string | undefined, prefix: string, count: number, make: (ref: string) => Promise<string>): Promise<{ value: { ref: string }; summary: string; ref: string }> {
+async function onceAsync(sys: Systems, key: string | undefined, prefix: string, count: number, nowMs: number, make: (ref: string) => Promise<string>): Promise<{ value: { ref: string }; summary: string; ref: string }> {
   const seen = key === undefined ? undefined : sys.written.get(`${prefix} ${key}`);
   if (seen !== undefined) return { value: { ref: seen }, summary: `${seen} (already done)`, ref: seen };
   const ref = `${prefix}${101 + count}`;
-  if (key !== undefined) sys.written.set(`${prefix} ${key}`, ref);
+  if (key !== undefined) sys.remember(`${prefix} ${key}`, ref, nowMs);
   return { value: { ref }, summary: await make(ref), ref };
 }
 
 /** The ten digits of a number, as a callback number holds them ("+15555550177" is 5555550177). */
 const tenDigits = (n: string): string => n.replace(/\D/g, '').slice(-10);
+
+/** A time as the log and the page keep it (ISO). */
+const iso = (ms: number): string => new Date(ms).toISOString();
 
 /**
  * A text: sent through the server's sender where there is one and a number to send to, else printed (the
@@ -201,17 +299,17 @@ const tenDigits = (n: string): string => n.replace(/\D/g, '').slice(-10);
  * summary, which the trace and the audit show, has the number by its last four and `masked` for its words.
  * The key (the write's) is the sender's too, so a text repeated after a restart is not sent twice.
  */
-async function sendText(sys: Systems, texts: Texts | undefined, ref: string, to: string, body: string, masked: string, opts: { media?: string[]; key?: string } = {}): Promise<string> {
+async function sendText(sys: Systems, texts: Texts | undefined, nowMs: number, ref: string, to: string, body: string, masked: string, opts: { media?: string[]; key?: string } = {}): Promise<string> {
   const media = opts.media !== undefined && opts.media.length > 0 ? { media: opts.media } : {};
   const shown = to === '' ? 'no number' : last4(to);
   if (texts === undefined || to === '') {
-    sys.texts.push({ ref, to, text: body, ...media, status: 'printed' });
+    sys.keep('text', { ref, at: iso(nowMs), to, text: body, ...media, status: 'printed' }, nowMs);
     const line = `text to ${shown} (printed, not sent${to === '' ? `: ${SHOP_PHONE} unset` : ''}): ${masked}${opts.media !== undefined && opts.media.length > 0 ? ` [${opts.media.length} photo${opts.media.length === 1 ? '' : 's'}]` : ''}`;
     if (printing) console.log(`[wheelshop] ${line}`);
     return line;
   }
   const r = await texts.send({ to, body, ...media, ...(opts.key !== undefined ? { key: opts.key } : {}) });
-  sys.texts.push({ ref, to, text: body, ...media, status: r.status });
+  sys.keep('text', { ref, at: iso(nowMs), to, text: body, ...media, status: r.status }, nowMs);
   return `text to ${shown}: ${r.status}${r.error !== undefined ? ` (${r.error})` : ''}`;
 }
 
@@ -246,11 +344,9 @@ export const TOOLS: Record<string, ToolDef> = {
     idempotent: true,
     run(call, sys, { idempotencyKey, tc }) {
       const s = sys as Systems;
-      return once(s, idempotencyKey, 'R', s.requests.length, (ref) => {
-        s.requests.push({ ...call.params, ref });
-        // On file by its callback number, so a photo texted in from it is matched to this request.
-        const number = tenDigits(call.params.callbackNumber ?? '');
-        if (number !== '') s.onFile.set(number, { name: nameWords(call.params.callerName ?? ''), vehicle: call.params.vehicle ?? '', textOk: call.params.textOk ?? '', atMs: tc.nowMs });
+      return once(s, idempotencyKey, 'R', s.requests.length, tc.nowMs, (ref) => {
+        // Kept, and on file by its callback number, so a photo texted in from it is matched to this request.
+        s.keep('request', { ...call.params, ref, at: iso(tc.nowMs) }, tc.nowMs);
         return `request ${ref} for ${call.params.day ?? ''} ${call.params.window ?? ''}`;
       });
     },
@@ -262,11 +358,11 @@ export const TOOLS: Record<string, ToolDef> = {
   send_photo_link: {
     params: REQUEST,
     idempotent: true,
-    async run(call, sys, { idempotencyKey, texts }) {
+    async run(call, sys, { idempotencyKey, texts, tc }) {
       const s = sys as Systems;
       const to = call.params.callbackNumber ?? '';
       const body = textLine('photoRequest');
-      return onceAsync(s, idempotencyKey, 'P', s.texts.length, (ref) => sendText(s, texts, ref, to, body, body, idempotencyKey !== undefined ? { key: idempotencyKey } : {}));
+      return onceAsync(s, idempotencyKey, 'P', s.texts.length, tc.nowMs, (ref) => sendText(s, texts, tc.nowMs, ref, to, body, body, idempotencyKey !== undefined ? { key: idempotencyKey } : {}));
     },
     check: REF,
   },
@@ -274,12 +370,12 @@ export const TOOLS: Record<string, ToolDef> = {
   notify_owner_request: {
     params: REQUEST,
     idempotent: true,
-    async run(call, sys, { idempotencyKey, texts, env }) {
+    async run(call, sys, { idempotencyKey, texts, env, tc }) {
       const s = sys as Systems;
       const p = call.params;
       const vars = { kind: 'request', who: nameWords(p.callerName ?? ''), details: requestDetails(p), day: dayWords(p.day ?? ''), window: p.window ?? '' };
-      return onceAsync(s, idempotencyKey, 'N', s.texts.length, (ref) =>
-        sendText(s, texts, ref, env(SHOP_PHONE) ?? '', ownerSummary({ ...vars, callbackNumber: p.callbackNumber ?? '' }), ownerSummary({ ...vars, callbackNumber: last4(p.callbackNumber ?? '') }), idempotencyKey !== undefined ? { key: idempotencyKey } : {}));
+      return onceAsync(s, idempotencyKey, 'N', s.texts.length, tc.nowMs, (ref) =>
+        sendText(s, texts, tc.nowMs, ref, env(SHOP_PHONE) ?? '', ownerSummary({ ...vars, callbackNumber: p.callbackNumber ?? '' }), ownerSummary({ ...vars, callbackNumber: last4(p.callbackNumber ?? '') }), idempotencyKey !== undefined ? { key: idempotencyKey } : {}));
     },
     check: REF,
   },
@@ -287,7 +383,7 @@ export const TOOLS: Record<string, ToolDef> = {
   book: {
     params: BOOKING,
     idempotent: true,
-    run(call, sys, { idempotencyKey }) {
+    run(call, sys, { idempotencyKey, tc }) {
       const s = sys as Systems;
       const p = call.params;
       // The calendar refuses a window without room for the cars, as a real one would (the gate does not
@@ -296,11 +392,10 @@ export const TOOLS: Record<string, ToolDef> = {
       if (!repeat && s.roomIn(p.day ?? '', p.window ?? '') < (COUNTS[p.cars ?? ''] ?? 1)) {
         return { value: { full: true }, summary: `${p.day ?? ''} ${p.window ?? ''}: no room for ${p.cars ?? ''} cars, not booked` };
       }
-      return once(s, idempotencyKey, 'B', s.bookings.length, (ref) => {
-        s.bookings.push({ ...p, ref });
-        const at = `${p.day ?? ''} ${p.window ?? ''}`;
-        s.booked.set(at, (s.booked.get(at) ?? 0) + (COUNTS[p.cars ?? ''] ?? 1));
-        return `booking ${ref}: ${p.cars ?? ''} cars for ${p.account ?? ''}, ${at}`;
+      return once(s, idempotencyKey, 'B', s.bookings.length, tc.nowMs, (ref) => {
+        // Kept, and its cars counted into the window.
+        s.keep('booking', { ...p, ref, at: iso(tc.nowMs) }, tc.nowMs);
+        return `booking ${ref}: ${p.cars ?? ''} cars for ${p.account ?? ''}, ${p.day ?? ''} ${p.window ?? ''}`;
       });
     },
     check: REF,
@@ -309,13 +404,13 @@ export const TOOLS: Record<string, ToolDef> = {
   notify_owner_booking: {
     params: BOOKING,
     idempotent: true,
-    async run(call, sys, { idempotencyKey, texts, env }) {
+    async run(call, sys, { idempotencyKey, texts, env, tc }) {
       const s = sys as Systems;
       const p = call.params;
       const account = accountOf(p.account ?? '');
       const summary = ownerSummary({ kind: 'booking', who: account.name, callbackNumber: account.number, details: `${p.cars ?? ''} cars, ${p.vehicles ?? ''}`, day: dayWords(p.day ?? ''), window: p.window ?? '' });
       // The account's own number is the business's record, not a caller's: in the summary whole.
-      return onceAsync(s, idempotencyKey, 'N', s.texts.length, (ref) => sendText(s, texts, ref, env(SHOP_PHONE) ?? '', summary, summary, idempotencyKey !== undefined ? { key: idempotencyKey } : {}));
+      return onceAsync(s, idempotencyKey, 'N', s.texts.length, tc.nowMs, (ref) => sendText(s, texts, tc.nowMs, ref, env(SHOP_PHONE) ?? '', summary, summary, idempotencyKey !== undefined ? { key: idempotencyKey } : {}));
     },
     check: REF,
   },
@@ -323,12 +418,12 @@ export const TOOLS: Record<string, ToolDef> = {
   callback: {
     params: ['callbackNumber'],
     idempotent: true,
-    async run(call, sys, { idempotencyKey, texts, env }) {
+    async run(call, sys, { idempotencyKey, texts, env, tc }) {
       const s = sys as Systems;
       const number = call.params.callbackNumber ?? '';
-      return onceAsync(s, idempotencyKey, 'C', s.callbacks.length, async (ref) => {
-        s.callbacks.push({ ...call.params, ref });
-        await sendText(s, texts, ref, env(SHOP_PHONE) ?? '', textLine('callbackNote', { number, ref }), textLine('callbackNote', { number: last4(number), ref }), idempotencyKey !== undefined ? { key: idempotencyKey } : {});
+      return onceAsync(s, idempotencyKey, 'C', s.callbacks.length, tc.nowMs, async (ref) => {
+        s.keep('callback', { ...call.params, ref, at: iso(tc.nowMs) }, tc.nowMs);
+        await sendText(s, texts, tc.nowMs, ref, env(SHOP_PHONE) ?? '', textLine('callbackNote', { number, ref }), textLine('callbackNote', { number: last4(number), ref }), idempotencyKey !== undefined ? { key: idempotencyKey } : {});
         return `callback note ${ref} for ${last4(number)}`;
       });
     },
@@ -350,6 +445,8 @@ export async function onText(m: IncomingText, ctx: TextContext): Promise<void> {
   const found = s.onFile.get(tenDigits(m.from));
   const recent = found !== undefined && ctx.nowMs - found.atMs <= ON_FILE_MS ? found : undefined;
   const media = m.media.map((x) => x.url);
+  // Kept whole for the shop page, with the request it was matched to.
+  s.keep('received', { ref: `I${101 + s.received.length}`, at: iso(ctx.nowMs), from: m.from, text: m.body, media, ...(recent !== undefined ? { request: recent.ref } : {}) }, ctx.nowMs);
   const vars = { name: recent?.name ?? '', last4: m.from.replace(/\D/g, '').slice(-4), vehicle: recent?.vehicle ?? '' };
   const line = recent === undefined ? textLine('unknownForward', vars) : textLine(media.length > 0 ? 'photoForward' : 'textForward', vars);
   // The caller's own words follow the shop's line, as they came; the record keeps the line alone.
@@ -357,8 +454,8 @@ export async function onText(m: IncomingText, ctx: TextContext): Promise<void> {
   const room = FORWARD_MAX - line.length - 2;
   const body = words === '' ? line : `${line}: ${words.length > room ? `${words.slice(0, room - 1)}…` : words}`;
   const ref = `T${101 + s.texts.length}`;
-  await sendText(s, ctx.texts, ref, ctx.env(SHOP_PHONE) ?? '', body, line, { media });
-  if (recent !== undefined && recent.textOk === 'yes' && media.length > 0) await sendText(s, ctx.texts, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
+  await sendText(s, ctx.texts, ctx.nowMs, ref, ctx.env(SHOP_PHONE) ?? '', body, line, { media });
+  if (recent !== undefined && recent.textOk === 'yes' && media.length > 0) await sendText(s, ctx.texts, ctx.nowMs, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
 }
 
 /** A request's values, as the gate grid sends them (its textOk given by each case). */
@@ -371,6 +468,8 @@ export const code: AppCode = {
   tools: TOOLS,
   systems: () => ({ sys: new Systems(), lookups: { ownerOf: () => null, scopeOf: () => [] } }),
   onText,
+  // The shop page, /wheelshop/shop, behind the console's sign-in; mounting it opens the shop's log (SHOP_DATA_DIR).
+  pages: shopPages,
   testing: {
     // A corpus line spoken mid-call (fixtures/corpus.jsonl) is seeded with a dealership account recognized by its
     // number (it may book and send a request alike) and these stand-ins, by the slots the engine builds from

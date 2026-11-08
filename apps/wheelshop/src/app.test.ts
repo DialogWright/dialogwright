@@ -183,7 +183,7 @@ describe('the writes and the texts', () => {
   it('with no sender, prints the text rather than send it', async () => {
     const sys = new Systems();
     const reply = await run(sys, 'send_photo_link', REQUEST, 'k-1');
-    expect(sys.texts).toEqual([{ ref: 'P101', to: '5555550177', text: "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price. Reply STOP to opt out.", status: 'printed' }]);
+    expect(sys.texts).toEqual([{ ref: 'P101', at: '1970-01-01T00:00:00.000Z', to: '5555550177', text: "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price. Reply STOP to opt out.", status: 'printed' }]);
     expect(reply.summary).toMatch(/^text to \.\.\.0177 \(printed, not sent\)/);
   });
 
@@ -217,7 +217,7 @@ describe('the writes and the texts', () => {
     const sys = new Systems();
     const { texts, sent } = sender();
     const reply = await run(sys, 'callback', { callbackNumber: '5555550177' }, 'k-1', { texts, env: { SHOP_PHONE: SHOP } });
-    expect(sys.callbacks).toEqual([{ callbackNumber: '5555550177', ref: 'C101' }]);
+    expect(sys.callbacks).toEqual([{ callbackNumber: '5555550177', ref: 'C101', at: '1970-01-01T00:00:00.000Z' }]);
     expect(sent).toEqual([{ from: '+15555550100', to: SHOP, body: 'Call back 5555550177 (callback note C101).', key: 'k-1' }]);
     expect(reply.summary).toBe('callback note C101 for ...0177');
   });
@@ -257,6 +257,8 @@ describe('a text that comes in (onText)', () => {
       { from: '+15555550100', to: SHOP, body: 'Photo from Jordan Lee, ...0177, for their 2020 BMW 3 Series request.', media: [PHOTO] },
       { from: '+15555550100', to: '+15555550177', body: "Got it, thanks. We'll text you a price soon." },
     ]);
+    // Kept for the shop page with the request it was matched to.
+    expect(sys.received).toEqual([{ ref: 'I101', at: '1970-01-01T00:00:01.000Z', from: '+15555550177', text: '', media: [PHOTO], request: 'R101' }]);
   });
 
   it('the caller\'s own words follow the line', async () => {
@@ -306,6 +308,8 @@ describe('a text that comes in (onText)', () => {
   it('with no sender, prints what it would send', async () => {
     const sys = new Systems();
     await onText(message('+15555550133', 'hello'), ctx(sys, undefined));
-    expect(sys.texts).toEqual([{ ref: 'T101', to: SHOP, text: 'Text from ...0133 (no request on file).: hello', status: 'printed' }]);
+    expect(sys.texts).toEqual([{ ref: 'T101', at: '1970-01-01T00:00:01.000Z', to: SHOP, text: 'Text from ...0133 (no request on file).: hello', status: 'printed' }]);
+    // The text that came in is kept whole for the shop page, matched to no request.
+    expect(sys.received).toEqual([{ ref: 'I101', at: '1970-01-01T00:00:01.000Z', from: '+15555550133', text: 'hello', media: [] }]);
   });
 });
