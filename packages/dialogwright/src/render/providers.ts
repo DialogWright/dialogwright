@@ -398,11 +398,11 @@ function upstreamError(metadata: unknown): string | null {
 
 /**
  * An API's account of a failed request, made safe to record: one line, at most 200 characters, the key
- * masked, anything shaped like a key (`sk-...`, `key-...`) and any long unbroken token (24 characters or
+ * masked (where one is given: an empty key masks nothing of its own), anything shaped like a key (`sk-...`, `key-...`) and any long unbroken token (24 characters or
  * more of letters, digits, `_` and `-`: another provider's key such as `AIza...`, a bearer token) masked.
  */
 export function safeErrorText(t: string, key: string): string {
-  return t.split(key).join('•').replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/[A-Za-z0-9_-]{24,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return (key === '' ? t : t.split(key).join('•')).replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/[A-Za-z0-9_-]{24,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 /** Words a line through OpenRouter's OpenAI-compatible chat completions, or the Anthropic Messages API. */

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { safeErrorText } from '../render/providers';
 import { NO_ACTION, type AgentAnswer } from './types';
 
 /**
@@ -13,11 +14,20 @@ function actionNames(actions: readonly string[]): [string, ...string[]] {
   return [...new Set([...actions.filter((a) => a !== NO_ACTION), NO_ACTION])] as [string, ...string[]];
 }
 
+/** The fields, refused when one is named twice (a form's fields are distinct). */
+function fieldNames(fields: readonly string[] | undefined): readonly string[] | undefined {
+  if (fields === undefined) return undefined;
+  const twice = fields.find((f, i) => fields.indexOf(f) !== i);
+  if (twice !== undefined) throw new Error(`the agent's fields name "${twice}" twice`);
+  return fields;
+}
+
 const nonEmpty = z.string().refine((s) => s.trim() !== '', { message: 'must not be empty' });
 
 /** The zod schema of an answer naming one of `actions` (or `none`), and where `fields` is given, values of those fields only. */
 export function agentAnswerSchema(actions: readonly string[], fields?: readonly string[]): z.ZodType<AgentAnswer> {
-  const field = fields === undefined || fields.length === 0 ? nonEmpty : z.enum(fields as [string, ...string[]]);
+  const names = fieldNames(fields);
+  const field = names === undefined || names.length === 0 ? nonEmpty : z.enum(names as [string, ...string[]]);
   return z.strictObject({
     reply: z.string(),
     values: z.array(z.strictObject({ field, value: nonEmpty, words: nonEmpty })),
@@ -28,6 +38,7 @@ export function agentAnswerSchema(actions: readonly string[], fields?: readonly 
 
 /** The JSON Schema of the same shape, for `response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } }`. */
 export function agentJsonSchema(actions: readonly string[], fields?: readonly string[]): Record<string, unknown> {
+  const names = fieldNames(fields);
   return {
     type: 'object',
     additionalProperties: false,
@@ -42,9 +53,9 @@ export function agentJsonSchema(actions: readonly string[], fields?: readonly st
           additionalProperties: false,
           required: ['field', 'value', 'words'],
           properties: {
-            field: { type: 'string', ...(fields !== undefined && fields.length > 0 ? { enum: [...fields] } : {}) },
-            value: { type: 'string' },
-            words: { type: 'string', description: "The caller's own words the value came from, exactly as said." },
+            field: { type: 'string', ...(names !== undefined && names.length > 0 ? { enum: [...names] } : {}) },
+            value: { type: 'string', minLength: 1 },
+            words: { type: 'string', minLength: 1, description: "The caller's own words the value came from, exactly as said." },
           },
         },
       },
@@ -57,15 +68,20 @@ export function agentJsonSchema(actions: readonly string[], fields?: readonly st
 /** The name the schema is sent under. */
 export const AGENT_SCHEMA_NAME = 'agent_answer';
 
-/** A model's text without the code fence some models put round JSON. */
+/** A model's text without the code fence some models put round JSON (```json, ```JSON or bare). */
 function unfenced(raw: string): string {
-  const m = /^\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```\s*$/.exec(raw);
+  const m = /^\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```\s*$/i.exec(raw);
   return m !== null ? m[1]! : raw;
 }
 
+/** The keys of the shape: a path names only these (or an index); any other key, which the model chose, is `?`. */
+const SHAPE_KEYS: ReadonlySet<string> = new Set(['reply', 'values', 'action', 'fromFacts', 'field', 'value', 'words']);
+
 /**
  * The model's text read as an answer: JSON in the shape (agentAnswerSchema), or why not (`not JSON`,
- * or the first issue's path and message). Never the text itself in the reason.
+ * or the first issue's path and kind). Never the text itself in the reason, nor a key the model chose:
+ * the path names the shape's own keys only, an unknown key is said as such, and what is left passes
+ * safeErrorText.
  */
 export function parseAgentAnswer(raw: string, actions: readonly string[], fields?: readonly string[]): { ok: true; answer: AgentAnswer } | { ok: false; detail: string } {
   let json: unknown;
@@ -77,5 +93,8 @@ export function parseAgentAnswer(raw: string, actions: readonly string[], fields
   const parsed = agentAnswerSchema(actions, fields).safeParse(json);
   if (parsed.success) return { ok: true, answer: parsed.data };
   const issue = parsed.error.issues[0];
-  return { ok: false, detail: `the answer is not the shape: ${issue === undefined ? 'invalid' : `${issue.path.join('.') || '(root)'}: ${issue.message}`}` };
+  if (issue === undefined) return { ok: false, detail: 'the answer is not the shape' };
+  const path = issue.path.map((p) => (typeof p === 'number' ? String(p) : typeof p === 'string' && SHAPE_KEYS.has(p) ? p : '?')).join('.') || '(root)';
+  const why = issue.code === 'unrecognized_keys' ? 'a key the shape does not have' : safeErrorText(issue.message, '');
+  return { ok: false, detail: `the answer is not the shape: ${path}: ${why}` };
 }

@@ -58,14 +58,19 @@ export interface AgentFacts {
 /** A field of the form in progress, as the model is told of it. */
 export interface AgentField {
   name: string;
-  /** Its slot type: choice, date, digits, name, text, birthdate. */
+  /** Its slot type: choice, date, digits, name or text (an identity factor never reaches the agent). */
   type: string;
   about?: string;
   /** A choice's options, by the words the value takes. */
   options?: string[];
-  /** Its value as the line understood it so far (masked where the records hide it), or null while empty. */
+  /** Its value as the line understood it so far, or null while empty. */
   value: string | null;
   required: boolean;
+  /**
+   * How the records hide its value (the slot's `redact`): the value is sent masked as a record masks
+   * it (`last4`: its last four digits; `mask`: the year alone; `length`: its length), never whole.
+   */
+  redact?: 'last4' | 'mask' | 'length';
 }
 
 /** An action the model may propose, with what it does, in the app's words. */
@@ -117,9 +122,17 @@ export type AgentResult =
   | { ok: true; answer: AgentAnswer; ms: number; usage?: RenderUsage; raw?: string; costUsd?: number }
   | { ok: false; reason: AgentFailure; detail: string; ms: number; usage?: RenderUsage; raw?: string; costUsd?: number };
 
+/** What a client sends for a turn: the request's body, never its key (agent/provider.ts). A cassette keys its answers by it. */
+export interface AgentRequest {
+  /** Throws where the turn cannot be put into a request (a `seen` result that is not JSON). */
+  body(ctx: AgentContext): Record<string, unknown>;
+}
+
 /** Asks the agent model one turn, within `timeoutMs` (agent/provider.ts; agent/fake.ts for tests; agent/cassette.ts recording and replaying). Never rejects. */
 export interface AgentClient {
   /** The model asked, for a run's header and a cassette's file name. */
   readonly model: string;
+  /** The request it sends for a turn, where it sends one (a provider's client, not a fake). */
+  readonly request?: AgentRequest;
   answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult>;
 }

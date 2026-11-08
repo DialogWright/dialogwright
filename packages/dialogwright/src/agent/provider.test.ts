@@ -90,6 +90,52 @@ describe('openRouterAgent', () => {
     expect(messages[1]!.content).toContain('Thursday please.');
   });
 
+  it('sends no reasoning setting where none is given, and the one given where it is', async () => {
+    const plain = fakeFetch(answer);
+    await openRouterAgent(openRouter(), plain.fetchFn).answer(ctx, 5000);
+    expect(plain.sent[0]!.body).not.toHaveProperty('reasoning');
+    const low = fakeFetch(answer);
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'vendor/always-reasons', RENDER_EFFORT: 'low', OPENROUTER_API_KEY: KEY })!;
+    await openRouterAgent(p, low.fetchFn).answer(ctx, 5000);
+    expect(low.sent[0]!.body).toMatchObject({ reasoning: { effort: 'low', exclude: true }, max_tokens: 4000 });
+  });
+
+  it('a timeout while the body is read is timeout', async () => {
+    const slowBody = ((_url: string, init?: RequestInit) => Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
+    })) as unknown as typeof fetch;
+    expect(await openRouterAgent(openRouter(), slowBody).answer(ctx, 20)).toMatchObject({ ok: false, reason: 'timeout' });
+  });
+
+  it('an answer cut off at the token limit is invalid, whatever it parses to', async () => {
+    const cut = (async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) }, finish_reason: 'length' }], usage: { prompt_tokens: 10, completion_tokens: 1000 } }), { status: 200 })) as unknown as typeof fetch;
+    const r = await openRouterAgent(openRouter(), cut).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'invalid', usage: { outputTokens: 1000 } });
+    expect(!r.ok && r.detail).toContain('cut off');
+  });
+
+  it('a network failure is error, naming its kind and never the request', async () => {
+    const down = (async () => {
+      throw Object.assign(new Error(`connect ECONNREFUSED with Bearer ${KEY}`), { name: 'TypeError' });
+    }) as unknown as typeof fetch;
+    const r = await openRouterAgent(openRouter(), down).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'error', detail: 'openrouter: TypeError' });
+  });
+
+  it('a gateway timeout (HTTP 504) is timeout', async () => {
+    const { fetchFn } = fakeFetch(null, { status: 504, error: { message: 'upstream timed out' } });
+    expect(await openRouterAgent(openRouter(), fetchFn).answer(ctx, 5000)).toMatchObject({ ok: false, reason: 'timeout' });
+  });
+
+  it('a turn that cannot be put into a request is error, never a throw', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    const r = await openRouterAgent(openRouter(), fetchFn).answer({ ...ctx, seen: [{ tool: 'lookup', result: { n: 1n } }] }, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'error' });
+    expect(sent).toHaveLength(0);
+  });
+
   it('never makes a client without its key', () => {
     const p = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'inception/mercury-3' }, { needKey: false })!;
     expect(() => openRouterAgent(p)).toThrow('OPENROUTER_API_KEY');

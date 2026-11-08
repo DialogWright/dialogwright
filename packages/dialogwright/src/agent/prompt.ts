@@ -1,3 +1,4 @@
+import { maskLast4, maskToYear } from '../trace/redact';
 import type { AgentContext, AgentField, AgentUtterance } from './types';
 import { NO_ACTION } from './types';
 
@@ -17,8 +18,19 @@ import { NO_ACTION } from './types';
  * The user message is the caller's latest words. The content is the goal and the full context, never a
  * procedure for the words (CLAUDE.md): the engine's checks and the drift judge hold the reply to the
  * facts, so no self-checking list is sent either. Identity factors never reach here; a value the records
- * hide arrives masked and is sent as it arrives.
+ * hide is sent masked as a record masks it (AgentField.redact). What the caller said, the values and the
+ * tools' results are escaped (`<`, `>`, `&`), so no words of theirs can open or close a section.
  */
+
+/** Text from the call (the caller's words, a value, a tool's result) as data inside a section: it cannot close one or open another. */
+export const escapeText = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** A field's value as it is sent: masked as the records mask it where they hide it, and escaped. */
+function shownValue(f: AgentField): string {
+  const v = f.value ?? '';
+  const masked = f.redact === 'last4' ? maskLast4(v) : f.redact === 'mask' ? maskToYear(v) : f.redact === 'length' ? `<${v.length} chars>` : v;
+  return escapeText(masked);
+}
 
 const tag = (name: string, body: string): string => `<${name}>\n${body.trim()}\n</${name}>`;
 const bullets = (lines: readonly string[]): string => lines.map((l) => `- ${l.trim()}`).join('\n');
@@ -32,7 +44,6 @@ function fieldLine(f: AgentField): string {
 const VALUE_FORMS: Readonly<Record<string, string>> = {
   choice: 'one of its options, word for word',
   date: 'a date as YYYY-MM-DD',
-  birthdate: 'a date as YYYY-MM-DD',
   digits: 'digits only',
   name: 'the name as the caller gave it',
   text: 'a short version of what the caller said, in plain words',
@@ -71,7 +82,7 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
     `language: ${ctx.locale}`,
     `today: ${ctx.today} (${weekday(ctx.today)})`,
     `the days ahead: ${daysAhead(ctx.today, DAYS_AHEAD).join(', ')}`,
-    `caller: ${ctx.caller.account !== null ? `recognized by the number they call from as ${ctx.caller.account}` : 'not recognized'}`,
+    `caller: ${ctx.caller.account !== null ? `recognized by the number they call from as ${escapeText(ctx.caller.account)}` : 'not recognized'}`,
   ].join('\n'));
 
   const collected = ctx.fields.filter((x) => x.value !== null);
@@ -80,19 +91,19 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
   const actions = [...ctx.actions.filter((a) => a.name !== NO_ACTION).map((a) => `${a.name}: ${a.about}`), `${NO_ACTION}: nothing to propose this turn`];
   const state = tag('current_state', [
     ctx.form !== null ? `form: ${ctx.form.name}${ctx.form.about !== undefined ? ` (${ctx.form.about.trim()})` : ''}` : 'form: none chosen yet',
-    tag('collected_so_far', collected.length > 0 ? bullets(collected.map((x) => `${x.name}: ${x.value} (${[x.type, ...(x.options !== undefined && x.options.length > 0 ? [`one of: ${x.options.join(', ')}`] : [])].join('; ')})`)) : '(nothing yet)'),
+    tag('collected_so_far', collected.length > 0 ? bullets(collected.map((x) => `${x.name}: ${shownValue(x)} (${[x.type, ...(x.options !== undefined && x.options.length > 0 ? [`one of: ${x.options.join(', ')}`] : [])].join('; ')})`)) : '(nothing yet)'),
     tag('still_needed', needed.length > 0 ? bullets(needed.map(fieldLine)) : '(nothing: every field is filled)'),
     ...(forms.length > 0 ? [tag('value_forms', bullets(forms))] : []),
     tag('actions', bullets(actions)),
-    ...(ctx.seen.length > 0 ? [tag('seen', bullets(ctx.seen.map((s) => `${s.tool}: ${JSON.stringify(s.result)}`)))] : []),
+    ...(ctx.seen.length > 0 ? [tag('seen', bullets(ctx.seen.map((s) => `${s.tool}: ${escapeText(JSON.stringify(s.result) ?? 'null')}`)))] : []),
   ].join('\n'));
 
   const { earlier, latest } = split(ctx.conversation);
-  const history = tag('conversation_history', earlier.length > 0 ? earlier.map((u) => `${speaker(u)}: ${u.text.trim()}`).join('\n') : '(the call has just begun)');
+  const history = tag('conversation_history', earlier.length > 0 ? earlier.map((u) => `${speaker(u)}: ${escapeText(u.text.trim())}`).join('\n') : '(the call has just begun)');
 
   const rules = tag('critical_rules', bullets([
     `Speak only about ${f.name}, its services and what <knowledge_base> holds.`,
-    'Say no price, figure, turnaround, time, date or promise that <knowledge_base>, <collected_so_far>, <seen> or the values you give this turn do not hold.',
+    'Say no price, figure, turnaround, time, date or promise that <knowledge_base>, <collected_so_far>, <seen> or the values you give this turn do not hold; a date may also be one of the days ahead in <call>.',
     'Ask one question at a time.',
     'Plain spoken sentences: no markdown, lists, symbols or emoji.',
     'Give every value you understood this turn in `values`, new ones and corrections alike, each with the caller\'s own words it came from, exactly as said. The reply does not read values back to confirm them: the line reads them back itself.',
@@ -104,7 +115,7 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
   const system = [persona, knowledge, ...examples, call, state, history, rules].join('\n\n');
   const user = latest === null
     ? '(The caller has not said anything yet.)'
-    : `${ctx.overLine ? '(Heard while the line was still speaking.)\n' : ''}Caller: ${latest.trim()}`;
+    : `${ctx.overLine ? '(Heard while the line was still speaking.)\n' : ''}Caller: ${escapeText(latest.trim())}`;
   return { system: `${system}\n`, user };
 }
 
