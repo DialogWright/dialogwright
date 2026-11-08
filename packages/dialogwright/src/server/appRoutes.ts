@@ -6,6 +6,7 @@ import type { JevClient } from '../jev/types';
 import type { ChatTurnDeps } from './chatTurn';
 import type { ChatSettings } from './config';
 import type { App } from '../core/app/types';
+import type { Texts } from '../texts/types';
 
 /**
  * A page or API an app serves beside the phone line (a web chat, say): one of the app's own pages
@@ -119,6 +120,15 @@ export interface AppPageDeps extends AppRouteDeps {
    * settings file over the server's settings, on a server of one the server's environment.
    */
   env(name: string): string | undefined;
+  /**
+   * The app's sender for what its pages send (TEXT_FROM: the same provider, number, keys and abuse limits its
+   * tools text with), absent where the server has none: a page a person works (a shop's own page, behind the
+   * console's sign-in) may text from it. Each text is recorded in the app's audit as a tool's is (`text_sent`,
+   * on the `sms` channel, under the text's `key`, or `page` with none). Whether a caller may be texted is the
+   * app's to decide, as in its incoming hook (AppCode.onText): nothing here goes through the gate, which holds
+   * a call's actions.
+   */
+  texts?: Texts;
 }
 
 /**

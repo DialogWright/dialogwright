@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { mountAppPages, validateRoutes, type AppPagesFactory, type AppRoute } fr
 import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { callbackApp } from '../testing/callback/app';
 import type { App } from '../core/app/types';
+import { fakeTextProvider } from '../texts/record';
 
 /**
  * An app's own pages (App.pages): mounted under `/<app id>` by a server of one app and by a host's
@@ -41,6 +42,24 @@ const demoPages: AppPagesFactory = (deps) => {
   return { routes: [page('/hello', false), page('/private', true), page('/records', true, 'console')] };
 };
 
+/** A page that texts (AppPageDeps.texts): a POST sends one, with a key, and says what the sender answered. */
+const sendPages: AppPagesFactory = (deps) => {
+  const send: AppRoute = {
+    label: 'demo send',
+    path: '/send',
+    localOnly: true,
+    auth: 'console',
+    async handle(req, res) {
+      if (req.method !== 'POST') return false;
+      const receipt = deps.texts === undefined ? null : await deps.texts.send({ to: '+15555550177', body: 'Your request is ready.', key: 'page-key-1' });
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(receipt === null ? 'no sender' : receipt.status);
+      return true;
+    },
+  };
+  return { routes: [send] };
+};
+
 const withPages = (app: App): App => ({ ...app, pages: demoPages });
 
 const dirs: string[] = [];
@@ -62,6 +81,19 @@ async function start(env: Env, overrides: Partial<ServerOverrides> = {}): Promis
   });
   running = await startServer(config, { host: '127.0.0.1', log: (l) => logs.push(l), env: { ...TARGETS, ...env }, ...overrides });
   return { base: `http://127.0.0.1:${running.port}`, logs };
+}
+
+/** start, with where the audit is written. */
+async function startWithAudit(env: Env, overrides: Partial<ServerOverrides> = {}): Promise<{ base: string; audit: string }> {
+  const dir = mkdtempSync(join(tmpdir(), 'app-pages-'));
+  dirs.push(dir);
+  const config = loadConfig({
+    PUBLIC_HOST: 'demo.example.com', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567', PORT: '0', TODAY_OVERRIDE: '2026-10-12',
+    TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, DASHBOARD: 'off', JEV_CLIENT: 'stub',
+    ...env,
+  });
+  running = await startServer(config, { host: '127.0.0.1', log: () => {}, env: { ...TARGETS, ...env }, ...overrides });
+  return { base: `http://127.0.0.1:${running.port}`, audit: join(dir, 'audit') };
 }
 
 /** A GET from this machine with the `Host` given, as a page whose name was pointed at 127.0.0.1 would send it. */
@@ -220,5 +252,29 @@ describe('mountAppPages', () => {
   it('refuses a path that is not one, naming the route', () => {
     expect(() => mountAppPages('/app', [route('portal')])).toThrow(/app route "r": path "portal" must be/);
     expect(() => mountAppPages('/app', [route('/')])).toThrow(/must be/);
+  });
+});
+
+describe('an app\'s pages texting (AppPageDeps.texts)', () => {
+  beforeAll(() => {
+    resetAppsForTest();
+    registerApp({ ...callbackApp, pages: sendPages });
+  });
+
+  it('gives the app\'s pages its sender where the server has one (TEXT_FROM), each text recorded in the app\'s audit under its key', async () => {
+    const provider = fakeTextProvider();
+    const { base, audit } = await startWithAudit({ TWILIO_AUTH_TOKEN: 't', TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'3'.repeat(32)}` }, { textProvider: provider });
+    const res = await fetch(`${base}/callback/send`, { method: 'POST' });
+    expect(await res.text()).toBe('queued');
+    expect(provider.sent).toEqual([{ from: '+15555550100', to: '+15555550177', body: 'Your request is ready.', key: 'page-key-1' }]);
+    const rows = readdirSync(audit).filter((f) => f.endsWith('.jsonl')).flatMap((f) => readFileSync(join(audit, f), 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as { type: string; callId: string; channel: string; detail: Record<string, unknown> }));
+    expect(rows.filter((r) => r.type === 'text_sent')).toMatchObject([{ callId: 'page-key-1', channel: 'sms', detail: { number: '...0177', bodyLength: 22, status: 'queued' } }]);
+    // A second send with the key is not sent again (the app's keys, as its tools'), and with no sender the page has none.
+    expect(await (await fetch(`${base}/callback/send`, { method: 'POST' })).text()).toBe('queued');
+    expect(provider.sent).toHaveLength(1);
+    await running!.close();
+    running = null;
+    const none = await start({});
+    expect(await (await fetch(`${none.base}/callback/send`, { method: 'POST' })).text()).toBe('no sender');
   });
 });

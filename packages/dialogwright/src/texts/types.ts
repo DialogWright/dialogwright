@@ -1,3 +1,5 @@
+import type { AnswerMap, QuestionMap } from '../jev/types';
+
 /**
  * Texts (SMS and MMS): a capability the server gives an app's code, neutral to any app
  * (docs/designs/2026-11-08-texting.md; the guide's 13.17). The engine sends and receives; whether a text
@@ -97,7 +99,24 @@ export interface TextContext {
   readonly sys: unknown;
   /** The time, ms since the epoch. */
   readonly nowMs: number;
+  /**
+   * Asks the decision model typed questions about the text (a yes or no, a choice, a score: the same
+   * questions a turn asks), never by matching its words. See TextDecide.
+   */
+  readonly decide: TextDecide;
 }
+
+/**
+ * The decision model asked about a text that came in (TextContext.decide; texts/decide.ts): `questions`,
+ * by id, as a turn's are written (`{ accepts: { type: 'noul', instructions: '...' } }`), the model sent the
+ * text's words, how many media it came with, and `about`, what the app says the text answers (the line it
+ * last texted, say), by name. The same client the app's calls ask (JEV_CLIENT; a test's stub or recording,
+ * never a model in a test), within JEV_TIMEOUT_MS. Resolves to the answers by id (read them with `noulValue`,
+ * `isChoice`), or null where the model gave none (an error, the time out): the app decides what it does
+ * then. Each asking is recorded in the app's audit beside the message (`text_decision`: the questions by
+ * id, each answer, the client, the time it took; never the words, and only the names of `about`).
+ */
+export type TextDecide = (questions: QuestionMap, about?: Readonly<Record<string, string>>) => Promise<AnswerMap | null>;
 
 /** A text as it is recorded (the audit's text_sent and text_received, TraceRecord.texts): no number whole, no words. */
 export interface TextRecord {

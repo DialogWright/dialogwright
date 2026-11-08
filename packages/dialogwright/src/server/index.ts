@@ -69,8 +69,9 @@ import { generatesLines } from '../render/config';
 import { textSettings } from '../texts/settings';
 import { twilioTextProvider } from '../texts/twilio';
 import { receivedRecord, recordingTexts, TextKeys, TextLimits, textAuditRow } from '../texts/record';
+import { textDecider } from '../texts/decide';
 import { sameNumber } from '../core/conditions';
-import type { IncomingText, TextProvider, TextRecord } from '../texts/types';
+import type { IncomingText, TextProvider, TextRecord, Texts } from '../texts/types';
 import { lastFour } from '../core/callerNumber';
 import type { TurnTexts } from '../run/turn';
 import { appModelKeyMissing, appModelLabel, defaultRenderPrice, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
@@ -316,6 +317,25 @@ function appAudit(sink: AuditSink, app: string): AuditSink {
   return {
     append: (callId, channel, d) => sink.append(callId, channel, named(d)),
     ...(appendAll ? { appendAll: (callId: string, channel: string, ds: readonly AuditDraft[]) => appendAll(callId, channel, ds.map(named)) } : {}),
+  };
+}
+
+/** The audit id an app page's text is recorded under where it carries no key (AppPageDeps.texts). */
+export const PAGE_TEXTS_ID = 'page';
+
+/**
+ * The sender an app's pages are given (AppPageDeps.texts): the app's own (its provider, number, keys and
+ * limits), each text recorded in the app's audit once it is sent (`text_sent`, on the `sms` channel, under
+ * its key, or PAGE_TEXTS_ID with none).
+ */
+function pageTexts(t: TurnTexts, sink: AuditSink): Texts {
+  return {
+    async send(text) {
+      const rows: TextRecord[] = [];
+      const receipt = await recordingTexts(t.provider, t.from, t.keys, (r) => rows.push(r), t.limits ?? null).send(text);
+      for (const r of rows) await sink.append(text.key ?? PAGE_TEXTS_ID, TEXT_CHANNEL, textAuditRow(r));
+      return receipt;
+    },
   };
 }
 
@@ -773,6 +793,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       app: a.app, base, chatPath,
       ...(config.chat ? { chat: host ? forApp(a.id, () => chatSettingsOf(config.chat!, a.env)) : config.chat } : {}),
       env: (name: string) => a.settings[name],
+      ...(textsOf(a.id) !== null ? { texts: pageTexts(textsOf(a.id)!, auditOf(a.id)) } : {}),
     }));
     for (const w of built.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
     return [...forApp(a.id, () => mountAppPages(base, built.routes)), ...builtIn(built.routes)];
@@ -1008,17 +1029,19 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (seen.length > SEEN_TEXTS) seen.shift();
     seenTexts.set(a.id, seen);
     const sink = auditOf(a.id);
-    const records: TextRecord[] = [];
+    // What the hook did, in order: each text it sent, and each asking of the decision model (ctx.decide).
+    const rows: AuditDraft[] = [];
     const t = textsOf(a.id);
-    const texts = t !== null ? recordingTexts(t.provider, t.from, t.keys, (r) => records.push(r), t.limits) : null;
+    const texts = t !== null ? recordingTexts(t.provider, t.from, t.keys, (r) => rows.push(textAuditRow(r)), t.limits) : null;
     log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)}${host ? ` (app ${a.id})` : ''}: ${m.body.length} characters, ${m.media.length} media${mediaDropped > 0 ? `, ${mediaDropped} not at Twilio's URLs dropped` : ''}`);
     await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped })));
     try {
-      if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys: toolsOf(a.id).sys, nowMs: now() });
+      const decide = textDecider(clientOf(a.id), thresholds.JEV_TIMEOUT_MS, m, (row) => rows.push(row), now);
+      if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys: toolsOf(a.id).sys, nowMs: now(), decide });
     } catch (err) {
       log(`${MESSAGES_PATH} ${m.id}: the app's onText failed (${err instanceof Error ? err.name : 'error'})`);
     } finally {
-      for (const r of records) await sink.append(m.id, TEXT_CHANNEL, textAuditRow(r));
+      for (const row of rows) await sink.append(m.id, TEXT_CHANNEL, row);
     }
   };
   const deps: HttpDeps = {

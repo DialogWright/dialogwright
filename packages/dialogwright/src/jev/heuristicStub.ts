@@ -15,9 +15,10 @@ const CONTROL_INTENT_KEYWORDS: Array<[string, RegExp]> = [
 
 const NUMBER_WORD_DIGIT: Record<string, string> = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5' };
 
+/** The words a question is about: a turn's (`asr.text`), or a text's that came in (`message.words`, texts/decide.ts). */
 function textOf(state: unknown): string {
-  const s = state as { asr?: { text?: string } } | null;
-  return (s?.asr?.text ?? '').toLowerCase();
+  const s = state as { asr?: { text?: string }; message?: { words?: string } } | null;
+  return (s?.asr?.text ?? s?.message?.words ?? '').toLowerCase();
 }
 
 /** Words a generated line may add to its fixed text and goal without saying anything of its own. */

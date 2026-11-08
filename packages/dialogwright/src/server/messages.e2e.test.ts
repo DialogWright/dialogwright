@@ -11,6 +11,7 @@ import { routedApp } from '../testing/routed/app';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { fakeTextProvider } from '../texts/record';
 import type { IncomingText, TextContext } from '../texts/types';
+import { noulValue, type AnswerMap } from '../jev/types';
 
 /**
  * Texts that come in (`POST /messages/twilio`): Twilio's signature checked as the voice webhook's is,
@@ -23,10 +24,13 @@ import type { IncomingText, TextContext } from '../texts/types';
 const TOKEN = 'authtok';
 const DESK = '+15555550190';
 const received: { m: IncomingText; ctx: TextContext }[] = [];
+/** What the hook read of a reply that begins "yes" (ctx.decide), in order. */
+const decided: (AnswerMap | null)[] = [];
 const app: App = {
   ...routedApp,
   async onText(m, ctx) {
     received.push({ m, ctx });
+    if (m.body.startsWith('yes')) decided.push(await ctx.decide({ confirmsYes: { type: 'noul', instructions: 'Does the reply say yes to the offer it answers?' } }, { offer: 'Reply to accept.' }));
     await ctx.texts?.send({ to: ctx.env('DESK_PHONE') ?? '', body: `From ...${m.from.slice(-4)}: ${m.body}`, media: m.media.map((x) => x.url) });
   },
 };
@@ -39,6 +43,7 @@ afterEach(async () => {
   await running?.close();
   running = null;
   received.length = 0;
+  decided.length = 0;
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
@@ -121,6 +126,19 @@ describe('POST /messages/twilio', () => {
     await vi.waitFor(() => expect(auditRows(audit).filter((x) => x.type === 'text_sent')).toHaveLength(2));
     expect(provider.sent).toHaveLength(1);
     expect(auditRows(audit).filter((x) => x.type === 'text_sent').map((x) => x.detail.status)).toEqual(['queued', 'limited']);
+  });
+
+  it('the hook asks the decision model about the text (ctx.decide): the server\'s client answers, and the asking is recorded beside the message with no words', async () => {
+    const { base, audit, provider } = await start();
+    expect((await post(base, { ...PHOTO, Body: 'yes please, go ahead', NumMedia: '0' })).status).toBe(200);
+    await vi.waitFor(() => expect(provider.sent).toHaveLength(1));
+    // The server's client (the heuristic stub here) read the text's words.
+    expect(noulValue(decided[0]!, 'confirmsYes')).toBeGreaterThan(0.5);
+    await vi.waitFor(() => expect(auditRows(audit).map((x) => x.type)).toEqual(['text_received', 'text_decision', 'text_sent']));
+    const row = auditRows(audit)[1]!;
+    expect(row).toMatchObject({ callId: PHOTO.MessageSid, channel: 'sms', detail: { questions: ['confirmsYes'], answers: ['confirmsYes 0.9'], about: ['offer'], source: 'stub:heuristic', error: null } });
+    expect(JSON.stringify(row)).not.toContain('go ahead');
+    expect(JSON.stringify(row)).not.toContain('Reply to accept');
   });
 
   it('a bad signature is refused, and nothing reaches the app', async () => {

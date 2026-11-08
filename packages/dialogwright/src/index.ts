@@ -186,7 +186,7 @@ export { RESULT_UNCHECKED } from './core/lifecycle';
 
 // Texts (SMS and MMS) an app's code sends (ToolContext.texts, TextContext.texts) and receives (AppCode.onText):
 // the guide's 13.17. The sender is the server's; whether a caller is texted is the app's policy.
-export type { IncomingMedia, IncomingText, OutgoingText, TextContext, TextReceipt, Texts } from './texts/types';
+export type { IncomingMedia, IncomingText, OutgoingText, TextContext, TextDecide, TextReceipt, Texts } from './texts/types';
 // The only media URLs a text that comes in keeps (the provider's own); an app shows or forwards no other.
 export { TWILIO_MEDIA_PREFIX } from './texts/twilio';
 
