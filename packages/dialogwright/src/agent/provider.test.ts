@@ -82,7 +82,7 @@ describe('openRouterAgent', () => {
     const [req] = sent;
     expect(req!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
     expect(req!.headers.authorization).toBe(`Bearer ${KEY}`);
-    expect(req!.body).toMatchObject({ model: 'inception/mercury-3', temperature: 0.6, response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true } } });
+    expect(req!.body).toMatchObject({ model: 'inception/mercury-3', temperature: 0.6, provider: { require_parameters: true }, usage: { include: true }, response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true } } });
     const schema = (req!.body.response_format as { json_schema: { schema: { properties: { action: { enum: string[] } } } } }).json_schema.schema;
     expect(schema.properties.action.enum).toEqual(['submit', 'none']);
     const messages = req!.body.messages as { role: string; content: string }[];

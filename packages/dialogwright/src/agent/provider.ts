@@ -114,7 +114,8 @@ function chatAgent(e: ChatEndpoint, fetchFn: typeof fetch): AgentClient {
  * The agent model through OpenRouter: the render provider's model, key and reasoning settings
  * (RENDER_THINKING, RENDER_EFFORT, openRouterReasoningBody: reasoning off unless one asks for it).
  * Only providers that honour every parameter are asked (`provider.require_parameters`), so structured
- * output is never dropped silently.
+ * output is never dropped silently; the answer's cost is asked for too (`usage.include`, OpenRouter's usage
+ * accounting), so a comparison needs no price.
  */
 export function openRouterAgent(p: RenderProvider, fetchFn: typeof fetch = fetch): AgentClient {
   if (p.apiKey === null) throw new Error(`missing required environment variable ${p.keyVar} (the agent model, ${p.model} from ${p.provider})`);
@@ -122,7 +123,7 @@ export function openRouterAgent(p: RenderProvider, fetchFn: typeof fetch = fetch
   return chatAgent({
     provider: 'openrouter', url: p.url, model: p.model, apiKey: p.apiKey,
     maxTokens: mayThink(p.thinking) || p.thinking?.effort !== undefined ? REASONING_MAX_TOKENS : MAX_TOKENS,
-    extra: { ...openRouterReasoningBody(p.thinking), provider: { require_parameters: true } },
+    extra: { ...openRouterReasoningBody(p.thinking), provider: { require_parameters: true }, usage: { include: true } },
   }, fetchFn);
 }
 
