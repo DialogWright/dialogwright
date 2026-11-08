@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { NO_ACTION, type AgentClient, type AgentResult } from '../agent/types';
 import { agentCassetteMissed, agentPropertyMismatches, isScriptedAgentStep, stepAgent, validAgentProperties, type AgentProperties, type ScriptedAgentStep } from './agentScript';
 import { questionVarsFor } from '../core/questionVars';
 import { rulesAt } from '../core/routes';
@@ -33,6 +34,18 @@ import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { matchLocale } from '../core/locale';
 import { localeOfNumber, numberLocalesOf } from '../core/numberLocales';
 
+/**
+ * The agent a corpus line of an app in agent mode runs with (runCorpusEntry): an answer that understood
+ * nothing (no value, no reply, no action, nothing from the facts), at once. The turn is the agent mode's,
+ * decided by the decision model's readings alone; no model is asked.
+ */
+export const UNDERSTANDS_NOTHING: AgentClient = {
+  model: 'understands-nothing',
+  async answer(): Promise<AgentResult> {
+    return { ok: true, answer: { reply: '', values: [], action: NO_ACTION, fromFacts: false }, ms: 0 };
+  },
+};
+
 /** How a runner runs one turn: runTurn, unless a test runs each one another way (testing/sessionRoundTrip.ts). */
 export type TurnRunner = typeof runTurn;
 
@@ -48,7 +61,7 @@ export interface ScenarioRunOptions extends RunOptions {
   /**
    * An app in agent mode on the stubs: each scripted call's agent answers are the ones its steps name
    * (ScenarioStep `agent`; harness-text/agentScript.ts stepAgent), in place of `agent`. A corpus line runs
-   * without the agent either way (runCorpusEntry). Absent, as for every other app, `agent` answers.
+   * with an agent that understands nothing either way (runCorpusEntry). Absent, as for every other app, `agent` answers.
    */
   readonly agentSteps?: boolean;
 }
@@ -415,10 +428,13 @@ function seededPrompt(s: Session): Pick<Session, 'lastPromptId' | 'lastPromptTex
 }
 
 export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOptions): Promise<{ outcome: Outcome; run: TurnRun; setup: TurnRun }> {
-  // A corpus line is the decision model's alone: in an app in agent mode it runs without the agent (as a
-  // call with no agent client does), so the stubs and a recording read it alike.
-  const { agent: _agent, ...own } = opts;
-  const { setup, runs } = await runSeeded(entry, getApp(defaultAppId()).mode === 'agent' ? own : opts);
+  // A corpus line is the decision model's alone: in an app in agent mode it runs with an agent that
+  // understands nothing (UNDERSTANDS_NOTHING), never the agent model, so the decision model is asked only
+  // what it is asked in agent mode (the turn-level readings, the yes or no at a read-back) and no field
+  // fills: the stubs and a recording read it alike. Not as a call with no agent client, which runs as a
+  // scripted app and has the decision model fill each field, which a stub's labels never say.
+  const { agent: _agent, agentSteps: _steps, ...own } = opts;
+  const { setup, runs } = await runSeeded(entry, getApp(defaultAppId()).mode === 'agent' ? { ...own, agent: { client: UNDERSTANDS_NOTHING } } : opts);
   const run = runs.at(-1)!;
   // The setup run is returned as well as traced: a summary that leaves it out would read
   // the seeded placeholders as slots this one utterance filled.

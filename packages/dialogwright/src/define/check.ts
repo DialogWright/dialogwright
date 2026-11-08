@@ -1678,9 +1678,10 @@ function isInside(parent: string, child: string): boolean {
 /**
  * The warnings for an app in agent mode's corpus, where it has one (the review of Task 8): a line that
  * labels a field's values. A corpus line is the decision model's alone and runs without the agent
- * (harness-text/runner.ts runCorpusEntry), so a field's label there is read only as a scripted app
- * reads it, never as the agent model understands the value; a scripted call's step names the agent's
- * answer instead. Never a refusal: the labels may be meant for a call run with no key.
+ * model (harness-text/runner.ts runCorpusEntry: with an agent that understands nothing, so no field
+ * fills), so a field's label there is read by no run of the corpus, only by a call run as a scripted app
+ * (no key); a scripted call's step names the agent's answer instead. Never a refusal: the labels may be
+ * meant for a call run with no key.
  */
 function agentCorpusWarnings(config: LoadedConfig, dir: string, fixturesRoot?: string): Problem[] {
   const fixtures = config.app.fixtures;

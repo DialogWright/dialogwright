@@ -176,6 +176,21 @@ function typeOfSlot(app: App, slot: string | undefined): string {
   return 'text';
 }
 
+/**
+ * The sources of figures the values accepted on a turn give (agentFigureSources `cited`): a digits or name
+ * value's cited words, tied to it by its check; a choice's or a date's not (a synonym, "Thursday"), so only
+ * its held value and display are sources (the review of Task 8); and a text value's figures that are both in
+ * the value as held and in the words it was cited from ("2020 BMW 3 Series" from "it's a 2020 BMW 3 Series",
+ * call 34): the caller's own, kept in what the line understood. The agent line's check and a scripted call's
+ * `said.notFigure` property read them alike.
+ */
+export function citedFigureSources(app: App, s: Session, accepted: readonly { slot?: string; words: string }[]): string[] {
+  return [
+    ...accepted.filter((v) => CITED_TYPES.has(typeOfSlot(app, v.slot))).map((v) => v.words),
+    ...accepted.filter((v) => typeOfSlot(app, v.slot) === 'text').map((v) => textValueFigures(s.slots[v.slot as string]?.value ?? '', v.words)),
+  ];
+}
+
 /** What the agent line is held with, on its turn. */
 export interface AgentLineInput {
   /** The turn as the core decided it. */
@@ -241,14 +256,7 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
     // A reply written from words the injection screen flagged or did not read is never said.
     if (heard !== null && (result.screen === null || result.screen.fired || result.screen.error !== null || result.quarantined)) return { fallback: 'screen' };
     const sources = agentFigureSources(app, session, input.todayIso, {
-      // A digits or name value's cited words are tied to it (its check holds them to it); a choice's or a date's are
-      // not (a synonym, "Thursday"), so only its held value and display are sources (the review of Task 8).
-      cited: [
-        ...accepted.filter((v) => CITED_TYPES.has(typeOfSlot(app, v.slot))).map((v) => v.words),
-        // A text value's figure, where it is both in the value as held and in the words it was cited from
-        // ("2020 BMW 3 Series" from "it's a 2020 BMW 3 Series"): the caller's own, kept in what the line understood.
-        ...accepted.filter((v) => typeOfSlot(app, v.slot) === 'text').map((v) => textValueFigures(session.slots[v.slot as string]?.value ?? '', v.words)),
-      ],
+      cited: citedFigureSources(app, session, accepted),
       seen: input.seen ?? [],
       fixed: [spokenText(app, fixedDecision, session.locale, shown)],
     });

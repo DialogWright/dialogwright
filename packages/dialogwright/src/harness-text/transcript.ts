@@ -108,9 +108,34 @@ function turnLines(run: TurnRun, indent: string): string[] {
   for (const r of run.result.routes ?? []) {
     lines.push(`${indent}   route  ${r.point}${r.form !== undefined ? ` ${r.form}` : ''}: ${r.rule === 'else' ? 'else' : `rule ${r.rule}`} -> ${r.outcome}${r.subjects.length > 0 ? `   read ${r.subjects.join(', ')}` : ''}`);
   }
+  lines.push(...agentLines(run, indent));
   lines.push(`${indent}   form   ${s.form ?? '-'}   level ${s.principal.level}   slots ${slotsOf(s)}`);
   for (const event of run.result.gateEvents) lines.push(`${indent}   gate   ${describeGate(event)}`);
   return lines;
+}
+
+/**
+ * An app in agent mode: what the agent model answered on the turn, as the trace keeps it (each value with
+ * its check's outcome; the reply, said or replaced and why; the action and what the turn did with it; a
+ * second asking), so a recording is triaged from the transcript, never from the cassette's JSON.
+ */
+function agentLines(run: TurnRun, indent: string): string[] {
+  const a = run.record.agent;
+  if (a === undefined) return [];
+  const pad = `${indent}   `;
+  const use = a.use === 'used' ? 'used' : a.use === 'dropped' ? `dropped (${a.dropped ?? '?'})` : `failed (${a.fallback ?? '?'}${a.detail !== undefined ? `: ${a.detail}` : ''})`;
+  const again = a.again === undefined ? '' : `; asked again with ${a.again.tools.join(', ')}${a.again.fallback !== undefined ? `, no second answer (${a.again.fallback})` : ''}`;
+  const out = [`${pad}agent  ${use}, ${Math.round(a.ms)} ms${again}`];
+  for (const v of a.values) out.push(`${pad}       value ${v.field}=${JSON.stringify(v.value)} from ${JSON.stringify(v.words)}: ${v.outcome}`);
+  if (a.action !== 'none') out.push(`${pad}       action ${a.action}${a.actionOutcome !== undefined ? ` (${a.actionOutcome})` : ''}`);
+  if (a.fixedLine !== undefined) out.push(`${pad}       fixedLine ${a.fixedLine}`);
+  if (a.reply !== undefined && a.reply !== '') {
+    const l = a.line;
+    const how = l === undefined ? (a.replySaid ? 'said' : 'not said') : l.mode === 'generated' ? 'said' : l.fallback !== undefined ? `replaced (${l.fallback})` : `not said (${l.skipped ?? 'not tried'})`;
+    const judge = l?.judge !== undefined ? `, judge ${l.judge.score.toFixed(2)} at ${l.judge.refuseAt}` : '';
+    out.push(`${pad}       reply ${JSON.stringify(a.reply)}: ${how}${judge}${a.fromFacts === true ? ', from the facts' : ''}`);
+  }
+  return out;
 }
 
 /** A turn the step made that the caller would notice: one that said something, or the step's last. */

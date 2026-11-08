@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { AGENT_CASSETTE_MISS, cassetteAgent } from '../agent/cassette';
+import { AGENT_CASSETTE_MISS, agentKey, cassetteAgent } from '../agent/cassette';
 import { agentCassettePath, agentRequestOf, liveAgentClient, type AgentModelSpec } from '../agent/bakeoff';
 import { NO_ACTION, type AgentAnswer, type AgentClient, type AgentContext, type AgentFailure, type AgentModelChoice, type AgentResult, type AgentRunner, type AgentValue } from '../agent/types';
 import { gateOf } from '../core/app/lookup';
 import type { App } from '../core/app/types';
 import type { TurnRun } from '../run/turn';
 import { foreignFigure } from '../render/checks';
-import { dateWords } from '../render/agentLine';
+import { agentFigureSources, citedFigureSources } from '../render/agentLine';
 import { isAnonymous } from '../gate/types';
 import { inCi } from '../define/ci';
 import { readBackPromptOf } from '../define/businessFiles';
@@ -144,15 +144,46 @@ export function harnessAgent(kind: string, app: App, recordedDir: string, env: R
   const timeoutMs = { voice: HARNESS_AGENT_TIMEOUT_MS, chat: HARNESS_AGENT_TIMEOUT_MS };
   const path = agentCassetteFile(recordedDir, model);
   if (kind === 'recorded') {
-    const client = cassetteAgent(path, { request: agentRequestOf(spec), model: model.model });
+    const client = cassetteAgent(path, { request: agentRequestOf(spec), model: model.model, oneAnswer: true });
     client.preload();
     return { runner: { client, timeoutMs }, steps: false, header: [`agent: ${label}, replayed`, `agent cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}`] };
   }
   if (kind === 'record' && inCi(env)) throw new Error('recording the agent model is the author\'s step, with their own key: it is refused in CI (CI is set)');
   if (kind === 'jev' && inCi(env)) throw new Error('asking the agent model live is the author\'s step, with their own key: it is refused in CI (CI is set); a CI run replays the agent cassette (--client recorded)');
   const live = liveAgentClient(spec, { ...env });
-  if (kind === 'record') return { runner: { client: cassetteAgent(path, { record: live }), timeoutMs }, steps: false, header: [`agent: ${label}, recorded`, `agent cassette ${path}`] };
-  return { runner: { client: live, timeoutMs }, steps: false, header: [`agent: ${label}, live`] };
+  // One answer per request, as the decision model's cassette keeps (AgentCassetteOptions.oneAnswer): a call's
+  // turns, replayed whole or alone, and the adversarial suite's variants of it hear what was recorded for them.
+  if (kind === 'record') return { runner: { client: cassetteAgent(path, { record: live, oneAnswer: true }), timeoutMs }, steps: false, header: [`agent: ${label}, recorded`, `agent cassette ${path}`] };
+  return { runner: { client: oneAnswerPerRequest(live), timeoutMs }, steps: false, header: [`agent: ${label}, live`] };
+}
+
+/**
+ * A live agent model asked once per request in a run, as a regression's cassette answers (AgentCassetteOptions
+ * .oneAnswer): a request asked again (an adversarial variant of a call, asking what its clean call asked)
+ * hears the answer the first asking got, so a variant differs from its clean call by what was changed in
+ * it, never by the model sampled twice.
+ */
+export function oneAnswerPerRequest(client: AgentClient): AgentClient {
+  const answered = new Map<string, Promise<AgentResult>>();
+  return {
+    ...client,
+    get model() {
+      return client.model;
+    },
+    answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult> {
+      let key: string;
+      try {
+        key = agentKey(ctx, client.request);
+      } catch {
+        return client.answer(ctx, timeoutMs);
+      }
+      const known = answered.get(key);
+      if (known !== undefined) return known;
+      const asked = client.answer(ctx, timeoutMs);
+      answered.set(key, asked);
+      return asked;
+    },
+  };
 }
 
 /** Whether a turn's agent answer (either asking) was a cassette's miss. */
@@ -170,19 +201,25 @@ export function agentCassetteMissed(run: Pick<TurnRun, 'record'>): boolean {
  * the call's turns, never its lines:
  * - `values`: what the call's write carries, by field name: the params of the last write a form made (its
  *   first `then` tool, allowed by the gate), as the call is recorded (a value the records hide by its mask,
- *   "...0144"); with none, the values the form open at the end holds;
+ *   "...0144"); with none, the values the form open at the end holds. Each is the value exactly, or `{ "has":
+ *   [...] }`, words the value holds, each as written, in any case and any order (a text value is the model's
+ *   own short version of the caller's words: "front two" may be "the front two wheels");
  * - `action`: a tool the gate allowed on the call (`"bookRoom"`), `"none"` for no form's write allowed, or
  *   `{ "not": "<tool>" }` for one never allowed;
  * - `said.notFigure`: no reply of the agent's that was said holds a figure that the facts, the values the
- *   line understood or the results it was shown do not (the caller's own words are no source: a figure the
- *   caller proposes is not the line's to state);
+ *   line understood (with the words a digits or name value was cited from, and a text value's figures that
+ *   are in its words too, as the agent line's check reads them) or the results it was shown do not (the
+ *   caller's other words are no source: a figure the caller proposes is not the line's to state);
  * - `readBackSaid`: the turn before each write (or before the read-back's keypad rung) said its form's
  *   read-back, in its fixed words, with the values the write carries, and a call with no write said one;
  * - `nothingDoneBefore: "confirm"`: no write ran but on the turn whose words confirmed its form's read-back.
  * A property that fails names its turn (the greeting is turn 0).
  */
+/** A value a property expects: exactly, or holding each of some words (AgentProperties.values). */
+export type ExpectedValue = string | { has: readonly string[] };
+
 export interface AgentProperties {
-  values?: Record<string, string>;
+  values?: Record<string, ExpectedValue>;
   action?: string | { not: string };
   said?: { notFigure?: boolean };
   readBackSaid?: boolean;
@@ -194,7 +231,9 @@ export const AGENT_PROPERTY_KEYS = ['values', 'action', 'said', 'readBackSaid', 
 
 /** Whether `v` holds only well-formed properties (a scripted call's JSON). */
 export function validAgentProperties(v: Record<string, unknown>): boolean {
-  const values = v.values === undefined || (typeof v.values === 'object' && v.values !== null && !Array.isArray(v.values) && Object.values(v.values).every((x) => typeof x === 'string'));
+  const expected = (x: unknown): boolean => typeof x === 'string'
+    || (typeof x === 'object' && x !== null && !Array.isArray(x) && Object.keys(x).length === 1 && Array.isArray((x as { has?: unknown }).has) && (x as { has: unknown[] }).has.length > 0 && (x as { has: unknown[] }).has.every((w) => typeof w === 'string' && w.trim() !== ''));
+  const values = v.values === undefined || (typeof v.values === 'object' && v.values !== null && !Array.isArray(v.values) && Object.values(v.values).every(expected));
   const action = v.action === undefined || typeof v.action === 'string' || (typeof v.action === 'object' && v.action !== null && typeof (v.action as { not?: unknown }).not === 'string');
   const said = v.said === undefined || (typeof v.said === 'object' && v.said !== null && Object.entries(v.said).every(([k, x]) => k === 'notFigure' && typeof x === 'boolean'));
   return values && action && said && (v.readBackSaid === undefined || typeof v.readBackSaid === 'boolean') && (v.nothingDoneBefore === undefined || v.nothingDoneBefore === 'confirm');
@@ -224,20 +263,17 @@ function repliesSaid(turns: readonly Pick<TurnRun, 'record'>[]): { turn: number;
 }
 
 /**
- * Where a figure in a reply said on a turn may come from: what the line may say and its fixed lines, every
- * value held after the turn but a text value (as held, as shown, a date with how it is said), and the
- * results of the tools the model was shown. Never the caller's own words.
+ * Where a figure in a reply said on a turn may come from, as the agent line's own check reads it
+ * (render/agentLine.ts agentFigureSources): what the line may say and its fixed lines, every value held
+ * after the turn but a text value (as held, as shown, a date with how it is said), the sources the turn's
+ * accepted values give (citedFigureSources: a digits or name value's words, a text value's figures in both
+ * its value and its words), and the results of the tools the model was shown. Never the caller's other words.
  */
 function figureSources(app: App, run: Pick<TurnRun, 'result' | 'record'>, today: string): string[] {
-  const facts = app.agent?.facts;
   const s = run.result.session;
-  const held = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields).filter((f) => f.type !== 'text').flatMap((f) => {
-    const slot = s.slots[f.slot];
-    if (slot === undefined || slot.value === null) return [];
-    return [slot.value, slot.display ?? slot.value, ...(f.type === 'date' ? dateWords(slot.value, today) : [])];
-  });
+  const accepted = (run.result.agent?.values ?? []).filter((v) => v.outcome === 'accepted');
   const seen = run.record.agent?.sent?.seen ?? [];
-  return [...(facts?.says ?? []), ...Object.values(facts?.fixed ?? {}), ...held, ...seen.map((x) => JSON.stringify(x.result) ?? '')];
+  return agentFigureSources(app, s, today, { cited: citedFigureSources(app, s, accepted), seen });
 }
 
 /** The reply said on a turn that holds a figure its sources do not ("no-figure"). */
@@ -280,6 +316,14 @@ export function levelViolations(app: App, turns: readonly Pick<TurnRun, 'result'
   });
 }
 
+/** Whether a value held is the one expected: exactly, or holding each word expected (in any case and order). */
+function valueHolds(got: string | null | undefined, want: ExpectedValue): boolean {
+  if (typeof want === 'string') return got === want;
+  if (typeof got !== 'string') return false;
+  const folded = got.toLowerCase();
+  return want.has.every((w) => folded.includes(w.toLowerCase()));
+}
+
 /** What a scripted call's agent properties came to: one line per property that did not hold, each starting with its name. */
 export function agentPropertyMismatches(app: App, expect: AgentProperties, turns: readonly Pick<TurnRun, 'result' | 'record'>[], today: string): string[] {
   const out: string[] = [];
@@ -297,7 +341,9 @@ export function agentPropertyMismatches(app: App, expect: AgentProperties, turns
     };
     for (const [field, want] of Object.entries(expect.values)) {
       const got = held(field);
-      if (got !== want) out.push(`values: ${field}: expected ${JSON.stringify(want)}, got ${got === undefined ? 'no such field' : JSON.stringify(got)}${last !== undefined ? ` in ${last.tool} on turn ${last.turn}` : ' (no write; in the form open at the end)'}`);
+      if (valueHolds(got, want)) continue;
+      const wanted = typeof want === 'string' ? JSON.stringify(want) : `a value with ${want.has.map((w) => JSON.stringify(w)).join(', ')}`;
+      out.push(`values: ${field}: expected ${wanted}, got ${got === undefined ? 'no such field' : JSON.stringify(got)}${last !== undefined ? ` in ${last.tool} on turn ${last.turn}` : ' (no write; in the form open at the end)'}`);
     }
   }
   if (expect.action !== undefined) {

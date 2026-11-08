@@ -10,9 +10,10 @@ import { mockCodeVerifier } from '../core/tools';
 import { choiceAnswer, sharp } from '../jev/distributions';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient, JevRequest, JevResponse } from '../jev/types';
-import { runScenario, type Scenario, type ScenarioRunOptions } from '../harness-text/runner';
+import { runCorpusEntry, runScenario, type Scenario, type ScenarioRunOptions } from '../harness-text/runner';
 import { agentCassetteFile, agentPropertyMismatches, harnessAgent, isScriptedAgentStep, validAgentProperties } from '../harness-text/agentScript';
 import type { TurnRun } from '../run/turn';
+import { scenarioTranscript } from '../harness-text/transcript';
 
 /**
  * Testing an app in agent mode (plan Task 9), on the fixture business: scripted calls whose steps name the
@@ -69,6 +70,16 @@ describe('a scripted call of an app in agent mode', () => {
     expect(r.pass).toBe(true);
   });
 
+  it('its transcript shows what the agent answered under each turn: its values with their checks, the reply said or replaced, the action, a second asking', async () => {
+    const r = await runScenario(booking(HOLDS), opts());
+    const lines = scenarioTranscript(booking(HOLDS), r);
+    expect(lines).toContain('          agent  used, 0 ms; asked again with roomAvailability');
+    expect(lines).toContain('                 value people="four" from "four people": accepted');
+    // The read-back was said, so the reply was not (the core's own step stands for it).
+    expect(lines).toContain('                 reply "Thursday morning is free.": not said');
+    expect(lines.some((l) => /action submit|action none/.test(l))).toBe(false);
+  });
+
   it('a property that fails names its turn', async () => {
     const r = await runScenario(booking({ ...HOLDS, values: { people: 'five', day: '2026-11-12' }, action: { not: 'bookRoom' } }), opts());
     expect(r.pass).toBe(false);
@@ -79,6 +90,33 @@ describe('a scripted call of an app in agent mode', () => {
     // A call that never says yes: no write, so no read-back said before it is asked of; nothing booked.
     const unconfirmed = await runScenario({ ...booking({ decision: 'prompt', action: 'bookRoom' }), steps: [booking(HOLDS).steps[0]!] }, opts());
     expect(unconfirmed.mismatches).toEqual(['action: expected bookRoom to run, but the gate never allowed it']);
+  });
+
+  it('values may name words a value holds, in any case and order, rather than the value exactly', async () => {
+    const HOLD = 'a hold on The Quiet Harbor, the second volume';
+    const call = (values: Scenario['expect']['values']): Scenario => ({
+      id: 'title-has',
+      steps: [{ say: HOLD, agent: { reply: '', values: [{ field: 'title', value: 'The Quiet Harbor, second volume', words: 'The Quiet Harbor, the second volume' }] } }],
+      expect: { decision: 'prompt', values },
+    });
+    expect((await runScenario(call({ title: { has: ['second volume', 'quiet harbor'] } }), opts())).mismatches).toEqual([]);
+    expect((await runScenario(call({ title: { has: ['third volume'] } }), opts())).mismatches).toEqual(['values: title: expected a value with "third volume", got "The Quiet Harbor, second volume" (no write; in the form open at the end)']);
+    expect(validAgentProperties({ values: { title: { has: ['harbor'] } } })).toBe(true);
+    expect(validAgentProperties({ values: { title: { has: [] } } })).toBe(false);
+    expect(validAgentProperties({ values: { title: { has: ['harbor'], exact: 'x' } } })).toBe(false);
+  });
+
+  it('said.notFigure reads a reply\'s figures as the agent line\'s check does: a text value\'s figure in its own words is a source, the caller\'s other figures are not', async () => {
+    const HOLD = 'a hold on The Quiet Harbor 2, for Friday at 3';
+    const call = (reply: string): Scenario => ({
+      id: 'title-figure',
+      steps: [{ say: HOLD, agent: { reply, values: [{ field: 'title', value: 'The Quiet Harbor 2', words: 'The Quiet Harbor 2' }] } }],
+      expect: { decision: 'prompt', said: { notFigure: true } },
+    });
+    // Said (the line's check passes it, call 34), and the property agrees.
+    const own = await runScenario(call('The Quiet Harbor 2, lovely.'), opts());
+    expect(own.runs.at(-1)!.record.agent?.line?.mode).toBe('generated');
+    expect(own.mismatches).toEqual([]);
   });
 
   it('a step the agent is asked on that names no answer fails the call, naming the step', async () => {
@@ -117,6 +155,25 @@ describe('a scripted call of an app in agent mode', () => {
   });
 });
 
+describe('a corpus line of an app in agent mode', () => {
+  it('runs with an agent that understands nothing: the decision model is asked no field\'s question, so no field fills, on the stubs and a model alike', async () => {
+    const asked: string[][] = [];
+    const stub = jev();
+    const client: JevClient = {
+      async ask(req) {
+        asked.push(Object.keys(req.questions));
+        return stub.ask(req);
+      },
+    };
+    const entry = { id: 'name', text: 'It is Avery Lane', intent: 'none', context: 'request', prompted: 'request_patronName' } as const;
+    // The agent the run was given (a cassette, the steps' answers) is never asked for a corpus line.
+    const r = await runCorpusEntry(entry as never, opts({ client, agentSteps: false, agent: { client: { model: 'never', answer: () => { throw new Error('the agent model is never asked for a corpus line'); } } } }));
+    expect(asked.flat().filter((q) => q.startsWith('request_'))).toEqual([]);
+    expect(r.run.result.session.slots.request_patronName!.value).toBeNull();
+    expect(r.outcome.promptId).toBe('ask_request_patronName');
+  });
+});
+
 describe('the review of Task 9', () => {
   it('where the turn asks again, one answer per asking is required: a missing one fails the call', async () => {
     const r = await runScenario({ ...booking(HOLDS), steps: [{ say: BOOK, agent: { reply: 'Lovely.', values: BOOK_VALUES } }, booking(HOLDS).steps[1]!] }, opts());
@@ -152,6 +209,21 @@ describe('the review of Task 9', () => {
 
   it('a live agent model is refused in CI, as recording it is', () => {
     expect(() => harnessAgent('jev', app, '/rec', { CI: '1', INCEPTION_API_KEY: 'test-key' })).toThrow(/asking the agent model live .* refused in CI/);
+  });
+});
+
+describe('the agent a regression asks live', () => {
+  it('is asked once per request in a run: a request asked again hears the first answer', async () => {
+    const { oneAnswerPerRequest } = await import('../harness-text/agentScript');
+    const { fakeAgent } = await import('../agent/fake');
+    let n = 0;
+    const once = oneAnswerPerRequest(fakeAgent(() => ({ reply: `answer ${(n += 1)}`, values: [], action: 'none', fromFacts: false })));
+    const ctx = { facts: { name: 'x', voice: '', says: [], background: [], fixed: {} }, examples: [], form: null, fields: [], actions: [], conversation: [{ who: 'caller' as const, text: 'hello' }], caller: { account: null }, channel: 'voice' as const, overLine: false, seen: [], locale: 'en-US', today: TODAY };
+    const other = { ...ctx, conversation: [{ who: 'caller' as const, text: 'goodbye' }] };
+    expect(await once.answer(ctx as never, 1000)).toMatchObject({ answer: { reply: 'answer 1' } });
+    expect(await once.answer(ctx as never, 1000)).toMatchObject({ answer: { reply: 'answer 1' } });
+    expect(await once.answer(other as never, 1000)).toMatchObject({ answer: { reply: 'answer 2' } });
+    expect(n).toBe(2);
   });
 });
 

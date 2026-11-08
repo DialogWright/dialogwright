@@ -19,7 +19,8 @@ import type { AgentClient, AgentContext, AgentFailure, AgentRequest, AgentResult
  * is asked again when recording, and replayed as it failed only where no answer was recorded after it,
  * so a recording and its replay table alike. The same request asked more than once (the bake-off's
  * `--repeat`) takes the recorded answers in turn; asked more often than they were recorded, a replay is
- * a miss, unless `repeatLast`. Recording is the author's step, with their own key; no test and no CI run
+ * a miss, unless `repeatLast`. A regression's cassette (`oneAnswer`) answers every asking of a request as
+ * first recorded. Recording is the author's step, with their own key; no test and no CI run
  * records.
  */
 
@@ -80,6 +81,14 @@ export interface AgentCassetteOptions {
   model?: string;
   /** A replay asked a request more often than it was recorded says its last answer again, rather than miss. */
   repeatLast?: boolean;
+  /**
+   * Every asking of a request takes the answer first recorded for it, as the decision model's cassette
+   * does, and a recording asks only a request with none: a regression's (harness-text/agentScript.ts). Its
+   * calls are replayed whole and alone alike (a call that repeats another's turns, `--scenario <id>`, the
+   * adversarial suite's variants of a call), and a variant asking what its clean call asked hears what the
+   * clean call heard. Absent, the bake-off's: a request asked again takes the next answer recorded (`--repeat`).
+   */
+  oneAnswer?: boolean;
   now?: () => number;
 }
 
@@ -122,7 +131,7 @@ export function cassetteAgent(path: string, opts: AgentCassetteOptions = {}): Ag
       } catch (e) {
         return { ok: false, reason: 'error', detail: `the turn could not be put into a request (${e instanceof Error ? e.name : 'error'})`, ms: 0 };
       }
-      const n = asked.get(key) ?? 0;
+      const n = opts.oneAnswer === true ? 0 : (asked.get(key) ?? 0);
       asked.set(key, n + 1);
       const recorded = load().get(key) ?? [];
       const answers = recorded.filter((l) => !isFailedRequest(l));

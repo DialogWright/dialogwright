@@ -60,6 +60,26 @@ describe('cassetteAgent', () => {
     for (let i = 0; i < 3; i += 1) expect(await lenient.answer(ctx, 1000)).toMatchObject({ ok: true });
   });
 
+  it('a regression\'s cassette (oneAnswer) answers every asking of a request as first recorded, and records only a request with none', async () => {
+    const path = scratch();
+    let n = 0;
+    const live = fakeAgent(() => (n += 1, { ...answer, reply: `answer ${n}` }), { ms: 300 });
+    const recording = cassetteAgent(path, { record: live, oneAnswer: true });
+    expect(await recording.answer(ctx, 1000)).toMatchObject({ ok: true, answer: { reply: 'answer 1' } });
+    // Asked again (another call repeating the same turn, an adversarial variant of the call): the first answer, no new asking.
+    expect(await recording.answer(ctx, 1000)).toMatchObject({ ok: true, answer: { reply: 'answer 1' } });
+    expect(n).toBe(1);
+    expect(loadAgentCassette(path).get(agentKey(ctx))).toHaveLength(1);
+    // A cassette recorded in turn (the bake-off's --repeat) replays its first answer to every asking.
+    const repeated = scratch();
+    const inTurn = cassetteAgent(repeated, { record: live });
+    await inTurn.answer(ctx, 1000);
+    await inTurn.answer(ctx, 1000);
+    const replay = cassetteAgent(repeated, { oneAnswer: true });
+    for (let i = 0; i < 3; i += 1) expect(await replay.answer(ctx, 1000)).toMatchObject({ ok: true, answer: { reply: 'answer 2' } });
+    expect((await cassetteAgent(repeated).answer(ctx, 1000))).toMatchObject({ ok: true, answer: { reply: 'answer 2' } });
+  });
+
   it('a recorded answer slower than the budget replays as a timeout', async () => {
     const path = scratch();
     await cassetteAgent(path, { record: fakeAgent(() => answer, { ms: 1200 }) }).answer(ctx, 5000);
