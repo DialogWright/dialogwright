@@ -190,6 +190,20 @@ export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 
 }
 
 /**
+ * A choice of yes and no the line asks in agent mode (core/questions.ts yesNoFieldAsked: a field of the form
+ * whose options are exactly yes and no): an entry in a form's context whose `prompted` slot is one, saying
+ * how the decision model reads the answer (`confirm`), which fills the field where it is clear (the
+ * agent-mode design's call 49).
+ */
+export function atYesNoField(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): boolean {
+  const form = contextForm(entry.context, app);
+  if (entry.confirm === undefined || entry.prompted === undefined || form === null || confirmForm(entry.context, app) !== null || offerTransfer(entry.context)) return false;
+  const field = app.agent?.forms[form]?.fields.find((f) => f.slot === entry.prompted);
+  const options = (field?.options ?? []).map((o) => o.trim().toLowerCase()).sort();
+  return field?.type === 'choice' && options.length === 2 && options[0] === 'no' && options[1] === 'yes';
+}
+
+/**
  * The proposal made at the greeting (a slot's `offerAt: greeting`): an entry in the `no_form` context
  * whose `prompted` slot proposes there and that says how it answers (`confirm`). Its state is the
  * proposal just made, `offer_<slot>` after the greeting's line, no form open, the slot still empty: the
@@ -365,7 +379,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent)`);
+      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app) && !atYesNoField(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber) or, in agent mode, is a choice of yes and no, or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent)`);
       if (atCallerMatch(entry, app) && entry.confirm === 'yes') throw new Error(`corpus ${entry.id}: the caller-ID question asks for a factor, not a yes: confirm no ("different account") or unanswered (the factor, or anything else)`);
     }
     if (entry.changeSlot !== undefined) {

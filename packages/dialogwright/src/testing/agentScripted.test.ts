@@ -214,6 +214,20 @@ describe('a scripted call keyed by question (call 41)', () => {
     expect(turned.mismatches).toEqual([]);
     expect(turned.said!.map((x) => x.answers ?? 'step')).toEqual(['step', 'request_day', 'request_day', 'readback_request']);
   });
+
+  it('an answer may be words over the line or a silence; a turn the line set aside leaves its question, answered next in the list (call 51)', async () => {
+    const overThenQuiet: NonNullable<Scenario['answers']> = {
+      ...answers,
+      request_day: [{ say: 'uh it has both', overLine: true, agent: { reply: '' } }, { silence: true }, answers.request_day as Scenario['steps'][number]],
+    };
+    const { as: _web, ...voice } = keyed([{ field: 'window', value: 'morning', words: 'morning' }]);
+    const run = await runScenario({ ...voice, callerNumber: '+15555550199', answers: overThenQuiet }, opts());
+    expect(run.mismatches).toEqual([]);
+    expect(run.said!.map((x) => x.answers ?? 'step')).toEqual(['step', 'request_day', 'request_day', 'request_day', 'readback_request']);
+    // The words were set aside; the silence after them says the question alone (call 48).
+    const silenceTurn = run.runs.find((r) => r.record.event.type === 'user.silence')!;
+    expect(silenceTurn.result.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_request_day', acks: [] });
+  });
 });
 
 describe('a corpus line of an app in agent mode', () => {

@@ -1,4 +1,4 @@
-import { AMOUNT_WORDS, DATE_WORDS, isFigureWord, straight } from '../render/checks';
+import { AMOUNT_WORDS, DATE_WORDS, foreignFigure, isFigureWord, straight } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -115,7 +115,7 @@ export function stubSpanDrift(state: unknown): boolean {
 /**
  * The stub's agent text value judge (render/checks.ts renderAgentValueQuestion): a test double, deterministic,
  * conservative and simple, that reads no grammar. It refuses a value that carries words of an injection or
- * an instruction, a figure or a capitalized name its words do not have, or two words or more of its own (in
+ * an instruction, a figure (compared as a number) or a capitalized name its words do not have, or two words or more of its own (in
  * neither the words, its goal nor common filler). What its words say of other fields it may leave out; a
  * negation dropped or turned around is a real judge's to read.
  */
@@ -126,7 +126,10 @@ export function stubAgentValue(state: unknown): boolean {
   const quoted = new Set((s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? tokens(q.words) : [])));
   const bare = (w: string): string => w.replace(/'s$/, '');
   const given = (w: string): boolean => quoted.has(w) || quoted.has(bare(w));
-  const own = tokens(said).filter((w) => !given(w));
+  // Its figures compared as numbers, as the text check compares them (call 47): "2023" from "twenty twenty three" is the words' own.
+  const quotedText = (s?.quoted ?? []).map((q) => (typeof q.words === 'string' ? q.words : '')).join(' ');
+  const figuresHeld = !foreignFigure(said, [quotedText]);
+  const own = tokens(said).filter((w) => !given(w) && !(figuresHeld && isFigureWord(w)));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
   if (own.some(isFigureWord)) return true;
   const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => straight(w).toLowerCase());

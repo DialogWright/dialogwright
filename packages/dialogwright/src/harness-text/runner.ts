@@ -608,7 +608,8 @@ export interface Scenario {
    * question (`anything_else`, a handoff, the call's end) or the one `expect.promptId` names. A question with
    * no answer here fails the call, naming it. A list answers the question in turn each time it is asked, its
    * last again after that ("I'm not sure, what is it?", then "yes"). Each answer's `agent` is the stub's, one
-   * per asking, as a step's.
+   * per asking, as a step's. An answer is words (`say`, heard over the line with `overLine: true`) or a
+   * silence (`{ "silence": true }`: the no-input wait runs out at the question).
    */
   answers?: Record<string, ScenarioStep | ScenarioStep[]>;
   expect: ScenarioExpectation;
@@ -721,6 +722,9 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   stepOf.push(-1);
   session = setup.result.session;
   let last = setup;
+  // The last turn that said something: a turn the line ignored (side speech, words set aside over a line) or
+  // held leaves the question it was on, which the next answer answers (Scenario.answers).
+  let asking = setup;
   let serviceDown = false;
   const said: { step: ScenarioStep; answers?: string }[] = [];
   const unanswered: string[] = [];
@@ -729,7 +733,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const next = (index: number): { step: ScenarioStep; answers?: string } | null => {
     if (index < scenario.steps.length) return { step: scenario.steps[index]! };
     if (scenario.answers === undefined || index >= scenario.steps.length + MAX_ANSWERS) return null;
-    const asked = askedOf(last.result, scenario.expect.promptId);
+    const asked = askedOf(asking.result, scenario.expect.promptId);
     if (asked === null) return null;
     const key = answerKey(scenario.answers, asked);
     if (key === null) {
@@ -762,6 +766,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
     for (const event of events) {
       last = await turn(session, event, o);
       runs.push(last);
+      if (last.result.decision.kind !== 'ignore' && last.result.decision.kind !== 'hold') asking = last;
       stepOf.push(index);
       failNext = false;
       // A scenario is synchronous, so a downstream service's answer is the very next turn.
@@ -770,6 +775,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
       runs.push(...followed);
       stepOf.push(...followed.map(() => index));
       last = followed.at(-1) ?? last;
+      if (followed.length > 0 && last.result.decision.kind !== 'ignore' && last.result.decision.kind !== 'hold') asking = last;
       session = last.result.session;
       if (session.ended) break;
     }
@@ -905,7 +911,7 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null) &&
     // An agent-mode call's steps' agent answers and its properties, well formed.
     (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent)) &&
-    ((s as Scenario).answers === undefined || (typeof (s as Scenario).answers === 'object' && (s as Scenario).answers !== null && !Array.isArray((s as Scenario).answers) && Object.values((s as Scenario).answers!).flatMap((x) => (Array.isArray(x) ? (x.length > 0 ? x : [null]) : [x])).every((step) => typeof step === 'object' && step !== null && 'say' in step && typeof (step as { say?: unknown }).say === 'string' && (!('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent))))) &&
+    ((s as Scenario).answers === undefined || (typeof (s as Scenario).answers === 'object' && (s as Scenario).answers !== null && !Array.isArray((s as Scenario).answers) && Object.values((s as Scenario).answers!).flatMap((x) => (Array.isArray(x) ? (x.length > 0 ? x : [null]) : [x])).every((step) => typeof step === 'object' && step !== null && (('silence' in step && (step as { silence?: unknown }).silence === true && Object.keys(step).length === 1) || ('say' in step && typeof (step as { say?: unknown }).say === 'string' && (!('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean') && (!('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent))))))) &&
     (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean') &&
     validAgentProperties((s as Scenario).expect as unknown as Record<string, unknown>)
   );

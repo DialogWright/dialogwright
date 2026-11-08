@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerHeuristically, HeuristicStubClient } from './heuristicStub';
+import { answerHeuristically, HeuristicStubClient, stubAgentValue } from './heuristicStub';
 import { sharp } from './distributions';
 import { buildQuestions } from '../core/questions';
 import { newSession } from '../core/session';
@@ -181,5 +181,14 @@ describe('HeuristicStubClient', () => {
     const pick = async (text: string) => ((await new HeuristicStubClient().ask({ state: { asr: { text } }, questions: q as never })).answers.changeSlot as { choice: string }).choice;
     expect(await pick('no, my account id is five five five zero one two three five')).toBe('none');
     expect(await pick('the date')).toBe('expectedDate');
+  });
+});
+
+describe("the stub's agent text value judge", () => {
+  const judged = (said: string, words: string): boolean => stubAgentValue({ value: { said, goal: 'the car' }, quoted: [{ words }] });
+  it('reads figures as numbers: a year said in pairs is the words\' own, another year is not (call 47)', () => {
+    expect(judged('2023 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe(false);
+    expect(judged('2024 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe(true);
+    expect(judged('2 wheels', 'two wheels')).toBe(false);
   });
 });
