@@ -1,4 +1,4 @@
-import { appendFileSync, chmodSync, closeSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Kept, Received, Text } from './app';
 
@@ -12,9 +12,14 @@ import type { Kept, Received, Text } from './app';
  * a restart forgets nothing: the shop page, the drop-off windows' room, the requests a photo texted in is
  * matched to, and each write's key, so a write repeated after a restart is still done once.
  *
- * It holds the callers' numbers whole and their words, as the shop needs them: the folder is made for the
- * server's own account alone (mode 700) and the file is mode 600. A line is only ever appended; a line
- * that cannot be read (the last one, cut by a crash mid-write) is skipped and counted, never rewritten.
+ * It is the shop's own system, holding the callers' numbers whole and their words, as the shop needs them:
+ * - the folder is made for the server's own account alone (mode 700); one already there that others may
+ *   read or write is tightened to 700 where the server owns it, and otherwise warned of as the server starts;
+ * - the file is mode 600, and is never reached through a symbolic link: it is opened with O_NOFOLLOW (a link
+ *   there stops the server, naming it), and every line is written through that one descriptor;
+ * - a line is only ever appended; a line that cannot be read (the last one, cut by a crash mid-write) or
+ *   that is not the shape this version writes is skipped and counted, never rewritten.
+ * One server's: two servers on one folder would each read the other's lines only when they start.
  */
 
 /** The setting that names the log's folder (the app's own settings file; never business.yaml). */
@@ -43,43 +48,108 @@ export interface ShopRead {
   unended: boolean;
 }
 
-const KINDS = new Set(['request', 'booking', 'callback', 'text', 'received', 'written']);
+const isString = (x: unknown): x is string => typeof x === 'string';
+const isStrings = (x: unknown): x is string[] => Array.isArray(x) && x.every(isString);
+const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 
-/** Whether a parsed line has the shape this version writes. */
-function isLine(x: unknown): x is ShopLine {
-  if (typeof x !== 'object' || x === null) return false;
-  const o = x as Record<string, unknown>;
-  if (o.v !== V || typeof o.at !== 'string' || typeof o.kind !== 'string' || !KINDS.has(o.kind)) return false;
-  if (o.kind === 'written') return typeof o.name === 'string' && typeof o.ref === 'string';
-  return typeof o.record === 'object' && o.record !== null && typeof (o.record as Record<string, unknown>).ref === 'string';
+/** A record a write kept: every field a string, its reference and time among them. */
+function isKept(r: unknown): r is Kept {
+  return isObject(r) && isString(r.ref) && isString(r.at) && Object.values(r).every(isString);
 }
 
-/** The append-only log in a folder: read back once, then appended to. */
+/** A text sent: its reference, time, number, words and status, and its media, if any, as URLs. */
+function isText(r: unknown): r is Text {
+  return isObject(r) && isString(r.ref) && isString(r.at) && isString(r.to) && isString(r.text) && isString(r.status) && (r.media === undefined || isStrings(r.media));
+}
+
+/** A text received: its reference, time, number, words and media, and the request it was matched to, if any. */
+function isReceived(r: unknown): r is Received {
+  return isObject(r) && isString(r.ref) && isString(r.at) && isString(r.from) && isString(r.text) && isStrings(r.media) && (r.request === undefined || isString(r.request));
+}
+
+/** Whether a parsed line has the shape this version writes, every field of the type it is read as. */
+function isLine(x: unknown): x is ShopLine {
+  if (!isObject(x) || x.v !== V || !isString(x.at)) return false;
+  switch (x.kind) {
+    case 'request':
+    case 'booking':
+    case 'callback':
+      return isKept(x.record);
+    case 'text':
+      return isText(x.record);
+    case 'received':
+      return isReceived(x.record);
+    case 'written':
+      return isString(x.name) && isString(x.ref);
+    default:
+      return false;
+  }
+}
+
+/** O_NOFOLLOW where the platform has it (not Windows, where the folder's own permissions protect it). */
+const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+
+/** The append-only log in a folder: read back once, then appended to through one descriptor. */
 export class ShopLog {
   readonly file: string;
 
-  private constructor(readonly dir: string) {
+  private constructor(readonly dir: string, private readonly fd: number) {
     this.file = join(dir, SHOP_LOG_FILE);
   }
 
-  /** Opens the log in `dir` (made, mode 700, if it is not there; the file made mode 600) and reads it back. */
-  static open(dir: string): { log: ShopLog; read: ShopRead } {
+  /**
+   * Opens the log in `dir` and reads it back: the folder made (mode 700) if it is not there, its mode checked
+   * if it is, and the file made mode 600 if it is not; never through a symbolic link. Returns what it read and
+   * any warning for the server's log.
+   */
+  static open(dir: string): { log: ShopLog; read: ShopRead; warnings: string[] } {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const log = new ShopLog(dir);
-    // Made empty if it is not there, readable and writable by the server's account alone.
-    closeSync(openSync(log.file, 'a', 0o600));
-    if (process.platform !== 'win32' && (statSync(log.file).mode & 0o077) !== 0) chmodSync(log.file, 0o600);
-    const read = ShopLog.read(log.file);
+    const warnings = ShopLog.checkFolder(dir);
+    const file = join(dir, SHOP_LOG_FILE);
+    let fd: number;
+    try {
+      fd = openSync(file, constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | NOFOLLOW, 0o600);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ELOOP') throw new Error(`${file} is a symbolic link: the shop's log is never written through one. Remove the link, or set ${SHOP_DATA_DIR} to the folder it points into`);
+      throw e;
+    }
+    if (process.platform !== 'win32') {
+      const st = fstatSync(fd);
+      if (!st.isFile()) {
+        closeSync(fd);
+        throw new Error(`${file} is not a file`);
+      }
+      if ((st.mode & 0o077) !== 0) chmodSync(file, 0o600);
+    }
+    const log = new ShopLog(dir, fd);
+    const read = ShopLog.parse(readFileSync(fd, 'utf8'));
     // A last line cut short by a crash is ended, so the next line is not written onto it.
-    if (read.unended) appendFileSync(log.file, '\n');
-    return { log, read };
+    if (read.unended) writeSync(fd, '\n');
+    return { log, read, warnings };
   }
 
-  /** Reads a log's lines; a line that is not one (cut short, or of another shape) is skipped and counted. */
+  /** The folder's mode: others may neither read nor write it. Tightened where the server owns it; a warning otherwise. */
+  private static checkFolder(dir: string): string[] {
+    if (process.platform === 'win32') return [];
+    const st = lstatSync(dir);
+    if (st.isSymbolicLink()) return [`${dir} is a symbolic link: the shop's log is kept in the folder it points to`];
+    if ((st.mode & 0o077) === 0) return [];
+    if (process.getuid !== undefined && st.uid === process.getuid()) {
+      chmodSync(dir, 0o700);
+      return [];
+    }
+    return [`${dir} can be read or written by other accounts (mode ${(st.mode & 0o777).toString(8)}) and belongs to another account, so its mode was not changed: the shop's log holds callers' numbers whole; chmod 700 ${dir}, or set ${SHOP_DATA_DIR} to a folder of the server's own`];
+  }
+
+  /** Reads a log's lines from a file (a test's look at it). */
   static read(file: string): ShopRead {
+    return ShopLog.parse(readFileSync(file, 'utf8'));
+  }
+
+  /** A log's lines; a line that is not one (cut short, or of another shape) is skipped and counted. */
+  private static parse(all: string): ShopRead {
     const lines: ShopLine[] = [];
     let skipped = 0;
-    const all = readFileSync(file, 'utf8');
     for (const text of all.split('\n')) {
       if (text.trim() === '') continue;
       try {
@@ -95,6 +165,11 @@ export class ShopLog {
 
   /** Appends one entry, with when it was written. */
   append(entry: ShopEntry, atMs: number): void {
-    appendFileSync(this.file, `${JSON.stringify({ v: V, at: new Date(atMs).toISOString(), ...entry })}\n`, { mode: 0o600 });
+    writeSync(this.fd, `${JSON.stringify({ v: V, at: new Date(atMs).toISOString(), ...entry })}\n`);
+  }
+
+  /** Closes the descriptor (a test's; the server keeps it open while it runs). */
+  close(): void {
+    closeSync(this.fd);
   }
 }

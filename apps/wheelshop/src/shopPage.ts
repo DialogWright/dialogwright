@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
-import type { AppBrand, AppPageDeps, AppRoute, AppRoutes } from 'dialogwright';
+import { TWILIO_MEDIA_PREFIX, type AppBrand, type AppPageDeps, type AppRoute, type AppRoutes } from 'dialogwright';
 import { COUNTS, WINDOW_NAMES, accountOf, capacityOf, dayWords, nameWords, standingCars, type Kept, type Received, type Systems, type Text } from './app';
 import { SHOP_DATA_DIR } from './shopLog';
 
@@ -50,8 +50,8 @@ function phoneHtml(n: string): string {
   return p.tel === null ? esc(p.shown) : `<a class="tel" href="tel:${esc(p.tel)}">${esc(p.shown)}</a>`;
 }
 
-/** A photo's URL the page may show: the provider's, over https (the engine keeps only Twilio's own). */
-const showable = (url: string): boolean => /^https:\/\/[^\s"'<>]+$/.test(url);
+/** A photo's URL the page may show: Twilio's own media (the engine's prefix; it keeps no other), with nothing in it an attribute could be broken by. */
+const showable = (url: string): boolean => url.startsWith(TWILIO_MEDIA_PREFIX) && !/[\s"'<>]/.test(url);
 
 /** Thumbnails, each linking to its full image. */
 function photosHtml(media: readonly string[]): string {
@@ -121,6 +121,8 @@ export interface ShopPageOptions {
   nonce: string;
   /** Where the records are kept: the log's file, or null for memory alone. */
   logFile: string | null;
+  /** The page is behind the console's sign-in (CONSOLE_AUTH=token): it offers Sign out. */
+  signOut?: boolean;
 }
 
 /** The page's HTML: every value escaped, no script. */
@@ -203,6 +205,8 @@ ${w.standing > 0 ? `<p class="meta">Includes the standing drop-off (${w.standing
   .mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; font-size: .9rem; }
   .brand h1 { font-size: 1.1rem; margin: 0; }
   .brand .sub { color: var(--muted); font-size: .85rem; }
+  .out { margin: 0; }
+  .out button { font: inherit; font-size: .9rem; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
   .refresh { margin-left: auto; color: var(--accent); font-weight: 600; text-decoration: none; padding: 6px 10px; border: 1px solid var(--accent); border-radius: 999px; font-size: .9rem; }
   nav { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; scrollbar-width: none; }
   nav a { white-space: nowrap; text-decoration: none; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; }
@@ -242,7 +246,7 @@ ${w.standing > 0 ? `<p class="meta">Includes the standing drop-off (${w.standing
 </head>
 <body>
 <div class="top">
-<div class="brand"><span class="mark" aria-hidden="true">${esc(o.brand.mark)}</span><div><h1>${name}</h1><div class="sub">What the line took in · ${time(new Date(o.nowMs).toISOString())}</div></div><a class="refresh" href="">Refresh</a></div>
+<div class="brand"><span class="mark" aria-hidden="true">${esc(o.brand.mark)}</span><div><h1>${name}</h1><div class="sub">What the line took in · ${time(new Date(o.nowMs).toISOString())}</div></div><a class="refresh" href="">Refresh</a>${o.signOut === true ? '<form class="out" method="post" action="/dashboard/logout"><button type="submit">Sign out</button></form>' : ''}</div>
 <nav aria-label="Sections"><a href="#requests">Requests${count(v.requests.length)}</a><a href="#bookings">Bookings${count(v.windows.reduce((n, w) => n + w.bookings.length, 0))}</a><a href="#texts">Texts${count(v.texts.length)}</a><a href="#callbacks">Callback notes${count(v.callbacks.length)}</a></nav>
 </div>
 <main>
@@ -268,9 +272,9 @@ ${callbacks}
 `;
 }
 
-/** The headers of the page's answer: its own policy (the page's style by its nonce, photos from https), no framing, no referrer, never cached. */
+/** The headers of the page's answer: its own policy (the page's style by its nonce, photos from https, its one form, Sign out, to this server), no framing, no referrer, never cached. */
 function protect(res: ServerResponse, nonce: string): void {
-  res.setHeader('content-security-policy', `default-src 'none'; style-src 'nonce-${nonce}'; img-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
+  res.setHeader('content-security-policy', `default-src 'none'; style-src 'nonce-${nonce}'; img-src https:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
   res.setHeader('x-frame-options', 'DENY');
   res.setHeader('referrer-policy', 'no-referrer');
   res.setHeader('cache-control', 'no-store');
@@ -278,7 +282,7 @@ function protect(res: ServerResponse, nonce: string): void {
 }
 
 /** The page's route: GET and HEAD of `/shop` (or `/shop/`); anything else under it is a 404, any other method a 405. */
-export function shopRoute(sys: Systems, o: { brand: ShopPageOptions['brand']; timeZone: string; now: () => number }): AppRoute {
+export function shopRoute(sys: Systems, o: { brand: ShopPageOptions['brand']; timeZone: string; now: () => number; signOut?: boolean }): AppRoute {
   return {
     label: 'shop page',
     path: SHOP_PATH,
@@ -297,7 +301,7 @@ export function shopRoute(sys: Systems, o: { brand: ShopPageOptions['brand']; ti
       }
       const nonce = randomBytes(16).toString('base64');
       protect(res, nonce);
-      const body = shopPageHtml(shopView(sys), { brand: o.brand, timeZone: o.timeZone, nowMs: o.now(), nonce, logFile: sys.logFile });
+      const body = shopPageHtml(shopView(sys), { brand: o.brand, timeZone: o.timeZone, nowMs: o.now(), nonce, logFile: sys.logFile, ...(o.signOut === true ? { signOut: true } : {}) });
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(body) });
       res.end(req.method === 'HEAD' ? undefined : body);
       return true;
@@ -317,10 +321,12 @@ export function shopPages(deps: AppPageDeps): AppRoutes {
   if (dir === '') {
     warnings.push(`shop page: ${SHOP_DATA_DIR} unset, so the shop's records are kept in memory, and a restart of the server loses them`);
   } else {
-    const { read, skipped } = sys.openLog(resolve(dir));
+    const { read, skipped, warnings: folder } = sys.openLog(resolve(dir));
+    warnings.push(...folder.map((w) => `shop page: ${w}`));
     deps.log(`shop page: ${read} record${read === 1 ? '' : 's'} read back from ${sys.logFile}`);
     if (skipped > 0) warnings.push(`shop page: ${skipped} line${skipped === 1 ? '' : 's'} of ${sys.logFile} could not be read and ${skipped === 1 ? 'was' : 'were'} skipped`);
   }
   const brand = deps.app.brand ?? { name: deps.app.id, mark: deps.app.id.slice(0, 2).toUpperCase() };
-  return { routes: [shopRoute(sys, { brand, timeZone: deps.config.timezone, now: deps.now })], warnings };
+  // Behind the console's sign-in where the server has one (a console page): then it offers Sign out.
+  return { routes: [shopRoute(sys, { brand, timeZone: deps.config.timezone, now: deps.now, signOut: deps.config.consoleAuth !== undefined })], warnings };
 }

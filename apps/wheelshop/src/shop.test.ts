@@ -1,7 +1,7 @@
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig, startServer, type IncomingText, type RunningServer, type TextContext, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
+import { loadConfig, startServer, type IncomingText, type RunningServer, type TextContext, type Texts, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Systems, TOOLS, onText } from './app';
 import { SHOP_LOG_FILE, ShopLog } from './shopLog';
@@ -63,7 +63,7 @@ describe('the shop\'s records on file (SHOP_DATA_DIR)', () => {
   it('keeps every record with its time, and reads all of it back after a restart: the records, the windows\' room, the requests on file and each write\'s key', async () => {
     const dir = join(scratch(), 'shop');
     const before = new Systems();
-    expect(before.openLog(dir)).toEqual({ read: 0, skipped: 0 });
+    expect(before.openLog(dir)).toEqual({ read: 0, skipped: 0, warnings: [] });
     await aDay(before);
     const after = new Systems();
     const opened = after.openLog(dir);
@@ -101,11 +101,70 @@ describe('the shop\'s records on file (SHOP_DATA_DIR)', () => {
     await run(first, 'request', REQUEST, 'k-r1', T0);
     appendFileSync(join(dir, SHOP_LOG_FILE), '{"v":1,"at":"2026-11-09T16:06:00.000Z","kind":"requ');
     const second = new Systems();
-    expect(second.openLog(dir)).toEqual({ read: 1, skipped: 1 });
+    expect(second.openLog(dir)).toEqual({ read: 1, skipped: 1, warnings: [] });
     await run(second, 'request', LATER, 'k-r2', T0 + MIN);
     const third = new Systems();
-    expect(third.openLog(dir)).toEqual({ read: 2, skipped: 1 });
+    expect(third.openLog(dir)).toEqual({ read: 2, skipped: 1, warnings: [] });
     expect(third.requests.map((r) => r.ref)).toEqual(['R101', 'R102']);
+  });
+
+  it('skips a line whose fields are not of their types, as a torn one is, and counts it', async () => {
+    const dir = scratch();
+    const first = new Systems();
+    first.openLog(dir);
+    await run(first, 'request', REQUEST, 'k-r1', T0);
+    for (const bad of [
+      { v: 1, at: '2026-11-09T16:06:00.000Z', kind: 'request', record: { ref: 'R9', at: '2026-11-09T16:06:00.000Z', callerName: 5 } },
+      { v: 1, at: '2026-11-09T16:06:00.000Z', kind: 'text', record: { ref: 'T9', at: '2026-11-09T16:06:00.000Z', to: '5555550177', text: 'hi', status: 'queued', media: [7] } },
+      { v: 1, at: '2026-11-09T16:06:00.000Z', kind: 'received', record: { ref: 'I9', at: '2026-11-09T16:06:00.000Z', from: '+15555550177', text: 'hi', media: 'https://api.twilio.com/x' } },
+      { v: 1, at: 7, kind: 'written', name: 'R k', ref: 'R9' },
+      { v: 1, at: '2026-11-09T16:06:00.000Z', kind: 'written', name: 'R k', ref: 9 },
+      { v: 1, at: '2026-11-09T16:06:00.000Z', kind: 'deleted', record: { ref: 'R1', at: '' } },
+    ]) appendFileSync(join(dir, SHOP_LOG_FILE), `${JSON.stringify(bad)}\n`);
+    const second = new Systems();
+    expect(second.openLog(dir)).toEqual({ read: 1, skipped: 6, warnings: [] });
+    expect(second.requests.map((r) => r.ref)).toEqual(['R101']);
+    expect(second.written.has('R k')).toBe(false);
+  });
+
+  it('tightens a folder of its own that others may read to 700, and never writes through a symbolic link', async () => {
+    if (process.platform === 'win32') return;
+    const dir = join(scratch(), 'open');
+    mkdirSync(dir, { mode: 0o755 });
+    chmodSync(dir, 0o755);
+    new Systems().openLog(dir);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    // shop.jsonl a link to a file elsewhere: refused, and the file it points to untouched.
+    const linked = join(scratch(), 'linked');
+    const elsewhere = join(scratch(), 'elsewhere.txt');
+    writeFileSync(elsewhere, 'not the shop\'s\n');
+    mkdirSync(linked, { mode: 0o700 });
+    symlinkSync(elsewhere, join(linked, SHOP_LOG_FILE));
+    expect(() => new Systems().openLog(linked)).toThrow(/is a symbolic link: the shop's log is never written through one/);
+    expect(readFileSync(elsewhere, 'utf8')).toBe('not the shop\'s\n');
+  });
+
+  it('files a text\'s key only once it is sent: a repeat in the same turn is caught, and after a crash in flight the text is sent again', async () => {
+    const dir = scratch();
+    const sys = new Systems();
+    sys.openLog(dir);
+    let release!: () => void;
+    const sent: string[] = [];
+    const texts: Texts = { send: (t) => new Promise((r) => { sent.push(t.to); release = () => r({ id: 'SM1', status: 'queued' }); }) };
+    const call: ToolCall = { tool: 'send_photo_link', params: REQUEST };
+    const ctx = { idempotencyKey: 'k-p1', env: () => undefined, texts, tc: { nowMs: T0 } } as unknown as Parameters<ToolDef['run']>[2];
+    const first = (TOOLS.send_photo_link as ToolDef).run(call, sys, ctx) as Promise<ToolReply>;
+    // In flight: the key is held in memory (a repeat does nothing), and nothing is on file yet.
+    expect(((await (TOOLS.send_photo_link as ToolDef).run(call, sys, ctx)) as ToolReply).summary).toBe('P101 (already done)');
+    expect(ShopLog.read(join(dir, SHOP_LOG_FILE)).lines).toEqual([]);
+    // A server that stopped here would send it again: nothing on file says it was sent.
+    const crashed = new Systems();
+    crashed.openLog(dir);
+    expect(crashed.written.size).toBe(0);
+    release();
+    await first;
+    expect(sent).toEqual(['5555550177']);
+    expect(ShopLog.read(join(dir, SHOP_LOG_FILE)).lines.map((l) => l.kind)).toEqual(['text', 'written']);
   });
 
   it('with no folder set, keeps everything in memory and writes nothing, as before', async () => {
@@ -161,11 +220,15 @@ describe('the shop page', () => {
     expect(notes).toContain('C101');
   });
 
-  it('escapes everything a caller gave, shows no photo that is not an https URL, and says so when it is empty', async () => {
+  it('escapes everything a caller gave, shows no photo that is not at Twilio\'s media URL, and says so when it is empty', async () => {
     const sys = new Systems();
     await run(sys, 'request', { ...REQUEST, callerName: '<script>alert(1)</script>', vehicle: '"><img src=x onerror=alert(1)>' }, 'k-r1', T0);
-    await onText(message('+15555550177', '<b>hi</b>', ['javascript:alert(1)']), textCtx(sys, T0 + MIN));
+    await onText(message('+15555550177', '<b>hi</b>', ['javascript:alert(1)', 'https://evil.example/2010-04-01/Media/ME1', 'http://api.twilio.com/x', `${PHOTO}" onerror="x`]), textCtx(sys, T0 + MIN));
     const html = shopPageHtml(shopView(sys), OPTIONS);
+    expect(html).not.toContain('evil.example');
+    expect(html).not.toContain('http://api.twilio.com');
+    expect(html).not.toContain('<img src=');
+    expect(html).not.toContain('onerror="x');
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('<img src=x');
     expect(html).not.toContain('<b>hi</b>');
@@ -205,6 +268,8 @@ describe('the shop page on the server', () => {
     expect(local.headers.get('referrer-policy')).toBe('no-referrer');
     const html = await local.text();
     expect(html).toContain('(555) 555-0177');
+    // No sign-in on this server: nothing to sign out of.
+    expect(html).not.toContain('Sign out');
     expect(html).toContain(PHOTO);
     const tunnelled = await fetch(`${base}/wheelshop/shop`, { headers: TUNNEL });
     expect(tunnelled.status).toBe(404);
@@ -243,6 +308,13 @@ describe('the shop page on the server', () => {
     const cookie = signIn.headers.getSetCookie().find((c) => c.includes('Path=/wheelshop/shop'))!.split(';')[0]!;
     const page = await fetch(`${base}/wheelshop/shop`, { headers: { ...TUNNEL, cookie } });
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain('(555) 555-0177');
+    expect(page.headers.get('content-security-policy')).toContain("form-action 'self'");
+    const html = await page.text();
+    expect(html).toContain('(555) 555-0177');
+    // Sign out, from the page: the session is refused from then on.
+    expect(html).toContain('<form class="out" method="post" action="/dashboard/logout"><button type="submit">Sign out</button></form>');
+    const out = await fetch(`${base}/dashboard/logout`, { method: 'POST', redirect: 'manual', headers: { ...TUNNEL, cookie, origin: 'https://shop.example.com' } });
+    expect(out.status).toBe(303);
+    expect((await fetch(`${base}/wheelshop/shop`, { headers: { ...TUNNEL, cookie }, redirect: 'manual' })).status).toBe(302);
   });
 });

@@ -174,14 +174,14 @@ export class Systems {
   /**
    * Keeps the records in the log in `dir` from now on, after reading back what it holds (the server does
    * this once, as it starts: src/shopPage.ts). Returns how many records were read (a write's key is not
-   * one) and how many lines skipped. Opened once: a second call does nothing.
+   * one), how many lines skipped, and any warning about the folder. Opened once: a second call does nothing.
    */
-  openLog(dir: string): { read: number; skipped: number } {
-    if (this.log !== null) return { read: 0, skipped: 0 };
-    const { log, read } = ShopLog.open(dir);
+  openLog(dir: string): { read: number; skipped: number; warnings: string[] } {
+    if (this.log !== null) return { read: 0, skipped: 0, warnings: [] };
+    const { log, read, warnings } = ShopLog.open(dir);
     for (const line of read.lines) this.replay(line);
     this.log = log;
-    return { read: read.lines.filter((l) => l.kind !== 'written').length, skipped: read.skipped };
+    return { read: read.lines.filter((l) => l.kind !== 'written').length, skipped: read.skipped, warnings };
   }
 
   /** A record kept: in memory, and in the log where there is one. */
@@ -194,10 +194,15 @@ export class Systems {
     this.log?.append(entry, atMs);
   }
 
-  /** A write's key and the reference it was given, kept so a repeat (after a restart too) is done once. */
+  /** A write's key and the reference it was given, kept so a repeat (after a restart too) is done once: call it once the write is done. */
   remember(name: string, ref: string, atMs: number): void {
     this.written.set(name, ref);
     this.log?.append({ kind: 'written', name, ref }, atMs);
+  }
+
+  /** A write's key held in memory alone while the write is under way, so a repeat in the same turn is caught; remember files it once the write is done. */
+  hold(name: string, ref: string): void {
+    this.written.set(name, ref);
   }
 
   /** One entry into memory: what keep does, and what reading the log back does for each line. */
@@ -283,8 +288,12 @@ async function onceAsync(sys: Systems, key: string | undefined, prefix: string, 
   const seen = key === undefined ? undefined : sys.written.get(`${prefix} ${key}`);
   if (seen !== undefined) return { value: { ref: seen }, summary: `${seen} (already done)`, ref: seen };
   const ref = `${prefix}${101 + count}`;
+  // Held before it waits, so a repeat on the same turn does nothing again; on file only once the write is done,
+  // so a crash in flight leaves no key on file and the write (a text) is made again after the restart.
+  if (key !== undefined) sys.hold(`${prefix} ${key}`, ref);
+  const summary = await make(ref);
   if (key !== undefined) sys.remember(`${prefix} ${key}`, ref, nowMs);
-  return { value: { ref }, summary: await make(ref), ref };
+  return { value: { ref }, summary, ref };
 }
 
 /** The ten digits of a number, as a callback number holds them ("+15555550177" is 5555550177). */
