@@ -18,6 +18,16 @@ describe('agentAnswerSchema', () => {
     expect(agentAnswerSchema([]).safeParse({ ...valid, values: [] }).success).toBe(true);
   });
 
+  it('an answer that leaves its values out gives none (Mercury 3 did on a yes at a read-back); any other key left out is refused', () => {
+    const schema = agentAnswerSchema(['none']);
+    const { values: _values, ...noValues } = valid;
+    expect(schema.parse(noValues)).toEqual({ ...noValues, values: [] });
+    expect(parseAgentAnswer(JSON.stringify(noValues), ['none'])).toEqual({ ok: true, answer: { ...noValues, values: [] } });
+    const { fromFacts: _fromFacts, ...noFacts } = valid;
+    expect(schema.safeParse(noFacts).success).toBe(false);
+    expect(schema.safeParse({ ...valid, values: null }).success).toBe(false);
+  });
+
   it('a value missing its words is refused, and so is one whose words are empty', () => {
     const schema = agentAnswerSchema(['none']);
     expect(schema.safeParse({ ...valid, values: [{ field: 'day', value: '2026-11-12' }] }).success).toBe(false);

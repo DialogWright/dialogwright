@@ -5,7 +5,8 @@ import { NO_ACTION, type AgentAnswer } from './types';
 /**
  * The shape the agent model answers in: its zod schema, which is what the engine accepts, and the
  * same shape as a JSON Schema for the request's `response_format` (`strict: true`: every object
- * closed, every field required, as Inception's and OpenAI's structured output take it). The action
+ * closed, every field required, as Inception's and OpenAI's structured output take it). The engine
+ * accepts one leniency the request does not offer: `values` left out is no values. The action
  * is one of the app's, or `none`; where the form's fields are given, a value names one of them.
  */
 
@@ -40,7 +41,11 @@ export function agentAnswerSchema(actions: readonly string[], fields?: readonly 
   const fixed = lineNames(lines);
   return z.strictObject({
     reply: z.string(),
-    values: z.array(z.strictObject({ field, value: nonEmpty, words: nonEmpty })),
+    // An answer that gives no values may leave the list out: Mercury 3 did on two turns in fifty of
+    // apps/wheelshop's recording ("reply", "action", "fromFacts", "fixedLine", nothing else), and a yes at
+    // a read-back so read was never taken. Absent is none, unambiguously; a list that is there is held to
+    // its shape as ever.
+    values: z.array(z.strictObject({ field, value: nonEmpty, words: nonEmpty })).default([]),
     action: z.enum(actionNames(actions)),
     fromFacts: z.boolean(),
     ...(fixed !== null ? { fixedLine: z.enum(fixed) } : {}),
