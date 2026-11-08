@@ -55,6 +55,7 @@ Said in fixed words, never worded by a model:
 | Line | Said |
 | --- | --- |
 | `greeting` | Thanks for calling Example Wheel Works. How can I help? |
+| `greeting_chat` | Hi, this is Example Wheel Works. What can I help with? |
 | `handoff_live_agent` | I'll have Sam call you back as soon as he's free. |
 | `goodbye` | Thanks for calling Example Wheel Works. |
 | `booking_for_accounts` | Bookings are for our dealership accounts; I can send Sam a request instead. |

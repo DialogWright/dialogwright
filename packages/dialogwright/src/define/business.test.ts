@@ -216,6 +216,41 @@ describe('business.yaml', () => {
     ]);
   });
 
+  it('a chat opens on its own greeting: the chat default, an explicit chat greeting, and a string greeting for the call only', () => {
+    const greetings = (dir: string): [string | undefined, string | undefined] => {
+      const loaded = loadAppFolder(dir);
+      expect(loaded.problems).toEqual([]);
+      const prompts = loaded.config!.prompts[loaded.config!.defaultLocale]!;
+      return [prompts.greeting?.text, prompts.greeting_chat?.text];
+    };
+    // No greeting: each channel's default, the call thanking the caller for calling, the chat not.
+    expect(greetings(copy())).toEqual(['Thanks for calling Example Library. How can I help?', 'Hi, this is Example Library. What can I help with?']);
+    // A string is the call's greeting; the chat keeps its default.
+    expect(greetings(copy({ 'business.yaml': (t) => `${t}greeting: Thanks for calling the library desk. What can we do for you?\n` }))).toEqual([
+      'Thanks for calling the library desk. What can we do for you?',
+      'Hi, this is Example Library. What can I help with?',
+    ]);
+    // Each channel's own, and one left out keeps its default.
+    expect(greetings(copy({ 'business.yaml': (t) => `${t}greeting:\n  chat: Hello from the library desk. What do you need?\n` }))).toEqual([
+      'Thanks for calling Example Library. How can I help?',
+      'Hello from the library desk. What do you need?',
+    ]);
+    expect(greetings(copy({ 'business.yaml': (t) => `${t}greeting:\n  call: You've reached the library desk.\n  chat: Hello from the library desk.\n` }))).toEqual([
+      "You've reached the library desk.",
+      'Hello from the library desk.',
+    ]);
+  });
+
+  it('each channel\'s greeting names no {placeholder}', () => {
+    const dir = copy({ 'business.yaml': (t) => `${t}greeting:\n  call: Hello from {name}.\n  chat: Hi {first}.\n` });
+    expect(problemsOf(dir).map((p) => `${p.path}: ${p.message}`)).toEqual([
+      'greeting.call: the line names {name}, which it is never given, so it would be said with the braces in it',
+      'greeting.chat: the line names {first}, which it is never given, so it would be said with the braces in it',
+    ]);
+    const unknown = copy({ 'business.yaml': (t) => `${t}greeting:\n  phone: Hello.\n` });
+    expect(problemsOf(unknown)).toMatchObject([{ file: 'business.yaml', path: expect.stringContaining('greeting') }]);
+  });
+
   it('windows, options and accounts are each one of a kind: windows by name, options and accounts by their key', () => {
     const windows = copy({ 'business.yaml': replacing('  - name: afternoon\n    says: from noon to 5', '  - name: morning\n    says: from noon to 5') });
     expect(problemsOf(windows)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'windows[1].name', message: 'the window "morning" is listed twice' })]));

@@ -169,7 +169,18 @@ export const businessSchema = z
     request: form.optional().describe('What any caller\'s request collects, its read-back, the tools a yes calls and its done line.'),
     booking: booking.optional(),
     callback: form.optional().describe('A callback note a caller who wants a person leaves (there is no live transfer): what it collects (a number to call back on), its read-back, its tools and its done line. Without it, a caller who wants a person hears the handoff line.'),
-    greeting: text().optional().describe('The line a call opens on, in fixed words. Default: "Thanks for calling <says>. How can I help?"'),
+    greeting: z
+      .union([
+        text(),
+        z
+          .strictObject({
+            call: text().optional().describe('The line a call opens on. Default: "Thanks for calling <says>. How can I help?"'),
+            chat: text().optional().describe('The line a web chat opens on. Default: "Hi, this is <says>. What can I help with?"'),
+          })
+          .describe('The opening line of each channel, each with its own default.'),
+      ])
+      .optional()
+      .describe('The opening line, in fixed words: a string is the line a call opens on (a chat opens on the chat default), or { call, chat }, each channel\'s own. Default: "Thanks for calling <says>. How can I help?" on a call, "Hi, this is <says>. What can I help with?" in a chat.'),
     handoff: text().describe('The line said when a caller asks for a person, in fixed words: a callback, not a transfer. A statement, not a question ("I\'ll have someone from the desk call you back."): it is said where nothing waits for an answer, and the callback form, where there is one, asks for the number.'),
     closing: text().describe('The line a call ends on, in fixed words.'),
     owner: z

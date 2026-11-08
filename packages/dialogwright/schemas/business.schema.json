@@ -680,9 +680,30 @@
       "additionalProperties": false
     },
     "greeting": {
-      "description": "The line a call opens on, in fixed words. Default: \"Thanks for calling <says>. How can I help?\"",
-      "type": "string",
-      "minLength": 1
+      "description": "The opening line, in fixed words: a string is the line a call opens on (a chat opens on the chat default), or { call, chat }, each channel's own. Default: \"Thanks for calling <says>. How can I help?\" on a call, \"Hi, this is <says>. What can I help with?\" in a chat.",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The line a call opens on. Default: \"Thanks for calling <says>. How can I help?\"",
+              "type": "string",
+              "minLength": 1
+            },
+            "chat": {
+              "description": "The line a web chat opens on. Default: \"Hi, this is <says>. What can I help with?\"",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "The opening line of each channel, each with its own default."
+        }
+      ]
     },
     "handoff": {
       "type": "string",

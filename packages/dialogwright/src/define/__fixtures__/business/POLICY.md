@@ -54,6 +54,7 @@ Said in fixed words, never worded by a model:
 | Line | Said |
 | --- | --- |
 | `greeting` | Thanks for calling Example Library. How can I help? |
+| `greeting_chat` | Hi, this is Example Library. What can I help with? |
 | `handoff_live_agent` | I'll have someone from the desk call you back. |
 | `goodbye` | Thanks for calling Example Library. |
 | `price` | Fees are explained at the desk, by the person who looks at your account. |

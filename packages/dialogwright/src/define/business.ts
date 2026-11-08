@@ -40,6 +40,11 @@ export function businessForms(b: BusinessYaml): { name: BusinessFormName; form: 
   return BUSINESS_FORMS.flatMap((name) => (b[name] !== undefined ? [{ name, form: b[name] as BusinessFormYaml }] : []));
 }
 
+/** The opening line each channel's greeting gives, where business.yaml words it: a string is the call's. */
+export function greetingsOf(b: BusinessYaml): { call?: string; chat?: string } {
+  return typeof b.greeting === 'string' ? { call: b.greeting } : (b.greeting ?? {});
+}
+
 /** The {placeholders} of a line. */
 export function placeholdersOf(text: string): string[] {
   return [...new Set([...text.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((m) => m[1]!))];
@@ -221,7 +226,8 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
   const fixedLines: [DataPath, string, readonly string[]][] = [
     [['handoff'], b.handoff, []],
     [['closing'], b.closing, []],
-    ...(b.greeting !== undefined ? [[['greeting'], b.greeting, []] as [DataPath, string, readonly string[]]] : []),
+    // The greeting of each channel: a string is the call's, at the key itself.
+    ...Object.entries(greetingsOf(b)).map(([channel, text]): [DataPath, string, readonly string[]] => [typeof b.greeting === 'string' ? ['greeting'] : ['greeting', channel], text, []]),
     ...(b.prices !== undefined ? [[['prices', 'say'], b.prices.say, []] as [DataPath, string, readonly string[]]] : []),
     ...forms.flatMap(({ name, form }) => form.fields.map((f, i): [DataPath, string, readonly string[]] => [[name, 'fields', i, 'question'], f.question, []])),
   ];
