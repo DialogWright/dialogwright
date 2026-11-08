@@ -109,7 +109,7 @@ export const FIGURES: Readonly<Record<'symbols' | 'words', string>> = {
 export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
   return {
     persona: style?.persona ?? DEFAULT_PERSONA,
-    words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat },
+    words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat, ...(style?.words?.answer !== undefined ? { answer: style.words.answer } : {}) },
     avoid: [...(style?.avoid ?? [])],
     ...(style?.figures !== undefined ? { figures: FIGURES[style.figures] } : {}),
     // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DRIFT_FIRE).

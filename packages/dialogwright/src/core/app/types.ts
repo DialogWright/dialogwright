@@ -1896,7 +1896,11 @@ export interface GeneratedSpan {
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
 export interface RenderStyle {
   readonly persona: string;
-  readonly words: { readonly voice: number; readonly chat: number };
+  /**
+   * The word budget per channel; `answer`, where style.yaml sets it, the budget of an agent reply that
+   * answers from the facts (AgentAnswer.fromFacts) on either channel (absent: the channel's and half again).
+   */
+  readonly words: { readonly voice: number; readonly chat: number; readonly answer?: number };
   readonly avoid: readonly string[];
   /** How a generated line writes figures (style.yaml's `figures`), as the model is told it; absent: as the model words them. */
   readonly figures?: string;

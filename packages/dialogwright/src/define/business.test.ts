@@ -164,6 +164,17 @@ describe('business.yaml', () => {
     expect(problemsOf(called)).toMatchObject([{ path: 'booking.then[1]', message: expect.stringContaining('is a tool a field sees') }]);
   });
 
+  it('freeFrom only on a choice, from a tool a field of the same form sees; prices.forms names forms the file has', () => {
+    const other = copy({ 'business.yaml': replacing('freeFrom: roomAvailability.windows', 'freeFrom: calendar.windows') });
+    expect(problemsOf(other)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'booking.fields[2].freeFrom', message: expect.stringContaining('"calendar" is no tool a field of the booking sees') })]));
+    const day = copy({ 'business.yaml': replacing("      question: What day would you like the room?\n      sees: roomAvailability\n", "      question: What day would you like the room?\n      sees: roomAvailability\n      freeFrom: roomAvailability.windows\n") });
+    expect(problemsOf(day)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'booking.fields[1].freeFrom', message: expect.stringContaining('only a choice field may be free from a seen result, and "day" is date') })]));
+    const form = copy({ 'business.yaml': replacing('forms: [request]', 'forms: [request, quote]') });
+    expect(problemsOf(form).length).toBeGreaterThan(0);
+    const missing = copy({ 'business.yaml': (t) => replacing('forms: [request]', 'forms: [request, booking]')(t).replace(/\nbooking:[\s\S]*?(?=\ncallback:)/, '\n').replace(/accounts:[\s\S]*?(?=\n[a-z])/, '') });
+    expect(problemsOf(missing)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'prices.forms[1]', message: 'the price line may be named in the booking, but the file has no booking' })]));
+  });
+
   it('a field the records hide sees no tool: its value, and the result for it, would reach the model whole (the review of Task 8)', () => {
     const dir = copy({ 'business.yaml': replacing("      question: What's the best number to reach you when it's ready?\n", "      question: What's the best number to reach you when it's ready?\n      sees: roomAvailability\n") });
     expect(problemsOf(dir)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'request.fields[6].sees', message: expect.stringContaining('is recorded by its last four (redact last4, its type\'s default), but it sees "roomAvailability"') })]));

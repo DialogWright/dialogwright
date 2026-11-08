@@ -543,12 +543,12 @@ describe("the console's daily figures' own retention (FIGURES_RETENTION_DAYS)", 
 
 describe('the agent model\'s budgets (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS)', () => {
   it('default to 1200 ms on a call and 3000 in a chat', () => {
-    expect(agentSettings({})).toEqual({ timeoutMs: { voice: 1200, chat: 3000 } });
+    expect(agentSettings({})).toEqual({ timeoutMs: { voice: 1800, chat: 4000 } });
   });
 
   it('are each set on their own', () => {
-    expect(agentSettings({ AGENT_TIMEOUT_VOICE_MS: '900' })).toEqual({ timeoutMs: { voice: 900, chat: 3000 } });
-    expect(agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15000' })).toEqual({ timeoutMs: { voice: 1200, chat: 15000 } });
+    expect(agentSettings({ AGENT_TIMEOUT_VOICE_MS: '900' })).toEqual({ timeoutMs: { voice: 900, chat: 4000 } });
+    expect(agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15000' })).toEqual({ timeoutMs: { voice: 1800, chat: 15000 } });
   });
 
   it('refuse a value outside 300 to 15000, or not a whole number', () => {

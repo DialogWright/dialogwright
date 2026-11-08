@@ -22,6 +22,12 @@
           "type": "integer",
           "minimum": 3,
           "maximum": 400
+        },
+        "answer": {
+          "description": "An app in agent mode: the most words a reply of the agent model may use where it answers the caller from the facts (its fromFacts), on either channel, so an explanation from the services fits. Read only in agent mode. Default: the channel's budget and half again (45 on a call at the default 30).",
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 400
         }
       },
       "additionalProperties": false

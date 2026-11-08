@@ -28,6 +28,7 @@ background:
 prices:
   quote: at the desk
   say: Fees are explained at the desk, by the person who looks at your account.
+  forms: [request] # the club's study room is free: the fee line is a hold's
 where:
   place: 12 Example Street, Rivergate
 days: [monday, tuesday, wednesday, thursday, friday, saturday]
@@ -105,6 +106,7 @@ booking:
     - name: window
       type: choice
       options: windows
+      freeFrom: roomAvailability.windows # a window the day's result lists as taken is refused
       question: Morning or afternoon?
   readBack: So that's the study room for {account}, {people} people, {day} in the {window}. Shall I book it?
   then: [bookRoom]

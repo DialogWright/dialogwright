@@ -7,7 +7,7 @@ import { fieldValueSent } from '../agent/prompt';
 import type { AgentField } from '../agent/types';
 import { oneLine } from '../core/agentTurn';
 import { appOf } from '../core/app/registry';
-import type { App } from '../core/app/types';
+import type { App, RenderStyle } from '../core/app/types';
 import type { PromptDecision } from '../core/decision';
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
@@ -191,6 +191,17 @@ export function citedFigureSources(app: App, s: Session, accepted: readonly { sl
   ];
 }
 
+/**
+ * The most words an agent reply may use: the channel's budget (style.yaml's `words`), or for a reply that
+ * answers from the facts (AgentAnswer.fromFacts: an explanation of a service, "what's diamond cut?") style.yaml's
+ * `words.answer`, by default the channel's and half again, rounded (the wheelshop recording: the
+ * diamond-cut explanation ran to 45 words over a budget of 30, and the caller heard only the next question).
+ */
+export function agentWordBudget(style: Pick<RenderStyle, 'words'>, channel: 'voice' | 'chat', fromFacts: boolean): number {
+  if (!fromFacts) return style.words[channel];
+  return style.words.answer ?? Math.round(style.words[channel] * 1.5);
+}
+
 /** What the agent line is held with, on its turn. */
 export interface AgentLineInput {
   /** The turn as the core decided it. */
@@ -260,7 +271,7 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
       seen: input.seen ?? [],
       fixed: [spokenText(app, fixedDecision, session.locale, shown)],
     });
-    const failed = checkAgentReply(reply, { channel, words: style.words[channel], avoid: style.avoid, sources });
+    const failed = checkAgentReply(reply, { channel, words: agentWordBudget(style, channel, result.agent?.fromFacts === true), avoid: style.avoid, sources });
     if (failed !== null) return { fallback: failed };
     const cited = new Map(accepted.map((v) => [v.field, v.words]));
     const understood: AgentUnderstood[] = heldFields(app, session).map((f) => {

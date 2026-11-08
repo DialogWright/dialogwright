@@ -14,7 +14,8 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { mockCodeVerifier } from '../core/tools';
 import { newSession, type Session } from '../core/session';
-import { checkAgentReply, judgedHistory, shapeLeak, textValueFigures } from './agentLine';
+import { agentWordBudget, checkAgentReply, judgedHistory, shapeLeak, textValueFigures } from './agentLine';
+import { styleOf } from './config';
 import { redactRecordSlots } from '../trace/redact';
 import { AGENT_DRIFT_QUESTION_ID } from './checks';
 
@@ -159,6 +160,29 @@ describe('an agent line: the checks by code', () => {
     expect(checkAgentReply('No problem. What name?', g)).toBe('avoid');
     expect(checkAgentReply('See example.com/fees. What name?', g)).toBe('foreign');
     expect(checkAgentReply('See example.org/holds. What name?', g)).toBeNull();
+  });
+});
+
+describe('an agent line: its word budget', () => {
+  it('a reply from the facts gets words.answer, by default the channel\'s budget and half again; any other the channel\'s', () => {
+    const style = styleOf({ words: { voice: 30 } });
+    expect(agentWordBudget(style, 'voice', false)).toBe(30);
+    expect(agentWordBudget(style, 'voice', true)).toBe(45);
+    expect(agentWordBudget(style, 'chat', true)).toBe(60);
+    const set = styleOf({ words: { voice: 30, answer: 50 } });
+    expect(agentWordBudget(set, 'voice', true)).toBe(50);
+    expect(agentWordBudget(set, 'chat', true)).toBe(50);
+    expect(agentWordBudget(set, 'chat', false)).toBe(40);
+  });
+
+  it('on a turn: an explanation from the facts over the channel\'s budget is said where the same reply not from the facts is not', async () => {
+    // 31 words, from the services' own: over the voice budget (25), within the answer's (38).
+    const LONG = 'The study room is a quiet room for up to six people, booked by member clubs, and holds are books kept at the front desk for a week. Which would you like?';
+    const HOLD_IT = 'what is a study room';
+    const facts = await call({ [HOLD_IT]: { reply: LONG, values: [], action: 'none', fromFacts: true } }, [HOLD_IT]);
+    expect(facts.last.record.agent?.line).toMatchObject({ mode: 'generated' });
+    const plain = await call({ [HOLD_IT]: { reply: LONG, values: [], action: 'none', fromFacts: false } }, [HOLD_IT]);
+    expect(plain.last.record.agent?.line).toMatchObject({ mode: 'fixed', fallback: 'words' });
   });
 });
 

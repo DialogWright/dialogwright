@@ -54,6 +54,12 @@ export interface AgentFacts {
   name: string;
   /** How it sounds: the persona, in the business's own words. */
   voice: string;
+  /** What kind of business it is (business.yaml's business.kind), for the persona. */
+  kind?: string;
+  /** The owner's name (business.owner), where the line refers to the owner. */
+  owner?: string;
+  /** The business is one person (business.oneOwner): the line never speaks of a team. */
+  oneOwner?: boolean;
   /** What the model may say: the claims, the services, what is not offered, where it is. */
   says: string[];
   /** Context only, never said as a claim. */
@@ -175,6 +181,12 @@ export interface AgentAppField {
   required: boolean;
   /** The tool whose result the model sees once it is filled (`sees`). */
   sees?: string;
+  /**
+   * A choice field whose value must be free (business.yaml's `freeFrom`): the tool a field of its form sees
+   * and the field of its checked result that lists the free options. Once that result is kept for the form's
+   * value of the seeing field, a value not in its list is refused (`range`).
+   */
+  freeFrom?: { tool: string; list: string };
 }
 
 /** A form of an app in agent mode (App.agent), as the agent model is told of it and the core runs it. */
@@ -216,6 +228,8 @@ export interface AgentApp {
    * facts.fixed, each with the prompt it is said through: the price line (`price`), where the business has one.
    */
   lines: Readonly<Record<string, string>>;
+  /** The forms each fixed line may be named in (business.yaml's `prices.forms`), by its name; a line absent here may be named in any. */
+  lineForms?: Readonly<Record<string, readonly string[]>>;
   /** How an agent line is held (render/agentLine.ts): its word budget on each channel, style.yaml's `avoid` and the judge's `refuseAt`. */
   style: RenderStyle;
 }
@@ -240,10 +254,12 @@ export interface AgentRunner {
 }
 
 /**
- * How long a turn waits for the agent's answer by default, ms: 1200 on a call (the measured p95 and 300
- * ms, rounded; the agent-mode design, "Measured") and 3000 in a chat.
+ * How long a turn waits for the agent's answer by default, ms: 1800 on a call, the bar's p95 (the
+ * agent-mode design, call 36: a turn that asks the model twice, shown a seen tool's result, took up to
+ * 1.75 s in apps/wheelshop's recording, where the first default, 1200, the p95 of a single asking and
+ * 300 ms, would have cut most of them), and 4000 in a chat.
  */
-export const DEFAULT_AGENT_TIMEOUT_MS: Readonly<{ voice: number; chat: number }> = Object.freeze({ voice: 1200, chat: 3000 });
+export const DEFAULT_AGENT_TIMEOUT_MS: Readonly<{ voice: number; chat: number }> = Object.freeze({ voice: 1800, chat: 4000 });
 
 /** The range an agent budget may be set in, ms. */
 export const AGENT_TIMEOUT_RANGE: Readonly<{ min: number; max: number }> = Object.freeze({ min: 300, max: 15_000 });

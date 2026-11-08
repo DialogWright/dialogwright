@@ -13,6 +13,9 @@ const ctx: AgentContext = {
   facts: {
     name: 'Example Service Desk',
     voice: 'Warm, plain and brief, like the person at the front desk.',
+    kind: 'a service desk',
+    owner: 'Dana',
+    oneOwner: true,
     says: ['Most requests are answered the same day.', 'The desk is at 12 Example Street, Rivergate.'],
     background: ['The desk is run by one person, who is often away from the phone.'],
     fixed: { price: 'Every request is priced after a person has looked at it.', handoff: 'I will have someone call you back. What is the best number?' },

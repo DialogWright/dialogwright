@@ -645,8 +645,8 @@ export function integer(env: Env, name: string, fallback: number): number {
 
 /**
  * An app in agent mode's settings (core/agentTurn.ts; guide 14.12): how long a turn waits for the agent
- * model's answer, AGENT_TIMEOUT_VOICE_MS on a call (default 1200) and AGENT_TIMEOUT_CHAT_MS in a chat
- * (default 3000), each a whole number of ms from 300 to 15000, each channel set on its own. Past it the
+ * model's answer, AGENT_TIMEOUT_VOICE_MS on a call (default 1800) and AGENT_TIMEOUT_CHAT_MS in a chat
+ * (default 4000), each a whole number of ms from 300 to 15000, each channel set on its own. Past it the
  * turn says its fixed fallback (the next field's question). Read per app, as the renderer's settings are.
  */
 export function agentSettings(env: Env): { timeoutMs: { voice: number; chat: number } } {

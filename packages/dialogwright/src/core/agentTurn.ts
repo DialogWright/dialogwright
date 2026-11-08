@@ -275,8 +275,9 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
   const earlier = maskedConversation(app, session.slots, allSlots, session.agent?.conversation ?? []);
   const p = session.principal;
   const form = session.form !== null && agent.forms[session.form] !== undefined ? { name: session.form, about: agent.forms[session.form]!.about } : null;
-  // The fixed lines the answer may name in place of its reply (the price line): those the facts have.
-  const lines = Object.keys(agent.lines).filter((l) => Object.hasOwn(agent.facts.fixed, l));
+  // The fixed lines the answer may name in place of its reply (the price line): those the facts have, and
+  // with a form open only those the business allows in it (prices.forms).
+  const lines = Object.keys(agent.lines).filter((l) => Object.hasOwn(agent.facts.fixed, l) && lineAllowed(app, l, session.form));
   return {
     facts: agent.facts,
     examples: [...agent.examples],
@@ -295,7 +296,7 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
 }
 
 /**
- * What a trace keeps of what the agent was sent (TraceRecord.agentSent): the form, the fields with their
+ * What a trace keeps of what the agent was sent (TraceRecord.agent.sent): the form, the fields with their
  * values masked as they were sent, the actions it might propose, the conversation (masked as sent), and
  * the turn's circumstances. Not the facts and sample replies, which are the app's own and the same all call.
  */
@@ -478,6 +479,7 @@ function slotNamed(app: App, field: string): SlotId | undefined {
 /** The answer's values checked by their fields' slot types and the accepted ones stored (see the top). */
 function applyValues(app: App, s: Session, values: readonly { field: string; value: string; words: string }[], said: string, tc: TurnContext, record: AgentTurnRecord): Applied {
   const out: Applied = { events: [], refused: null, changed: false };
+  const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string }; before: Session['slots'][string] }[] = [];
   const fields = s.form !== null ? (app.agent!.forms[s.form]?.fields ?? []) : [];
   const locale = slotLocaleOf(s);
   for (const v of values) {
@@ -485,6 +487,15 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     if (field === undefined) {
       const slot = slotNamed(app, v.field);
       record.values.push({ field: v.field, ...(slot !== undefined ? { slot } : {}), value: v.value, words: v.words, outcome: 'field' });
+      continue;
+    }
+    // The value the field holds, given back as the model was shown it (masked where the records hide it:
+    // "...0177" at a callback number's read-back): no new value, nor a correction, so nothing to check and
+    // nothing changed (the wheelshop recording: a yes at the callback note's read-back, the number restated
+    // masked, was refused as a correction and the read-back set aside).
+    const onFile = s.slots[field.slot];
+    if (onFile !== undefined && onFile.value !== null && restatesHeld(app, field, onFile, v.value)) {
+      record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'accepted', shown: onFile.display ?? String(onFile.value) });
       continue;
     }
     const spec = app.slots[field.slot] as BuiltSlotSpec | undefined;
@@ -497,6 +508,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
       continue;
     }
     const slot = s.slots[field.slot]!;
+    if (field.freeFrom !== undefined) held.push({ field, proposed, before: { ...slot } });
     if (slot.value !== check.value) out.changed = true;
     Object.assign(slot, { value: check.value, display: check.shown, confirmed: false, window: null, by: 'agent' as const });
     delete slot.declined;
@@ -504,16 +516,65 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     record.values.push({ ...proposed, outcome: 'accepted', shown: check.shown });
     out.events.push({ slot: field.slot, outcome: { kind: 'filled', value: check.value, display: check.shown, confidence: 1, confirm: 'none' } });
   }
+  // A value that must be free (business.yaml's `freeFrom`), once every value of the answer is in (the day may
+  // come with it): where the model has been shown the free options for the form's day, one not among them
+  // is refused (`range`), its slot as it was, so the line never takes, or promises, an option that is full.
+  for (const { field, proposed, before } of held) {
+    const slot = s.slots[field.slot]!;
+    const free = freeOptions(app, s, field, tc);
+    if (free === null || slot.value === null || free.includes(String(slot.value))) continue;
+    Object.assign(slot, before);
+    const at = record.values.findIndex((r) => r.slot === field.slot && r.outcome === 'accepted' && r.value === proposed.value);
+    if (at !== -1) {
+      const { shown: _shown, ...rest } = record.values[at]!;
+      record.values[at] = { ...rest, outcome: 'range' };
+    }
+    const filled = out.events.findIndex((e) => e.slot === field.slot && e.outcome.kind === 'filled');
+    if (filled !== -1) out.events.splice(filled, 1);
+    out.events.push({ slot: field.slot, outcome: { kind: 'invalid', reason: 'agent-range', raw: '' } });
+    out.refused ??= field.slot;
+  }
   return out;
+}
+
+/** Whether `value` is the held value as the field holds it, shows it, or was sent it masked (agent/prompt.ts fieldValueSent). */
+function restatesHeld(app: App, field: AgentAppField, held: { value: unknown; display?: string | null }, value: string): boolean {
+  const redact = app.slots[field.slot]?.redact as AgentField['redact'];
+  const forms = [String(held.value), ...(held.display != null ? [held.display] : [])];
+  return forms.some((f) => f === value || (redact !== undefined && fieldValueSent({ value: f, redact }) === value));
+}
+
+/**
+ * The options free for a `freeFrom` field (AgentAppField.freeFrom), by their keys: the list in the latest
+ * result kept on the call (Session.agent.seen, or on a second resolution the results it was asked again with) of its tool for the value the form's seeing field holds now
+ * (the day); null where there is none yet (the model has not been shown it: its value stands, and the
+ * model is asked again with the result, core/agentTurn.ts step 3a) or the list is not one of words.
+ */
+function freeOptions(app: App, s: Session, field: AgentAppField, tc: TurnContext): string[] | null {
+  const from = field.freeFrom!;
+  const form = s.form !== null ? app.agent!.forms[s.form] : undefined;
+  const seer = form?.fields.find((f) => f.sees === from.tool);
+  const day = seer !== undefined ? s.slots[seer.slot]?.value : null;
+  if (day === null || day === undefined) return null;
+  // The results kept on the call, and on a second resolution those the model was just asked again with.
+  const kept = [...(s.agent?.seen ?? []), ...(tc.agentSeen?.seen ?? [])].reverse().find((x) => x.tool === from.tool && x.value === String(day));
+  const list = kept !== undefined && typeof kept.result === 'object' && kept.result !== null ? (kept.result as Record<string, unknown>)[from.list] : undefined;
+  return Array.isArray(list) && list.every((x) => typeof x === 'string') ? (list as string[]) : null;
 }
 
 /** Whether an answer understood nothing: no value, no action, nothing from the facts (a miss, which speech over a line sets aside). */
 const understoodNothing = (a: AgentAnswer): boolean => a.values.length === 0 && a.action === NO_ACTION && !a.fromFacts && (a.fixedLine === undefined || a.fixedLine === NO_ACTION);
 
-/** The fixed line an answer names in place of its reply (AgentAnswer.fixedLine), with the prompt it is said through, where the app has it; else null. */
-function fixedLineOf(app: App, answer: AgentAnswer | null): { name: string; promptId: string } | null {
+/** Whether a fixed line may be named with `form` open (AgentApp.lineForms: business.yaml's `prices.forms`): with no form open, or a line no form list limits, always. */
+function lineAllowed(app: App, line: string, form: FormId | null): boolean {
+  const forms = app.agent?.lineForms?.[line];
+  return form === null || forms === undefined || forms.includes(form);
+}
+
+/** The fixed line an answer names in place of its reply (AgentAnswer.fixedLine), with the prompt it is said through, where the app has it and allows it in the form open; else null. */
+function fixedLineOf(app: App, answer: AgentAnswer | null, form: FormId | null): { name: string; promptId: string } | null {
   const name = answer?.fixedLine;
-  if (name === undefined || name === NO_ACTION) return null;
+  if (name === undefined || name === NO_ACTION || !lineAllowed(app, name, form)) return null;
   const promptId = app.agent?.lines[name];
   return promptId !== undefined && Object.hasOwn(app.prompts.manifest, promptId) ? { name, promptId } : null;
 }
@@ -649,8 +710,21 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
   };
 
   // An answer that names a fixed line (the price line): that line said whole before the turn's own, never the reply.
-  const fixed = fixedLineOf(app, answer);
-  return withFixedLine(answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null }), fixed, record);
+  const named = answer?.fixedLine !== undefined && answer.fixedLine !== NO_ACTION;
+  const fixed = fixedLineOf(app, answer, s.form);
+  const handled = answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null });
+  // A line named where the business does not allow it (prices.forms), with the form open before the turn or
+  // the one it opened: not said, and nor is the reply written to stand beside it; the turn's own line is.
+  if (named && (fixed === null || !lineAllowed(app, fixed.name, s.form))) return withoutAgentReply(handled, record);
+  return withFixedLine(handled, fixed, record);
+}
+
+/** A turn said without the agent's reply: its own line alone. */
+function withoutAgentReply(h: Handled, record: AgentTurnRecord): Handled {
+  if (h.decision.kind !== 'prompt' || h.decision.agent === undefined) return h;
+  const { agent: _reply, ...decision } = h.decision;
+  record.replySaid = false;
+  return { ...h, decision };
 }
 
 /** The words turn once the answer is recorded (agentWords): the read-back's, or the form's (steps 1 to 6 at the top). */

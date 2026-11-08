@@ -310,6 +310,14 @@ describe('the code an agent-mode app writes', () => {
     expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, roomAvailability: unchecked } })).toEqual([`${at}the tool declares no reply check`]);
   });
 
+  it('a field free from a seen result (freeFrom) needs the list its tool\'s check names', () => {
+    const seen = TOOLS.roomAvailability!;
+    expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, roomAvailability: { ...seen, check: replyShape.object({ day: replyShape.isoDate(), free: replyShape.list(replyShape.oneOf(['morning', 'afternoon'])) }) } } }))
+      .toEqual(['business.yaml booking.fields[2].freeFrom: the field "window" is free from "roomAvailability.windows", but the reply check of "roomAvailability" names no list "windows", so the model is never shown it']);
+    expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, roomAvailability: { ...seen, check: replyShape.object({ day: replyShape.isoDate(), windows: replyShape.oneOf(['morning']) }) } } }))
+      .toEqual(['business.yaml booking.fields[2].freeFrom: the field "window" is free from "roomAvailability.windows", but the reply check of "roomAvailability" names no list "windows", so the model is never shown it']);
+  });
+
   it('a tool whose params are not its form\'s values is refused', () => {
     expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, noteCallback: { ...TOOLS.noteCallback!, params: ['phone'] } } })).toEqual([
       'business.yaml callback.then[0]: the tool "noteCallback" lists the params [phone], but every call the callback makes carries its values, [callbackNumber]',

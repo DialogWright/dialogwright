@@ -69,7 +69,9 @@ function split(conversation: readonly AgentUtterance[]): { earlier: readonly Age
 export function agentMessages(ctx: AgentContext): { system: string; user: string } {
   const f = ctx.facts;
   const persona = tag('persona', [
-    `You are the phone and chat line of ${f.name}, talking with a caller.`,
+    `You are the phone and chat line of ${f.name}${f.kind !== undefined ? `, ${f.kind}` : ''}, talking with a caller.`,
+    ...(f.owner !== undefined ? [`The owner is ${f.owner}. You are the line, never ${f.owner}.`] : []),
+    ...(f.oneOwner === true ? [`${f.owner ?? 'The owner'} works alone: there is no team, no staff and no one else to speak of.`] : []),
     f.voice.trim(),
   ].join('\n'));
 

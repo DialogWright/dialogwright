@@ -62,6 +62,9 @@ const field = z
       .regex(/^\d{1,3}$/, 'countryCode is one to three digits, such as "1"')
       .optional()
       .describe('With offer: callerNumber, the country calling code the carrier writes before the number ("1" for +1), taken off the number calling to fill the field. Default "1".'),
+    freeFrom: matching(/^[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*$/, 'is not a tool and a list of its result ("availability.windows")', 'write the tool a field of the same form sees, a dot, and the field of its result that lists the free options, for example "availability.windows"')
+      .optional()
+      .describe('A choice field whose value must be free: <tool>.<list>, a tool a field of the same form sees (`sees`) and the field of its checked result that lists the free options, by their keys (availability.windows). Once the model has been shown that result, a value not in its list is refused (range), and the model is asked again with what is free, so the line never takes, or promises, a full option. Only on a choice field. Default: none.'),
     sees: identifier()
       .optional()
       .describe('A tool whose result the agent model may see once the field is filled (the maintainer\'s decision 2): the tool, in the app\'s code, is called through the gate with the field\'s value, and its result, checked by the tool\'s reply check in a closed form, reaches the model. For example availability, for a day.'),
@@ -138,6 +141,10 @@ export const businessSchema = z
       .strictObject({
         quote: text().optional().describe('How a price is given, for the agent model ("at the desk"). Never a figure.'),
         say: text().describe('The price line, said word for word when a caller asks about price: the line never says a figure.'),
+        forms: unique(z.enum(BUSINESS_FORMS), 'form')
+          .min(1, { error: 'must name at least one form' })
+          .optional()
+          .describe('The forms in which the agent model may name the price line: with another form open, it is not offered (and not said if named), so a price line about one kind of work is never said in another ("[request]": dealership bookings are billed otherwise). With no form open it is offered. Default: every form.'),
       })
       .optional()
       .describe('How prices are given. Without it, the line has no price line to say.'),

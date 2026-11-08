@@ -111,6 +111,12 @@ async function call(script: Record<string, Scripted>, steps: (string | Step)[], 
 const heard = (r: TurnRun): string => spokenText(app, r.result.decision);
 const promptOf = (r: TurnRun): string | undefined => ('promptId' in r.result.decision ? r.result.decision.promptId : undefined);
 const value = (r: TurnRun, slot: string): string | null => r.result.session.slots[slot]!.value;
+/** A turn that handed the caller to a person: the callback note begun, with the handoff's line said first (its id); null for any other. */
+const handedToPerson = (r: TurnRun): string | null => {
+  const d = r.result.decision;
+  if (d.kind !== 'prompt' || r.result.session.form !== 'callback') return null;
+  return d.acks.find((a) => a.promptId.startsWith('handoff_'))?.promptId ?? null;
+};
 const toolCalls = (c: Call, tool: string) => c.runs.flatMap((r) => r.result.gateEvents.filter((e) => e.decision.call.tool === tool));
 
 const HOLD = 'I would like to place a hold on The Quiet Harbor';
@@ -317,6 +323,47 @@ describe('the agent turn: who may book (review focus 3)', () => {
   });
 });
 
+describe('the agent turn: what the business limits (prices.forms, freeFrom)', () => {
+  const BOOK = 'I would like the study room for four people on Saturday';
+  const SATURDAY = '2026-11-14'; // its afternoon is taken
+
+  it('the price line is offered, and said, only in the forms prices.forms names: in the booking it is not offered, and named there, neither it nor the reply is said', async () => {
+    const FEE = 'and what does it cost';
+    const c = await call({ [BOOK]: said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday']]), [FEE]: { ...said('It is ten dollars, the fee line says.'), fixedLine: 'price' } as AgentAnswer }, [BOOK, FEE], { number: CLUB });
+    // Asked twice on the first turn (the day's result shown); the third asking is the fee question, in the booking.
+    const inBooking = c.contexts.at(-1)!;
+    expect(inBooking.form?.name).toBe('booking');
+    expect(inBooking.lines).toBeUndefined();
+    expect(heard(c.last)).toBe('Morning or afternoon?');
+    expect(c.last.record.agent).toMatchObject({ replySaid: false });
+    expect(c.last.record.agent?.fixedLine).toBeUndefined();
+    // In the request it is offered.
+    const r = await call({ [HOLD]: { ...said(''), fixedLine: 'price' } as AgentAnswer }, [HOLD]);
+    expect(r.contexts[0]!.lines).toEqual(['price']);
+    expect(heard(r.last)).toContain('Fees are explained at the desk');
+  });
+
+  it('a window its day\'s result lists as taken is refused (freeFrom): the model asked again with it, and "the afternoon works" never said', async () => {
+    const values: [string, string, string][] = [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'afternoon', 'afternoon']];
+    const AFTERNOON = `${BOOK} afternoon`;
+    const c = await call({ [AFTERNOON]: said('Saturday afternoon works.', values) }, [AFTERNOON], { number: CLUB });
+    // Asked once, then again with the result: both answers kept the afternoon.
+    expect(c.contexts).toHaveLength(2);
+    expect(c.contexts[1]!.seen).toEqual([{ tool: 'roomAvailability', result: { day: SATURDAY, windows: ['morning'] } }]);
+    expect(value(c.last, 'booking_window')).toBeNull();
+    expect(c.last.record.agent!.values.find((v) => v.field === 'window')).toMatchObject({ value: 'afternoon', outcome: 'range' });
+    expect(heard(c.last)).not.toContain('afternoon works');
+    expect(promptOf(c.last)).toBe('ask_booking_window_retry');
+    // Given on a later turn, once the result is kept: refused at once, nothing asked again.
+    const later = await call({ [BOOK]: said('Lovely.', values.slice(0, 2)), 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]) }, [BOOK, 'the afternoon'], { number: CLUB });
+    expect(value(later.last, 'booking_window')).toBeNull();
+    expect(heard(later.last)).not.toContain('afternoon is yours');
+    // A free one is taken.
+    const free = await call({ [BOOK]: said('Lovely.', values.slice(0, 2)), 'the morning': said('Morning it is.', [['window', 'morning', 'morning']]) }, [BOOK, 'the morning'], { number: CLUB });
+    expect(value(free.last, 'booking_window')).toBe('morning');
+  });
+});
+
 describe('the agent turn: what the decision model decides alone', () => {
   it('side speech drops the agent\'s answer', async () => {
     const c = await call({ [HOLD]: HOLD_ANSWER, 'honey, the book is called The Quiet Harbor': said('Thanks.', [['patronName', 'Honey', 'honey']]) }, [HOLD, 'honey, the book is called The Quiet Harbor']);
@@ -374,13 +421,23 @@ describe('the agent turn: a slow or failed model', () => {
     expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid', detail: 'the answer is not JSON' });
   });
 
-  it('two failures in a row end with the handoff line; one answer between resets the count', async () => {
+  it('two failures in a row end with the handoff line, then the callback note; one answer between resets the count', async () => {
     const twice = await call({ [HOLD]: { fail: 'error' }, 'Avery Lane': { fail: 'timeout' } }, [HOLD, 'Avery Lane']);
     expect(promptOf(twice.runs[1]!)).toBe('ask_request_patronName');
-    expect(twice.last.result.decision).toMatchObject({ kind: 'handoff', reason: 'system-failure' });
-    expect(heard(twice.last)).toBe("I'll have someone from the desk call you back.");
+    expect(handedToPerson(twice.last)).toBe('handoff_system_failure');
+    expect(heard(twice.last)).toBe("I'll have someone from the desk call you back. Is the number you're calling from, ending in 0199, the best one to reach you?");
     const between = await call({ [HOLD]: { fail: 'error' }, 'Avery Lane': said('Thanks.', [['patronName', 'Avery Lane', 'Avery Lane']]), 'two copies': { fail: 'timeout' } }, [HOLD, 'Avery Lane', 'two copies']);
     expect(between.last.result.decision.kind).toBe('prompt');
+  });
+
+  it('every handoff opens the callback note where the business has one; a failure of the callback note itself ends with the handoff statement', async () => {
+    // Two failures mid-request: the handoff's line, then the note (above). In the note itself: the statement, the call handed off.
+    const PERSON = 'can I talk to a person';
+    const c = await call({ 'umm': { fail: 'error' }, 'err': { fail: 'timeout' } }, [PERSON, 'no', 'umm', 'err']);
+    expect(c.runs[1]!.result.session.form).toBe('callback');
+    expect(promptOf(c.runs[2]!)).toBe('ask_callback_callbackNumber');
+    expect(c.last.result.decision).toMatchObject({ kind: 'handoff', reason: 'system-failure' });
+    expect(heard(c.last)).toBe("I'll have someone from the desk call you back.");
   });
 
   it('a call begun with no agent client (no key) runs as a scripted app: the decision model asks the fields\' questions', async () => {
@@ -438,14 +495,14 @@ describe('the review of Task 6', () => {
     expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'timeout' });
     // A second failure in a row there hands off; nothing is filed still.
     const twice = await call({ ...toReadBack, 'yes, but make it three': { fail: 'timeout' }, 'yes': { fail: 'invalid' } }, [HOLD, DETAILS, 'yes, but make it three', 'yes']);
-    expect(twice.last.result.decision).toMatchObject({ kind: 'handoff', reason: 'system-failure' });
+    expect(handedToPerson(twice.last)).toBe('handoff_system_failure');
     expect(twice.sys.holds).toEqual([]);
   });
 
   it('a refused value counts an attempt on its slot and walks its ladder to the slot\'s escape', async () => {
     const wrong = said('Thursday it is.', [['day', '2026-11-12', 'Thursday']]);
     const c = await call({ [HOLD]: HOLD_ANSWER, 'some day': wrong, 'some other day': wrong, 'whenever': wrong, 'any day': wrong }, [HOLD, 'some day', 'some other day', 'whenever', 'any day']);
-    const asked = c.runs.slice(2).map((r) => (r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
+    const asked = c.runs.slice(2).map((r) => (handedToPerson(r) !== null ? 'handoff' : r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
     expect(c.runs.slice(2).map((r) => r.result.session.slots.request_day!.attempts).slice(0, 2)).toEqual([1, 2]);
     expect(asked[0]).toBe('ask_request_day_retry');
     // The ladder ends where a scripted miss's does: the keypad rung or a person, never the question forever.
@@ -518,6 +575,13 @@ describe('the review of Task 6', () => {
     expect(no.sys.notes).toEqual([]);
   });
 
+  it('a yes at a read-back that gives back a held value as the model was shown it (masked) completes: no correction, nothing refused', async () => {
+    const c = await call({ ...toReadBack, 'yes please': said('Great.', [['callbackNumber', '...0144', 'yes please']]) }, [HOLD, DETAILS, 'yes please']);
+    expect(c.sys.holds).toHaveLength(1);
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'callbackNumber', value: '...0144', outcome: 'accepted' }]);
+    expect(c.sys.holds[0]).toMatchObject({ callbackNumber: '5555550144' });
+  });
+
   it('a second bare no reads the read-back again on its ladder', async () => {
     const c = await call({ ...toReadBack, no: said('What should I change?'), 'no.': said('Okay.') }, [HOLD, DETAILS, 'no', 'no.']);
     const [, , , first, second] = c.runs;
@@ -562,7 +626,7 @@ describe('the review of Task 6', () => {
   it('words that settle nothing at the read-back walk its ladder: the keypad rung, then a person', async () => {
     const ums = ['um', 'umm', 'ummm', 'uh', 'uhh', 'uhhh'];
     const c = await call({ ...toReadBack, ...Object.fromEntries(ums.map((u) => [u, said('Sorry?')])) }, [HOLD, DETAILS, ...ums]);
-    const after = c.runs.slice(3).map((r) => (r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
+    const after = c.runs.slice(3).map((r) => (handedToPerson(r) !== null ? 'handoff' : r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
     expect(after).toContain('confirm_dtmf');
     expect(after).toContain('handoff');
     expect(after.indexOf('confirm_dtmf')).toBeLessThan(after.indexOf('handoff'));
@@ -579,7 +643,7 @@ describe('the review of Task 6', () => {
     // The first is an aside, uncounted; the second in a row counts, as any other turn.
     expect(after[0]!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 0, aside: true });
     expect(after[1]!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
-    const ids = after.map((r) => (r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
+    const ids = after.map((r) => (handedToPerson(r) !== null ? 'handoff' : r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
     expect(ids).toContain('confirm_dtmf');
     expect(ids).toContain('handoff');
     expect(ids.indexOf('confirm_dtmf')).toBeLessThan(ids.indexOf('handoff'));

@@ -1,7 +1,7 @@
 import type { AgentApp, AgentAppField, AgentAppForm } from '../agent/types';
 import type { App, Completion, CompletionContext, FactsConfig, SummaryContext, ToolDef } from '../core/app/types';
 import type { Session, SessionFacts } from '../core/session';
-import { openPart, replyShape } from '../core/replyShape';
+import { openPart, replyShape, shapeOf } from '../core/replyShape';
 import { isAnonymous, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, slotIdOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
@@ -38,6 +38,17 @@ import type { BusinessFieldYaml, BusinessFormName, BusinessYaml } from './schema
  * model. No turn runs in agent mode here: core/agentTurn.ts reads App.agent.
  */
 
+/** Whether a reply check names `list` as a list of its object (replyShape.object({ [list]: replyShape.list(...) })), through nullable and all. */
+function checkNamesList(check: unknown, list: string): boolean {
+  const shape = shapeOf(check);
+  if (shape === undefined) return false;
+  if (shape.kind === 'nullable') return checkNamesList(shape.of, list);
+  if (shape.kind === 'all') return shape.of.some((c) => checkNamesList(c, list));
+  if (shape.kind !== 'object' || !Object.hasOwn(shape.fields, list)) return false;
+  const inner = shapeOf(shape.fields[list]);
+  return inner?.kind === 'list' || (inner?.kind === 'nullable' && shapeOf(inner.of)?.kind === 'list');
+}
+
 /** App.agent for an app built from business.yaml (`style`: style.yaml's `agent`, as read). */
 export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): AgentApp {
   const forms: Record<string, AgentAppForm> = {};
@@ -54,6 +65,7 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
         ...(options !== undefined ? { options } : {}),
         required: f.optional !== true,
         ...(f.sees !== undefined ? { sees: f.sees } : {}),
+        ...(f.freeFrom !== undefined ? { freeFrom: { tool: f.freeFrom.split('.')[0]!, list: f.freeFrom.split('.')[1]! } } : {}),
       };
     });
     forms[name] = { about: form.about ?? name, fields, then: [...form.then], ...(name === 'booking' ? { for: 'accounts' as const } : {}) };
@@ -67,6 +79,8 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
     model: { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL.model, effort: chosen?.effort ?? DEFAULT_AGENT_MODEL.effort },
     // The price line, where the business has one: an answer may name it in place of its reply, so a price is never worded.
     lines: b.prices !== undefined ? { price: PRICE_PROMPT } : {},
+    // The forms the price line may be named in (prices.forms), where the business limits it.
+    ...(b.prices?.forms !== undefined ? { lineForms: { price: [...b.prices.forms] } } : {}),
     // How a reply is held: style.yaml's word budget, its phrases to avoid and its judge's cutoff (render/agentLine.ts).
     style: styleOf(style),
   };
@@ -327,6 +341,15 @@ export function businessCodeProblems(b: BusinessYaml, code: AppCode, codeFile: s
         const open = openPart(def.check);
         if (open !== null) inYaml([name, 'fields', i, 'sees'], `the field "${f.name}" sees "${f.sees}", whose result is shown to the agent model, but its reply check is not a closed form: ${open}`, `check that field of code.tools.${f.sees} in ${codeFile} with a closed form of replyShape (oneOf, digits, code, isoDate, amount, number, boolean), or leave it out of the check, so it is never shown`);
       }
+    });
+    // A field free from a seen result names a list the tool's check names: what is never checked is never shown.
+    form.fields.forEach((f, i) => {
+      if (f.freeFrom === undefined) return;
+      const [tool, list] = f.freeFrom.split('.') as [string, string];
+      const def = tools[tool];
+      // A tool with no check, or one not closed, is refused above, at its sees.
+      if (def?.check === undefined || openPart(def.check) !== null || !form.fields.some((o) => o.sees === tool)) return;
+      if (!checkNamesList(def.check, list)) inYaml([name, 'fields', i, 'freeFrom'], `the field "${f.name}" is free from "${f.freeFrom}", but the reply check of "${tool}" names no list "${list}", so the model is never shown it`, `check "${list}" in code.tools.${tool}.check in ${codeFile} as a list (replyShape.list(replyShape.oneOf([...]))), or name the list it checks`);
     });
   }
   // The tools seen by fields of two forms: each called with one field's value, the same name in both.

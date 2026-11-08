@@ -128,6 +128,16 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
     if (unsaid.length > 0) {
       report(at(['readBack']), `the read-back does not say ${unsaid.map((v) => `{${v}}`).join(', ')}, so the caller would confirm a value they never heard`, `add ${unsaid.map((v) => `{${v}}`).join(', ')} to the read-back, or make the field optional`);
     }
+    // A value that must be free is checked against a result a field of the same form is shown (`freeFrom`).
+    form.fields.forEach((f, i) => {
+      if (f.freeFrom === undefined) return;
+      const [tool] = f.freeFrom.split('.');
+      if (f.type !== 'choice') report(at(['fields', i, 'freeFrom']), `only a choice field may be free from a seen result, and "${f.name}" is ${f.type}`, 'delete "freeFrom", or make the field a choice');
+      if (!form.fields.some((o) => o.sees === tool)) {
+        const seen = form.fields.flatMap((o) => (o.sees !== undefined ? [o.sees] : []));
+        report(at(['fields', i, 'freeFrom']), `"${tool}" is no tool a field of the ${name} sees, so no result of it is ever shown for this form`, seen.length > 0 ? `name one of ${seen.map((t) => `"${t}"`).join(', ')}` : `give a field of the ${name} "sees: ${tool}", or delete "freeFrom"`);
+      }
+    });
     // A tool a form calls after the read-back is not one a field sees: the two are called with other values.
     const seenHere = new Set(form.fields.flatMap((f) => (f.sees !== undefined ? [f.sees] : [])));
     form.then.forEach((tool, i) => {
@@ -168,6 +178,11 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
       else owner.set(tool, name);
     });
   }
+
+  // The forms the price line may be named in are forms the file has.
+  (b.prices?.forms ?? []).forEach((f, i) => {
+    if (!forms.some((x) => x.name === f)) report(['prices', 'forms', i], `the price line may be named in the ${f}, but the file has no ${f}`, `name ${forms.map((x) => `"${x.name}"`).join(', ')}, or add "${f}:"`);
+  });
 
   if (b.booking !== undefined && (b.accounts ?? []).length === 0) {
     report(['booking', 'for'], 'the booking is for accounts, but the file lists no accounts, so no caller could book', 'add "accounts:", each with its name and the numbers it calls from, or delete the booking');
@@ -302,6 +317,10 @@ export function factsOf(b: BusinessYaml): AgentFacts {
   return {
     name: (b.business.says ?? b.business.name).trim(),
     voice: b.business.voice.trim(),
+    // The persona's own facts (business.kind, owner, oneOwner): who the line speaks for.
+    ...(b.business.kind !== undefined ? { kind: b.business.kind.trim() } : {}),
+    ...(b.business.owner !== undefined ? { owner: b.business.owner.trim() } : {}),
+    ...(b.business.oneOwner !== undefined ? { oneOwner: b.business.oneOwner } : {}),
     says,
     background: [...(b.background ?? [])],
     fixed,

@@ -87,7 +87,7 @@ describe('the agent model in the run', () => {
     const o = opts(slowJev(0), agent);
     const s = await started(o, true);
     await runTurn(s, textEvent('I would like a hold on The Quiet Harbor'), o);
-    expect(budget).toBe(3000);
+    expect(budget).toBe(4000);
   });
 
   it('is not asked at the call\'s start, on silence, or at the offer of the caller\'s number', async () => {

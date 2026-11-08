@@ -2740,6 +2740,24 @@ function uncheckedHandoff(s: Session, decision: Decision, unchecked: readonly Un
   return { ...handed, ...(own ? {} : { promptId: handoffPromptId('needs-human') }), unchecked: [...unchecked] };
 }
 
+/**
+ * A handoff in an app whose person is a form (App.personForm, agent mode: a callback note where there is no
+ * live transfer): the handoff's line, then the person form, so a caller handed off for any reason (frustration,
+ * attempts run out, a system's failure, a person needed) leaves a note rather than hear "someone will call
+ * you" with no number taken. The handoff of the person form itself (it was open before the turn or is now)
+ * stays the handoff statement, and so does one for a downstream reply that failed its check
+ * (`result-unchecked`), whose record goes with the handoff to the person who reads it. Every other app's
+ * handoff is as always.
+ */
+function handoffToPersonForm(s: Session, before: Session, decision: Decision, io: TurnIO): Decision {
+  const person = io.app.personForm;
+  if (decision.kind !== 'handoff' || person === undefined || decision.reason === RESULT_UNCHECKED) return decision;
+  if (s.form === person.form || before.form === person.form || s.ended) return decision;
+  s.pendingConfirmation = null;
+  s.pendingHash = null;
+  return enterForm(s, person.form, {}, slotContext(s, '', io.tc), io, undefined, undefined, { acks: [...decision.acks, { promptId: decision.promptId, vars: {} }] }).decision;
+}
+
 /** The purpose the call-start lookup is made with (app.yaml's `callerNumber.lookup`): a gate decision and the audit say what it was. */
 export const CALLER_LOOKUP_PURPOSE = 'caller-lookup';
 
@@ -3311,7 +3329,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   // A reply that did not pass its tool's check this turn ends the turn with a person, whatever the
   // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
   const settle = (decision: Decision, label: string): Decision => {
-    const settled = uncheckedHandoff(s, decision, io.out.unchecked);
+    const settled = handoffToPersonForm(s, session, uncheckedHandoff(s, decision, io.out.unchecked), io);
     // A slot's own question with the values its lines may say (a record slot's {choices}).
     withQuestionVars(io.app, settled, () => slotContext(s, '', tc));
     bookkeep(s, settled, label);

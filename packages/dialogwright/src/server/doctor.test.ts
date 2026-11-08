@@ -938,7 +938,7 @@ describe('agent mode (pnpm diagnose)', () => {
   });
 
   it('is ok with the key, and says the budgets; a budget out of range fails', () => {
-    expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x' })).toEqual([{ id: 'agent', status: 'ok', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), key in INCEPTION_API_KEY, within 1200 ms on a call and 3000 ms in a chat" }]);
+    expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x' })).toEqual([{ id: 'agent', status: 'ok', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), key in INCEPTION_API_KEY, within 1800 ms on a call and 4000 ms in a chat" }]);
     expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x', AGENT_TIMEOUT_VOICE_MS: '100' })[0]).toMatchObject({ id: 'agent', status: 'fail' });
   });
 

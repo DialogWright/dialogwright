@@ -31,6 +31,7 @@ export const styleSchema = z
       .strictObject({
         voice: z.int({ error: 'must be a whole number' }).min(3, { error: 'must be at least 3' }).max(200, { error: 'must be at most 200' }).optional().describe(`The most words a generated line may use on a call. Default ${DEFAULT_WORDS.voice}.`),
         chat: z.int({ error: 'must be a whole number' }).min(3, { error: 'must be at least 3' }).max(400, { error: 'must be at most 400' }).optional().describe(`The most words a generated line may use in a chat. Default ${DEFAULT_WORDS.chat}.`),
+        answer: z.int({ error: 'must be a whole number' }).min(3, { error: 'must be at least 3' }).max(400, { error: 'must be at most 400' }).optional().describe('An app in agent mode: the most words a reply of the agent model may use where it answers the caller from the facts (its fromFacts), on either channel, so an explanation from the services fits. Read only in agent mode. Default: the channel\'s budget and half again (45 on a call at the default 30).'),
       })
       .optional()
       .describe('The word budget of a generated line, per channel: a longer one is not said (its fixed line is).'),
