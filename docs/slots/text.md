@@ -415,6 +415,10 @@ place:
 
 </details>
 
+## Checked values
+
+In agent mode the slot checks a value the model understood: not empty and, once written as the slot writes its words (`numbers`, `case`), at most `maxLength` characters. The value need not be a part of the words cited (a short version is allowed), but the words cited must be in what the caller said. It is shown as the display says it (the stand-in, or the words with `say: null`).
+
 ## Notes
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note. A yes to the summary keeps the words too, however the `given` question reads the yes: the caller accepted them. A correction at the summary (a no, an unanswered turn, the slot named as the detail to change) replaces them either way.

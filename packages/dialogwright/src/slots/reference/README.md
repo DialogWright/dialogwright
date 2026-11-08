@@ -31,6 +31,10 @@ On the slot `bookingCode`, `bookingCodeGiven` (yes or no: does the caller state 
 
 <!-- slot-docs:examples -->
 
+## Checked values
+
+A `reference` slot takes no value from outside its fill: its check answers `unsupported`, and an app in agent mode may not use it.
+
 ## Notes
 
 - Masked by its length by default (`redact: length`): a short reference's last four characters would show most of it.

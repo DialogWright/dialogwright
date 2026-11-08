@@ -3,6 +3,7 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
+import { digitsCheck } from './check';
 import { digitsDisplay } from './display';
 import { digitsFill, digitsFit, digitsStartOfValue } from './fill';
 import { digitsOptions, type DigitsOptions } from './options';
@@ -90,6 +91,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
         : {}),
       ...(o.callerNumber !== undefined ? { callerNumber: callerNumberOf(o, display) } : {}),
       display,
+      check: digitsCheck(o, display),
       // Said back one digit at a time on the phone, unless it is a quantity (channel/sayDigits.ts).
       ...(o.sayAs === 'digits' ? { sayAs: 'digits' as const } : {}),
       // On the phone, the words of a number begun held for the rest of it (server/adapter.ts holdWords).

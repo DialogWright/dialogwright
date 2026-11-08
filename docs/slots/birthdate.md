@@ -265,6 +265,10 @@ customerBirth:
 
 </details>
 
+## Checked values
+
+In agent mode (a value the model understood, not one the fill read) the slot checks it: a real ISO day, in `minYear` or later and before today, and the words cited for it must be in what the caller said (whole words, case and punctuation ignored). It is shown as the display says it ("June 14th, 1975").
+
 ## Notes
 
 - Every slot listens on every turn, so the four questions are asked even while the form is on another slot, and "this is about my account, my birthday is June fourteenth seventy five" can fill the birth date on the opening turn.

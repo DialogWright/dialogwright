@@ -46,6 +46,10 @@ caller:
 
 <!-- slot-docs:examples -->
 
+## Checked values
+
+In agent mode the slot checks a value the model understood: not empty and at most 60 characters, and the words cited must be in what the caller said. It is stored as a fill stores a name (lower case, single spaces) and shown title-cased in the call's locale.
+
 ## Notes
 
 - Every slot listens on every turn, so the two questions are asked even while the form is on another slot, and "this is Morgan Ellis, calling about my appointment" can fill the name on the opening turn.

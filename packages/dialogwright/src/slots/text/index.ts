@@ -2,6 +2,7 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
+import { textCheck } from './check';
 import { textDisplay } from './display';
 import { textFill } from './fill';
 import { textOptions, textWording, type TextOptions, type TextWording } from './options';
@@ -93,6 +94,7 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       questions: textQuestions(id, o),
       fill: textFill(o, { given: givenId, pick: pickId, changed: changedId }, display),
       display,
+      check: textCheck(o, display, displaysSaid(o)),
     };
   },
   get examples() {

@@ -56,6 +56,10 @@ account:
 
 <!-- slot-docs:examples -->
 
+## Checked values
+
+In agent mode the slot checks a value the model understood: only digits that fit the slot's `length` and `mask` exactly as a spoken number does, and the words cited must be in what the caller said (a number of nine digits for a `length` of ten is refused). It is shown as the display says it, grouped by `group`.
+
 ## Notes
 
 - Every slot listens on every turn, so the three questions are asked even while the form is on another slot, and "what do I have out on card 5552 0417" can fill the card on the opening turn.

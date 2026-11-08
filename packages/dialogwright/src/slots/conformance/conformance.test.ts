@@ -119,6 +119,20 @@ describe('the correct toy, and the built-in types', () => {
 });
 
 describe('each broken toy fails the check meant to catch it', () => {
+  it('a check that shows a value other than the display says, or takes words never said: value-check', () => {
+    const accepts = (shown: (v: string) => string, saidOnly = true) => (v: string, words: string, said: string) =>
+      saidOnly && !said.includes(words) ? ({ ok: false, reason: 'words' } as const) : ({ ok: true, value: v, shown: shown(v) } as const);
+    expect(failing(toy('toy-check', () => ({ check: accepts((v) => v) })))).toEqual([]);
+    const shownWrong = failures(toy('toy-check-shown', () => ({ check: accepts((v) => v.toUpperCase()) })));
+    expect([...shownWrong.keys()]).toEqual(['value-check']);
+    expect(shownWrong.get('value-check')).toContain('reuse the display');
+    const wordsAny = failures(toy('toy-check-words', () => ({ check: accepts((v) => v, false) })));
+    expect(wordsAny.get('value-check')).toContain('the words cited must be in what the caller said');
+    const refuses = failures(toy('toy-check-refuses', () => ({ check: () => ({ ok: false, reason: 'shape' }) })));
+    expect(refuses.get('value-check')).toContain('check refused the value "hello"');
+    expect(failing(toy('toy-check-unsupported', () => ({ check: () => ({ ok: false, reason: 'unsupported' }) })))).toEqual([]);
+  });
+
   it('a display that disagrees with the fill: display', () => {
     const broken = toy('toy-display', (spec) => ({ display: (v: string) => `"${v}"`, dtmf: spec.dtmf }));
     const f = failures(broken);

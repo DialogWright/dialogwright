@@ -15,7 +15,7 @@ export { meetsThreshold } from './parts/thresholds';
 export { examplesFrom, parseSlotExamples } from './parts/examples';
 export { wordingFor } from './parts/locale';
 export type {
-  BuiltSlotSpec, SlotBuildEnv, SlotTypeDocs, SlotWording, SlotExample, SlotUtterance, ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample,
+  BuiltSlotSpec, SlotCheckContext, SlotValue, SlotValueCheck, ValueCheck, SlotBuildEnv, SlotTypeDocs, SlotWording, SlotExample, SlotUtterance, ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample,
 } from './types';
 export type { ChoiceWording } from './choice/index';
 export type { TextWording } from './text/index';

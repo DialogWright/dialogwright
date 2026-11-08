@@ -84,6 +84,7 @@ The kit (`conformance/`, exported from `dialogwright/testing`, not the root entr
 | `prompts` | Every line an outcome can lead to (a `retryPromptId`, a help prompt, `disambiguate_<slot>` with `a` and `b`, the partial prompt with its variables) is in the slot's `prompts` with the variables it is given. |
 | `prompt-vars` | Every line the slot declares lists only variables the engine gives it: `ack_<slot>` and `confirm_<slot>` get `{<slot>}`, `disambiguate_<slot>` gets `{a}` and `{b}`, the partial prompt gets its `partialVars` (and so does `ask_<slot>` when there is no partial prompt), and `ask_<slot>_dtmf`, `ask_<slot>_retry`, a `retryPromptId` and a help line get none. A line declared with another would pass `dialogwright check` and fail when it is said. A `by-confidence` slot that fills with `confirm: implicit` declares `ack_<slot>`. |
 | `values` | A slot whose `valueKind` is `date` gives ISO dates (`YYYY-MM-DD`) from every fill, candidate and keypad value; every confidence is a number from 0 to 1. |
+| `value-check` | A slot that has a `check` (a value it did not fill, taken from an agent) accepts each value its example utterances fill, with the same `shown` as its display and the same value, and refuses the value when the words cited for it were never said; a type that takes no such value says `unsupported`. A slot with no `check` passes: it cannot be used in an agent-mode app. |
 | `utterances` | Each example utterance gives the outcome it expects, answers only questions the slot asks, and at least one fills the slot. |
 
 In a type's test file:

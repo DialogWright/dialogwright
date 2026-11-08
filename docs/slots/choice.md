@@ -347,6 +347,10 @@ pickup:
 
 </details>
 
+## Checked values
+
+In agent mode the slot checks a value the model understood: an option's key or its `say` text (or how the call's locale says it), matched without regard to case, and the words cited must be in what the caller said. The value stored is the key, shown as the display says it. Anything else is refused as the wrong shape.
+
 ## Notes
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot, and "express, please" said at the start can fill the slot before the form asks for it.

@@ -9,8 +9,38 @@ import type { CatalogTopic, Nomination, SectionNomination, TopicCatalog } from '
  * the contract.
  */
 
+/** What a slot's value is: the string a fill carries (a key, digits, an ISO date, words). */
+export type SlotValue = string;
+
+/** What a check of a value is given beside it: the call's locale (absent: none) and today's date (ISO). */
+export interface SlotCheckContext {
+  readonly locale?: string;
+  readonly today: string;
+}
+
+/**
+ * A value checked: accepted, with the value as the slot stores it and `shown`, the text the type's
+ * display says for it (the same text the read-back says), or refused for one reason. `shape`: not
+ * the form the type holds; `range`: the form, but outside what the slot takes; `words`: the words
+ * cited for it were not said; `unsupported`: the type cannot take a value from outside its fill.
+ */
+export type ValueCheck =
+  | { ok: true; value: SlotValue; shown: string }
+  | { ok: false; reason: 'shape' | 'range' | 'words' | 'unsupported' };
+
+/**
+ * Checks a value the slot did not fill: `words` are the caller's words the value is cited from, and
+ * `said` is everything the caller said on the call. See ./parts/check.ts.
+ */
+export type SlotValueCheck = (value: string, words: string, said: string, ctx: SlotCheckContext) => ValueCheck;
+
 /** What a type builds: a SlotSpec that declares every question id it may ask and every line it may lead to. */
-export type BuiltSlotSpec = SlotSpec & { questionIds: readonly string[]; prompts: readonly SlotPrompt[] };
+export type BuiltSlotSpec = SlotSpec & {
+  questionIds: readonly string[];
+  prompts: readonly SlotPrompt[];
+  /** Checks a value the slot did not fill (agent mode). Absent on a slot written in code. */
+  check?: SlotValueCheck;
+};
 
 /**
  * A slot's wording by locale tag (a locale's slots.yaml, `locale/<tag>/slots.yaml`): for each locale
@@ -84,6 +114,8 @@ export type LibrarySlotSpec<O = unknown> = SlotSpec & {
   readonly config: Readonly<O>;
   /** Its wording by locale, when a locale's slots.yaml gives any (SlotType.wording). */
   readonly wording?: SlotWording;
+  /** Its type's check of a value the slot did not fill (BuiltSlotSpec.check), when the type has one. */
+  readonly check?: SlotValueCheck;
 };
 
 /** One example configuration of a type, with what a caller might say to a slot built from it. */

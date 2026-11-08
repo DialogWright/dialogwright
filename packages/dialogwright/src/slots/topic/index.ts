@@ -3,6 +3,7 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
+import { topicCheck } from './check';
 import { topicDisplay } from './display';
 import { topicFill } from './fill';
 import { DEFAULT_CAP, topicOptions, type TopicOptions } from './options';
@@ -55,6 +56,7 @@ export const topicType: SlotType<TopicOptions> = defineSlotType<TopicOptions>({
       questions: topicQuestions(id, o, cap, catalog?.followUpWording === 'continued'),
       fill: topicFill(o, questionId, cap, catalog, display, id),
       display,
+      check: topicCheck,
     };
   },
   get examples() {

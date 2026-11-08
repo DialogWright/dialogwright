@@ -75,6 +75,10 @@ booking:
 
 <!-- slot-docs:examples -->
 
+## Checked values
+
+In agent mode the slot checks a value the model understood: a real ISO day ("2026-02-30" is refused), in the slot's `range` against today (ahead: today or a day to come; back: today or a day gone, up to two years back), and the words cited must be in what the caller said. It is shown as the display says it, in the call's locale.
+
 ## Notes
 
 - Every slot listens on every turn, so the questions are asked even while the form is on another slot, and "I'd like a table next Tuesday" can fill the day on the opening turn.

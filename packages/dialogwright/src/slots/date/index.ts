@@ -4,6 +4,7 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
+import { dateCheck } from './check';
 import { dateDisplay } from './display';
 import { dateFill, dateKeys, futurePromptOf, refusesFuture } from './fill';
 import { dateOptions, type DateOptions } from './options';
@@ -64,6 +65,7 @@ export const dateType: SlotType<DateOptions> = defineSlotType<DateOptions>({
       fill: dateFill(id, o, ids, display),
       ...(o.keypad ? { dtmf: { length: 4, parse: dateKeys(o, display) } } : {}),
       display,
+      check: dateCheck(o, display),
     };
   },
   get examples() {

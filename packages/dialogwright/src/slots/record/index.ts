@@ -7,6 +7,7 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
+import { recordCheck } from './check';
 import { recordDisplay } from './display';
 import { recordFill, recordKeys } from './fill';
 import { recordOptions, type RecordOptions } from './options';
@@ -65,6 +66,7 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
       fill: recordFill(o, questionId, display),
       ...(o.keypad !== undefined ? { dtmf: { length: o.keypad, parse: recordKeys({ keyPattern: o.keyPattern, keypad: o.keypad }, display) } } : {}),
       display,
+      check: recordCheck,
       // With `display`, a fill is said from the record it chose, which display(key) does not have.
       ...(o.display !== undefined ? { displayFrom: 'fill' as const } : {}),
       // {choices} for its question lines: the records it offers, each as its display says it, said in a row

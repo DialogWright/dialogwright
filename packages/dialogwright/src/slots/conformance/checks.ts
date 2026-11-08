@@ -23,7 +23,7 @@ import {
 /** The checks, by id. */
 export const CHECK_IDS = [
   'builds', 'unknown-keys', 'question-ids', 'empty', 'quiet', 'malformed', 'thresholds', 'threshold-names', 'boundary', 'display', 'keypad',
-  'prompts', 'prompt-vars', 'values', 'utterances',
+  'prompts', 'prompt-vars', 'values', 'value-check', 'utterances',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -43,6 +43,7 @@ export const CHECK_ABOUT: Readonly<Record<CheckId, string>> = {
   prompts: 'every line an outcome can lead to is in the slot\'s prompts, with the variables it is given',
   'prompt-vars': 'every line the slot declares uses only variables the engine gives it, and an acknowledged value has its ack line declared',
   values: 'a date-valued slot gives ISO dates, and every confidence is a number from 0 to 1',
+  'value-check': 'a slot that checks a value it did not fill accepts each value its example utterances fill, shown as its display says it, refuses it when the words cited were never said, or says it is unsupported',
   utterances: 'each example utterance gives the outcome it expects',
 };
 
@@ -661,6 +662,28 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
         const c = attempt(r, `dtmf.parse(${JSON.stringify(k.digits)})`, () => spec.dtmf!.parse(k.digits, kitContext('', {}, k.locale)));
         if (c) dateProblem(c.value, `the keys ${JSON.stringify(k.digits)}`);
       }
+    }
+  },
+
+  'value-check'(r) {
+    const spec = attempt(r, 'defineSlot', () => build(r));
+    if (!spec || spec.check === undefined) return;
+    for (const u of r.example.utterances) {
+      if (u.expect.kind !== 'filled' || u.expect.value === undefined) continue;
+      const locale = u.context?.locale;
+      const today = u.context?.todayIso ?? KIT_TODAY;
+      const ctx = { ...(locale !== undefined ? { locale } : {}), today };
+      const accepted = attempt(r, `check(${JSON.stringify(u.expect.value)}) on utterance ${said(u)}`, () => spec.check!(u.expect.value!, u.text, u.text, ctx));
+      if (accepted === undefined) continue;
+      if (!accepted.ok) {
+        if (accepted.reason !== 'unsupported') r.fail(`check refused the value ${JSON.stringify(u.expect.value)} its fill gave on utterance ${said(u)} (${accepted.reason})`);
+        continue;
+      }
+      if (accepted.value !== u.expect.value) r.fail(`check gave the value ${JSON.stringify(accepted.value)} for ${JSON.stringify(u.expect.value)} on utterance ${said(u)}: a value its fill gave is stored as it is`);
+      const shown = spec.displayFrom === 'said' ? undefined : attempt(r, 'display', () => spec.display(accepted.value, locale, today));
+      if (shown !== undefined && accepted.shown !== shown) r.fail(`check shows ${JSON.stringify(accepted.shown)} for ${JSON.stringify(u.expect.value)} on utterance ${said(u)}, but the slot's display says ${JSON.stringify(shown)}: reuse the display`);
+      const unsaid = attempt(r, 'check with words never said', () => spec.check!(u.expect.value!, 'zzqx never said', u.text, ctx));
+      if (unsaid?.ok === true) r.fail(`check accepted words the caller never said on utterance ${said(u)}: the words cited must be in what the caller said`);
     }
   },
 
