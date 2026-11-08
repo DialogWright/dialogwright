@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { agentCassetteMissed, agentPropertyMismatches, isScriptedAgentStep, stepAgent, validAgentProperties, type AgentProperties, type ScriptedAgentStep } from './agentScript';
 import { questionVarsFor } from '../core/questionVars';
 import { rulesAt } from '../core/routes';
 import { localDateIso } from '../run/clock';
@@ -44,6 +45,12 @@ export interface ScenarioRunOptions extends RunOptions {
    * is given in its place. Absent, as on every run but such a test, the stand-in's answer is given.
    */
   readonly serviceReply?: (service: string, answer: unknown) => unknown;
+  /**
+   * An app in agent mode on the stubs: each scripted call's agent answers are the ones its steps name
+   * (ScenarioStep `agent`; harness-text/agentScript.ts stepAgent), in place of `agent`. A corpus line runs
+   * without the agent either way (runCorpusEntry). Absent, as for every other app, `agent` answers.
+   */
+  readonly agentSteps?: boolean;
 }
 
 export interface Outcome {
@@ -408,7 +415,10 @@ function seededPrompt(s: Session): Pick<Session, 'lastPromptId' | 'lastPromptTex
 }
 
 export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOptions): Promise<{ outcome: Outcome; run: TurnRun; setup: TurnRun }> {
-  const { setup, runs } = await runSeeded(entry, opts);
+  // A corpus line is the decision model's alone: in an app in agent mode it runs without the agent (as a
+  // call with no agent client does), so the stubs and a recording read it alike.
+  const { agent: _agent, ...own } = opts;
+  const { setup, runs } = await runSeeded(entry, getApp(defaultAppId()).mode === 'agent' ? own : opts);
   const run = runs.at(-1)!;
   // The setup run is returned as well as traced: a summary that leaves it out would read
   // the seeded placeholders as slots this one utterance filled.
@@ -480,9 +490,15 @@ export async function runSeeded(entry: CorpusEntry, opts: ScenarioRunOptions, ho
  * (serviceResultEvent(service, null)), as a timeout or an error would. `signIn` (a subject's id) is the web
  * visitor signing in through the portal: the server's `auth.signed_in` event, at the level a sign-in proves (identity.yaml's `signIn`).
  */
-export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
+export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean; agent?: ScriptedAgentStep } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
 
-export interface ScenarioExpectation {
+/**
+ * A scripted call's expectation: its end (the decision, the prompt, the gate, ...), and, for an app in agent
+ * mode, properties over its turns (AgentProperties: the values the write carries, the action taken or not,
+ * no figure outside the facts said, the read-back said, nothing done before the confirm), each failing
+ * with the turn it is about.
+ */
+export interface ScenarioExpectation extends AgentProperties {
   decision: string;
   promptId?: string;
   reason?: string;
@@ -653,7 +669,9 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const today = scenario.todayIso ?? (at !== undefined ? dateAt(at) : undefined);
   // A slow renderer, where the call says so (renderDelayMs).
   const renderer = opts.renderer && scenario.renderDelayMs !== undefined && scenario.renderDelayMs > 0 ? { ...opts.renderer, client: slowRenderClient(opts.renderer.client, scenario.renderDelayMs) } : undefined;
-  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}), ...(renderer !== undefined ? { renderer } : {}) };
+  // An app in agent mode on the stubs: the agent's answers are the ones the steps name.
+  const stepped = opts.agentSteps === true && getApp(defaultAppId()).mode === 'agent' ? stepAgent() : null;
+  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}), ...(renderer !== undefined ? { renderer } : {}), ...(stepped !== null ? { agent: { client: stepped } } : {}) };
   const runs: TurnRun[] = [];
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(o)(), scenario.as);
@@ -683,6 +701,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
       : 'signIn' in step ? [signedInEvent(signedInSubject(scenario.id, step.signIn))]
       : [saidEvent(session, step.say, step.partial !== true)];
     failNext = 'say' in step && step.fail === true;
+    stepped?.step(index, 'say' in step ? step.agent : undefined);
     for (const event of events) {
       last = await turn(session, event, o);
       runs.push(last);
@@ -701,6 +720,15 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   }
   const outcome = outcomeOf(scenario.id, last.result, runs.flatMap((r) => r.result.gateEvents));
   const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result), last.result.actions.find((a) => a.type === 'transfer'));
+  // An app in agent mode: its properties over the turns; a step the agent was asked on that names no
+  // answer (on the stubs), and a turn the agent cassette had no answer for, each fail the call.
+  if (appOf(session).mode === 'agent') {
+    mismatches.push(...agentPropertyMismatches(appOf(session), scenario.expect, runs, o.todayIso));
+    for (const step of stepped?.unscripted ?? []) mismatches.push(`agent: step ${step + 1} (${JSON.stringify((scenario.steps[step] as { say?: string }).say ?? '')}) was asked of the agent, but names no agent answer`);
+    runs.forEach((r, i) => {
+      if (agentCassetteMissed(r)) mismatches.push(`agent: turn ${i} has no answer in the agent cassette (a miss): record it with --client record`);
+    });
+  }
   return { outcome, runs, stepOf, pass: mismatches.length === 0, mismatches };
 }
 
@@ -776,7 +804,10 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).todayIso === undefined || (typeof (s as Scenario).todayIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test((s as Scenario).todayIso!))) &&
     ((s as Scenario).env === undefined || isStringMap((s as Scenario).env)) &&
     ((s as Scenario).renderDelayMs === undefined || (Number.isInteger((s as Scenario).renderDelayMs) && (s as Scenario).renderDelayMs! >= 0 && (s as Scenario).renderDelayMs! <= 30_000)) &&
-    ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
+    ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null) &&
+    // An agent-mode call's steps' agent answers and its properties, well formed.
+    (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent)) &&
+    validAgentProperties((s as Scenario).expect as unknown as Record<string, unknown>)
   );
 }
 
@@ -787,7 +818,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a step's agent answer or an agent property not in its shape, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       const [gapProblem] = scenarioGapProblems(s);
       if (gapProblem !== undefined) throw new Error(`scenarios ${file}: ${gapProblem.message}`);

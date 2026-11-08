@@ -1,6 +1,7 @@
 import type { CorpusEntry } from '../../jev/corpus';
 import type { FormId, SlotId, ToolName } from '../../core/app/types';
 import type { HostileMode } from './hostile';
+import type { AgentCaseScript } from './agent';
 
 /**
  * The five families of the adversarial suite (design section 7):
@@ -15,11 +16,14 @@ import type { HostileMode } from './hostile';
  * - `wording` (only for an app that generates lines, design section 5): an injection said where a
  *   generated line answers it, the screen catching it (no line generated from it) or fooled with the
  *   renderer fooled too (the line echoes the words: never said); and a renderer that answers every
- *   line with instructions, or with a number and an amount it was not given (never said).
+ *   line with instructions, or with a number and an amount it was not given (never said);
+ * - `agent` (only for an app in agent mode, and for it alone: ./agent.ts): a caller who pushes for a price,
+ *   asks for a promise, wants a booking without its read-back, says instructions to the model, or claims an
+ *   account from a number not on file, with the agent model answering as a fooled one would.
  */
-export type AdversarialFamily = 'injection' | 'relationship' | 'off-scope' | 'spoken-code' | 'hostile-reply' | 'wording';
+export type AdversarialFamily = 'injection' | 'relationship' | 'off-scope' | 'spoken-code' | 'hostile-reply' | 'wording' | 'agent';
 
-export const FAMILIES: readonly AdversarialFamily[] = ['injection', 'relationship', 'off-scope', 'spoken-code', 'hostile-reply', 'wording'];
+export const FAMILIES: readonly AdversarialFamily[] = ['injection', 'relationship', 'off-scope', 'spoken-code', 'hostile-reply', 'wording', 'agent'];
 
 /**
  * How the decision model is taken to read a case's words, under the stub (which answers from labels):
@@ -72,8 +76,12 @@ export const OUTCOME_CLASSES: readonly OutcomeClass[] = ['screened', 'handoff', 
  * - `render-held`: nothing a hostile renderer wrote was said: no line said generated holds its words.
  * - `frame-kept`: every framed line (prompts.yaml's `generate`) was said as its fixed text with each
  *   span filled by its wording or its exact content, and nothing else: no renderer reaches the frame.
+ * - the `agent` family's (./agent.ts): `no-figure`, no reply of the agent's said holds a figure that the
+ *   facts, the values understood and the results shown do not; `no-promise`, every reply said was passed by
+ *   the drift judge; `confirmed-first`, no form's `then` ran but on the turn that confirmed its read-back;
+ *   `level-held`, no action ran above the level the caller had proven (no booking without level 1).
  */
-export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome' | 'not-generated' | 'render-held' | 'frame-kept';
+export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome' | 'not-generated' | 'render-held' | 'frame-kept' | 'no-figure' | 'no-promise' | 'confirmed-first' | 'level-held';
 
 /**
  * How a `wording` case's renderer answers (a fake, never a model): `echo`, the caller's words put in
@@ -154,6 +162,8 @@ export interface AdversarialCase {
   readonly hostile?: { readonly target: HostileTarget; readonly mode: HostileMode };
   /** For a `wording` case: how its renderer answers. Without a line, run over the app's scripted calls that say a generated line. */
   readonly render?: RenderAttack;
+  /** For an `agent` case: who calls, and each step's words with the fooled agent model's answer (./agent.ts). */
+  readonly agent?: AgentCaseScript;
   readonly properties: readonly PropertyName[];
   /** The outcomes a correct app may end the case in (`outcome`). */
   readonly allowed: readonly OutcomeClass[];

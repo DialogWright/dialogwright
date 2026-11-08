@@ -86,6 +86,13 @@ export type {
   AdversarialCase, AdversarialFamily, AdversarialReport, AdversarialRunOptions, AdversarialSuite, AdversarialSuiteOptions,
   CaseCall, CaseResult, CaseStatus, CodePrompt, HostileMode, HostileTarget, OutcomeClass, Perception, PropertyName, RenderAttack,
 } from './adversarial/index';
+// An app in agent mode's tests: a scripted call's agent answers and its properties over the turns
+// (harness-text/agentScript.ts), the fake agent a test scripts, and the adversarial suite's agent family.
+export { agentPropertyMismatches, stepAgent, scriptedAnswer, AGENT_PROPERTY_KEYS } from '../harness-text/agentScript';
+export type { AgentProperties, ScriptedAgentAnswer, ScriptedAgentStep } from '../harness-text/agentScript';
+export { fakeAgent, FAKE_AGENT_MODEL } from '../agent/fake';
+export type { FakeAgentFailure, FakeAgentOptions } from '../agent/fake';
+export { agentViolations, AGENT_PROPERTIES } from './adversarial/agent';
 // Generated wording in an app's tests: a renderer that asks no model, its own wording or the test's.
 export { FakeRenderClient, fakeWording, FAKE_RENDER_MODEL } from '../render/fake';
 export type { FakeRenderOptions } from '../render/fake';

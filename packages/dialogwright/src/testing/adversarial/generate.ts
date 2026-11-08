@@ -16,6 +16,7 @@ import { REGRESS_TODAY } from '../../harness-text/baseline';
 import { digitWords, languageOf, TEMPLATES, type FooledReading, type InjectionPoint, type LanguageTemplates } from './templates';
 import { ANSWER_ATTACKS, type AdversarialCase, type AdversarialSuite, type AnswerAttack, type OutcomeClass, type Perception, type PropertyName, type RenderAttack } from './types';
 import { seatSeed } from './seed';
+import { agentCases } from './agent';
 import { answerSpanOf, generatesLines } from '../../render/config';
 
 /** Every outcome but a failed turn: what a case run with a fooled perception may end in, its properties carrying the rest. */
@@ -699,6 +700,12 @@ function wording(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): 
  */
 export function adversarialSuite(app: App, opts: AdversarialSuiteOptions = {}): AdversarialSuite {
   if (getApp(defaultAppId()) !== app) throw new Error(`adversarialSuite: app "${app.id}" is not the registered default app; register it first (registerApp)`);
+  // An app in agent mode: the agent family alone. The others seed a call and answer its words by labels
+  // the decision model reads in a scripted app; in agent mode the agent model reads the values.
+  if (app.mode === 'agent' && app.agent !== undefined) {
+    const { cases, notes } = agentCases(app);
+    return { app: app.id, cases, notes: [...notes, 'an app in agent mode: the agent family alone (the scripted families answer a call\'s words by labels the agent model does not take)'] };
+  }
   const shape = shapeOf(app, opts);
   const b = new Builder(shape);
   for (const tag of shape.languages) {
