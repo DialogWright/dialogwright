@@ -291,15 +291,40 @@
                 "type": "boolean"
               },
               "says": {
-                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
+                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), or `{ readBack, done }` for words of each line, and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string",
                   "minLength": 1
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "minLength": 1
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "readBack": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "What the read-back says for the option."
+                        },
+                        "done": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "What the done line says for the option."
+                        }
+                      },
+                      "required": [
+                        "readBack",
+                        "done"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The option said one way in the read-back and another in the done line (\"yes\": { readBack: \"and we'll text you at\", done: \"Reply to our text with a photo.\" })."
+                    }
+                  ]
                 }
               },
               "length": {
@@ -358,10 +383,56 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The tool, as a plain entry names it."
+                  },
+                  "when": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                        "description": "A choice field of the form."
+                      },
+                      "is": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The option the field must hold, by its words (\"yes\"): with any other, or none, the gate refuses the tool."
+                      },
+                      "reason": {
+                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"). Default \"<field>-not-<option>\".",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "is"
+                    ],
+                    "additionalProperties": false,
+                    "description": "The condition the gate holds the tool to: a oneOf rule on the field's param."
+                  }
+                },
+                "required": [
+                  "tool",
+                  "when"
+                ],
+                "additionalProperties": false,
+                "description": "A tool called only where a field of the form holds one option."
+              }
+            ]
           },
-          "description": "The tools a yes at the read-back calls, in order, each through the gate: the first is the form's write. Each is called with the form's values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only."
+          "description": "The tools a yes at the read-back calls, in order, each through the gate: the first is the form's write. Each is called with the form's values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only. A tool after the first may be `{ tool, when: { field, is } }`, called only where a choice field of the form holds that option (a text sent only with the caller's consent): the gate refuses it otherwise, and the form goes on without it."
         },
         "done": {
           "type": "string",
@@ -443,15 +514,40 @@
                 "type": "boolean"
               },
               "says": {
-                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
+                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), or `{ readBack, done }` for words of each line, and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string",
                   "minLength": 1
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "minLength": 1
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "readBack": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "What the read-back says for the option."
+                        },
+                        "done": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "What the done line says for the option."
+                        }
+                      },
+                      "required": [
+                        "readBack",
+                        "done"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The option said one way in the read-back and another in the done line (\"yes\": { readBack: \"and we'll text you at\", done: \"Reply to our text with a photo.\" })."
+                    }
+                  ]
                 }
               },
               "length": {
@@ -510,10 +606,56 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The tool, as a plain entry names it."
+                  },
+                  "when": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                        "description": "A choice field of the form."
+                      },
+                      "is": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The option the field must hold, by its words (\"yes\"): with any other, or none, the gate refuses the tool."
+                      },
+                      "reason": {
+                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"). Default \"<field>-not-<option>\".",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "is"
+                    ],
+                    "additionalProperties": false,
+                    "description": "The condition the gate holds the tool to: a oneOf rule on the field's param."
+                  }
+                },
+                "required": [
+                  "tool",
+                  "when"
+                ],
+                "additionalProperties": false,
+                "description": "A tool called only where a field of the form holds one option."
+              }
+            ]
           },
-          "description": "The tools a yes at the read-back calls, in order, each through the gate: the first is the form's write. Each is called with the form's values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only."
+          "description": "The tools a yes at the read-back calls, in order, each through the gate: the first is the form's write. Each is called with the form's values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only. A tool after the first may be `{ tool, when: { field, is } }`, called only where a choice field of the form holds that option (a text sent only with the caller's consent): the gate refuses it otherwise, and the form goes on without it."
         },
         "done": {
           "type": "string",
@@ -593,15 +735,40 @@
                 "type": "boolean"
               },
               "says": {
-                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
+                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), or `{ readBack, done }` for words of each line, and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string",
                   "minLength": 1
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "minLength": 1
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "readBack": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "What the read-back says for the option."
+                        },
+                        "done": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "What the done line says for the option."
+                        }
+                      },
+                      "required": [
+                        "readBack",
+                        "done"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The option said one way in the read-back and another in the done line (\"yes\": { readBack: \"and we'll text you at\", done: \"Reply to our text with a photo.\" })."
+                    }
+                  ]
                 }
               },
               "length": {
@@ -660,10 +827,56 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The tool, as a plain entry names it."
+                  },
+                  "when": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                        "description": "A choice field of the form."
+                      },
+                      "is": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The option the field must hold, by its words (\"yes\"): with any other, or none, the gate refuses the tool."
+                      },
+                      "reason": {
+                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"). Default \"<field>-not-<option>\".",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "is"
+                    ],
+                    "additionalProperties": false,
+                    "description": "The condition the gate holds the tool to: a oneOf rule on the field's param."
+                  }
+                },
+                "required": [
+                  "tool",
+                  "when"
+                ],
+                "additionalProperties": false,
+                "description": "A tool called only where a field of the form holds one option."
+              }
+            ]
           },
-          "description": "The tools a yes at the read-back calls, in order, each through the gate: the first is the form's write. Each is called with the form's values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only."
+          "description": "The tools a yes at the read-back calls, in order, each through the gate: the first is the form's write. Each is called with the form's values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only. A tool after the first may be `{ tool, when: { field, is } }`, called only where a choice field of the form holds that option (a text sent only with the caller's consent): the gate refuses it otherwise, and the form goes on without it."
         },
         "done": {
           "type": "string",
@@ -749,9 +962,9 @@
           "description": "How the owner hears of each request and booking: \"text\", a text message (printed until texting is registered), or \"print\", printed only."
         },
         "number": {
+          "description": "The owner's number (E.164), for the app's own tools. A real number may stay out of the file, in the app's settings (its code reads it with ctx.env). Default: none.",
           "type": "string",
-          "pattern": "^\\+\\d{8,15}$",
-          "description": "The owner's number (E.164)."
+          "pattern": "^\\+\\d{8,15}$"
         },
         "summary": {
           "type": "string",
@@ -761,13 +974,24 @@
       },
       "required": [
         "notify",
-        "number",
         "summary"
       ],
       "additionalProperties": false
     },
     "tools": {
       "description": "What each tool a form calls does, in a few words, by its name (\"placeHold: place the hold\"): the action's description on the policy card, the console and the audit. Default: the tool's name in words.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "texts": {
+      "description": "The texts the app's own code sends, in the business's fixed words, by a name its code reads them by (photoRequest: \"Reply to this text with a photo of the damage.\"), with the {placeholders} its code fills: never a generated line, and never said on a call. Default: none.",
       "type": "object",
       "propertyNames": {
         "type": "string",

@@ -2,8 +2,8 @@ import type { AgentApp, AgentAppField, AgentAppForm } from '../agent/types';
 import type { App, Completion, CompletionContext, FactsConfig, SummaryContext, ToolDef } from '../core/app/types';
 import type { Session, SessionFacts } from '../core/session';
 import { openPart, replyShape, shapeOf } from '../core/replyShape';
-import { isAnonymous, type Principal } from '../gate/types';
-import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, optionKey, readsThroughHook, slotIdOf } from './business';
+import { isAnonymous, passed, type Principal } from '../gate/types';
+import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, optionKey, readsThroughHook, saysFor, slotIdOf, stepTool, thenTools, whenOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
 import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, fieldSlotConfig, formParams, PRICE_PROMPT, wordsOf } from './businessFiles';
 import { buildSlot } from '../slots/defineSlot';
@@ -68,7 +68,11 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
         ...(f.freeFrom !== undefined ? { freeFrom: { tool: f.freeFrom.split('.')[0]!, list: f.freeFrom.split('.')[1]! } } : {}),
       };
     });
-    forms[name] = { about: form.about ?? name, fields, then: [...form.then], ...(name === 'booking' ? { for: 'accounts' as const } : {}) };
+    const when = Object.fromEntries(form.then.flatMap((step) => {
+      const w = whenOf(step);
+      return w === undefined ? [] : [[stepTool(step), { field: w.field, is: w.is, reason: w.reason }]];
+    }));
+    forms[name] = { about: form.about ?? name, fields, then: thenTools(form), ...(Object.keys(when).length > 0 ? { when } : {}), ...(name === 'booking' ? { for: 'accounts' as const } : {}) };
   }
   const chosen = style?.agent;
   return {
@@ -185,8 +189,13 @@ function completeForm(b: BusinessYaml, name: BusinessFormName): (c: CompletionCo
     const { s, acks } = c;
     s.confirmedHash = s.pendingHash;
     const params = values(s);
-    for (const tool of form.then) {
+    for (const step of form.then) {
+      const tool = stepTool(step);
+      const when = whenOf(step);
       const { decision } = c.callTool({ tool, params });
+      // A tool held to a condition the caller's values do not meet (a text without consent): the gate refused
+      // it on that rule alone, which is audited, and the form goes on without it.
+      if (when !== undefined && decision.verdict === 'BLOCK' && decision.reason === when.reason && !passed(decision, 'oneOf')) continue;
       if (decision.verdict === 'BLOCK' && decision.reason === 'confirmation') {
         s.confirmedHash = null;
         return { kind: 'reconfirm', acks };
@@ -198,7 +207,7 @@ function completeForm(b: BusinessYaml, name: BusinessFormName): (c: CompletionCo
     }
     s.confirmedHash = null;
     s.pendingHash = null;
-    const vars = { ...Object.fromEntries(Object.entries(s.slots).map(([id, slot]) => [id, slot.display ?? ''])), ...saysVars(b, name, s), ...accountVars(s) };
+    const vars = { ...Object.fromEntries(Object.entries(s.slots).map(([id, slot]) => [id, slot.display ?? ''])), ...saysVars(b, name, s, 'done'), ...accountVars(s) };
     return { kind: 'said', acks: [...acks, { promptId: donePromptOf(name), vars }] };
   };
 }
@@ -207,7 +216,7 @@ function completeForm(b: BusinessYaml, name: BusinessFormName): (c: CompletionCo
  * A form's choice fields with `says`, as its read-back and done line say them: each option in the business's
  * words for it (its own words where `says` gives none), and `says.unset` for an optional field left empty.
  */
-export function saysVars(b: BusinessYaml, name: BusinessFormName, s: Session): Record<string, string> {
+export function saysVars(b: BusinessYaml, name: BusinessFormName, s: Session, line: 'readBack' | 'done'): Record<string, string> {
   const form = businessForms(b).find((f) => f.name === name)?.form;
   const out: Record<string, string> = {};
   for (const f of form?.fields ?? []) {
@@ -215,7 +224,8 @@ export function saysVars(b: BusinessYaml, name: BusinessFormName, s: Session): R
     const slot = s.slots[slotIdOf(name, f.name)];
     const value = slot?.value ?? null;
     const said = Object.entries(f.says).find(([k]) => k !== 'unset' && optionKey(k) === value)?.[1];
-    out[slotIdOf(name, f.name)] = value === null ? (f.says.unset ?? '') : (said ?? slot?.display ?? String(value));
+    const unset = f.says.unset;
+    out[slotIdOf(name, f.name)] = value === null ? (unset !== undefined ? saysFor(unset, line) : '') : (said !== undefined ? saysFor(said, line) : (slot?.display ?? String(value)));
   }
   return out;
 }
@@ -240,7 +250,7 @@ export function businessCode(b: BusinessYaml, code: AppCode): AppCode {
     confirmedParams: formValues(b, name),
     complete: completeForm(b, name),
     // The booking's read-back names {account}: the recognized account's name; a choice field with `says`, its option in the business's words.
-    ...(readsThroughHook(b, name) ? { onSummaryRead: (c: SummaryContext) => ({ vars: { ...saysVars(b, name, c.s), ...accountVars(c.s) } }) } : {}),
+    ...(readsThroughHook(b, name) ? { onSummaryRead: (c: SummaryContext) => ({ vars: { ...saysVars(b, name, c.s, 'readBack'), ...accountVars(c.s) } }) } : {}),
   }]));
   const systems: AppCode['systems'] = () => {
     const made = code.systems();
@@ -332,7 +342,7 @@ export function businessCodeProblems(b: BusinessYaml, code: AppCode, codeFile: s
 
   for (const { name, form } of businessForms(b)) {
     const params = formParams(name, form);
-    form.then.forEach((tool, i) => {
+    thenTools(form).forEach((tool, i) => {
       called.add(tool);
       const def = tools[tool];
       if (def === undefined) {

@@ -311,6 +311,20 @@ function agentSection(app: App, source: PolicySource): string[] {
     }
     out.push('');
   }
+  // The actions held to a field's option (business.yaml's `{ tool, when }`): a consent the caller gave, read back and confirmed.
+  const held = Object.entries(agent.forms).flatMap(([form, f]) => Object.entries(f.when ?? {}).map(([tool, w]) => ({ form, tool, w, slot: f.fields.find((x) => x.name === w.field)?.slot })));
+  if (held.length > 0) {
+    out.push(
+      '### Done only on the caller\'s answer',
+      '',
+      'Each of these is called after its form\'s read-back only where the field holds the option named, as the caller answered it and confirmed it in the read-back (business.yaml\'s `when`, a `oneOf` rule on the action). With any other answer the gate refuses the action, the refusal is audited under the reason named, and the form goes on without it: a caller who did not consent is not, for example, texted.',
+      '',
+      '| Action | Only where | Refused as |',
+      '| --- | --- | --- |',
+    );
+    for (const { form, tool, w, slot } of held) out.push(`| ${cell(actionLabel(source, tool))} (${code(tool)}), after the ${form}'s read-back | ${slot !== undefined ? `${slotNoun(app, slot)} (${code(w.field)})` : code(w.field)} is ${code(w.is)} | ${code(w.reason)} |`);
+    out.push('');
+  }
   const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done)_/.test(id) || ['price', 'greeting', 'greeting_chat', 'goodbye', 'goodbye_chat', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
   out.push('Said in fixed words, never worded by a model:', '', '| Line | Said |', '| --- | --- |');
   for (const id of fixedIds) out.push(`| ${code(id)} | ${cell(app.prompts.manifest[id]!.text)} |`);

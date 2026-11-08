@@ -6,7 +6,7 @@ import { AGENT_LINE_IDS, engineLineVars } from './businessLines';
 import { sayableParty } from '../gate/types';
 import { readBusinessFile } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
-import { BUSINESS_FORMS, WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml } from './schema/business';
+import { BUSINESS_FORMS, WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml, type ThenStepYaml } from './schema/business';
 
 /**
  * business.yaml read and checked (an app in agent mode; ./schema/business.ts says what it holds), and
@@ -33,6 +33,24 @@ export function slotIdOf(form: BusinessFormName, field: string): string {
 export function optionKey(said: string): string {
   const key = said.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return key === '' ? 'option' : /^[a-z]/.test(key) ? key : `n_${key}`;
+}
+
+/** A `then` entry's tool: the entry itself, or its `tool`. */
+export const stepTool = (step: ThenStepYaml): string => (typeof step === 'string' ? step : step.tool);
+
+/** The tools a form's yes calls, in order, by name. */
+export const thenTools = (form: Pick<BusinessFormYaml, 'then'>): string[] => form.then.map(stepTool);
+
+/** The condition a form holds a tool to (`{ tool, when }`), as the gate's oneOf rule reads it, with its reason; undefined for a plain entry. */
+export function whenOf(step: ThenStepYaml): { field: string; is: string; key: string; reason: string } | undefined {
+  if (typeof step === 'string') return undefined;
+  const key = optionKey(step.when.is);
+  return { field: step.when.field, is: step.when.is, key, reason: step.when.reason ?? `${step.when.field}-not-${key.replace(/_/g, '-')}` };
+}
+
+/** What a choice option's `says` gives for one line: a string is both lines', `{ readBack, done }` each its own. */
+export function saysFor(said: string | { readBack: string; done: string }, line: 'readBack' | 'done'): string {
+  return typeof said === 'string' ? said : said[line];
 }
 
 /** The forms business.yaml defines, in the engine's order, each with its name. */
@@ -163,9 +181,27 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
         report(at(['fields', i, 'freeFrom']), `"${tool}" is no tool a field of the ${name} sees, so no result of it is ever shown for this form`, seen.length > 0 ? `name one of ${seen.map((t) => `"${t}"`).join(', ')}` : `give a field of the ${name} "sees: ${tool}", or delete "freeFrom"`);
       }
     });
+    // A tool held to a condition (`when`): a choice field of the form and one of its options, never the form's write.
+    form.then.forEach((step, i) => {
+      const when = whenOf(step);
+      if (when === undefined) return;
+      if (i === 0) report(at(['then', i, 'when']), `"${stepTool(step)}" is the ${name}'s write (its first tool), which a yes always makes, so it cannot be held to a condition`, 'put a tool before it that the form always calls, or delete "when"');
+      const field = form.fields.find((f) => f.name === when.field);
+      if (field === undefined) {
+        const near = closest(when.field, form.fields.map((f) => f.name));
+        report(at(['then', i, 'when', 'field']), `"${when.field}" is not a field of the ${name}`, near ? `write "${near}" if it is that field, or add a field "${when.field}"` : `name one of ${form.fields.map((f) => `"${f.name}"`).join(', ')}`);
+        return;
+      }
+      if (field.type !== 'choice') {
+        report(at(['then', i, 'when', 'field']), `the field "${when.field}" is ${field.type}, but a condition reads a choice field's option`, `make "${when.field}" a choice field (options: [yes, no]), or hold "${stepTool(step)}" to a choice field`);
+        return;
+      }
+      const options = field.options === WINDOWS_OPTIONS ? (b.windows ?? []).map((w) => w.name) : (field.options ?? []);
+      if (!options.some((o) => optionKey(o) === when.key)) report(at(['then', i, 'when', 'is']), `"${when.is}" is not an option of "${when.field}"`, `write one of ${options.map((o) => `"${o}"`).join(', ')}`);
+    });
     // A tool a form calls after the read-back is not one a field sees: the two are called with other values.
     const seenHere = new Set(form.fields.flatMap((f) => (f.sees !== undefined ? [f.sees] : [])));
-    form.then.forEach((tool, i) => {
+    thenTools(form).forEach((tool, i) => {
       if (seenHere.has(tool) || forms.some((o) => o.form.fields.some((f) => f.sees === tool))) report(at(['then', i]), `"${tool}" is a tool a field sees (its result shown to the model, called with that field's value), so it cannot also be one the ${name} calls after its read-back, with all its values`, `give the ${name} a tool of its own to call, or take "${tool}" out of the field's sees`);
     });
   }
@@ -197,7 +233,7 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
   // A form's tools carry its own values, confirmed at its read-back: one form each.
   const owner = new Map<string, BusinessFormName>();
   for (const { name, form } of forms) {
-    form.then.forEach((tool, i) => {
+    thenTools(form).forEach((tool, i) => {
       const first = owner.get(tool);
       if (first !== undefined) report([name, 'then', i], `the tool "${tool}" follows the ${first} too, but a tool's call carries its form's values, confirmed at that form's read-back, so it follows one form only`, `give the ${name} a tool of its own (for example "${tool}_${name}"), or take "${tool}" out of one of the two`);
       else owner.set(tool, name);
@@ -262,7 +298,7 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
   // The handoff is said where nothing waits for an answer (the callback form, where there is one, asks for the number).
   if (b.handoff.includes('?')) report(['handoff'], 'the handoff asks a question, but it is said where nothing waits for an answer', `make it a statement ("I'll have someone call you back.")${b.callback !== undefined ? '; the callback form asks for the number' : ', and add a callback form to collect the number'}`);
 
-  const called = new Set(forms.flatMap(({ form }) => [...form.then, ...form.fields.flatMap((f) => (f.sees !== undefined ? [f.sees] : []))]));
+  const called = new Set(forms.flatMap(({ form }) => [...thenTools(form), ...form.fields.flatMap((f) => (f.sees !== undefined ? [f.sees] : []))]));
   for (const tool of Object.keys(b.tools ?? {})) {
     if (!called.has(tool)) report(['tools', tool], `"${tool}" is no tool a form calls (a then) or a field sees, so its words are never read`, `${closest(tool, [...called]) ? `rename it to "${closest(tool, [...called])}" if it is that tool, or ` : ''}delete it`);
   }

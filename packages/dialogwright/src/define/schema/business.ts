@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { checkAlways, identifier, matching, text, unique } from './common';
+import { checkAlways, identifier, matching, name, text, unique } from './common';
 import { E164 } from '../../core/numberLocales';
 
 /**
@@ -53,9 +53,15 @@ const field = z
       .describe(`A choice field's options: a list of the words each option is said by ("one", "not sure"), or "${WINDOWS_OPTIONS}", the names of the business's windows. Only on a choice field, which needs it.`),
     optional: z.boolean().optional().describe('true: the form may be read back without it. Default false: the read-back waits for it. Every field is sent by the form\'s `then`, so an optional field is still named in the read-back (the caller confirms what is sent), with `says.unset` for when it is left empty.'),
     says: z
-      .record(text(), text())
+      .record(text(), z.union([
+        text(),
+        z.strictObject({
+          readBack: text().describe('What the read-back says for the option.'),
+          done: text().describe('What the done line says for the option.'),
+        }).describe('The option said one way in the read-back and another in the done line ("yes": { readBack: "and we\'ll text you at", done: "Reply to our text with a photo." }).'),
+      ]))
       .optional()
-      .describe('A choice field: how each option is said in the form\'s read-back and done line, by the option\'s words ("large print": "in large print"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.'),
+      .describe('A choice field: how each option is said in the form\'s read-back and done line, by the option\'s words ("large print": "in large print"), or `{ readBack, done }` for words of each line, and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.'),
     length: z.int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(40, { error: 'must be at most 40' }).optional().describe('A digits field\'s number of digits (10 for a phone number with its area code). Only on a digits field, which needs it.'),
     offer: z
       .literal('callerNumber')
@@ -79,14 +85,50 @@ const field = z
   })
   .describe('One field a form collects: its name, its slot type and its fixed question.');
 
+/**
+ * One tool a form's yes calls: its name, or `{ tool, when }`, a tool called only where a field of the form
+ * holds one option (the caller's consent to a text: `{ tool: sendText, when: { field: textOk, is: "yes" } }`).
+ * The condition is the gate's: compiled to a `oneOf` rule on the tool's param, so with any other value the
+ * gate refuses the tool, the refusal is audited, and the form goes on without it.
+ */
+const thenStep = z.union([
+  identifier(),
+  z
+    .strictObject({
+      tool: identifier().describe('The tool, as a plain entry names it.'),
+      when: z
+        .strictObject({
+          field: identifier().describe('A choice field of the form.'),
+          is: text().describe('The option the field must hold, by its words ("yes"): with any other, or none, the gate refuses the tool.'),
+          reason: name().optional().describe('The reason the gate records when it refuses the tool ("no-consent"). Default "<field>-not-<option>".'),
+        })
+        .describe('The condition the gate holds the tool to: a oneOf rule on the field\'s param.'),
+    })
+    .describe('A tool called only where a field of the form holds one option.'),
+]);
+
+/** A form's `then` entry, as written. */
+export type ThenStepYaml = z.infer<typeof thenStep>;
+
 const formShape = {
   about: text().optional().describe('What the form is for, as the agent model is told ("a hold on a book, collected in a pick-up window"). Default: the form\'s name.'),
   label: text().optional().describe('The form in a few words, as the line names it ("send a request"). Default: the engine\'s words for the form.'),
   fields: z.array(field).min(1, { error: 'must list at least one field' }).describe('What the form collects, in the order its fixed questions are asked.'),
   readBack: text().describe('The read-back: the line, in fixed words, that says what the line understood, with each field\'s value as its slot type displays it ({name}), and asks the caller to confirm it. A yes sends the form\'s `then` to the gate.'),
-  then: unique(identifier(), 'tool')
+  then: z
+    .array(thenStep)
     .min(1, { error: 'must name at least one tool' })
-    .describe('The tools a yes at the read-back calls, in order, each through the gate: the first is the form\'s write. Each is called with the form\'s values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only.'),
+    .check(checkAlways((items, ctx) => {
+      if (!Array.isArray(items)) return;
+      const seen = new Set<string>();
+      items.forEach((item, i) => {
+        const tool = typeof item === 'string' ? item : typeof item === 'object' && item !== null ? (item as { tool?: unknown }).tool : undefined;
+        if (typeof tool !== 'string') return;
+        if (seen.has(tool)) ctx.addIssue({ code: 'custom', path: [i], message: `tool "${tool}" is listed twice`, params: { fix: `delete one of the two "${tool}" entries` } });
+        seen.add(tool);
+      });
+    }))
+    .describe('The tools a yes at the read-back calls, in order, each through the gate: the first is the form\'s write. Each is called with the form\'s values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only. A tool after the first may be `{ tool, when: { field, is } }`, called only where a choice field of the form holds that option (a text sent only with the caller\'s consent): the gate refuses it otherwise, and the form goes on without it.'),
   done: text().describe('The line said, in fixed words, once the form\'s tools have run, with the values as {placeholders}.'),
 };
 
@@ -196,7 +238,7 @@ export const businessSchema = z
     owner: z
       .strictObject({
         notify: z.enum(['text', 'print']).describe('How the owner hears of each request and booking: "text", a text message (printed until texting is registered), or "print", printed only.'),
-        number: phone().describe('The owner\'s number (E.164).'),
+        number: phone().optional().describe('The owner\'s number (E.164), for the app\'s own tools. A real number may stay out of the file, in the app\'s settings (its code reads it with ctx.env). Default: none.'),
         summary: text().describe('The owner\'s summary of each request and booking, a fixed template with the values as {placeholders}: never a generated line.'),
       })
       .optional()
@@ -205,6 +247,10 @@ export const businessSchema = z
       .record(identifier(), text())
       .optional()
       .describe('What each tool a form calls does, in a few words, by its name ("placeHold: place the hold"): the action\'s description on the policy card, the console and the audit. Default: the tool\'s name in words.'),
+    texts: z
+      .record(identifier(), text())
+      .optional()
+      .describe('The texts the app\'s own code sends, in the business\'s fixed words, by a name its code reads them by (photoRequest: "Reply to this text with a photo of the damage."), with the {placeholders} its code fills: never a generated line, and never said on a call. Default: none.'),
     lines: z
       .record(identifier(), text())
       .optional()

@@ -1,5 +1,5 @@
 import { buildSlot } from '../slots/defineSlot';
-import { ACCOUNT_SLOT, businessForms, closingsOf, greetingsOf, optionKey, readsThroughHook, slotIdOf } from './business';
+import { ACCOUNT_SLOT, businessForms, closingsOf, greetingsOf, optionKey, readsThroughHook, slotIdOf, stepTool, thenTools, whenOf } from './business';
 export { optionKey };
 import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
@@ -183,8 +183,8 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
       summaryPromptId: readBackPromptOf(name),
       // A form for accounts names the account in its lines: its summary hook gives {account} the recognized account's name.
       hooks: readsThroughHook(b, name) ? ['confirmedParams', 'complete', 'onSummaryRead'] : ['confirmedParams', 'complete'],
-      calls: [...form.then, ...sees.filter((t) => !form.then.includes(t))],
-      writes: form.then[0]!,
+      calls: [...thenTools(form), ...sees.filter((t) => !thenTools(form).includes(t))],
+      writes: thenTools(form)[0]!,
     };
   }
 
@@ -224,12 +224,18 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   const audit: Record<string, AuditMask> = {};
   for (const { name, form } of forms) {
     const params = formParams(name, form);
-    form.then.forEach((tool) => {
+    form.then.forEach((step) => {
+      const tool = stepTool(step);
       const what = b.tools?.[tool] ?? wordsOf(tool);
+      // A tool held to a condition (`when`): a oneOf rule on the field's param, after the read-back's confirmation.
+      const when = whenOf(step);
       actions[tool] = {
         say: what,
         level: formLevel(name),
-        rules: ['identity', ...(name === 'booking' ? [{ scope: { param: ACCOUNT_SLOT } }] : []), { confirmed: params }],
+        rules: [
+          'identity', ...(name === 'booking' ? [{ scope: { param: ACCOUNT_SLOT } }] : []), { confirmed: params },
+          ...(when !== undefined ? [{ oneOf: { field: when.field, values: [when.key], reason: when.reason } }] : []),
+        ],
       };
     });
     for (const f of form.fields) audit[f.name] ??= auditOf(fieldSlot.get(slotIdOf(name, f.name))?.redact);

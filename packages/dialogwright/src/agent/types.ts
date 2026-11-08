@@ -203,6 +203,11 @@ export interface AgentAppForm {
   fields: AgentAppField[];
   /** The tools a yes at its read-back calls, in order: the first is its write. */
   then: string[];
+  /**
+   * The tools held to a condition (business.yaml's `{ tool, when }`), by tool: called only where the field
+   * holds the option, the gate refusing them otherwise with `reason`. Absent where none is.
+   */
+  when?: Record<string, { field: string; is: string; reason: string }>;
   /** Who may open it: `accounts`, a caller a caller-ID match recognized; absent, anyone. */
   for?: 'accounts';
 }
