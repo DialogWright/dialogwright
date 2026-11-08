@@ -74,7 +74,7 @@ flowchart LR
   r_bookRoom(["Rules, in order<br/>1. identity<br/>2. scope<br/>3. confirmed"])
   a_bookRoom --> r_bookRoom
   a_roomAvailability["Read the study room's free windows near a day<br/>level 1: recognized by the number calling"]
-  summary -->|"calls"| a_roomAvailability
+  s_booking_day -.->|"once filled, its result shown to the model"| a_roomAvailability
   r_roomAvailability(["Rules, in order<br/>1. identity"])
   a_roomAvailability --> r_roomAvailability
 ```

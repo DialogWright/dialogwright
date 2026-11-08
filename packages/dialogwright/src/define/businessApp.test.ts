@@ -326,6 +326,24 @@ describe('the code an agent-mode app writes', () => {
     ]);
   });
 
+  it('writes a default corpus seed by the slots it builds, each value the grid\'s and its display the slot\'s own; the app\'s own seed wins', () => {
+    const seed = app.testing!.seed!;
+    expect(seed.caller()).toEqual({ kind: 'account', level: 1, id: 'rivergate_book_club', first: 'Rivergate Book Club' });
+    expect(seed.callerNumber).toBe('+15555550142');
+    expect(seed.placeholders).toMatchObject({
+      account: { value: 'rivergate_book_club', display: 'Rivergate Book Club' },
+      request_patronName: { display: 'Avery Lane' },
+      request_copies: { value: 'two', display: 'two' },
+      request_day: { value: '2026-11-12', display: 'Thursday, November 12' },
+      booking_people: { value: 'four', display: 'four' },
+      callback_callbackNumber: { value: '5555550144' },
+    });
+    // Every field of every form, by its engine-built slot.
+    expect(Object.keys(seed.placeholders).sort()).toEqual([...Object.keys(app.agent!.forms).flatMap((f) => app.agent!.forms[f]!.fields.map((x) => x.slot)), 'account'].sort());
+    const own = { caller: () => ANONYMOUS, placeholders: {} };
+    expect(defineApp(BUSINESS_FIXTURE_DIR, { ...businessFixtureCode, testing: { ...businessFixtureCode.testing, seed: own } }).testing!.seed).toBe(own);
+  });
+
   it('pnpm check finds nothing wrong with the fixture', async () => {
     expect(await checkApp(BUSINESS_FIXTURE_DIR)).toEqual([]);
   });
@@ -338,6 +356,13 @@ describe('the fixture\'s pages', () => {
   it('policy.matrix', () => expectPolicyMatrix(app, page('policy.matrix')));
   it('POLICY.md', () => expectPolicyCard(app, page('POLICY.md')));
   it('APP-MAP.md', () => expectAppMap(app, page('APP-MAP.md')));
+
+  it('the app map draws a tool a field sees as called once its field is filled, never by the read-back', () => {
+    const map = readFileSync(page('APP-MAP.md'), 'utf8');
+    expect(map).toContain('s_booking_day -.->|"once filled, its result shown to the model"| a_roomAvailability');
+    expect(map).not.toContain('summary -->|"calls"| a_roomAvailability');
+    expect(map).toContain('summary -->|"calls"| a_bookRoom');
+  });
 
   it('the matrix shows the booking and the callback allowed where the gate allows them, each with its own confirmed values', () => {
     const matrix = readFileSync(page('policy.matrix'), 'utf8');

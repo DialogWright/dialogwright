@@ -144,7 +144,11 @@ function formDiagram(app: App, id: FormId): string[] {
       continue;
     }
     out.push(`  ${node}[${mermaidLabel(action.say === undefined ? tool : capitalize(action.say), `level ${action.level}: ${levelName(app, action.level)}`)}]`);
-    out.push(`  ${last} -->|${mermaidLabel('calls')}| ${node}`);
+    // An agent-mode app's tool a field sees (business.yaml's `sees`) is called once its field is filled, its
+    // checked result shown to the model, never by the read-back's yes.
+    const seenBy = form.slots.filter((slot) => app.agent?.sees[slot] === tool);
+    if (seenBy.length > 0) for (const slot of seenBy) out.push(`  ${nodeId('s', slot)} -.->|${mermaidLabel('once filled, its result shown to the model')}| ${node}`);
+    else out.push(`  ${last} -->|${mermaidLabel('calls')}| ${node}`);
     out.push(`  ${nodeId('r', tool)}([${mermaidLabel('Rules, in order', ...action.rules.map((r, i) => `${i + 1}. ${ruleName(r)}`))}])`, `  ${node} --> ${nodeId('r', tool)}`);
   }
   // The form it goes on to as it completes (`next`), drawn under it on this page.

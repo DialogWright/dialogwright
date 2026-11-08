@@ -155,6 +155,15 @@ export function agentFigureSources(app: App, s: Session, today: string, opts: { 
   ].filter((x) => x.trim() !== '');
 }
 
+/**
+ * The figures of a text value that are both in the value as held and in the words it was cited from, as one
+ * source (the review of wheelshop): a figure the caller said outside the value's own words stays no source.
+ */
+export function textValueFigures(held: string, words: string): string {
+  const cited = new Set([...digitRuns(words), ...spelledNumbers(words)]);
+  return [...new Set([...digitRuns(held), ...spelledNumbers(held)].filter((n) => cited.has(n)))].join(' ');
+}
+
 /** The slot types whose values' cited words are a source of figures: those whose check ties the value to its words. */
 const CITED_TYPES: ReadonlySet<string> = new Set(['digits', 'name']);
 
@@ -234,7 +243,12 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
     const sources = agentFigureSources(app, session, input.todayIso, {
       // A digits or name value's cited words are tied to it (its check holds them to it); a choice's or a date's are
       // not (a synonym, "Thursday"), so only its held value and display are sources (the review of Task 8).
-      cited: accepted.filter((v) => CITED_TYPES.has(typeOfSlot(app, v.slot))).map((v) => v.words),
+      cited: [
+        ...accepted.filter((v) => CITED_TYPES.has(typeOfSlot(app, v.slot))).map((v) => v.words),
+        // A text value's figure, where it is both in the value as held and in the words it was cited from
+        // ("2020 BMW 3 Series" from "it's a 2020 BMW 3 Series"): the caller's own, kept in what the line understood.
+        ...accepted.filter((v) => typeOfSlot(app, v.slot) === 'text').map((v) => textValueFigures(session.slots[v.slot as string]?.value ?? '', v.words)),
+      ],
       seen: input.seen ?? [],
       fixed: [spokenText(app, fixedDecision, session.locale, shown)],
     });

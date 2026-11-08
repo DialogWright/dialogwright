@@ -14,7 +14,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { mockCodeVerifier } from '../core/tools';
 import { newSession, type Session } from '../core/session';
-import { checkAgentReply, judgedHistory, shapeLeak } from './agentLine';
+import { checkAgentReply, judgedHistory, shapeLeak, textValueFigures } from './agentLine';
 import { redactRecordSlots } from '../trace/redact';
 import { AGENT_DRIFT_QUESTION_ID } from './checks';
 
@@ -303,6 +303,20 @@ describe('the review of Task 7', () => {
     // Its held value and display stay sources: "two copies" said back passes.
     const ok = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, lovely. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words]);
     expect(ok.last.record.agent!.line).toMatchObject({ mode: 'generated' });
+  });
+
+  it('a text value\'s figure is a source where it is in the value as held and in its cited words; a figure said outside them is not', async () => {
+    const words = "it's the 2019 edition of The Quiet Harbor";
+    const value = [['title', 'The Quiet Harbor, 2019 edition', 'the 2019 edition of The Quiet Harbor']] as [string, string, string][];
+    const ok = await call({ [words]: said('The 2019 edition, lovely. What name is it under?', value) }, [words]);
+    expect(ok.last.record.agent!.line).toMatchObject({ mode: 'generated' });
+    const other = await call({ [words]: said('The 2020 edition, lovely. What name is it under?', value) }, [words]);
+    expect(other.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
+    const outside = 'The Quiet Harbor, and is it under 5 dollars?';
+    const asked = await call({ [outside]: said('Yes, under 5 dollars. What name is it under?', [['title', 'The Quiet Harbor', 'The Quiet Harbor']]) }, [outside]);
+    expect(asked.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
+    expect(textValueFigures('2020 BMW 3 Series', "it's a 2020 BMW 3 Series")).toBe('2020 3');
+    expect(textValueFigures('2020 BMW 3 Series', "it's a BMW, the 3 Series")).toBe('3');
   });
 
   it('"in two days?" against "Yes, two days is fine": the caller\'s figure, refused', async () => {

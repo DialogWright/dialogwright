@@ -271,6 +271,11 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
     - **`pnpm check` warns of a field's labels in an agent-mode app's corpus**, since a corpus line runs without the agent (the guide's note comes in Task 11). `--client jev` is refused in CI for the agent model, as recording is.
     - **The judge's history** takes off only the line this turn noted. The bake-off counts, beside the replies with a figure not in the facts, those whose only such figure is the number one, so the cost of call 32's "one" is measured in Task 12.
 
+34. **(2026-11-09, from building `apps/wheelshop`) Decided by the maintainer:**
+    - **A figure in an accepted text value is a source** where it is both in the value as held and in the words the value was cited from ("2020 BMW 3 Series" from "it's a 2020 BMW 3 Series"), so "A 3 Series, nice" passes. A figure the caller says outside an accepted value's own words stays no source (call 32 holds).
+    - **The app map draws a tool a field sees** as called once its field is filled, its result shown to the model (a dotted edge from the slot), never by the read-back's yes; the forms' `calls` still list it, so reach is checked as before.
+    - **A default corpus seed:** an agent-mode app whose code writes no `testing.seed` gets one from business.yaml, by the slots the engine builds (`<form>_<field>`): each value the app's grid's (`policyMatrix().values`, by field) or a stand-in of its type, its display as the slot's own check shows it, and with accounts the first account recognized at level 1, calling from its first number. An app's own seed wins.
+
 ## Left to the builder
 
 - each slot type's `check`, within the rule above;

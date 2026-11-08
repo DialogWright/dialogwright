@@ -5,13 +5,17 @@ import { openPart, replyShape } from '../core/replyShape';
 import { isAnonymous, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, slotIdOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
-import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, formParams, PRICE_PROMPT } from './businessFiles';
+import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, fieldSlotConfig, formParams, PRICE_PROMPT, wordsOf } from './businessFiles';
+import { buildSlot } from '../slots/defineSlot';
+import type { BuiltSlotSpec } from '../slots/types';
+import { ANONYMOUS } from '../gate/principal';
+import { REGRESS_TODAY } from '../harness-text/baseline';
 import { styleOf } from '../render/config';
 import type { AppCode } from './defineApp';
 import type { LoadedConfig } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
 import { DEFAULT_AGENT_MODEL } from './schema/style';
-import type { BusinessFormName, BusinessYaml } from './schema/business';
+import type { BusinessFieldYaml, BusinessFormName, BusinessYaml } from './schema/business';
 
 /**
  * An app in agent mode, joined with its code: what the engine adds to the app's code for the app
@@ -219,7 +223,60 @@ export function businessCode(b: BusinessYaml, code: AppCode): AppCode {
     forms,
     systems,
     ...(accounts ? { facts: accountFacts() } : {}),
+    // A corpus line said mid-call is seeded by the slots the engine builds: the app's own seed where it writes one.
+    testing: { ...code.testing, seed: code.testing?.seed ?? defaultSeed(b, code) },
   };
+}
+
+/** The day a default seed's date fields hold where the app's grid gives none: a week after the regression's day. */
+const SEED_DAY = new Date(Date.parse(`${REGRESS_TODAY}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+
+/** A stand-in for a field of its type, where the app's grid (App.testing.policyMatrix values) gives none. */
+function standIn(f: BusinessFieldYaml, options: Record<string, string>): string {
+  switch (f.type) {
+    case 'choice': return Object.keys(options)[0] ?? '';
+    case 'date': return SEED_DAY;
+    case 'digits': return '5555550100'.padEnd(f.length ?? 10, '0').slice(0, f.length ?? 10);
+    case 'name': return 'avery lane';
+    default: return wordsOf(f.name);
+  }
+}
+
+/**
+ * The seed a corpus line said mid-call is set up with (App.testing.seed), for an app in agent mode whose
+ * code writes none: the stand-in of every field of every form, by the slot the engine builds for it
+ * (`<form>_<field>`), each value the app's own grid's (App.testing.policyMatrix `values`, by field) or one
+ * of its type, and its display as the slot's own check shows it (what the read-back says); with accounts,
+ * the first account, recognized at level 1, calling from its first number.
+ */
+export function defaultSeed(b: BusinessYaml, code: AppCode): NonNullable<NonNullable<AppCode['testing']>['seed']> {
+  let given: Readonly<Record<string, string>> = {};
+  try {
+    given = code.testing?.policyMatrix?.().values ?? {};
+  } catch {
+    given = {};
+  }
+  const placeholders: Record<string, { value: string; display: string }> = {};
+  for (const { name, form } of businessForms(b)) {
+    for (const f of form.fields) {
+      const id = slotIdOf(name, f.name);
+      const options = f.type === 'choice' ? fieldOptions(b, f) : {};
+      const value = given[f.name] ?? standIn(f, options);
+      const built = buildSlot(id, fieldSlotConfig(b, f));
+      // The display the slot's own check gives the value, as of the day before a date's (a date ahead is in range).
+      const day = f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(Date.parse(`${value}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10) : REGRESS_TODAY;
+      const checked = built.ok ? (built.spec as BuiltSlotSpec).check?.(value, value, value, { today: day }) : undefined;
+      placeholders[id] = checked?.ok === true ? { value: String(checked.value), display: checked.shown } : { value, display: options[value] ?? value };
+    }
+  }
+  const first = b.accounts?.[0];
+  const keys = accountOptions(b);
+  const key = first === undefined ? undefined : Object.keys(keys).find((k) => keys[k] === first.name);
+  if (first !== undefined && key !== undefined && b.booking !== undefined) {
+    placeholders[ACCOUNT_SLOT] = { value: key, display: first.name };
+    return { caller: () => ({ kind: ACCOUNT_SLOT, level: 1, id: key, first: first.name }), placeholders, ...(first.numbers[0] !== undefined ? { callerNumber: first.numbers[0] } : {}) };
+  }
+  return { caller: () => ANONYMOUS, placeholders };
 }
 
 /**

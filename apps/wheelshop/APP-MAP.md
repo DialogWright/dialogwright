@@ -58,7 +58,7 @@ flowchart LR
   r_notify_owner_request(["Rules, in order<br/>1. identity<br/>2. confirmed"])
   a_notify_owner_request --> r_notify_owner_request
   a_availability["Read the free drop-off windows on a day<br/>level 0: anonymous"]
-  summary -->|"calls"| a_availability
+  s_request_day -.->|"once filled, its result shown to the model"| a_availability
   r_availability(["Rules, in order<br/>1. identity"])
   a_availability --> r_availability
 ```
@@ -88,7 +88,7 @@ flowchart LR
   r_notify_owner_booking(["Rules, in order<br/>1. identity<br/>2. scope<br/>3. confirmed"])
   a_notify_owner_booking --> r_notify_owner_booking
   a_availability["Read the free drop-off windows on a day<br/>level 0: anonymous"]
-  summary -->|"calls"| a_availability
+  s_booking_day -.->|"once filled, its result shown to the model"| a_availability
   r_availability(["Rules, in order<br/>1. identity"])
   a_availability --> r_availability
 ```
