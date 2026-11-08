@@ -34,7 +34,8 @@ import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, 
  *   8000 in a chat. Past half of it the caller hears the second hold line (kb_hold_more) where the app has
  *   it; past it, the line's fallback (answers.documents.onFail). RENDER_DOCUMENTS_TIMEOUT_MS sets both.
  * - RENDER_PRICE_INPUT_PER_MTOK and RENDER_PRICE_OUTPUT_PER_MTOK: the model's price in US dollars per
- *   million tokens, for the cost in the trace and Insights; default the default model's.
+ *   million tokens, for the cost in the trace and Insights; default the model's own where the engine knows
+ *   it (RENDER_PRICE_BY_MODEL: Mercury 3's), else the default model's.
  * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
  *   (renderThinkingOf), default the model's own way of thinking least (THINKING_BY_MODEL); on OpenRouter
  *   (openRouterThinkingOf), default reasoning off (`reasoning: { effort: 'none' }`); on Inception
@@ -197,6 +198,17 @@ export function clampInceptionTemperature(t: number): number {
   return Math.min(INCEPTION_TEMPERATURE.max, Math.max(INCEPTION_TEMPERATURE.min, t));
 }
 
+/**
+ * What the server's start line and `pnpm diagnose` say of the app's temperatures on Inception: each one
+ * outside its range, as it is sent (`style.yaml's temperature 0.2 is sent as 0.5`); none on another provider.
+ */
+export function inceptionTemperatureNotes(p: { provider: RenderProviderName }, model: RenderModelChoice | undefined): string[] {
+  if (p.provider !== 'inception' || model === undefined) return [];
+  return (['temperature', 'retryTemperature'] as const)
+    .filter((k) => model[k] !== undefined && clampInceptionTemperature(model[k]!) !== model[k])
+    .map((k) => `style.yaml's ${k} ${model[k]} is sent as ${clampInceptionTemperature(model[k]!)}`);
+}
+
 /** The `thinking` and `output_config` an Anthropic request carries for `t`. */
 export function anthropicThinkingBody(t: RenderThinking): Record<string, unknown> {
   const thinking = t.mode === 'disabled' ? { type: 'disabled' } : t.mode === 'between-tools' ? { type: 'between_tools' } : t.mode === 'adaptive' ? { type: 'adaptive', display: 'omitted' } : undefined;
@@ -217,7 +229,7 @@ export function thinkingLabel(t: RenderThinking): string {
 export function providerSettingsLabel(p: RenderProvider): string | null {
   if (p.provider === 'inception') {
     const effort = inceptionReasoningBody(p.thinking ?? { mode: 'disabled', overridden: false }).reasoning_effort;
-    return [effort !== undefined ? `reasoning_effort ${String(effort)}` : 'reasoning_effort its own', ...(p.realtime === true ? ['realtime'] : [])].join(', ');
+    return [effort !== undefined ? `reasoning_effort ${String(effort)}` : "no reasoning_effort (Inception's default)", ...(p.realtime === true ? ['realtime'] : [])].join(', ');
   }
   return p.thinking !== undefined ? thinkingLabel(p.thinking) : null;
 }
@@ -243,8 +255,10 @@ export interface RenderProvider {
  */
 export function renderCassetteModel(p: RenderProvider): string {
   const t = p.thinking;
-  if (t === undefined || !t.overridden) return p.model;
-  return `${p.model}.thinking-${t.mode}${t.effort !== undefined ? `.effort-${t.effort}` : ''}`;
+  // Inception with realtime off (RENDER_REALTIME=off) is recorded apart, so it never replays or writes into the realtime cassette.
+  const realtime = p.provider === 'inception' && p.realtime === false ? '.realtime-off' : '';
+  if (t === undefined || !t.overridden) return `${p.model}${realtime}`;
+  return `${p.model}.thinking-${t.mode}${t.effort !== undefined ? `.effort-${t.effort}` : ''}${realtime}`;
 }
 
 const KNOWN: Record<RenderProviderName, { url: string; keyVar: string; model: string }> = {
@@ -388,15 +402,35 @@ function perChannel(env: Env, base: string, defaults: { readonly voice: number; 
   return { voice: one('voice'), chat: one('chat') };
 }
 
-/** RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, and the price, with their defaults. */
-export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
+/**
+ * The price of the models whose price the engine knows, US dollars per million tokens: the default model
+ * (Claude Haiku 5.5, on Anthropic and on OpenRouter) and Inception's Mercury 3. Mercury 3's is Inception's
+ * regular price, $0.20 input and $0.70 output; at its launch discount it was $0.10 and $0.35 (Inception's
+ * docs, read 2026-11-08), so a cost counted at the regular price may be over what was paid.
+ */
+export const RENDER_PRICE_BY_MODEL: Readonly<Record<string, RenderPrice>> = {
+  'claude-haiku-5-5': DEFAULT_RENDER_PRICE,
+  'anthropic/claude-haiku-5.5': DEFAULT_RENDER_PRICE,
+  'mercury-3': { input: 0.2, output: 0.7 },
+};
+
+/** A model's default price: its own where RENDER_PRICE_BY_MODEL knows it, else the default model's. */
+export function defaultRenderPrice(model: string | undefined): RenderPrice {
+  return (model !== undefined ? RENDER_PRICE_BY_MODEL[model] : undefined) ?? DEFAULT_RENDER_PRICE;
+}
+
+/**
+ * RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, and the price, with their
+ * defaults; the price's default is `model`'s where it is known (defaultRenderPrice), else the default model's.
+ */
+export function renderSettings(env: Env = process.env, model?: string): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
     timeoutMs: perChannel(env, 'RENDER_TIMEOUT', DEFAULT_RENDER_TIMEOUT_MS),
     checkTimeoutMs: perChannel(env, 'RENDER_CHECK_TIMEOUT', DEFAULT_RENDER_CHECK_TIMEOUT_MS),
     answerTimeoutMs: perChannel(env, 'RENDER_ANSWER_TIMEOUT', DEFAULT_RENDER_ANSWER_TIMEOUT_MS),
     documentsTimeoutMs: perChannel(env, 'RENDER_DOCUMENTS_TIMEOUT', DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS),
-    price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', DEFAULT_RENDER_PRICE.input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', DEFAULT_RENDER_PRICE.output) },
+    price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', defaultRenderPrice(model).input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', defaultRenderPrice(model).output) },
   };
 }
 
@@ -413,6 +447,11 @@ const THINKING_MAX_TOKENS = 4000;
 /** The API's own account of a failed request (its error's type and message), made safe to record: one line, short, no key. */
 function apiError(json: unknown, key: string): { type?: string; message?: string } {
   const e = (json as { error?: unknown } | null)?.error;
+  // A body that is not OpenAI's shape (FastAPI's `{ "detail": ... }`, as Inception's may be): its detail as the message.
+  if (e === undefined) {
+    const detail = detailOf((json as { detail?: unknown } | null)?.detail);
+    return detail !== null ? { message: safeErrorText(detail, key) } : {};
+  }
   if (e === null || typeof e !== 'object') return {};
   const o = e as { type?: unknown; code?: unknown; message?: unknown; metadata?: unknown };
   // Anthropic's error has a type; OpenRouter's a code, which may be the HTTP status again (a number:
@@ -422,6 +461,14 @@ function apiError(json: unknown, key: string): { type?: string; message?: string
   const upstream = upstreamError(o.metadata);
   const message = own !== null && upstream !== null ? `${own} (${upstream})` : own ?? upstream;
   return { ...(type !== undefined && WORD.test(type) ? { type } : {}), ...(message !== null ? { message: safeErrorText(message, key) } : {}) };
+}
+
+/** A `detail` field's text: a string, or a validation error's list read by each item's `msg` alone (never its `input`). */
+function detailOf(d: unknown): string | null {
+  if (typeof d === 'string') return d.trim() !== '' ? d : null;
+  if (!Array.isArray(d)) return null;
+  const msgs = d.map((i) => (i !== null && typeof i === 'object' && typeof (i as { msg?: unknown }).msg === 'string' ? (i as { msg: string }).msg : null)).filter((m): m is string => m !== null && m.trim() !== '');
+  return msgs.length > 0 ? msgs.join('; ') : null;
 }
 
 /** A word an error may name as it is: a type, a code, a provider. */

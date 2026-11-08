@@ -26,6 +26,7 @@ import {
   resolveRenderProvider,
   providerSettingsLabel,
   RENDER_KEY_VARS,
+  RENDER_PRICE_BY_MODEL,
   thinkingLabel,
   type RenderEffort,
   type RenderProvider,
@@ -119,8 +120,8 @@ export function envForModel(spec: ModelSpec, env: Env): Env {
 /** The key variable each provider's recording needs (render/providers.ts). */
 export { RENDER_KEY_VARS };
 
-/** The models whose price is known without `--price`: the default model's, on either provider (DEFAULT_RENDER_PRICE). */
-export const PRICED_BY_DEFAULT: Readonly<Record<string, RenderPrice>> = { 'claude-haiku-5-5': DEFAULT_RENDER_PRICE, 'anthropic/claude-haiku-5.5': DEFAULT_RENDER_PRICE };
+/** The models whose price is known without `--price` (render/providers.ts RENDER_PRICE_BY_MODEL): the default model's, on either provider, and Mercury 3's (Inception's regular price). */
+export const PRICED_BY_DEFAULT: Readonly<Record<string, RenderPrice>> = RENDER_PRICE_BY_MODEL;
 
 /** Reads `--price <model>=<input>,<output>` (US dollars per million tokens), each repeatable. Throws on a malformed one. */
 export function parsePrices(values: readonly string[]): Map<string, RenderPrice> {

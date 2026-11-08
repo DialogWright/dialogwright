@@ -105,6 +105,7 @@ describe('the models named', () => {
       { entry: 'inception:mercury-3', provider: 'inception', model: 'mercury-3' },
       { entry: 'inception:mercury-3:low', provider: 'inception', model: 'mercury-3', effort: 'low' },
     ]);
+    expect(parsePrices([]).get('mercury-3')).toEqual({ input: 0.2, output: 0.7 });
     expect(() => parseModelSpecs(['inception:mercury-3:instant'])).toThrow('got "instant" (reasoning_effort instant is the default: leave it out, or say disabled)');
   });
 
