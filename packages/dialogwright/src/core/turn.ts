@@ -46,7 +46,7 @@ import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
 import type { AgentResult } from '../agent/types';
-import { agentDropped, agentLed, agentWords, noteConversation, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
+import { agentDropped, agentLed, agentWords, noteConversation, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
   /**
@@ -401,8 +401,10 @@ export function plan(session: Session, event: SessionEvent, turnContext: TurnCon
   // ignored, so the model is not asked either.
   if ((event.type !== 'user.speech' && event.type !== 'user.text') || session.ended || session.pendingService !== null || turnContext.duringService === true) return { needsModel: false, turnState: null, questions: null };
   const tc = appTurnContext(appOf(session), turnContext);
-  const turnState = buildTurnState(session, heard(session, event), tc.nowMs);
-  const questions = buildQuestions(session, slotContext(session, event.text, tc));
+  // A turn with no agent client is a scripted one from now on (scriptedFromNow): its questions are a scripted app's.
+  const asked = scriptedFromNow(session, tc) ? { ...session, agent: { conversation: session.agent?.conversation ?? [], failures: session.agent?.failures ?? 0, scripted: true as const } } : session;
+  const turnState = buildTurnState(asked, heard(asked, event), tc.nowMs);
+  const questions = buildQuestions(asked, slotContext(asked, event.text, tc));
   return { needsModel: true, turnState, questions };
 }
 
@@ -3219,6 +3221,7 @@ const SCRIPTED_STEPS: ScriptedSteps = {
   handleVerdict,
   personForm,
   askSummary,
+  summaryPrompt,
   askChange,
   reaskConfirmation,
   continueForm,
@@ -3252,6 +3255,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   const s = cloneSession(session);
   const tc = appTurnContext(appOf(s), turnContext);
   const io: TurnIO = { app: appOf(s), tc, out: newTurnOut(), prefix: [] };
+  // An app in agent mode run with no agent client (no key) runs as a scripted app from this turn for the
+  // rest of the call: a call begun so, and one resumed on a server without the key (Session.agent.scripted).
+  if (scriptedFromNow(s, tc)) s.agent = { conversation: s.agent?.conversation ?? [], failures: s.agent?.failures ?? 0, scripted: true };
   // A moment asked for on the turn before is this turn's to read, and over after it.
   if (s.takingTime === true) {
     io.tookTime = true;
@@ -3311,7 +3317,6 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const data = keptCallData(io.app, event.callData);
       if (data !== undefined) s.callData = data;
       // An app in agent mode whose call begins with no agent client (no key) runs as a scripted app for the whole call.
-      if (io.app.mode === 'agent' && tc.noAgentClient === true) s.agent = { conversation: [], failures: 0, scripted: true };
       // The app's start hook, once, for every call, before the call-start lookup (App.onStart).
       startHook(s, io);
       // The app's lookup by that number, once, before the greeting, through the gate.

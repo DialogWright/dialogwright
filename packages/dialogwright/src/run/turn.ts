@@ -135,7 +135,8 @@ export interface RunOptions {
    * The agent model of an app in agent mode (core/agentTurn.ts): its client and its budgets per channel
    * (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS). Asked beside the decision model on each turn of words
    * it can answer, so it adds no wait of its own beyond the slower of the two. Unset on a run of an app in
-   * agent mode, every such turn says its fixed fallback (no agent client); every other app never asks it.
+   * agent mode (no key), the call runs as a scripted app from that turn on (core/agentTurn.ts
+   * scriptedFromNow); every other app never asks it.
    */
   agent?: AgentRunner | null;
 }

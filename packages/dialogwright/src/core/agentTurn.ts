@@ -37,9 +37,10 @@ import type { ScreenResult } from './screen';
  *    one walks its slot's ladder. With none, the decision model's yes completes the form (its
  *    engine-written `complete` hook calls its `then` through the gate), whatever the answer proposed; a
  *    `callback` opens the person form; a no asks what to change (`ask_change`) and a second no reads it
- *    again on its ladder; a question (an answer from the facts, or a reply to words neither a yes nor a
- *    no) is answered as an aside, the reply and then the read-back again, uncounted; anything else reads
- *    the read-back again on its ladder.
+ *    again on its ladder; a question answered from the facts is an aside, the reply and then the read-back
+ *    again as it stands, uncounted; anything else (words neither a yes nor a no) asks the read-back again
+ *    on its ladder, counted, the reply before it as an aside (after "What should I change?", that
+ *    question with the reply in its place), so words that settle nothing reach the keypad and a person.
  * 2. **A form opened**: with none open, the request the decision model read opens its form; failing that,
  *    the form the answer's values belong to (the caller's own forms only: one only a recognized caller
  *    may open is never chosen for anyone else). A form only a recognized caller may open, asked for by
@@ -60,9 +61,9 @@ import type { ScreenResult } from './screen';
  *    form (App.personForm). A form's `then` tools are the engine's, called only by the yes at its read-back;
  *    the model never runs a tool.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
- *    says why (`fallback`); the second such turn in a row ends the call with the handoff line. A call that
- *    begins with no agent client (no key) runs as a scripted app for the whole call (agentLed); a client
- *    missing on a later turn of a call begun with one is no failure: the fixed question, nothing counted.
+ *    says why (`fallback`); the second such turn in a row ends the call with the handoff line. A call with
+ *    no agent client (no key) runs as a scripted app from that turn for the rest of the call
+ *    (scriptedFromNow): one begun so, and one resumed on a server without the key.
  *
  * Speech heard over a line the caller could not interrupt whose answer understood nothing (no value
  * accepted or refused, no action, nothing from the facts) is a miss, and is set aside as in a scripted app
@@ -129,10 +130,9 @@ export const CALLBACK_ACTION = 'callback';
  * offer of the caller's number or of a person, a request's confirmation, are answered by the decision
  * model's yes or no alone).
  */
-export function agentAsks(session: Session, event: SessionEvent, tc: Pick<TurnContext, 'duringService'>): boolean {
+export function agentAsks(session: Session, event: SessionEvent, tc: Pick<TurnContext, 'duringService' | 'noAgentClient'>): boolean {
   if (event.type !== 'user.speech' && event.type !== 'user.text') return false;
-  const app = appOf(session);
-  if (!agentLed(session)) return false;
+  if (!agentLed(session) || tc.noAgentClient === true) return false;
   if (session.ended || session.pendingService !== null || tc.duringService === true) return false;
   const pc = session.pendingConfirmation;
   return pc === null || pc.target === 'form';
@@ -147,6 +147,15 @@ export function agentAsks(session: Session, event: SessionEvent, tc: Pick<TurnCo
 export function agentLed(session: Session): boolean {
   const app = appOf(session);
   return app.mode === 'agent' && app.agent !== undefined && session.agent?.scripted !== true;
+}
+
+/**
+ * Whether the session's turns become a scripted app's on this turn: an app in agent mode whose agent is
+ * leading the call, on a run with no agent client (no key). A call that begins so, and a call resumed on a
+ * server without the key, run as a scripted app from that turn for the rest of the call (Session.agent.scripted).
+ */
+export function scriptedFromNow(session: Session, tc: Pick<TurnContext, 'noAgentClient'>): boolean {
+  return tc.noAgentClient === true && agentLed(session);
 }
 
 /** The forms a caller may open, in the app's order: a form only a recognized caller may open only for one. */
@@ -288,6 +297,8 @@ export interface ScriptedSteps {
   handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): Handled;
   personForm(s: Session, reason: string, answers: AnswerMap, ctx: SlotContext, io: TurnIO): Handled | null;
   askSummary(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision;
+  /** The pending read-back said again as it stands: its attempts and its "What should I change?" kept. */
+  summaryPrompt(s: Session, form: FormId, acks: Ack[]): PromptDecision;
   askChange(pc: Extract<PendingConfirmation, { target: 'form' }>, acks: Ack[]): PromptDecision;
   reaskConfirmation(s: Session, io: TurnIO, acks?: Ack[]): Decision;
   continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: null): Decision;
@@ -583,20 +594,22 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     // A no with nothing more: what to change; a second asks the read-back again, on its ladder.
     return { decision: pc.askedChange === true ? steps.reaskConfirmation(s, io) : steps.askChange(pc, []), events: applied.events };
   }
-  // Asked what to change, and answered with no value yet ("the day"): the reply, in place of the question again.
-  if (pc.askedChange === true && answer !== null && !answer.fromFacts) {
-    if (understoodNothing(answer)) io.missed = true;
-    return { decision: withReply(prompt('ask_change', 'confirm', {}, []), answer.reply, record), events: applied.events };
+  // A question at the read-back ("do you open on Saturdays?"), an answer from the facts: answered as an
+  // aside, and the read-back said again as it stands (its attempts and its "What should I change?" kept), uncounted.
+  if (answer !== null && answer.values.length === 0 && answer.fromFacts) {
+    return { decision: withAside(steps.summaryPrompt(s, pc.form, []), answer.reply, record), events: applied.events };
   }
-  // A question at the read-back ("do you open on Saturdays?"): answered as an aside, and the read-back said again, uncounted.
-  // Words neither a yes nor a no that the answer understood nothing in are a miss, which speech over a line sets aside.
-  if (answer !== null && understoodNothing(answer)) io.missed = true;
-  // A question at the read-back ("do you open on Saturdays?"): answered as an aside, and the read-back said again, uncounted.
-  if (answer !== null && answer.values.length === 0 && (answer.fromFacts || replyOf(answer.reply) !== null)) {
-    const again = steps.askSummary(s, pc.form, [], io);
-    return { decision: again.kind === 'prompt' ? withAside(again, answer.reply, record) : again, events: applied.events };
+  // Anything else, neither a yes nor a no ("um", "the day" after "What should I change?"): the read-back
+  // asked again on its ladder, counted, so words that settle nothing reach the keypad and then a person.
+  // The reply is said before it, as an aside (held to the facts as every agent line is); after "What should
+  // I change?" the re-ask's rung is that question with the reply in its place.
+  const again = steps.reaskConfirmation(s, io);
+  const reply = answer?.reply ?? null;
+  if (again.kind !== 'prompt') return { decision: again, events: applied.events };
+  if (pc.askedChange === true && again.target === 'confirm' && again.promptId !== 'confirm_dtmf') {
+    return { decision: withReply(prompt('ask_change', 'confirm', {}, again.acks), reply, record), events: applied.events };
   }
-  return { decision: steps.reaskConfirmation(s, io), events: applied.events };
+  return { decision: withAside(again, reply, record), events: applied.events };
 }
 
 /**

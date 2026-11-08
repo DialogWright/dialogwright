@@ -460,18 +460,53 @@ describe('the review of Task 6', () => {
     expect(change.last.result.session).toEqual(change.runs.at(-2)!.result.session);
   });
 
-  it('a client gone on a later turn of a call begun with one is no failure: three turns and more each say the fixed question, never a handoff', async () => {
+  it('a client gone on a later turn of a call begun with one (resumed on a server without the key) runs as a scripted app from that turn', async () => {
     const tools = { ...app.systems(), codes: mockCodeVerifier };
-    const base = { client: jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools };
-    let s = (await runTurn(newSession('S-gone', 0, VOICE_RELAY, ANONYMOUS, app.id), withCallerNumber(startEvent(), STRANGER), { ...base, agent: { client: fakeAgent(() => HOLD_ANSWER) } })).result.session;
+    const j = jev();
+    const base = { client: j, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools };
+    const withAgent = { ...base, agent: { client: fakeAgent(() => HOLD_ANSWER) } };
+    let s = (await runTurn(newSession('S-gone', 0, VOICE_RELAY, ANONYMOUS, app.id), withCallerNumber(startEvent(), STRANGER), withAgent)).result.session;
+    s = (await runTurn(s, speechEvent(HOLD), withAgent)).result.session;
     expect(s.agent?.scripted).toBeUndefined();
-    for (const words of [HOLD, 'Avery Lane', 'two copies', 'Thursday']) {
-      const r = await runTurn(s, speechEvent(words), base);
-      s = r.result.session;
-      expect(r.result.decision.kind).toBe('prompt');
-      expect(r.record.agent).toMatchObject({ use: 'failed', detail: 'no agent client', replySaid: false });
-      expect(s.agent!.failures).toBe(0);
-    }
+    expect(s.form).toBe('request');
+    // The key gone: from this turn, the decision model asks the field's questions and fills them, as in a scripted app.
+    const gone = await runTurn(s, speechEvent('Avery Lane'), base);
+    s = gone.result.session;
+    expect(s.agent).toMatchObject({ scripted: true });
+    expect(Object.keys(j.asked.at(-1)!.questions)).toEqual(expect.arrayContaining(['request_patronNameGiven']));
+    expect(gone.record.agent).toBeUndefined();
+    expect(gone.result.session.slots.request_title!.value).toBe('The Quiet Harbor');
+    // The client back on a later turn: the call stays scripted, and the agent is never asked again.
+    const back = await runTurn(s, speechEvent('two copies'), withAgent);
+    expect(back.result.session.agent).toMatchObject({ scripted: true });
+    expect(back.record.agent).toBeUndefined();
+    expect(Object.keys(j.asked.at(-1)!.questions)).toEqual(expect.arrayContaining(['request_copies']));
+  });
+
+  it('words that settle nothing at the read-back walk its ladder: the keypad rung, then a person', async () => {
+    const ums = ['um', 'umm', 'ummm', 'uh', 'uhh', 'uhhh'];
+    const c = await call({ ...toReadBack, ...Object.fromEntries(ums.map((u) => [u, said('Sorry?')])) }, [HOLD, DETAILS, ...ums]);
+    const after = c.runs.slice(3).map((r) => (r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
+    expect(after).toContain('confirm_dtmf');
+    expect(after).toContain('handoff');
+    expect(after.indexOf('confirm_dtmf')).toBeLessThan(after.indexOf('handoff'));
+    // Each is counted on the read-back, its reply said before the read-back again as an aside.
+    expect(c.runs[3]!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
+    expect(heard(c.runs[3]!)).toBe(`Sorry? ${READ_BACK}`);
+    expect(c.sys.holds).toEqual([]);
+  });
+
+  it('"no", then a question, then "no" never asks "What should I change?" twice', async () => {
+    const q = 'how long do you keep holds';
+    const c = await call({ ...toReadBack, no: said('What should I change?'), [q]: said('Holds are kept at the front desk for a week.', [], 'none', true), 'no.': said('Okay.') }, [HOLD, DETAILS, 'no', q, 'no.']);
+    const [, , , first, question, second] = c.runs;
+    expect(promptOf(first!)).toBe('ask_change');
+    expect(promptOf(question!)).toBe('readback_request');
+    expect(heard(question!)).toBe(`Holds are kept at the front desk for a week. ${READ_BACK}`);
+    // The question kept the read-back as it stood: its "What should I change?" already asked.
+    expect(question!.result.session.pendingConfirmation).toMatchObject({ target: 'form', askedChange: true, attempts: 1 });
+    expect(promptOf(second!)).not.toBe('ask_change');
+    expect(c.sys.holds).toEqual([]);
   });
 
   it('the history keeps each utterance on one line: words cannot pass for the line\'s', async () => {
