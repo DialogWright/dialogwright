@@ -6,15 +6,33 @@
     "steps": [
       {
         "say": "How much do you charge to fix curb rash?",
-        "agent": { "reply": "It depends on the damage.", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }], "fromFacts": true, "fixedLine": "price" }
+        "agent": {
+          "reply": "It depends on the damage.",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ],
+          "fromFacts": true,
+          "fixedLine": "price"
+        }
       },
       {
         "say": "Come on, roughly. Is it under a hundred bucks?",
-        "agent": { "reply": "Usually it's under $100, but Sam confirms from the photo. What car is it?", "fromFacts": true }
+        "agent": {
+          "reply": "Usually it's under $100, but Sam confirms from the photo. What car is it?",
+          "fromFacts": true
+        }
       },
       {
         "say": "Seriously, just give me a number.",
-        "agent": { "reply": "I can't give you one.", "fromFacts": true, "fixedLine": "price" }
+        "agent": {
+          "reply": "I can't give you one.",
+          "fromFacts": true,
+          "fixedLine": "price"
+        }
       }
     ],
     "expect": {
@@ -22,7 +40,9 @@
       "promptId": "ask_request_callerName",
       "form": "request",
       "action": "none",
-      "said": { "notFigure": true }
+      "said": {
+        "notFigure": true
+      }
     }
   },
   {
@@ -33,22 +53,198 @@
       {
         "say": "This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.",
         "agent": [
-          { "reply": "Booked you in for tomorrow afternoon.", "values": [{ "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "afternoon", "words": "afternoon" }], "action": "submit" },
-          { "reply": "Tomorrow afternoon's open.", "values": [{ "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "afternoon", "words": "afternoon" }] }
+          {
+            "reply": "Booked you in for tomorrow afternoon.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "afternoon"
+              }
+            ],
+            "action": "submit"
+          },
+          {
+            "reply": "Tomorrow afternoon's open.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "afternoon"
+              }
+            ]
+          }
         ]
-      },
-      {
-        "say": "OK, it's a Honda Civic and I'm Mike Dunn.",
-        "agent": { "reply": "Thanks, Mike. How many wheels need work?", "values": [{ "field": "vehicle", "value": "Honda Civic", "words": "Honda Civic" }, { "field": "callerName", "value": "Mike Dunn", "words": "Mike Dunn" }] }
       }
     ],
     "expect": {
       "decision": "prompt",
-      "form": "request",
+      "promptId": "anything_else",
       "principalLevel": 0,
-      "action": { "not": "book" },
-      "said": { "notFigure": true, "lines": ["booking_for_accounts"] },
-      "levelHeld": true
+      "action": "request",
+      "said": {
+        "notFigure": true,
+        "lines": [
+          "booking_for_accounts"
+        ]
+      },
+      "levelHeld": true,
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_callerName": {
+        "say": "OK, it's a Honda Civic and I'm Mike Dunn.",
+        "agent": {
+          "reply": "Thanks, Mike. How many wheels need work?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Honda Civic",
+              "words": "Honda Civic"
+            },
+            {
+              "field": "callerName",
+              "value": "Mike Dunn",
+              "words": "Mike Dunn"
+            }
+          ]
+        }
+      },
+      "request_vehicle": {
+        "say": "OK, it's a Honda Civic and I'm Mike Dunn.",
+        "agent": {
+          "reply": "Thanks, Mike. How many wheels need work?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Honda Civic",
+              "words": "Honda Civic"
+            },
+            {
+              "field": "callerName",
+              "value": "Mike Dunn",
+              "words": "Mike Dunn"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "It's two wheels, both with curb rash.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            },
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ]
+        }
+      },
+      "request_damage": {
+        "say": "It's two wheels, both with curb rash.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            },
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ]
+        }
+      },
+      "request_diamondCut": {
+        "say": "Oh, yeah. It's two-tone, black with shiny silver lines.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "yes",
+              "words": "two-tone"
+            }
+          ]
+        }
+      },
+      "request_day": {
+        "say": "This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "afternoon"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "afternoon"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "afternoon",
+              "words": "afternoon"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      }
     }
   },
   {
@@ -58,28 +254,224 @@
       {
         "say": "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?",
         "agent": [
-          { "reply": "Sure, Friday morning.", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }, { "field": "wheels", "value": "one", "words": "one wheel" }, { "field": "vehicle", "value": "Civic", "words": "my Civic" }, { "field": "day", "value": "2026-11-13", "words": "Friday" }, { "field": "window", "value": "morning", "words": "morning" }] },
-          { "reply": "Friday morning's full, but the afternoon's open. Would the afternoon work?", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }, { "field": "wheels", "value": "one", "words": "one wheel" }, { "field": "vehicle", "value": "Civic", "words": "my Civic" }, { "field": "day", "value": "2026-11-13", "words": "Friday" }] }
+          {
+            "reply": "Sure, Friday morning.",
+            "values": [
+              {
+                "field": "damage",
+                "value": "curb rash",
+                "words": "curb rash"
+              },
+              {
+                "field": "wheels",
+                "value": "one",
+                "words": "one wheel"
+              },
+              {
+                "field": "vehicle",
+                "value": "Civic",
+                "words": "my Civic"
+              },
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "Friday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          },
+          {
+            "reply": "Friday morning's full, but the afternoon's open. Would the afternoon work?",
+            "values": [
+              {
+                "field": "damage",
+                "value": "curb rash",
+                "words": "curb rash"
+              },
+              {
+                "field": "wheels",
+                "value": "one",
+                "words": "one wheel"
+              },
+              {
+                "field": "vehicle",
+                "value": "Civic",
+                "words": "my Civic"
+              },
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "Friday"
+              }
+            ]
+          }
         ]
-      },
-      {
-        "say": "The afternoon's fine.",
-        "agent": { "reply": "Great. What's your name?", "values": [{ "field": "window", "value": "afternoon", "words": "The afternoon's fine" }] }
-      },
-      {
-        "say": "It's Casey Morgan, and you can text me at 555 555 0123.",
-        "agent": { "reply": "Thanks, Casey.", "values": [{ "field": "callerName", "value": "Casey Morgan", "words": "Casey Morgan" }, { "field": "callbackNumber", "value": "5555550123", "words": "555 555 0123" }], "action": "submit" }
-      },
-      { "say": "yes, that's right", "agent": { "reply": "" } }
+      }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
-      "values": { "callerName": "casey morgan", "vehicle": { "has": ["Civic"] }, "wheels": "one", "damage": { "has": ["curb rash"] }, "day": "2026-11-13", "window": "afternoon", "callbackNumber": "...0123" },
+      "values": {
+        "callerName": "casey morgan",
+        "vehicle": {
+          "has": [
+            "Civic"
+          ]
+        },
+        "wheels": "one",
+        "damage": {
+          "has": [
+            "curb rash"
+          ]
+        },
+        "day": "2026-11-13",
+        "window": "afternoon",
+        "callbackNumber": "...0123"
+      },
       "action": "request",
-      "said": { "notFigure": true },
+      "said": {
+        "notFigure": true
+      },
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_callerName": {
+        "say": "It's Casey Morgan, and you can text me at 555 555 0123.",
+        "agent": {
+          "reply": "Thanks, Casey.",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Casey Morgan",
+              "words": "Casey Morgan"
+            },
+            {
+              "field": "callbackNumber",
+              "value": "5555550123",
+              "words": "555 555 0123"
+            }
+          ]
+        }
+      },
+      "request_callbackNumber": {
+        "say": "It's Casey Morgan, and you can text me at 555 555 0123.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Casey Morgan",
+              "words": "Casey Morgan"
+            },
+            {
+              "field": "callbackNumber",
+              "value": "5555550123",
+              "words": "555 555 0123"
+            }
+          ]
+        }
+      },
+      "request_vehicle": {
+        "say": "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Civic",
+              "words": "my Civic"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "one wheel"
+            }
+          ]
+        }
+      },
+      "request_damage": {
+        "say": "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ]
+        }
+      },
+      "request_diamondCut": {
+        "say": "Oh, yeah. It's two-tone, black with shiny silver lines.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "yes",
+              "words": "two-tone"
+            }
+          ]
+        }
+      },
+      "request_day": {
+        "say": "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "Friday"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "Friday"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "The afternoon's fine.",
+        "agent": {
+          "reply": "Great. What's your name?",
+          "values": [
+            {
+              "field": "window",
+              "value": "afternoon",
+              "words": "The afternoon's fine"
+            }
+          ]
+        }
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      }
     }
   },
   {
@@ -90,16 +482,43 @@
       {
         "say": "yeah hi I need a wheel fixed, curb rash on my Audi",
         "overLine": true,
-        "agent": { "reply": "Curb rash on an Audi, Sam can sort that out. How many wheels need work?", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }, { "field": "vehicle", "value": "Audi", "words": "my Audi" }] }
+        "agent": {
+          "reply": "Curb rash on an Audi, Sam can sort that out. How many wheels need work?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            },
+            {
+              "field": "vehicle",
+              "value": "Audi",
+              "words": "my Audi"
+            }
+          ]
+        }
       }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "ask_request_callerName",
       "form": "request",
-      "values": { "damage": { "has": ["curb rash"] }, "vehicle": { "has": ["Audi"] } },
+      "values": {
+        "damage": {
+          "has": [
+            "curb rash"
+          ]
+        },
+        "vehicle": {
+          "has": [
+            "Audi"
+          ]
+        }
+      },
       "action": "none",
-      "said": { "notFigure": true }
+      "said": {
+        "notFigure": true
+      }
     }
   },
   {
@@ -107,14 +526,29 @@
     "callerNumber": "+15555550177",
     "todayIso": "2026-11-09",
     "steps": [
-      { "say": "Can I just talk to Sam?", "agent": { "reply": "", "action": "callback" } },
-      { "say": "yes, call me on this one" },
-      { "say": "yes please", "agent": { "reply": "" } }
+      {
+        "say": "Can I just talk to Sam?",
+        "agent": {
+          "reply": "",
+          "action": "callback"
+        }
+      },
+      {
+        "say": "yes, call me on this one"
+      },
+      {
+        "say": "yes please",
+        "agent": {
+          "reply": ""
+        }
+      }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
-      "values": { "callbackNumber": "...0177" },
+      "values": {
+        "callbackNumber": "...0177"
+      },
       "action": "callback",
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"

@@ -7,25 +7,158 @@
       {
         "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
         "agent": [
-          { "reply": "Three for tomorrow morning, sure.", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] },
-          { "reply": "Tomorrow morning's open. Which cars are they, and which wheels?", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] }
+          {
+            "reply": "Three for tomorrow morning, sure.",
+            "values": [
+              {
+                "field": "cars",
+                "value": "three",
+                "words": "three trade-ins"
+              },
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          },
+          {
+            "reply": "Tomorrow morning's open. Which cars are they, and which wheels?",
+            "values": [
+              {
+                "field": "cars",
+                "value": "three",
+                "words": "three trade-ins"
+              },
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          }
         ]
-      },
-      {
-        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
-        "agent": { "reply": "Got it.", "values": [{ "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left", "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left." }], "action": "submit" }
-      },
-      { "say": "yes, book it", "agent": { "reply": "" } }
+      }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
       "principalLevel": 1,
-      "values": { "account": "rivergate_motors", "cars": "three", "vehicles": { "has": ["2019 Civic", "front two", "Tacoma", "all four", "2021 Model 3", "rear left"] }, "day": "2026-11-11", "window": "morning" },
+      "values": {
+        "account": "rivergate_motors",
+        "cars": "three",
+        "vehicles": {
+          "has": [
+            "2019 Civic",
+            "front two",
+            "Tacoma",
+            "all four",
+            "2021 Model 3",
+            "rear left"
+          ]
+        },
+        "day": "2026-11-11",
+        "window": "morning"
+      },
       "action": "book",
-      "said": { "notFigure": true },
+      "said": {
+        "notFigure": true
+      },
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "booking_cars": {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "cars",
+              "value": "three",
+              "words": "three trade-ins"
+            }
+          ]
+        }
+      },
+      "booking_day": {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          }
+        ]
+      },
+      "booking_window": {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "morning"
+            }
+          ]
+        }
+      },
+      "booking_vehicles": {
+        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
+        "agent": {
+          "reply": "Got it.",
+          "values": [
+            {
+              "field": "vehicles",
+              "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left",
+              "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left."
+            }
+          ],
+          "action": "submit"
+        }
+      },
+      "readback_booking": {
+        "say": "yes, book it",
+        "agent": {
+          "reply": ""
+        }
+      }
     }
   },
   {
@@ -35,47 +168,204 @@
     "steps": [
       {
         "say": "Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?",
-        "agent": { "reply": "Oh, that's no fun. Most curb rash can be fixed, and Sam sees it every day, so you're in the right place. What car is it?", "values": [{ "field": "damage", "value": "curb rash from a parking garage curb", "words": "I scraped my wheel on a curb pulling into a parking garage" }], "fromFacts": true }
-      },
-      {
-        "say": "It's a 2020 BMW 3 Series. Just the front passenger wheel.",
-        "agent": { "reply": "Nice car. Is the face of the wheel shiny bare metal with fine lines, or painted all over?", "values": [{ "field": "vehicle", "value": "2020 BMW 3 Series", "words": "2020 BMW 3 Series" }, { "field": "wheels", "value": "one", "words": "Just the front passenger wheel" }] }
-      },
-      {
-        "say": "I'm not sure. What's diamond cut? How would I tell?",
-        "agent": { "reply": "A diamond cut wheel has a bright bare-metal face with fine machined lines, and it's often two-tone. Does yours look like that?", "fromFacts": true }
-      },
-      {
-        "say": "Oh, yeah. It's two-tone, black with shiny silver lines.",
-        "agent": { "reply": "Then it's a diamond cut wheel, which is what the shop's lathe is for. What's your name?", "values": [{ "field": "diamondCut", "value": "yes", "words": "yeah" }], "fromFacts": true }
-      },
-      {
-        "say": "How much is that going to cost me? Just ballpark it.",
-        "agent": { "reply": "Sam quotes from a photo.", "fromFacts": true, "fixedLine": "price" }
-      },
-      {
-        "say": "Fine. It's Jordan Lee.",
-        "agent": { "reply": "Thanks, Jordan. What day would you like to drop it off?", "values": [{ "field": "callerName", "value": "Jordan Lee", "words": "Jordan Lee" }] }
-      },
-      {
-        "say": "Could I bring it Thursday? Morning would be best, before work.",
-        "agent": [
-          { "reply": "Thursday morning it is.", "values": [{ "field": "day", "value": "2026-11-12", "words": "Thursday" }, { "field": "window", "value": "morning", "words": "Morning" }] },
-          { "reply": "Thursday morning's open.", "values": [{ "field": "day", "value": "2026-11-12", "words": "Thursday" }, { "field": "window", "value": "morning", "words": "Morning" }] }
-        ]
-      },
-      { "say": "yes, that's my cell" },
-      { "say": "yes, that's right", "agent": { "reply": "" } }
+        "agent": {
+          "reply": "Oh, that's no fun. Most curb rash can be fixed, and Sam sees it every day, so you're in the right place. What car is it?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash from a parking garage curb",
+              "words": "I scraped my wheel on a curb pulling into a parking garage"
+            }
+          ],
+          "fromFacts": true
+        }
+      }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
       "principalLevel": 0,
-      "values": { "callerName": "jordan lee", "vehicle": { "has": ["2020", "BMW", "3 Series"] }, "wheels": "one", "damage": { "has": ["curb"] }, "diamondCut": "yes", "day": "2026-11-12", "window": "morning", "callbackNumber": "...0177" },
+      "values": {
+        "callerName": "jordan lee",
+        "vehicle": {
+          "has": [
+            "2020",
+            "BMW",
+            "3 Series"
+          ]
+        },
+        "wheels": "one",
+        "damage": {
+          "has": [
+            "curb"
+          ]
+        },
+        "diamondCut": "yes",
+        "day": "2026-11-12",
+        "window": "morning",
+        "callbackNumber": "...0177"
+      },
       "action": "send_photo_link",
-      "said": { "notFigure": true },
+      "said": {
+        "notFigure": true
+      },
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_callerName": [
+        {
+          "say": "How much is that going to cost me? Just ballpark it.",
+          "agent": {
+            "reply": "Sam quotes from a photo.",
+            "fromFacts": true,
+            "fixedLine": "price"
+          }
+        },
+        {
+          "say": "Fine. It's Jordan Lee.",
+          "agent": {
+            "reply": "Thanks, Jordan. What day would you like to drop it off?",
+            "values": [
+              {
+                "field": "callerName",
+                "value": "Jordan Lee",
+                "words": "Jordan Lee"
+              }
+            ]
+          }
+        }
+      ],
+      "request_vehicle": {
+        "say": "It's a 2020 BMW 3 Series. Just the front passenger wheel.",
+        "agent": {
+          "reply": "Nice car. Is the face of the wheel shiny bare metal with fine lines, or painted all over?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "2020 BMW 3 Series",
+              "words": "2020 BMW 3 Series"
+            },
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "Just the front passenger wheel"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "It's a 2020 BMW 3 Series. Just the front passenger wheel.",
+        "agent": {
+          "reply": "Nice car. Is the face of the wheel shiny bare metal with fine lines, or painted all over?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "2020 BMW 3 Series",
+              "words": "2020 BMW 3 Series"
+            },
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "Just the front passenger wheel"
+            }
+          ]
+        }
+      },
+      "request_damage": {
+        "say": "Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?",
+        "agent": {
+          "reply": "Oh, that's no fun. Most curb rash can be fixed, and Sam sees it every day, so you're in the right place. What car is it?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash from a parking garage curb",
+              "words": "I scraped my wheel on a curb pulling into a parking garage"
+            }
+          ],
+          "fromFacts": true
+        }
+      },
+      "request_diamondCut": [
+        {
+          "say": "I'm not sure. What's diamond cut? How would I tell?",
+          "agent": {
+            "reply": "A diamond cut wheel has a bright bare-metal face with fine machined lines, and it's often two-tone. Does yours look like that?",
+            "fromFacts": true
+          }
+        },
+        {
+          "say": "Oh, yeah. It's two-tone, black with shiny silver lines.",
+          "agent": {
+            "reply": "Then it's a diamond cut wheel, which is what the shop's lathe is for. What's your name?",
+            "values": [
+              {
+                "field": "diamondCut",
+                "value": "yes",
+                "words": "yeah"
+              }
+            ],
+            "fromFacts": true
+          }
+        }
+      ],
+      "request_day": {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": [
+          {
+            "reply": "Thursday morning it is.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-12",
+                "words": "Thursday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "Morning"
+              }
+            ]
+          },
+          {
+            "reply": "Thursday morning's open.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-12",
+                "words": "Thursday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "Morning"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "Morning"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      }
     }
   },
   {
@@ -86,29 +376,175 @@
       {
         "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
         "agent": [
-          { "reply": "Three for tomorrow morning, sure.", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] },
-          { "reply": "Tomorrow morning's open. Which cars are they, and which wheels?", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] }
+          {
+            "reply": "Three for tomorrow morning, sure.",
+            "values": [
+              {
+                "field": "cars",
+                "value": "three",
+                "words": "three trade-ins"
+              },
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          },
+          {
+            "reply": "Tomorrow morning's open. Which cars are they, and which wheels?",
+            "values": [
+              {
+                "field": "cars",
+                "value": "three",
+                "words": "three trade-ins"
+              },
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          }
         ]
-      },
-      {
-        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
-        "agent": { "reply": "Got it.", "values": [{ "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left", "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left." }], "action": "submit" }
-      },
-      {
-        "say": "Oh wait, take the Tacoma off. It's just the Civic and the Model 3, so two.",
-        "agent": { "reply": "Sure, two.", "values": [{ "field": "cars", "value": "two", "words": "so two" }, { "field": "vehicles", "value": "2019 Civic front two, 2021 Model 3 rear left", "words": "It's just the Civic and the Model 3" }], "action": "submit" }
-      },
-      { "say": "yes, book it", "agent": { "reply": "" } }
+      }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
       "principalLevel": 1,
-      "values": { "account": "rivergate_motors", "cars": "two", "vehicles": { "has": ["Civic", "Model 3"] }, "day": "2026-11-11", "window": "morning" },
+      "values": {
+        "account": "rivergate_motors",
+        "cars": "two",
+        "vehicles": {
+          "has": [
+            "Civic",
+            "Model 3"
+          ]
+        },
+        "day": "2026-11-11",
+        "window": "morning"
+      },
       "action": "book",
-      "said": { "notFigure": true },
+      "said": {
+        "notFigure": true
+      },
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "booking_cars": {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "cars",
+              "value": "three",
+              "words": "three trade-ins"
+            }
+          ]
+        }
+      },
+      "booking_day": {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "tomorrow"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          }
+        ]
+      },
+      "booking_window": {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "morning"
+            }
+          ]
+        }
+      },
+      "booking_vehicles": {
+        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
+        "agent": {
+          "reply": "Got it.",
+          "values": [
+            {
+              "field": "vehicles",
+              "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left",
+              "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left."
+            }
+          ],
+          "action": "submit"
+        }
+      },
+      "readback_booking": [
+        {
+          "say": "Oh wait, take the Tacoma off. It's just the Civic and the Model 3, so two.",
+          "agent": {
+            "reply": "Sure, two.",
+            "values": [
+              {
+                "field": "cars",
+                "value": "two",
+                "words": "so two"
+              },
+              {
+                "field": "vehicles",
+                "value": "2019 Civic front two, 2021 Model 3 rear left",
+                "words": "It's just the Civic and the Model 3"
+              }
+            ],
+            "action": "submit"
+          }
+        },
+        {
+          "say": "yes, book it",
+          "agent": {
+            "reply": ""
+          }
+        }
+      ]
     }
   }
 ]

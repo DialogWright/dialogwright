@@ -20,6 +20,7 @@
 {"id":"rq-15","text":"It's Casey Morgan, and you can text me at 555 555 0123.","intent":"none","context":"request","prompted":"request_callerName"}
 {"id":"rq-16","text":"OK, it's a Honda Civic and I'm Mike Dunn.","intent":"none","context":"request","prompted":"request_callerName"}
 {"id":"rq-17","text":"yeah hi I need a wheel fixed, curb rash on my Audi","intent":"request","context":"no_form"}
+{"id":"rq-18","text":"It's two wheels, both with curb rash.","intent":"none","context":"request","prompted":"request_wheels"}
 {"id":"cb-01","text":"Can I just talk to Sam?","intent":"agent","context":"no_form"}
 {"id":"cb-02","text":"yes, call me on this one","intent":"none","context":"callback","prompted":"callback_callbackNumber","confirm":"yes"}
 {"id":"cb-03","text":"yes please","intent":"none","context":"confirm_callback","confirm":"yes"}

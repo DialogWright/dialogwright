@@ -645,6 +645,35 @@
     "principalLevel": 0,
     "gate": null
   },
+  "rq-18": {
+    "id": "rq-18",
+    "decision": "prompt",
+    "promptId": "ask_request_wheels",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "request",
+    "slots": {
+      "request_callerName": "jordan lee",
+      "request_vehicle": "2020 BMW 3 Series",
+      "request_wheels": null,
+      "request_damage": null,
+      "request_diamondCut": null,
+      "request_day": null,
+      "request_window": null,
+      "request_callbackNumber": null,
+      "booking_cars": null,
+      "booking_vehicles": null,
+      "booking_day": null,
+      "booking_window": null,
+      "callback_callbackNumber": null,
+      "account": "rivergate_motors"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": null
+  },
   "cb-01": {
     "id": "cb-01",
     "decision": "prompt",

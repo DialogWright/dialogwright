@@ -122,7 +122,7 @@ What the recordings show, for the owner and the maintainer (none fails a call):
 - The judge refused the owner's own sample reply ("Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?") at 0.53 and 0.54 in the second recording (it passed at 0.47, and at 0.39 in the third): on the bar.
 - Live variance: run live once (`--client jev`, nothing kept), `claimed-account` lost its day and window, as the third recording did; across the three recordings the model read the same words differently on the opening turns (the dealer's day given or not; "on my Audi" taken once in three), so a scripted call's pass rests on one sample of each turn.
 
-### The fifth recording (after the whole-branch review, call 40), the one committed
+### The fifth recording (after the whole-branch review, call 40)
 
 What changed, each the engine's or the app's: a text value with a figure or an address of its own is refused, and one not in the caller's words is judged against them; a window held from before its day is checked again once the day's windows are shown; after a system's failure the call is scripted; the read-back names the diamond cut (`says`), since every field is sent to Sam; the calendar refuses a window without room for the cars, so `correction-at-read-back` now takes a car off (the Tacoma: two in all) rather than add a fourth to a window of three; the bake-off reads business.yaml; "across from the car dealership" is gone from the shop's place. Recorded fresh: corpus 23/25 (the two known gaps), scenarios 7/8, adversarial 26/26, no misses.
 
@@ -131,9 +131,15 @@ Not at 0 to triage, the model's (shown to the maintainer, not tagged):
 - `window-full` fails: on "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?" the model gave the vehicle, the wheels and the damage, and neither the day nor the window ("What day works for you to drop it off?"), where it gave both in every earlier recording. The scripted caller then answers questions it was not asked: its "yes, that's right" is read as the diamond cut, and the request is never read back.
 - `claimed-account` passes but differs from the stub baseline: the model held "two cars" as the vehicle and two wheels, and asked the damage before the wheels. The call holds no values, so it passes.
 
+### The sixth recording (call 41), the one committed
+
+The calls whose middle turns rested on the order the model asks in now answer what the line asks (`answers`, keyed by the question: the field's slot, `readback_*`, `offer_*`), after their opening: `dealer-trade-ins`, `correction-at-read-back` (the read-back answered in turn: the correction, then the yes), `retail-bmw` (the diamond cut and the name each answered in turn: the caller's question, then the answer), `window-full` and `claimed-account`. So a model that leaves the day out of the opening is asked the day, and the caller gives it. `claimed-account` now goes on to send its request: the booking refused, the request read back and sent, the caller at the level greeted, so its end no longer rests on which values the model took. One corpus line was added for it (`rq-18`, "It's two wheels, both with curb rash."). Only the turns whose requests changed were recorded on top: corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, 0 to triage.
+
 Baseline edits (`fixtures/expected/`, by hand, never `--update`):
 
 - `corpus.json`, 16 entries, for the corpus run with an agent that understands nothing: a field answered is no longer filled by the decision model, so its question is asked again uncounted (`ask_<field>` for `ask_<field>_retry`: rq-03 to rq-07, rq-11, rq-12, rq-14 to rq-16), a text field is no longer filled with the turn whole (bk-02, rq-02: the question asked again), and an opening line that begins the request has no "Sure, I can help you send Sam a request" (`ack_intent`: rq-01, rq-10, rq-13, rq-17), since the agent's reply stands in for it.
+- `corpus.json`, `rq-18`, a new line: its entry the stub's own outcome (`regress --corpus rq-18 --json`), added, never an existing one changed.
+- `scenarios.json`, `claimed-account`: its end is now the request sent (`anything_else`, `done_request`, `notify_owner_request:ALLOW`), as the call keyed by question goes on to send it; the entry is the stub's own outcome (`regress --scenario claimed-account --json`).
 - `scenarios.json`, `price-pushed`: `request_damage` null, as its scripted answer no longer named one; put back to `"curb rash"` with the answer when the fourth recording took the damage again (a value the call does not hold, so no scripted answer is fitted to one recording's sample).
 
 ## Not yet
