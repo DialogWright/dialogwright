@@ -179,6 +179,12 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 8. **The stand-in calendar** is a small in-memory schedule of drop-off windows in the app's code. It has a morning and an afternoon window each weekday, each with a number of cars (see the assumptions). Texts are printed until texting is registered.
 9. **Retail callers send a request, never a booking.** Regular accounts book. This is the app's policy, not the engine's.
 10. **The model understands the values; the engine checks their shape; the caller confirms them.** The maintainer decided on 2026-11-08 that Jev asks no field's questions in agent mode, which would only extract every value twice. Each library slot type gains a `check` (a value and its words in, a verdict out), part of its conformance kit. The read-back confirmed by the caller is the final check before anything is done. Jev keeps the turn-level readings it already makes, and the yes or no at the read-back, since that decides an action.
+10a. **(2026-11-09, after Task 3's review) A value is tied to its words where that is deterministic.**
+    - A `digits` value must be in the digits the cited words say (number words included).
+    - A `name` must be one the name fill itself would take from those words.
+    - A `choice` or `date` value is not tied, since its words may be a synonym or "Thursday"; the read-back is its confirmation.
+    - The words are checked against this turn's words only.
+    - A date ahead is held to the fill's own horizon.
 11. **Fields map onto the library's slot types.**
     - The number of wheels is a `choice` (one to four).
     - The callback number is `digits`, offering the number the caller is calling from.
