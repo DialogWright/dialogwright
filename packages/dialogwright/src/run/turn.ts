@@ -636,10 +636,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // The text values the agent gave that are not the caller's words as cited, each held to them by the drift
   // judge a framed summary is (call 40): one it refuses, or does not read in time, is held as its cited
   // words, and the turn is resolved again with them (the tools already called kept, none called twice).
+  let textUsage: JevUsage | null = null;
   if (reread === null && used !== null && used.agent?.ok === true && resolved.agent?.use === 'used' && resolved.agent.values.length > 0) {
     const app = appOf(session);
     const budget = (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[session.caps.speech ? 'voice' : 'chat'];
-    const judged = await judgeTextValues(app, resolved.agent.values, opts.renderer?.drift ?? opts.client, budget, app.agent?.style.refuseAt ?? DRIFT_FIRE, localeOf(session));
+    const { judged, usage } = await judgeTextValues(app, resolved.agent.values, opts.renderer?.drift ?? opts.client, budget, app.agent?.style.refuseAt ?? DRIFT_FIRE, localeOf(session));
+    textUsage = usage;
     if (judged.length > 0) {
       const asWords = new Set(judged.filter((j) => j.held === 'words').map((j) => j.field));
       if (asWords.size > 0) {
@@ -673,7 +675,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const kb = rendered?.kbSaid !== undefined && decided.kb !== null ? { ...decided.kb, said: rendered.kbSaid } : decided.kb;
   const result = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;
   // The decision model's checks this turn: the agent line's judge and generated wording's, together.
-  const driftUsage = sumUsage(held?.usage ?? null, rendered?.driftUsage ?? null);
+  // The text values' judge (call 40) is the decision model's too.
+  const driftUsage = sumUsage(sumUsage(held?.usage ?? null, rendered?.driftUsage ?? null), textUsage);
   // Chained before anything else is written: the audit is the record of what the turn did.
   // The audit entries are recorded under the session's own channel kind.
   const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];

@@ -219,11 +219,15 @@ export interface TextValueJudged {
  * agent-mode design, call 40. A value it refuses, or that it does not read in time, is held as its cited words.
  * In parallel, each within `timeoutMs`. Empty where no such value was accepted.
  */
-export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, language: string): Promise<TextValueJudged[]> {
+export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, language: string): Promise<{ judged: TextValueJudged[]; usage: JevUsage | null }> {
   const fields = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields);
   const same = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
   const asked = values.filter((v) => v.outcome === 'accepted' && fields.find((f) => f.slot === v.slot)?.type === 'text' && !same(v.value, v.words));
-  return Promise.all(asked.map(async (v): Promise<TextValueJudged> => {
+  let usage: JevUsage | null = null;
+  const add = (u: JevUsage): void => {
+    usage = usage === null ? { ...u } : { inputTokens: usage.inputTokens + u.inputTokens, outputTokens: usage.outputTokens + u.outputTokens, estimated: usage.estimated || u.estimated };
+  };
+  const judged = await Promise.all(asked.map(async (v): Promise<TextValueJudged> => {
     const field = fields.find((f) => f.slot === v.slot)!;
     const act: SpanAct = {
       kind: 'span',
@@ -242,6 +246,7 @@ export async function judgeTextValues(app: App, values: readonly { field: string
     try {
       const r = await Promise.race([judge.ask({ state: renderSpanDriftState(act, v.value) as unknown as JsonValue, questions: renderSpanDriftQuestion(), timeoutMs, signal: abort.signal }), late]);
       if (r === 'late') return { field: v.field, refuseAt, held: 'words' };
+      if (r.usage) add(r.usage);
       const a = r.answers[SPAN_DRIFT_QUESTION_ID];
       if (!isNoul(a)) return { field: v.field, refuseAt, held: 'words' };
       return { field: v.field, score: a.noul, refuseAt, held: a.noul >= refuseAt ? 'words' : 'value' };
@@ -252,6 +257,7 @@ export async function judgeTextValues(app: App, values: readonly { field: string
       abort.abort();
     }
   }));
+  return { judged, usage };
 }
 
 /** What the agent line is held with, on its turn. */

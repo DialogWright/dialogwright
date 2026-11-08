@@ -169,6 +169,53 @@ describe('a scripted call of an app in agent mode', () => {
   });
 });
 
+describe('a scripted call keyed by question (call 41)', () => {
+  const HOLD = 'a hold on The Quiet Harbor, two copies, in print, for Avery Lane, on Thursday morning, call me on 5555550144';
+  const opening = (extra: { field: string; value: string; words: string }[]): Scenario['steps'][number] => ({
+    say: HOLD,
+    agent: { reply: '', values: [{ field: 'patronName', value: 'Avery Lane', words: 'Avery Lane' }, { field: 'title', value: 'The Quiet Harbor', words: 'The Quiet Harbor' }, { field: 'copies', value: 'two', words: 'two copies' }, { field: 'format', value: 'print', words: 'in print' }, { field: 'callbackNumber', value: '5555550144', words: '5555550144' }, ...extra] },
+  });
+  const answers: NonNullable<Scenario['answers']> = {
+    request_day: { say: 'Thursday', agent: { reply: '', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }] } },
+    request_window: { say: 'the morning', agent: { reply: '', values: [{ field: 'window', value: 'morning', words: 'morning' }] } },
+    readback_request: { say: 'yes', agent: { reply: '' } },
+  };
+  const keyed = (first: { field: string; value: string; words: string }[]): Scenario => ({
+    id: 'keyed', as: 'web', steps: [opening(first)], answers,
+    expect: { decision: 'prompt', promptId: 'anything_else', action: 'placeHold', values: { day: '2026-11-12', window: 'morning', callbackNumber: '...0144' }, readBackSaid: true, nothingDoneBefore: 'confirm' },
+  });
+
+  it('the caller answers what the line asks, whatever the order: the day before the window, or the window before the day', async () => {
+    // The opening gives the window: the line asks the day first.
+    const dayFirst = await runScenario(keyed([{ field: 'window', value: 'morning', words: 'morning' }]), opts());
+    expect(dayFirst.mismatches).toEqual([]);
+    expect(dayFirst.said!.map((x) => x.answers ?? 'step')).toEqual(['step', 'request_day', 'readback_request']);
+    // The opening gives the day: the line asks the window first.
+    const windowFirst = await runScenario(keyed([{ field: 'day', value: '2026-11-12', words: 'Thursday' }]), opts());
+    expect(windowFirst.mismatches).toEqual([]);
+    expect(windowFirst.said!.map((x) => x.answers ?? 'step')).toEqual(['step', 'request_window', 'readback_request']);
+  });
+
+  it('a question asked again is answered again with the same words; one with no answer fails the call, naming it', async () => {
+    const { request_window: _w, ...noWindow } = answers;
+    const missing = await runScenario({ ...keyed([]), answers: noWindow }, opts());
+    expect(missing.pass).toBe(false);
+    expect(missing.mismatches).toContain('answers: the line asked ask_request_window, which the call has no answer for');
+    // The day's answer gives nothing the first time it is asked: the retry is answered by the same key, with the same words.
+    let asked = 0;
+    const flaky: NonNullable<Scenario['answers']> = { ...answers, request_day: { say: 'Thursday', agent: [{ reply: '' }] } };
+    const again = await runScenario({ ...keyed([{ field: 'window', value: 'morning', words: 'morning' }]), answers: flaky, expect: { decision: 'prompt' } }, opts());
+    asked = again.said!.filter((x) => x.answers === 'request_day').length;
+    expect(asked).toBeGreaterThan(1);
+    expect(again.mismatches.some((m) => m.includes('still asking'))).toBe(true);
+    // A list answers in turn: first unsure, then the day; the call ends as it should.
+    const inTurn: NonNullable<Scenario['answers']> = { ...answers, request_day: [{ say: 'not sure yet', agent: { reply: '' } }, answers.request_day as Scenario['steps'][number]] };
+    const turned = await runScenario({ ...keyed([{ field: 'window', value: 'morning', words: 'morning' }]), answers: inTurn }, opts());
+    expect(turned.mismatches).toEqual([]);
+    expect(turned.said!.map((x) => x.answers ?? 'step')).toEqual(['step', 'request_day', 'request_day', 'readback_request']);
+  });
+});
+
 describe('a corpus line of an app in agent mode', () => {
   it('runs with an agent that understands nothing: the decision model is asked no field\'s question, so no field fills, on the stubs and a model alike', async () => {
     const asked: string[][] = [];

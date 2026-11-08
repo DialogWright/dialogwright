@@ -598,6 +598,19 @@ export interface Scenario {
    */
   env?: Record<string, string>;
   steps: ScenarioStep[];
+  /**
+   * An app in agent mode: what the caller says to each question the line asks, by the question, so the call
+   * does not rest on the order the model asks the fields in (the agent-mode design, call 41). The key is the
+   * prompt the line said (`readback_request`, `confirm_intent_explicit`, `offer_request_callbackNumber`), or
+   * the slot a field's question asks (`request_day` answers `ask_request_day` and its retry); a question
+   * asked again is answered again with the same words. Once `steps` (the turns tied to no question: the
+   * opening, an aside) are said, each turn says the answer to the line's question, until the line says no
+   * question (`anything_else`, a handoff, the call's end) or the one `expect.promptId` names. A question with
+   * no answer here fails the call, naming it. A list answers the question in turn each time it is asked, its
+   * last again after that ("I'm not sure, what is it?", then "yes"). Each answer's `agent` is the stub's, one
+   * per asking, as a step's.
+   */
+  answers?: Record<string, ScenarioStep | ScenarioStep[]>;
   expect: ScenarioExpectation;
   /**
    * How long each of the call's generated lines takes to word, ms, before the renderer answers (a fake, or
@@ -629,8 +642,10 @@ export interface Scenario {
 export interface ScenarioRun {
   outcome: Outcome;
   runs: TurnRun[];
-  /** For each of `runs`, the index in the scenario's steps of the step that made it: -1 for the opening turn. */
+  /** For each of `runs`, the index in `said` of the step that made it: -1 for the opening turn. */
   stepOf: number[];
+  /** The steps said, in order: the scenario's `steps`, then each answer said (Scenario.answers), with the question it answered. */
+  said?: { step: ScenarioStep; answers?: string }[];
   pass: boolean;
   mismatches: string[];
 }
@@ -707,8 +722,32 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   session = setup.result.session;
   let last = setup;
   let serviceDown = false;
-  for (const [index, step] of scenario.steps.entries()) {
+  const said: { step: ScenarioStep; answers?: string }[] = [];
+  const unanswered: string[] = [];
+  const answeredTimes = new Map<string, number>();
+  // The scenario's steps, then (Scenario.answers) the answer to each question the line asks, until it asks none.
+  const next = (index: number): { step: ScenarioStep; answers?: string } | null => {
+    if (index < scenario.steps.length) return { step: scenario.steps[index]! };
+    if (scenario.answers === undefined || index >= scenario.steps.length + MAX_ANSWERS) return null;
+    const asked = askedOf(last.result, scenario.expect.promptId);
+    if (asked === null) return null;
+    const key = answerKey(scenario.answers, asked);
+    if (key === null) {
+      unanswered.push(asked);
+      return null;
+    }
+    const given = scenario.answers[key]!;
+    const list = Array.isArray(given) ? given : [given];
+    const n = answeredTimes.get(key) ?? 0;
+    answeredTimes.set(key, n + 1);
+    return { step: list[Math.min(n, list.length - 1)]!, answers: key };
+  };
+  for (let index = 0; ; index += 1) {
     if (session.ended) break;
+    const taken = next(index);
+    if (taken === null) break;
+    said.push(taken);
+    const step = taken.step;
     if ('serviceDown' in step) {
       serviceDown = true;
       continue;
@@ -738,17 +777,50 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   }
   const outcome = outcomeOf(scenario.id, last.result, runs.flatMap((r) => r.result.gateEvents));
   const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result), last.result.actions.find((a) => a.type === 'transfer'));
+  for (const q of unanswered) mismatches.push(`answers: the line asked ${q}, which the call has no answer for`);
+  if (scenario.answers !== undefined && said.length >= scenario.steps.length + MAX_ANSWERS && !session.ended) mismatches.push(`answers: the line was still asking after ${MAX_ANSWERS} answers`);
+  const stepText = (i: number): string => JSON.stringify((said[i]?.step as { say?: string } | undefined)?.say ?? '');
   // An app in agent mode: its properties over the turns; a step the agent was asked on that names no
   // answer (on the stubs), and a turn the agent cassette had no answer for, each fail the call.
   if (appOf(session).mode === 'agent') {
     mismatches.push(...agentPropertyMismatches(appOf(session), scenario.expect, runs, o.todayIso));
-    for (const step of stepped?.unscripted ?? []) mismatches.push(`agent: step ${step + 1} (${JSON.stringify((scenario.steps[step] as { say?: string }).say ?? '')}) was asked of the agent, but names no agent answer`);
-    for (const s of stepped?.short ?? []) mismatches.push(`agent: step ${s.step + 1} (${JSON.stringify((scenario.steps[s.step] as { say?: string }).say ?? '')}) asked the agent ${s.asking === 2 ? 'again' : `a ${s.asking}th time`} (shown a tool's result), but names ${s.named} answer${s.named === 1 ? '' : 's'}: give one per asking`);
+    for (const step of stepped?.unscripted ?? []) mismatches.push(`agent: step ${step + 1} (${stepText(step)}) was asked of the agent, but names no agent answer`);
+    for (const s of stepped?.short ?? []) mismatches.push(`agent: step ${s.step + 1} (${stepText(s.step)}) asked the agent ${s.asking === 2 ? 'again' : `a ${s.asking}th time`} (shown a tool's result), but names ${s.named} answer${s.named === 1 ? '' : 's'}: give one per asking`);
     runs.forEach((r, i) => {
       if (agentCassetteMissed(r)) mismatches.push(`agent: turn ${i} has no answer in the agent cassette (a miss): record it with --client record`);
     });
   }
-  return { outcome, runs, stepOf, pass: mismatches.length === 0, mismatches };
+  return { outcome, runs, stepOf, ...(scenario.answers !== undefined ? { said } : {}), pass: mismatches.length === 0, mismatches };
+}
+
+/** How many answers a call keyed by question (Scenario.answers) says at most: past them it is still asking, and fails. */
+const MAX_ANSWERS = 24;
+
+/** The prompts that ask nothing a call keyed by question answers: the open question once a task is done, and the goodbyes. */
+const NOT_ASKED: ReadonlySet<string> = new Set(['anything_else', 'goodbye', 'goodbye_chat']);
+
+/**
+ * The question the line asked on `result` for a call keyed by question (Scenario.answers): the prompt it said,
+ * or null where it asked none (no prompt, the open question after a task, a goodbye, a handoff, the call's
+ * end) or asked the one the call expects to end on.
+ */
+export function askedOf(result: TurnResult, endsAt?: string): string | null {
+  const d = result.decision;
+  if (d.kind !== 'prompt' || result.session.ended || NOT_ASKED.has(d.promptId) || d.promptId === endsAt) return null;
+  return d.promptId;
+}
+
+/**
+ * The answer a call keyed by question has for the prompt the line said: by the prompt itself, else by the
+ * slot a field's question asks (`ask_<slot>`, its retry, keypad and other wordings: `ask_request_day_retry`
+ * is answered by `request_day`), the longest slot named first. Null where it has none.
+ */
+export function answerKey(answers: Readonly<Record<string, unknown>>, promptId: string): string | null {
+  if (Object.hasOwn(answers, promptId)) return promptId;
+  if (!promptId.startsWith('ask_')) return null;
+  const rest = promptId.slice('ask_'.length);
+  const slots = Object.keys(answers).filter((k) => rest === k || rest.startsWith(`${k}_`)).sort((a, b) => b.length - a.length);
+  return slots[0] ?? null;
 }
 
 /**
@@ -833,6 +905,7 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null) &&
     // An agent-mode call's steps' agent answers and its properties, well formed.
     (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent)) &&
+    ((s as Scenario).answers === undefined || (typeof (s as Scenario).answers === 'object' && (s as Scenario).answers !== null && !Array.isArray((s as Scenario).answers) && Object.values((s as Scenario).answers!).flatMap((x) => (Array.isArray(x) ? (x.length > 0 ? x : [null]) : [x])).every((step) => typeof step === 'object' && step !== null && 'say' in step && typeof (step as { say?: unknown }).say === 'string' && (!('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent))))) &&
     (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean') &&
     validAgentProperties((s as Scenario).expect as unknown as Record<string, unknown>)
   );
@@ -863,5 +936,5 @@ export function loadScenarios(dir: string): Scenario[] {
  */
 export function unanswerableSteps(corpus: readonly CorpusEntry[], scenarios: readonly Scenario[]): string[] {
   const texts = new Set(corpus.map((e) => normalizeText(e.text)));
-  return scenarios.flatMap((s) => s.steps.flatMap((step) => ('say' in step && !texts.has(normalizeText(step.say)) ? [`${s.id}: ${step.say}`] : [])));
+  return scenarios.flatMap((s) => [...s.steps, ...Object.values(s.answers ?? {}).flat()].flatMap((step) => ('say' in step && !texts.has(normalizeText(step.say)) ? [`${s.id}: ${step.say}`] : [])));
 }

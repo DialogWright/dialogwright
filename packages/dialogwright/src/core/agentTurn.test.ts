@@ -416,12 +416,14 @@ describe('the review of the branch (call 40)', () => {
         const q = req.questions.renderSpanDrift;
         if (q === undefined) return stub.ask(req);
         const said = (req.state as { span?: { said?: string } }).span?.said ?? '';
-        return { answers: { renderSpanDrift: noulAnswer(/signed/.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 1, outputTokens: 1, estimated: true }, source: 'model' } as unknown as JevResponse;
+        return { answers: { renderSpanDrift: noulAnswer(/signed/.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 7000, outputTokens: 3, estimated: false }, source: 'model' } as unknown as JevResponse;
       },
     };
     const c = await call({ [HOLD]: said('Happy to help.', [['title', 'The Quiet Harbor, a signed copy', 'The Quiet Harbor']]) }, [HOLD], { jev: judged });
     expect(value(c.last, 'request_title')).toBe('The Quiet Harbor');
     expect(c.last.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.9, held: 'words' }]);
+    // The judge's tokens are the turn's (its usage counts them).
+    expect(c.last.record.usage.inputTokens).toBeGreaterThanOrEqual(7000);
     const kept = await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: judged });
     expect(value(kept.last, 'request_title')).toBe('Quiet Harbor');
     expect(kept.last.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.1, held: 'value' }]);

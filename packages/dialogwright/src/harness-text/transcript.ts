@@ -163,9 +163,12 @@ export function scenarioTranscript(scenario: Scenario, run: ScenarioRun, detail:
     const step = run.stepOf[i] ?? -1;
     byStep.set(step, [...(byStep.get(step) ?? []), r]);
   });
-  for (const [index, step] of [[-1, null] as const, ...scenario.steps.map((s, i) => [i, s] as const)]) {
+  // A call keyed by question (Scenario.answers): the steps as said, each answer with the question it answered.
+  const steps: { step: ScenarioStep; answers?: string }[] = run.said ?? scenario.steps.map((step) => ({ step }));
+  for (const [index, taken] of [[-1, null] as const, ...steps.map((s, i) => [i, s] as const)]) {
     const turns = byStep.get(index) ?? [];
-    out.push(step === null ? '  start' : `  ${index + 1}. ${describeStep(step)}`);
+    const step = taken?.step ?? null;
+    out.push(step === null ? '  start' : `  ${index + 1}. ${describeStep(step)}${taken?.answers !== undefined ? `   (answers ${taken.answers})` : ''}`);
     if (step !== null && turns.length === 0) {
       out.push('       (no turn: the call had ended, or the step only sets up the next one)');
       continue;
