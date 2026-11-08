@@ -28,8 +28,8 @@ import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { resolveWaiting } from './waiting';
-import { agentAsks, agentContextOf, agentSentRecord, NO_AGENT_CLIENT, type AgentSentRecord } from '../core/agentTurn';
-import { DEFAULT_AGENT_TIMEOUT_MS, type AgentResult, type AgentRunner } from '../agent/types';
+import { agentAsks, agentContextOf, agentSentRecord, NO_AGENT_CLIENT, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
+import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
 
 export interface TurnObserver {
   /**
@@ -289,9 +289,9 @@ function clientFailure(reason: unknown): TurnError {
  * DEFAULT_AGENT_TIMEOUT_MS): its answer, or why there is none. A client never rejects; one that does is an
  * error all the same, its kind and never its message. No client set: NO_AGENT_CLIENT, at once.
  */
-async function askAgent(runner: AgentRunner | null, ctx: Parameters<AgentRunner['client']['answer']>[0], speech: boolean): Promise<AgentResult> {
+async function askAgent(runner: AgentRunner | null, ctx: Parameters<AgentRunner['client']['answer']>[0], speech: boolean, left?: number): Promise<AgentResult> {
   if (runner === null) return NO_AGENT_CLIENT;
-  const budget = (runner.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)[speech ? 'voice' : 'chat'];
+  const budget = left ?? agentBudget(runner, speech);
   const t0 = performance.now();
   // The budget is held here too, so a client that does not keep to it cannot hold the turn.
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -307,12 +307,53 @@ async function askAgent(runner: AgentRunner | null, ctx: Parameters<AgentRunner[
   }
 }
 
+/** The agent model's budget for a turn, ms, on its channel (AgentRunner.timeoutMs, else DEFAULT_AGENT_TIMEOUT_MS). */
+function agentBudget(runner: AgentRunner, speech: boolean): number {
+  return (runner.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)[speech ? 'voice' : 'chat'];
+}
+
+/** The detail of a second answer not asked, the turn's budget spent before it (askAgain). */
+export const AGENT_AGAIN_NO_TIME = "no time left of the agent's budget";
+
+/**
+ * The agent model asked again on a turn whose values ran a tool it sees (TurnResult.agentAgain; core/agentTurn.ts),
+ * now shown the checked results: within what is left of the turn's budget, counted from when it was first
+ * asked, so the two answers together take no longer than one may. Nothing left, it is not asked.
+ */
+async function askAgain(runner: AgentRunner, first: AgentContext, seen: readonly SeenResult[], speech: boolean, askedAt: number): Promise<{ result: AgentResult; ctx: AgentContext }> {
+  const ctx: AgentContext = { ...first, seen: seen.map(({ tool, result }) => ({ tool, result })) };
+  const left = Math.floor(agentBudget(runner, speech) - (performance.now() - askedAt));
+  if (left <= 0) return { result: { ok: false, reason: 'timeout', detail: AGENT_AGAIN_NO_TIME, ms: 0 }, ctx };
+  return { result: await askAgent(runner, ctx, speech, left), ctx };
+}
+
+/** Two answers' tokens and costs added (agentSpent of each). */
+function bothSpent(a: ReturnType<typeof agentSpent>, b: ReturnType<typeof agentSpent>): ReturnType<typeof agentSpent> {
+  const usage = a.usage === undefined ? b.usage : b.usage === undefined ? a.usage : { inputTokens: a.usage.inputTokens + b.usage.inputTokens, outputTokens: a.usage.outputTokens + b.usage.outputTokens };
+  const costUsd = a.costUsd === undefined ? b.costUsd : b.costUsd === undefined ? a.costUsd : a.costUsd + b.costUsd;
+  return { ...(usage !== undefined ? { usage } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
+}
+
 /** An answer's tokens and cost: the provider's own cost where it gives one, else the tokens at the model's price. */
 function agentSpent(r: AgentResult, runner: AgentRunner | null | undefined): { usage?: { inputTokens: number; outputTokens: number }; costUsd?: number } {
   if (r.usage === undefined) return r.costUsd !== undefined ? { costUsd: r.costUsd } : {};
   const price = runner?.price ?? defaultRenderPrice(runner?.client.model);
   const costUsd = r.costUsd ?? (r.usage.inputTokens * price.input + r.usage.outputTokens * price.output) / 1_000_000;
   return { usage: { inputTokens: r.usage.inputTokens, outputTokens: r.usage.outputTokens }, costUsd };
+}
+
+/**
+ * The trace's record of the agent's answer (TraceRecord.agent): the turn's, with its tokens and cost, what
+ * it was sent (the second time, where it was asked again), and the second asking (`again`): both answers'
+ * time and cost together.
+ */
+function agentRecord(record: AgentTurnRecord, first: AgentResult | null, again: { result: AgentResult; tools: string[] } | null, runner: AgentRunner | null | undefined, sent: AgentSentRecord | null): AgentTurnRecord & { sent?: AgentSentRecord } {
+  const spent = first === null ? {} : again === null ? agentSpent(first, runner) : bothSpent(agentSpent(first, runner), agentSpent(again.result, runner));
+  const asked = again === null ? {} : {
+    ms: (first?.ms ?? 0) + again.result.ms,
+    again: { tools: again.tools, ms: again.result.ms, ...(again.result.ok ? {} : { fallback: again.result.reason, detail: again.result.detail }) },
+  };
+  return { ...record, ...spent, ...asked, ...(sent !== null ? { sent } : {}) };
 }
 
 /** Two usages of the decision model added; null where neither was spent. */
@@ -439,6 +480,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // The agent model, for a turn of an app in agent mode it can answer: asked now, beside the decision model.
   const agentCtx = agentAsks(session, event, base) ? agentContextOf(session, event, base) : null;
   const agentSent: AgentSentRecord | null = agentCtx !== null ? agentSentRecord(agentCtx) : null;
+  const agentAskedAt = performance.now();
   const agentAsked: Promise<AgentResult | null> = agentCtx === null ? Promise.resolve(null) : askAgent(opts.agent ?? null, agentCtx, session.caps.speech);
   const askJev = async (): Promise<void> => {
     if (p.needsModel && words !== null) {
@@ -498,11 +540,31 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const t2f = performance.now();
   // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
   // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
-  const { result: resolved, waited } = await resolveWaiting(session, event, second?.answers ?? response?.answers ?? null, turnTc, error, screen, {
+  const turnAnswers = second?.answers ?? response?.answers ?? null;
+  const channel = {
     ...(opts.early !== undefined ? { early: opts.early } : {}),
     ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}),
     render: opts.render ?? null,
-  }, waitingOf(appOf(session)).timeoutMs ?? TOOL_TIMEOUT_MS);
+  };
+  const toolTimeout = waitingOf(appOf(session)).timeoutMs ?? TOOL_TIMEOUT_MS;
+  const first = await resolveWaiting(session, event, turnAnswers, turnTc, error, screen, channel, toolTimeout);
+  let { result: resolved, waited } = first;
+  // An app in agent mode whose values ran a tool the model sees: the model asked again, shown its checked
+  // result, within what is left of its budget, and the turn resolved again from the start with that answer
+  // (the calls already made kept, none made twice). Where no second answer comes, the turn as it first stood.
+  let agentShown = agentCtx;
+  let again: { result: AgentResult; tools: string[] } | null = null;
+  if (resolved.agentAgain !== undefined && agentCtx !== null && opts.agent != null) {
+    const seen = resolved.agentAgain.seen;
+    const asked = await askAgain(opts.agent, agentCtx, seen, session.caps.speech, agentAskedAt);
+    again = { result: asked.result, tools: seen.map((x) => x.tool) };
+    if (asked.result.ok) {
+      const next = await resolveWaiting(session, event, turnAnswers, { ...turnTc, agent: asked.result, agentSeen: { seen } }, error, screen, channel, toolTimeout, first.memo);
+      resolved = next.result;
+      waited = next.waited ?? waited;
+      agentShown = asked.ctx;
+    }
+  }
   const t3 = performance.now();
   // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.
   const retrievedAny = retrieved ?? second?.retrieved ?? null;
@@ -510,7 +572,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // drift judge (render/agentLine.ts), its fixed line said in its place where one fails, and the records with it.
   const held = appOf(session).mode === 'agent'
     ? await holdAgentLine({
-      result: resolved, event, judge: opts.renderer?.drift ?? opts.client, clips: opts.render ?? null, seen: agentCtx?.seen ?? [], todayIso: opts.todayIso,
+      result: resolved, event, judge: opts.renderer?.drift ?? opts.client, clips: opts.render ?? null, seen: agentShown?.seen ?? [], todayIso: opts.todayIso,
       ...(opts.renderer?.checkTimeoutMs !== undefined ? { checkTimeoutMs: opts.renderer.checkTimeoutMs } : {}),
     })
     : null;
@@ -552,12 +614,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
         : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - t0 }),
       ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
       ...(second?.ms != null ? { followUpMs: second.ms } : {}),
-      ...(agentResult !== null ? { agentMs: agentResult.ms } : {}),
+      ...(agentResult !== null ? { agentMs: agentResult.ms + (again?.result.ms ?? 0) } : {}),
       // A turn that rendered a generated line, or held an agent line, counts its rendering too.
       ...(rendered?.record.ms !== undefined || held !== null ? { renderMs: (rendered?.record.ms ?? 0) + (held?.ms ?? 0), totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
     },
     render: rendered?.record ?? null,
-    ...(result.agent !== undefined ? { agent: { ...result.agent, ...(agentResult !== null ? agentSpent(agentResult, opts.agent) : {}), ...(agentSent !== null ? { sent: agentSent } : {}) } } : {}),
+    ...(result.agent !== undefined ? { agent: agentRecord(result.agent, agentResult, again, opts.agent, agentShown !== null ? agentSentRecord(agentShown) : agentSent) } : {}),
     driftUsage,
     retrieval: retrievedAny?.record ?? null,
     followUp: second?.run ? followUpRecord(second.run) : null,

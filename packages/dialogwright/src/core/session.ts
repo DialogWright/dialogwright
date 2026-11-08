@@ -1,4 +1,5 @@
 import type { FormId, Intent, SlotId, ToolName } from './app/types';
+import type { SeenResult } from '../agent/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination, SectionNomination } from '../kb/types';
@@ -318,10 +319,13 @@ export interface Session {
    * the line said, in order, as the agent model is sent it (each earlier line masked there by what the
    * records hide); and how many turns in a row the agent model failed (a timeout, an answer not in its
    * shape, an error), two of which end the call with the handoff line. `scripted`: the call began with no
-   * agent client (no key), so it runs as a scripted app for the whole call (core/agentTurn.ts). Absent for
-   * every other app, so every other session, and one saved before it, is as it was.
+   * agent client (no key), so it runs as a scripted app for the whole call (core/agentTurn.ts). `seen`: the
+   * checked results of the tools the app lets the model see (business.yaml's `sees`), the latest of each
+   * tool, each with the field and value it was called with, and only the fields its check names
+   * (core/replyShape.ts namedPart); absent until the first. Absent for every other app, so every other
+   * session, and one saved before it, is as it was.
    */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true };
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[] };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -603,7 +607,7 @@ export function cloneSession(s: Session): Session {
     completed: [...s.completed],
     ...(s.acknowledged ? { acknowledged: [...s.acknowledged] } : {}),
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
-    ...(s.agent ? { agent: { ...s.agent, conversation: s.agent.conversation.map((u) => ({ ...u })) } } : {}),
+    ...(s.agent ? { agent: { ...s.agent, conversation: s.agent.conversation.map((u) => ({ ...u })), ...(s.agent.seen ? { seen: s.agent.seen.map((x) => ({ ...x })) } : {}) } } : {}),
   };
 }
 

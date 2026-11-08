@@ -4,6 +4,7 @@ import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolNa
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, waysOf } from '../core/identityWays';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
 import { recordingOf } from '../core/recording';
+import { namedFields, openPart } from '../core/replyShape';
 import { answerSpanOf, isSectionsSpan, spanNameVars, summarizedFields } from '../render/config';
 import { DEFAULT_HOLD_TEXT, KB_HOLD_PROMPT } from '../render/turn';
 import { DRIFT_FIRE } from '../render/checks';
@@ -302,9 +303,10 @@ function agentSection(app: App, source: PolicySource): string[] {
   if (seen.length === 0) {
     out.push('No tool\'s result is shown to the model.', '');
   } else {
-    out.push('The tools whose results the model sees (business.yaml\'s `sees`), each called through the gate once its field is filled, its result shown only once the tool\'s reply check passes:', '', '| Field | Tool | Reply check |', '| --- | --- | --- |');
+    out.push('The tools whose results the model sees (business.yaml\'s `sees`), each called through the gate once its field is filled, its result shown only once the tool\'s reply check passes, and only the fields that check names, each in a closed form (never free text):', '', '| Field | Tool | Reply check |', '| --- | --- | --- |');
     for (const [slot, tool] of seen) {
-      const checked = app.tools[tool]?.check !== undefined ? 'declared' : '**none declared**';
+      const check = app.tools[tool]?.check;
+      const checked = check === undefined ? '**none declared**' : openPart(check) !== null ? '**not a closed form**' : `closed form; the model is shown ${shownFields(check)}`;
       out.push(`| ${slotNoun(app, slot)} (${code(slot)}) | ${cell(actionLabel(source, tool))} (${code(tool)}) | ${checked} |`);
     }
     out.push('');
@@ -853,4 +855,10 @@ export function writePolicyCard(app: App, file: string): { changed: boolean; lin
 function relativeFolder(file: string): string {
   const rel = relative(process.cwd(), dirname(file));
   return rel === '' ? '.' : rel;
+}
+
+/** What a model is shown of a tool's result, for the card: each field its check names, or the value where it names none. */
+function shownFields(check: unknown): string {
+  const fields = namedFields(check);
+  return fields.length === 0 ? 'the value' : andList(fields.map((f) => `\`${f}\``));
 }

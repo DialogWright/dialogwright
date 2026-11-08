@@ -43,11 +43,11 @@ This app is in agent mode (app.yaml's `mode: agent`): a model, `mercury-3` on in
 - **The model proposes; the engine decides.** It never calls a tool. Each value it understands is checked by its field's slot type, and the caller confirms every value at the read-back, said in fixed words, before any action. Every action is decided by the gate, as below.
 - **What it may say** is the business's: 9 statements (its claims, services, what it does not offer, where it is, its days and windows), and 1 line of background it is told never to claim. Its sample replies (2) are sent as examples of tone.
 
-The tools whose results the model sees (business.yaml's `sees`), each called through the gate once its field is filled, its result shown only once the tool's reply check passes:
+The tools whose results the model sees (business.yaml's `sees`), each called through the gate once its field is filled, its result shown only once the tool's reply check passes, and only the fields that check names, each in a closed form (never free text):
 
 | Field | Tool | Reply check |
 | --- | --- | --- |
-| day (`booking_day`) | read the study room's free windows near a day (`roomAvailability`) | declared |
+| day (`booking_day`) | read the study room's free windows near a day (`roomAvailability`) | closed form; the model is shown `day` and `windows` |
 
 Said in fixed words, never worded by a model:
 

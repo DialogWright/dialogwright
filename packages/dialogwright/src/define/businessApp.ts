@@ -1,7 +1,7 @@
 import type { AgentApp, AgentAppField, AgentAppForm } from '../agent/types';
 import type { App, Completion, CompletionContext, FactsConfig, SummaryContext, ToolDef } from '../core/app/types';
 import type { Session, SessionFacts } from '../core/session';
-import { replyShape } from '../core/replyShape';
+import { openPart, replyShape } from '../core/replyShape';
 import { isAnonymous, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, slotIdOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
@@ -263,6 +263,12 @@ export function businessCodeProblems(b: BusinessYaml, code: AppCode, codeFile: s
         inYaml([name, 'fields', i, 'sees'], `the field "${f.name}" sees "${f.sees}", which is not a tool in the code`, `${near ? `rename it to "${near}" if it is that tool, or ` : ''}add it to the app's tools in ${codeFile} (code.tools.${f.sees}), with params [${f.name}] and a reply check in a closed form`);
       } else if (!sameList(def.params ?? [], [f.name])) {
         inYaml([name, 'fields', i, 'sees'], `the tool "${f.sees}" lists the params [${(def.params ?? []).join(', ')}], but it is called with the field it sees, [${f.name}]`, `make code.tools.${f.sees}.params [${f.name}] in ${codeFile}`);
+      } else if (def.check === undefined) {
+        // Its result is shown to the model: only a reply that passes its check, in a closed form (the design's decision 2).
+        inYaml([name, 'fields', i, 'sees'], `the field "${f.name}" sees "${f.sees}", whose result is shown to the agent model, but the tool declares no reply check`, `give code.tools.${f.sees} a check in ${codeFile}, written with replyShape in closed forms (oneOf, digits, code, isoDate, amount, number, boolean, and lists and objects of them), naming each field the model may see`);
+      } else {
+        const open = openPart(def.check);
+        if (open !== null) inYaml([name, 'fields', i, 'sees'], `the field "${f.name}" sees "${f.sees}", whose result is shown to the agent model, but its reply check is not a closed form: ${open}`, `check that field of code.tools.${f.sees} in ${codeFile} with a closed form of replyShape (oneOf, digits, code, isoDate, amount, number, boolean), or leave it out of the check, so it is never shown`);
       }
     });
   }

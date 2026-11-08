@@ -14,6 +14,7 @@ import type { Principal } from '../gate/types';
 import type { LibrarySlotSpec } from '../slots/types';
 import { parseCorpus } from '../jev/corpus';
 import { mockCodeVerifier } from '../core/tools';
+import { replyShape } from '../core/replyShape';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { fakeAgent } from '../agent/fake';
 import { HeuristicStubClient } from '../jev/heuristicStub';
@@ -298,6 +299,17 @@ describe('the code an agent-mode app writes', () => {
     expect(problems({ ...businessFixtureCode, tools: rest })).toEqual(['business.yaml booking.fields[1].sees: the field "day" sees "roomAvailability", which is not a tool in the code']);
   });
 
+  it('a sees tool with a text() check is refused at load: its result is shown to the model only in a closed form', () => {
+    const seen = TOOLS.roomAvailability!;
+    const at = 'business.yaml booking.fields[1].sees: the field "day" sees "roomAvailability", whose result is shown to the agent model, but ';
+    expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, roomAvailability: { ...seen, check: replyShape.object({ day: replyShape.isoDate(), note: replyShape.text() }) } } }))
+      .toEqual([`${at}its reply check is not a closed form: \`note\` is free text (replyShape.text())`]);
+    expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, roomAvailability: { ...seen, check: (v: unknown) => typeof v === 'object' } } }))
+      .toEqual([`${at}its reply check is not a closed form: the reply is checked by a function written by hand, which the engine cannot read`]);
+    const { check: _check, ...unchecked } = seen;
+    expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, roomAvailability: unchecked } })).toEqual([`${at}the tool declares no reply check`]);
+  });
+
   it('a tool whose params are not its form\'s values is refused', () => {
     expect(problems({ ...businessFixtureCode, tools: { ...TOOLS, noteCallback: { ...TOOLS.noteCallback!, params: ['phone'] } } })).toEqual([
       'business.yaml callback.then[0]: the tool "noteCallback" lists the params [phone], but every call the callback makes carries its values, [callbackNumber]',
@@ -338,7 +350,7 @@ describe('the fixture\'s pages', () => {
     const card = readFileSync(page('POLICY.md'), 'utf8');
     expect(card).toContain('## Agent mode');
     expect(card).toContain('**The conversation is sent to the agent model:**');
-    expect(card).toContain('| day (`booking_day`) | read the study room\'s free windows near a day (`roomAvailability`) | declared |');
+    expect(card).toContain('| day (`booking_day`) | read the study room\'s free windows near a day (`roomAvailability`) | closed form; the model is shown `day` and `windows` |');
     // Honest about what the model sees: the caller's words as said, and what is masked where.
     expect(card).toContain('the caller\'s words as they said them (a number they say included)');
     expect(card).toContain('A value the records hide (the callback number by its last four) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.');

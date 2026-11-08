@@ -1,7 +1,7 @@
 import type { SessionEvent } from '../channel/events';
 import { maskedConversation } from '../agent/history';
 import { fieldValueSent } from '../agent/prompt';
-import { NO_ACTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance } from '../agent/types';
+import { NO_ACTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
 import { isAnonymous } from '../gate/types';
 import type { AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
@@ -15,6 +15,8 @@ import type { Ack, FillEvent } from './fia';
 import type { Verdict } from './gates';
 import { localeOf, slotLocaleOf } from './locale';
 import { setForm, type PendingConfirmation, type Session } from './session';
+import { callTool } from './lifecycle';
+import { namedPart } from './replyShape';
 import type { SlotContext } from './slots/types';
 import { resolve, type TurnContext, type TurnError, type TurnIO, type TurnResult } from './turn';
 import type { ScreenResult } from './screen';
@@ -50,6 +52,17 @@ import type { RenderLine } from '../render/types';
  *    turn's words. An accepted value is stored with its `shown` (`by: 'agent'`); a refused one is dropped,
  *    counts an attempt on its slot and walks the slot's own ladder (its retry line, then its
  *    onMaxAttempts, the keypad or a person), as a scripted fill that misses does.
+ * 3a. **What the model may see** (business.yaml's `sees`): an accepted value that fills a field whose tool
+ *    the model sees, with a value its result was not yet shown for, runs that tool through the gate (as an
+ *    async tool waits, core/toolWait.ts). Its result, once it passes the tool's reply check (a closed form,
+ *    which pnpm check holds it to), is kept (Session.agent.seen), only the fields the check names, and the
+ *    turn asks for the model to be asked again with it before anything is said (TurnResult.agentAgain): the
+ *    runner asks it within what is left of the turn's budget and resolves the turn again from the start with
+ *    that answer (TurnContext.agentSeen), which asks no more. So a full window is met with the next free one
+ *    before the read-back. The turn as it first stands (its values, its fixed question or read-back, the
+ *    reply not said: it was written without the result) is what is said where the second answer does not
+ *    come. A reply of the second answer is not said where it gave a value whose result the model was not
+ *    shown. A result that fails its check ends the turn with a person (`result-unchecked`), as for any tool.
  * 4. **The read-back** once every required field is filled (`submit` before that is ignored).
  * 5. **The reply**, said as an agent line (PromptDecision.agent) in place of its fallback, the next empty
  *    field's question, or with no form the open question; a reply that asks nothing is said before that
@@ -109,6 +122,13 @@ export interface AgentTurnRecord {
   /** The agent model's tokens and their cost, US dollars (the provider's own, else at the model's price); set by the runner. */
   usage?: { inputTokens: number; outputTokens: number };
   costUsd?: number;
+  /**
+   * The agent model asked again on this turn, with the results of the tools it sees (TurnResult.agentAgain),
+   * set by the runner: the tools whose results it was shown, how long the second answer took, ms, and why
+   * there was none where it failed (the turn then said what it first decided, its reply not said). This
+   * record is then of the second answer where it came, and `ms` is both answers' time.
+   */
+  again?: { tools: string[]; ms: number; fallback?: AgentFailure; detail?: string };
 }
 
 /** What a value's check came to: accepted, refused by its slot type (ValueCheck's reason), or `field`, naming no field of the form it was given in. */
@@ -217,7 +237,8 @@ export const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim(
  * hide it, agent/prompt.ts), what it may propose, the conversation so far with the values the records hide
  * masked once understood and these words last, whole, who the caller is where caller ID recognized them,
  * the channel, whether the words were heard over a line, the language and today. No identity factor: an
- * app in agent mode collects none. No tool's result yet (`seen`, a later step).
+ * app in agent mode collects none. The checked results of the tools the model sees, kept on the call
+ * (Session.agent.seen): only the fields each check names.
  */
 export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<TurnContext, 'todayIso'>): AgentContext {
   const app = appOf(session);
@@ -253,7 +274,7 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
     caller: { account: isAnonymous(p) ? null : p.first },
     channel: session.caps.speech ? 'voice' : 'chat',
     overLine: event.type === 'user.speech' && event.overLine === true,
-    seen: [],
+    seen: (session.agent?.seen ?? []).map(({ tool, result }) => ({ tool, result })),
     locale: localeOf(session),
     today: tc.todayIso,
   };
@@ -274,6 +295,7 @@ export function agentSentRecord(ctx: AgentContext): AgentSentRecord {
     channel: ctx.channel,
     overLine: ctx.overLine,
     today: ctx.today,
+    ...(ctx.seen.length > 0 ? { seen: ctx.seen.map((x) => ({ ...x })) } : {}),
   };
 }
 
@@ -287,6 +309,8 @@ export interface AgentSentRecord {
   channel: 'voice' | 'chat';
   overLine: boolean;
   today: string;
+  /** The checked results it was shown (a closed form, only the fields each check names); absent where none. */
+  seen?: { tool: string; result: unknown }[];
 }
 
 /**
@@ -490,6 +514,51 @@ function withFixedLine(h: Handled, fixed: { name: string; promptId: string } | n
   return { ...h, decision: { ...decision, acks: [{ promptId: fixed.promptId, vars: {} }, ...decision.acks] } };
 }
 
+/** What the tools the model sees came to on this turn (lookUpSeen). */
+interface Looked {
+  /** The results to ask the model again with (every result kept on the call), where a value this turn ran a tool the model was not yet shown; else null. */
+  again: SeenResult[] | null;
+  /** On the second resolution: a value the second answer gave ran a tool whose result the model was not shown, so its reply was written without it. */
+  unseen: boolean;
+}
+
+/**
+ * The tools the model sees (business.yaml's `sees`, App.agent.sees), each run through the gate for an
+ * accepted value of its field whose result the model has not yet been shown (step 3a at the top), its
+ * result, once it passes its reply check, kept on the call (Session.agent.seen) with only the fields that
+ * check names. A call still waiting makes the pass provisional (core/toolWait.ts); one the gate refuses,
+ * or with no result, shows nothing; one whose reply fails its check ends the turn with a person
+ * (TurnOut.unchecked, as for any tool), and nothing is asked again.
+ */
+function lookUpSeen(app: App, s: Session, io: TurnIO, record: AgentTurnRecord): Looked {
+  const sees = app.agent!.sees;
+  const given = io.tc.agentSeen;
+  const kept = [...(s.agent?.seen ?? [])];
+  let fresh = false;
+  let unseen = false;
+  for (const v of record.values) {
+    const tool = v.outcome === 'accepted' && v.slot !== undefined ? sees[v.slot] : undefined;
+    if (tool === undefined) continue;
+    const value = s.slots[v.slot!]?.value;
+    if (value === null || value === undefined) continue;
+    // Shown on an earlier turn: the model was sent it with this turn's words.
+    if (kept.some((k) => k.tool === tool && k.field === v.field && k.value === value)) continue;
+    const ran = callTool(s, { tool, params: { [v.field]: value } }, io.tc, io.out);
+    if (ran.pending === true || ran.decision.verdict !== 'ALLOW' || ran.value === null || ran.value === undefined) continue;
+    const result = namedPart(app.tools[tool]?.check, ran.value);
+    if (result === undefined) continue;
+    const at = kept.findIndex((k) => k.tool === tool);
+    const seen: SeenResult = { tool, field: v.field, value, result };
+    if (at >= 0) kept[at] = seen;
+    else kept.push(seen);
+    if (given === undefined) fresh = true;
+    else if (!given.seen.some((g) => g.tool === tool && g.field === v.field && g.value === value)) unseen = true;
+  }
+  if (kept.length > 0) s.agent = { conversation: s.agent?.conversation ?? [], failures: s.agent?.failures ?? 0, ...s.agent, seen: kept };
+  const checkedAll = (io.out.unchecked?.length ?? 0) === 0;
+  return { again: fresh && checkedAll ? kept.map((k) => ({ ...k })) : null, unseen };
+}
+
 /**
  * The words turn of an app in agent mode, once the gates have read the turn (core/turn.ts): see the top.
  * `said` is the turn's words, which every value's words are held to.
@@ -567,6 +636,9 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
 
   // 3. Values.
   const applied = applyValues(app, s, answer?.values ?? [], said, io.tc, record);
+  // 3a. The tools the model sees, for the values it gave: asked again with their results where any is new.
+  const looked = lookUpSeen(app, s, io, record);
+  if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
   if (answer !== null && understoodNothing(answer) && !opened) io.missed = true;
 
@@ -588,7 +660,8 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   // 5. The reply, unless it could contradict what the core did: a value set aside, the action not taken,
   // a form only a recognized caller may open turned down, or a form open it was not written for.
   const forFormOpen = formBefore === form || (formBefore === null && form !== null && openable(app, s).includes(form));
-  const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen;
+  // Nor a reply written without a result the model sees: one it is to be asked again with, or a value's whose result it was not shown.
+  const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen || looked.again !== null || looked.unseen;
   const reply = contradicts ? null : (answer?.reply ?? null);
   if (form !== null) {
     // The reply in place of the core's own next question; any other next step of the core's is said instead.
@@ -616,10 +689,16 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     s.pendingHash = null;
     return { decision: steps.failAttempt(s, applied.refused, io, []), events: applied.events };
   }
-  // A correction ("no, it's two"): stored, and the read-back said again with it.
+  // A correction ("no, it's two"): stored, and the read-back said again with it. A correction of a field whose
+  // tool the model sees runs it and asks the model again (step 3a); the second answer's reply, written with
+  // the result, is said before the read-back as an aside ("Saturday afternoon is full, so the morning?").
   if (applied.changed) {
     actionDone('ignored');
-    return { decision: steps.askSummary(s, pc.form, [], io), events: applied.events };
+    const looked = lookUpSeen(app, s, io, record);
+    if (looked.again !== null) io.agentAgain = { seen: looked.again };
+    const again = steps.askSummary(s, pc.form, [], io);
+    const informed = io.tc.agentSeen !== undefined && !looked.unseen && again.kind === 'prompt';
+    return { decision: informed ? withAside(again as PromptDecision, answer?.reply ?? null, record) : again, events: applied.events };
   }
   // The yes, with nothing changed: the form completes through its engine-written complete hook, whatever was proposed.
   if (verdict.kind === 'confirmed') {

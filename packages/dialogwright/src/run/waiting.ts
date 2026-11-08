@@ -9,7 +9,7 @@ import { sayAction, type Action } from '../channel/actions';
 import type { SessionEvent } from '../channel/events';
 import { appOf } from '../core/app/registry';
 import type { Session } from '../core/session';
-import { holdAfterMs, holdLineId, pendingTools, untilReplied, waitedCalls, waitingOf } from '../core/toolWait';
+import { holdAfterMs, holdLineId, pendingTools, untilReplied, waitedCalls, waitingOf, type ToolMemo } from '../core/toolWait';
 import { resolve, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import type { ScreenResult } from '../core/screen';
 import type { AnswerMap } from '../jev/types';
@@ -30,9 +30,11 @@ export interface WaitingChannel {
  * with the turn's memo, waiting between passes for the calls the last one found running. A pass that throws
  * while a call is pending (a hook that read the null it was given) is provisional like any other; one
  * that throws with nothing pending fails the turn, as it always has. `waited` is null on a turn whose
- * every tool replied at once.
+ * every tool replied at once. `memo`: the calls a resolution of the same turn already made, for a turn
+ * resolved again (an agent-mode turn whose model is asked again: run/turn.ts), so none is made twice; the
+ * memo used is returned.
  */
-export async function resolveWaiting(session: Session, event: SessionEvent, answers: AnswerMap | null, tc: TurnContext, error: TurnError | null, screen: ScreenResult | null, channel: WaitingChannel, timeoutMs: number): Promise<{ result: TurnResult; waited: WaitedRecord | null }> {
+export async function resolveWaiting(session: Session, event: SessionEvent, answers: AnswerMap | null, tc: TurnContext, error: TurnError | null, screen: ScreenResult | null, channel: WaitingChannel, timeoutMs: number, given?: ToolMemo): Promise<{ result: TurnResult; waited: WaitedRecord | null; memo: ToolMemo }> {
   let shown: WaitShow | null = null;
   try {
     const { value: result, memo, passes } = await untilReplied(
@@ -41,11 +43,12 @@ export async function resolveWaiting(session: Session, event: SessionEvent, answ
       (memo, provisional) => {
         shown = showWaiting(session, event, provisional, pendingTools(memo), channel);
       },
+      given,
     );
     const calls = waitedCalls(memo);
     const show = shown as WaitShow | null;
     const waited: WaitedRecord | null = calls.length === 0 && show === null ? null : { calls, passes, ...(show?.record() ?? {}) };
-    return { result, waited };
+    return { result, waited, memo };
   } finally {
     (shown as WaitShow | null)?.stop();
   }

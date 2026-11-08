@@ -45,7 +45,7 @@ import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
-import type { AgentResult } from '../agent/types';
+import type { AgentResult, SeenResult } from '../agent/types';
 import { agentDropped, agentLed, agentWords, noteConversation, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
@@ -123,6 +123,13 @@ export interface TurnContext {
    * its shape, or no client is set. Absent on every turn that does not ask it, and for every other app.
    */
   agent?: AgentResult;
+  /**
+   * The results the agent model was shown when it was asked again on this turn (core/agentTurn.ts): a
+   * value that filled a field whose tool the model sees (business.yaml's `sees`) ran that tool through the
+   * gate, and the runner asked the model again with its checked result (TurnResult.agentAgain) before
+   * anything was said. Set only on that second resolution of the turn; the turn then asks no more.
+   */
+  agentSeen?: { seen: readonly SeenResult[] };
   /**
    * The run has no agent client for an app in agent mode (no key): set by the runner on every turn of
    * such a run. A call that begins so runs as a scripted app for the whole call (Session.agent.scripted).
@@ -245,6 +252,8 @@ export interface TurnIO {
   replied?: true;
   /** What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts). */
   agent?: AgentTurnRecord;
+  /** The agent model is to be asked again, with these results shown (TurnResult.agentAgain). */
+  agentAgain?: { seen: SeenResult[] };
 }
 
 export interface Plan {
@@ -317,6 +326,14 @@ export interface TurnResult {
    * or failed. Only on a turn that asked the agent; absent on every other turn and for every other app.
    */
   agent?: AgentTurnRecord;
+  /**
+   * The agent model is to be asked again on this turn's words, now shown these checked results (the tools
+   * whose results it sees, run for the values it gave: core/agentTurn.ts), before anything is said: the
+   * runner asks it and resolves the turn again with its answer (TurnContext.agentSeen). The turn as it
+   * stands is what is said where the second answer does not come in time: its values, the agent's reply
+   * not said (it was written without the results). Absent on every other turn.
+   */
+  agentAgain?: { seen: SeenResult[] };
 }
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */
@@ -3274,7 +3291,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     return withSources(io.app, withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) }), io.out.kb, { shown: !s.caps.speech });
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
-  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false, ...(io.agent !== undefined ? { agent: io.agent } : {}) });
+  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false, ...(io.agent !== undefined ? { agent: io.agent } : {}), ...(io.agentAgain !== undefined ? { agentAgain: io.agentAgain } : {}) });
   // A reply that did not pass its tool's check this turn ends the turn with a person, whatever the
   // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
   const settle = (decision: Decision, label: string): Decision => {

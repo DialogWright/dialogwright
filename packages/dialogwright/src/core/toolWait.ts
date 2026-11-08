@@ -212,10 +212,11 @@ export function holdLineId(app: App, tools: readonly string[], atStart: boolean)
  * `run`, made again with the same memo until no call it made is still to reply: for synchronous code
  * that calls tools outside a turn (the harness seeding a corpus entry's state). `run` must start from
  * the same state each time (a fresh copy of the session), as a turn's passes do. `onWait` is told, once,
- * of the first wait.
+ * of the first wait. `given`: a memo of calls already made this turn (a turn resolved again, as an agent-mode
+ * turn is once its model has seen a tool's result: core/agentTurn.ts), so none of them is made twice.
  */
-export async function untilReplied<T>(run: (memo: ToolMemo) => T, timeoutMs: number = TOOL_TIMEOUT_MS, onWait?: (memo: ToolMemo, provisional: T | null) => void): Promise<{ value: T; memo: ToolMemo; passes: number }> {
-  const memo = newToolMemo(timeoutMs);
+export async function untilReplied<T>(run: (memo: ToolMemo) => T, timeoutMs: number = TOOL_TIMEOUT_MS, onWait?: (memo: ToolMemo, provisional: T | null) => void, given?: ToolMemo): Promise<{ value: T; memo: ToolMemo; passes: number }> {
+  const memo = given ?? newToolMemo(timeoutMs);
   for (let pass = 1; ; pass++) {
     startPass(memo);
     let value: T | null = null;

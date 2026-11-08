@@ -546,14 +546,27 @@ function redactAgent(app: Slots, agent: TraceRecord['agent'], scrub: Scrub | nul
     : agent.values;
   // The reply, said or not, is our line: scrubbed as one.
   const reply = typeof agent.reply === 'string' && scrub !== null ? scrub(agent.reply) : agent.reply;
+  // The results of the tools it sees, each text in them scrubbed as the conversation is (a value a result repeats).
   const sent = isObject(agent.sent) && scrub !== null && Array.isArray(agent.sent.conversation)
-    ? { ...agent.sent, conversation: agent.sent.conversation.map((u) => (isObject(u) && typeof u.text === 'string' ? { ...u, text: scrub(u.text) } : u)) }
+    ? {
+        ...agent.sent,
+        conversation: agent.sent.conversation.map((u) => (isObject(u) && typeof u.text === 'string' ? { ...u, text: scrub(u.text) } : u)),
+        ...(Array.isArray(agent.sent.seen) ? { seen: agent.sent.seen.map((x) => (isObject(x) ? { ...x, result: scrubLeaves(x.result, scrub) } : x)) } : {}),
+      }
     : agent.sent;
   // The reply held to the facts (render/agentLine.ts): its fixed line, the reply said or refused, our lines too.
   const line = isObject(agent.line) && scrub !== null
     ? { ...agent.line, fixed: scrub(agent.line.fixed), ...(agent.line.said !== undefined ? { said: scrub(agent.line.said) } : {}), ...(agent.line.refused !== undefined ? { refused: scrub(agent.line.refused) } : {}) }
     : agent.line;
   return { ...agent, values, ...(reply !== undefined ? { reply } : {}), ...(sent !== undefined ? { sent } : {}), ...(line !== undefined ? { line } : {}) } as TraceRecord['agent'];
+}
+
+/** Every string in `v` (a tool's result), scrubbed. */
+function scrubLeaves(v: unknown, scrub: Scrub): unknown {
+  if (typeof v === 'string') return scrub(v);
+  if (Array.isArray(v)) return v.map((x) => scrubLeaves(x, scrub));
+  if (isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubLeaves(x, scrub)]));
+  return v;
 }
 
 /** A say action's text parts, scrubbed. */

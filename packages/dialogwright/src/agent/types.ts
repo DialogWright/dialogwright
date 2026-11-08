@@ -122,6 +122,18 @@ export interface AgentContext {
   today: string;
 }
 
+/**
+ * A tool's result the model is shown (business.yaml's `sees`; AgentContext.seen): the tool, the field and
+ * the value it was called with, and its result once it passed the tool's reply check, only the fields that
+ * check names (core/replyShape.ts namedPart), each in a closed form.
+ */
+export interface SeenResult {
+  tool: string;
+  field: string;
+  value: string;
+  result: unknown;
+}
+
 /** Why an answer could not be used. */
 export type AgentFailure = 'timeout' | 'invalid' | 'error';
 
