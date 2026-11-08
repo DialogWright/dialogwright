@@ -344,7 +344,7 @@ const MAX_TOKENS = 200;
 const THINKING_MAX_TOKENS = 4000;
 
 /** The API's own account of a failed request (its error's type and message), made safe to record: one line, short, no key. */
-function apiError(json: unknown, key: string): { type?: string; message?: string } {
+export function apiError(json: unknown, key: string): { type?: string; message?: string } {
   const e = (json as { error?: unknown } | null)?.error;
   if (e === null || typeof e !== 'object') return {};
   const o = e as { type?: unknown; code?: unknown; message?: unknown; metadata?: unknown };
@@ -401,7 +401,7 @@ function upstreamError(metadata: unknown): string | null {
  * masked, anything shaped like a key (`sk-...`, `key-...`) and any long unbroken token (24 characters or
  * more of letters, digits, `_` and `-`: another provider's key such as `AIza...`, a bearer token) masked.
  */
-function safeErrorText(t: string, key: string): string {
+export function safeErrorText(t: string, key: string): string {
   return t.split(key).join('•').replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/[A-Za-z0-9_-]{24,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 

@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest';
+import { resolveRenderProvider } from '../render/providers';
+import { INCEPTION_URL, inceptionAgent, openRouterAgent, resolveInceptionAgent } from './provider';
+import type { AgentContext } from './types';
+
+/**
+ * The agent model's providers: OpenRouter, and Inception's own OpenAI-compatible API. No test reaches
+ * a model: each request goes to a fetch written here, which checks what it was sent and answers as an
+ * OpenAI-compatible API does.
+ */
+
+const KEY = 'sk-test-not-a-real-key';
+
+const ctx: AgentContext = {
+  facts: { name: 'Example Service Desk', voice: 'Warm and brief.', says: ['The desk answers requests.'], background: [], fixed: {} },
+  examples: [],
+  form: { name: 'request' },
+  fields: [{ name: 'day', type: 'date', value: null, required: true }],
+  actions: [{ name: 'submit', about: 'Read back what is collected.' }],
+  conversation: [{ who: 'caller', text: 'Thursday please.' }],
+  caller: { account: null },
+  channel: 'voice',
+  overLine: false,
+  seen: [],
+  locale: 'en-US',
+  today: '2026-11-09',
+};
+
+const answer = { reply: 'Thursday works. Morning or afternoon?', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'none', fromFacts: false };
+
+type Sent = { url: string; headers: Record<string, string>; body: Record<string, unknown> };
+
+/** A fetch that records what it was sent and answers with `content` as the assistant's message. */
+function fakeFetch(content: unknown, opts: { status?: number; error?: unknown; usage?: Record<string, unknown> } = {}): { fetchFn: typeof fetch; sent: Sent[] } {
+  const sent: Sent[] = [];
+  const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+    sent.push({ url: String(url), headers: init?.headers as Record<string, string>, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+    if (opts.status !== undefined && opts.status !== 200) return new Response(JSON.stringify({ error: opts.error ?? { message: 'bad' } }), { status: opts.status });
+    return new Response(JSON.stringify({ model: 'mercury-3', choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: 'stop' }], usage: { prompt_tokens: 1200, completion_tokens: 80, ...opts.usage } }), { status: 200 });
+  }) as typeof fetch;
+  return { fetchFn, sent };
+}
+
+const openRouter = () => resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'inception/mercury-3', OPENROUTER_API_KEY: KEY })!;
+
+describe('openRouterAgent', () => {
+  it('a valid body is ok, with its usage and its text', async () => {
+    const { fetchFn } = fakeFetch(answer, { usage: { cost: 0.00042 } });
+    const r = await openRouterAgent(openRouter(), fetchFn).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: true, answer, usage: { inputTokens: 1200, outputTokens: 80 }, costUsd: 0.00042, raw: JSON.stringify(answer) });
+    expect(r.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('a body that is not the schema is invalid', async () => {
+    const { fetchFn } = fakeFetch({ ...answer, action: 'book' });
+    const r = await openRouterAgent(openRouter(), fetchFn).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'invalid' });
+    const prose = await openRouterAgent(openRouter(), fakeFeed('Sure, Thursday works!')).answer(ctx, 5000);
+    expect(prose).toMatchObject({ ok: false, reason: 'invalid', raw: 'Sure, Thursday works!' });
+  });
+
+  it('an abort at the budget is timeout', async () => {
+    const hanging = ((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    })) as unknown as typeof fetch;
+    const r = await openRouterAgent(openRouter(), hanging).answer(ctx, 20);
+    expect(r).toMatchObject({ ok: false, reason: 'timeout' });
+    expect(r.ms).toBeGreaterThanOrEqual(15);
+  });
+
+  it('an API error is error, its message kept without the key', async () => {
+    const { fetchFn } = fakeFetch(null, { status: 401, error: { code: 401, message: `invalid key ${KEY}` } });
+    const r = await openRouterAgent(openRouter(), fetchFn).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'error' });
+    expect(!r.ok && r.detail).toContain('HTTP 401');
+    expect(JSON.stringify(r)).not.toContain(KEY);
+  });
+
+  it('the request names json_schema strict, temperature 0.6 and the model', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    await openRouterAgent(openRouter(), fetchFn).answer(ctx, 5000);
+    const [req] = sent;
+    expect(req!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(req!.headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(req!.body).toMatchObject({ model: 'inception/mercury-3', temperature: 0.6, response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true } } });
+    const schema = (req!.body.response_format as { json_schema: { schema: { properties: { action: { enum: string[] } } } } }).json_schema.schema;
+    expect(schema.properties.action.enum).toEqual(['submit', 'none']);
+    const messages = req!.body.messages as { role: string; content: string }[];
+    expect(messages.map((m) => m.role)).toEqual(['system', 'user']);
+    expect(messages[1]!.content).toContain('Thursday please.');
+  });
+
+  it('never makes a client without its key', () => {
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'inception/mercury-3' }, { needKey: false })!;
+    expect(() => openRouterAgent(p)).toThrow('OPENROUTER_API_KEY');
+  });
+});
+
+/** A fetch whose assistant message is `text` as it is. */
+function fakeFeed(text: string): typeof fetch {
+  return fakeFetch(text).fetchFn;
+}
+
+describe('inceptionAgent', () => {
+  it('inceptionAgent sends reasoning_effort and realtime, and reads INCEPTION_API_KEY', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    const client = resolveInceptionAgent({ INCEPTION_API_KEY: KEY }, { model: 'mercury-3', effort: 'instant', realtime: true }, fetchFn);
+    const r = await client.answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: true, answer });
+    const [req] = sent;
+    expect(req!.url).toBe(INCEPTION_URL);
+    expect(INCEPTION_URL).toBe('https://api.inceptionlabs.ai/v1/chat/completions');
+    expect(req!.headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(req!.body).toMatchObject({ model: 'mercury-3', reasoning_effort: 'instant', realtime: true, temperature: 0.6, response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true } } });
+    expect(req!.body).not.toHaveProperty('reasoning');
+  });
+
+  it('leaves out what is not asked for: no effort, no realtime', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    await inceptionAgent({ model: 'mercury-3', apiKey: KEY, realtime: false }, fetchFn).answer(ctx, 5000);
+    expect(sent[0]!.body).not.toHaveProperty('reasoning_effort');
+    expect(sent[0]!.body).not.toHaveProperty('realtime');
+  });
+
+  it('names the variable a missing key is read from, never a key', () => {
+    expect(() => resolveInceptionAgent({}, { model: 'mercury-3', realtime: false })).toThrow('missing required environment variable INCEPTION_API_KEY');
+    expect(() => inceptionAgent({ model: 'mercury-3', apiKey: null, realtime: false })).toThrow('INCEPTION_API_KEY');
+  });
+});

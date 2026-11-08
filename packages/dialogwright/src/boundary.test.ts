@@ -8,7 +8,7 @@ import { dirname, join, normalize } from 'node:path';
  * (src/testing, which registers the default app for vitest). An engine file never reaches into an
  * app; apps are registered by the launchers inside them (src/apps/<app>/serve.ts and the like).
  */
-const ENGINE = ['core', 'gate', 'run', 'channel', 'server', 'jev', 'audit', 'trace', 'handoff', 'prompts', 'harness-text', 'define', 'slots', 'kb', 'render'];
+const ENGINE = ['core', 'gate', 'run', 'channel', 'server', 'jev', 'audit', 'trace', 'handoff', 'prompts', 'harness-text', 'define', 'slots', 'kb', 'render', 'agent'];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -235,9 +235,9 @@ describe('import specifiers', () => {
 
 /**
  * The engine's inner layers (core, run, prompts, gate, jev, the slot library, conformance kit
- * included, and generated wording's renderer) sit below the server, the test infrastructure and the text harness: they never import them.
+ * included, generated wording's renderer, and the agent model's client) sit below the server, the test infrastructure and the text harness: they never import them.
  */
-const INNER = ['core', 'run', 'prompts', 'gate', 'jev', 'slots', 'render'];
+const INNER = ['core', 'run', 'prompts', 'gate', 'jev', 'slots', 'render', 'agent'];
 const OUTER = ['src/server', 'src/testing', 'src/harness-text'];
 
 function importsOuter(file: string, src: string): string[] {
@@ -245,7 +245,7 @@ function importsOuter(file: string, src: string): string[] {
 }
 
 describe('layering', () => {
-  it('core, run, prompts, gate, jev, slots and render never import src/server, src/testing or src/harness-text', () => {
+  it('core, run, prompts, gate, jev, slots, render and agent never import src/server, src/testing or src/harness-text', () => {
     const offenders = INNER.flatMap((d) => files(join('src', d))).flatMap((f) => importsOuter(f, readFileSync(f, 'utf8')).map((t) => `${f}: ${t}`));
     expect(offenders).toEqual([]);
   });
