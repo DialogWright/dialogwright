@@ -58,6 +58,7 @@ Each is a stand-in until the owner says what he uses:
 - `claimed-account`: an unknown number says "This is Rivergate Motors. Just book me in ...". The line says `booking_for_accounts` and begins the request, with the day and window understood; nothing is booked (`action: { not: book }`).
 - `window-full`: Friday morning is full. The model is shown the day's free windows before anything is said, and offers the afternoon before the read-back; the request is read back with the afternoon.
 - `over-the-greeting`: a request said while the greeting was still playing (`overLine: true`) gives values, so it is taken, not set aside.
+- `callback-note`: a caller who asks for Sam hears the handoff (a statement), is offered the number they're calling from, hears it read back and leaves Sam a callback note on the yes.
 
 Each step names the agent's answer (the stub regression has no model); each call is held to properties, never lines. Two findings shaped the scripted answers, and are the engine's as it stands:
 

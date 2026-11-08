@@ -103,5 +103,23 @@
       "action": "none",
       "said": { "notFigure": true }
     }
+  },
+  {
+    "id": "callback-note",
+    "callerNumber": "+15555550177",
+    "todayIso": "2026-11-09",
+    "steps": [
+      { "say": "Can I just talk to Sam?", "agent": { "reply": "", "action": "callback" } },
+      { "say": "yes, call me on this one" },
+      { "say": "yes please", "agent": { "reply": "" } }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "values": { "callbackNumber": "...0177" },
+      "action": "callback",
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    }
   }
 ]
