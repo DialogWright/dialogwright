@@ -675,6 +675,9 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
 function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
   const app = io.app;
   const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
+  // Asides in a row at the read-back: only the first is uncounted (below), so questions alone never hold it open.
+  const asideBefore = pc.aside === true;
+  delete pc.aside;
   if (answer === null && !failed.none) {
     // A failed answer: the words may hold a correction no one read ("yes, but make it three"), so nothing
     // completes. The read-back is said again, uncounted; the second failure in a row hands off.
@@ -719,9 +722,15 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     return { decision: pc.askedChange === true ? steps.reaskConfirmation(s, io) : steps.askChange(pc, []), events: applied.events };
   }
   // A question at the read-back ("do you open on Saturdays?", "how much is it?"), an answer from the facts
-  // or a fixed line named in its place: answered as an aside, and the read-back said again as it stands (its attempts and its "What should I change?" kept), uncounted.
-  if (answer !== null && answer.values.length === 0 && (answer.fromFacts || failed.fixed)) {
-    return { decision: withAside(steps.summaryPrompt(s, pc.form, []), answer.reply, record), events: applied.events };
+  // or a fixed line named in its place: answered as an aside, and the read-back said again as it stands (its
+  // attempts and its "What should I change?" kept), uncounted: the first in a row only, and only with
+  // something said in answer. A second in a row, or one with nothing to say, counts as any other turn (the
+  // review of Task 7), so a caller who only asks still reaches the keypad and a person.
+  const isAside = answer !== null && answer.values.length === 0 && (answer.fromFacts || failed.fixed);
+  const answeredSomething = failed.fixed || replyOf(answer?.reply) !== null;
+  if (isAside && answeredSomething && !asideBefore) {
+    pc.aside = true;
+    return { decision: withAside(steps.summaryPrompt(s, pc.form, []), answer!.reply, record), events: applied.events };
   }
   // Anything else, neither a yes nor a no ("um", "the day" after "What should I change?"): the read-back
   // asked again on its ladder, counted, so words that settle nothing reach the keypad and then a person.
@@ -729,9 +738,12 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   // I change?" the re-ask's rung is that question with the reply in its place.
   const again = steps.reaskConfirmation(s, io);
   const reply = answer?.reply ?? null;
+  // An aside counted: the next in a row is counted too.
+  if (isAside && s.pendingConfirmation?.target === 'form') s.pendingConfirmation.aside = true;
   if (again.kind !== 'prompt') return { decision: again, events: applied.events };
   if (pc.askedChange === true && again.target === 'confirm' && again.promptId !== 'confirm_dtmf') {
-    return { decision: withReply(prompt('ask_change', 'confirm', {}, again.acks), reply, record), events: applied.events };
+    // "What should I change?" again: the reply in its place where it asks something, else before it, so the question is still asked.
+    return { decision: replyOrAside(prompt('ask_change', 'confirm', {}, again.acks), reply, record), events: applied.events };
   }
   return { decision: withAside(again, reply, record), events: applied.events };
 }

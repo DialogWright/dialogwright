@@ -243,6 +243,11 @@ export function saidLineOf(say: Say): SaidLine | undefined {
   return SAID_LINES.get(say);
 }
 
+/** Notes the prompt a Say made outside decisionToActions says (an agent line's fixed line in its place: render/agentLine.ts), so saidLineOf reads it as any other. */
+export function noteSaidLine(say: Say, line: SaidLine): void {
+  SAID_LINES.set(say, { ...line, vars: { ...line.vars } });
+}
+
 /** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry), each as `channel` takes it. */
 export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null, locale?: string, channel: LineChannel = {}): Action[] {
   const sayAs = (role: LineRole, exact = false) => (id: string, vars: Record<string, string>, interruptible: boolean): Say => {

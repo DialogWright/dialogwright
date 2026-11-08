@@ -3333,7 +3333,6 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The data the call or chat came with, only the keys the app names (core/callData.ts).
       const data = keptCallData(io.app, event.callData);
       if (data !== undefined) s.callData = data;
-      // An app in agent mode whose call begins with no agent client (no key) runs as a scripted app for the whole call.
       // The app's start hook, once, for every call, before the call-start lookup (App.onStart).
       startHook(s, io);
       // The app's lookup by that number, once, before the greeting, through the gate.

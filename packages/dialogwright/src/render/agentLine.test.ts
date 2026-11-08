@@ -8,7 +8,7 @@ import { ANONYMOUS } from '../gate/principal';
 import { choiceAnswer, noulAnswer, sharp } from '../jev/distributions';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient, JevRequest, JevResponse } from '../jev/types';
-import { spokenText } from '../prompts/render';
+import { saidLineOf, spokenText } from '../prompts/render';
 import { runTurn, type TurnRun } from '../run/turn';
 import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
@@ -71,7 +71,7 @@ interface Call {
   judge: ReturnType<typeof jev>;
 }
 
-async function call(script: Record<string, AgentAnswer>, steps: string[], opts: { chat?: boolean; judged?: (state: { agent: { said: string } }) => number | undefined } = {}): Promise<Call> {
+async function call(script: Record<string, AgentAnswer>, steps: string[], opts: { chat?: boolean; judged?: (state: { agent: { said: string } }) => number | undefined; wrap?: (j: JevClient) => JevClient; checkTimeoutMs?: number } = {}): Promise<Call> {
   const tools = { ...app.systems(), codes: mockCodeVerifier };
   const judge = jev(opts.judged);
   const agent = fakeAgent((ctx) => {
@@ -80,7 +80,7 @@ async function call(script: Record<string, AgentAnswer>, steps: string[], opts: 
     if (out === undefined) throw new Error(`no answer scripted for "${words}"`);
     return out;
   });
-  const o = { client: judge, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: agent } };
+  const o = { client: opts.wrap?.(judge) ?? judge, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: agent, ...(opts.checkTimeoutMs !== undefined ? { checkTimeoutMs: { voice: opts.checkTimeoutMs, chat: opts.checkTimeoutMs } } : {}) } };
   let session: Session = newSession('S-line', 0, opts.chat ? WEB_CHAT : VOICE_RELAY, ANONYMOUS, app.id);
   const runs: TurnRun[] = [];
   const run = async (event: SessionEvent): Promise<void> => {
@@ -121,7 +121,7 @@ describe('an agent line: the checks by code', () => {
     expect(heard(c.last)).toBe(NAME_Q);
   });
 
-  it('a figure the caller said, or a value held, may be said back', async () => {
+  it('a value held may be said back, in the words it was cited from ("two copies")', async () => {
     const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), 'Avery Lane, and I need two copies': said('Two copies for Avery, lovely. Which day would you collect them?', [['patronName', 'Avery Lane', 'Avery Lane'], ['copies', 'two', 'two copies']]) }, [HOLD, 'Avery Lane, and I need two copies']);
     expect(c.last.record.agent!.line).toMatchObject({ mode: 'generated', said: 'Two copies for Avery, lovely. Which day would you collect them?' });
   });
@@ -139,6 +139,14 @@ describe('an agent line: the checks by code', () => {
     expect(shapeLeak('Just a few words about the damage, please.')).toBe(false);
     expect(shapeLeak("What's the value of the order?")).toBe(false);
     expect(shapeLeak('A value-added service.')).toBe(false);
+    // Ordinary words beside other marks pass (the review of Task 7): only the answer's JSON marks join a key to a word.
+    expect(shapeLeak('Two words—that is all.')).toBe(false);
+    expect(shapeLeak('Is it the value/price you want?')).toBe(false);
+    expect(shapeLeak('A few actions, words and values.')).toBe(false);
+    expect(shapeLeak('"Words" is what you said.')).toBe(false);
+    expect(shapeLeak('Thanks.values')).toBe(true);
+    expect(shapeLeak('{"values":[')).toBe(true);
+    expect(shapeLeak('fixedLine')).toBe(true);
   });
 
   it('checkAgentReply: markup on a call, two questions, the word budget, a phrase to avoid, a web address not held', () => {
@@ -217,7 +225,7 @@ describe('an agent line: the drift judge', () => {
 
   it('the judge is given whose line speaks, what it may say, its fixed lines, what it understood (a text value with the caller\'s words), and the caller\'s words', async () => {
     const words = "it's that novel, The Quiet Harbor, the one about the lighthouse keeper";
-    const c = await call({ [words]: said('The Quiet Harbor, a lovely one. What name is it under?', [['title', 'The Quiet Harbor', words]]) }, [words]);
+    const c = await call({ [words]: said('The Quiet Harbor, a lovely book. What name is it under?', [['title', 'The Quiet Harbor', words]]) }, [words]);
     expect(c.last.record.agent!.line).toMatchObject({ mode: 'generated' });
     const state = c.judge.judged[0]!.state as { agent: Record<string, unknown>; quoted: { name: string; words: string }[] };
     expect(state.agent.speaks).toBe('the automated line of Example Library, speaking with a caller on a phone call');
@@ -274,5 +282,139 @@ describe('an agent line: what a fallback leaves', () => {
     const c = await call({ [HOLD]: said('Hi, this is Dana. What name is it under?', TITLE) }, [HOLD], { chat: true });
     expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'drift' });
     expect(sayTexts(c.last)).toEqual([NAME_Q]);
+  });
+});
+
+describe('the review of Task 7', () => {
+  const NAMED = 'Avery Lane';
+
+  it('a figure the caller proposes is not the line\'s: "is it under a hundred?" against "Yes, it\'s under a hundred"', async () => {
+    const asked = 'is it under a hundred dollars?';
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [asked]: said("Yes, it's under a hundred dollars. What name is it under?", [], { fromFacts: true }) }, [HOLD, asked]);
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: "Yes, it's under a hundred dollars. What name is it under?" });
+    expect(heard(c.last)).toBe(NAME_Q);
+  });
+
+  it('"in two days?" against "Yes, two days is fine": the caller\'s figure, refused', async () => {
+    const asked = 'can you have it ready in two days?';
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [asked]: said('Yes, two days is fine. What name is it under?', [], { fromFacts: true }) }, [HOLD, asked]);
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
+  });
+
+  it('"$80" against a fact with a dollar figure of its own: refused; the fact\'s own figure passes', () => {
+    const g = { channel: 'voice' as const, words: 30, avoid: [], sources: ['A replacement library card is $2.'] };
+    expect(checkAgentReply("It's $80 for the large print.", g)).toBe('foreign');
+    expect(checkAgentReply('A replacement card is $2.', g)).toBeNull();
+  });
+
+  it('the judge is asked whether the line agrees to a figure, a time or a promise the caller proposed, and is given the call so far, masked', async () => {
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), 'Avery Lane, call me at 555 555 0144': said('Thanks, Avery. How many copies?', [['patronName', 'Avery Lane', 'Avery Lane'], ['callbackNumber', '5555550144', '555 555 0144']]), 'two please': said('Two it is. Which day would you collect them?', [['copies', 'two', 'two']]) }, [HOLD, 'Avery Lane, call me at 555 555 0144', 'two please']);
+    const q = c.judge.judged.at(-1)!.questions[AGENT_DRIFT_QUESTION_ID] as { criteria: { true: string } };
+    expect(q.criteria.true).toContain('it agrees to, or states as its own, a figure, a time or a promise the caller proposed');
+    const state = c.judge.judged.at(-1)!.state as { agent: { conversation: { who: string; text: string }[] }; quoted: { words: string }[] };
+    // The call before this turn, as the agent model is sent it: this turn's words quoted apart, the callback number masked.
+    expect(state.agent.conversation.map((u) => u.who)).toEqual(['line', 'caller', 'line', 'caller', 'line']);
+    expect(state.agent.conversation[3]!.text).not.toContain('0144 ');
+    expect(JSON.stringify(state.agent.conversation)).not.toContain('555 555 0144');
+    expect(state.quoted).toEqual([{ name: 'heard', words: 'two please' }]);
+  });
+
+  it('the stub judge reads the caller\'s quoted words as the caller\'s: a promise asked for and made is refused', async () => {
+    const asked = 'can you promise me it will be kept for me?';
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [asked]: said('I promise it will be kept for you. What name is it under?', [], { fromFacts: true }) }, [HOLD, asked]);
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'drift' });
+  });
+
+  it('a judge that does not answer in time: the fixed line, the reply refused as late', async () => {
+    const slow = (j: JevClient): JevClient => ({ async ask(req) {
+      if (Object.hasOwn(req.questions, AGENT_DRIFT_QUESTION_ID)) await new Promise((r) => setTimeout(r, 200));
+      return j.ask(req);
+    } });
+    const c = await call({ [HOLD]: said('Happy to help with that. What name is it under?', TITLE) }, [HOLD], { wrap: slow, checkTimeoutMs: 50 });
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'timeout' });
+    expect(heard(c.last)).toBe(NAME_Q);
+  });
+
+  it('a judge that errs, or answers no reading: the fixed line', async () => {
+    const failing = (j: JevClient): JevClient => ({ async ask(req) {
+      if (Object.hasOwn(req.questions, AGENT_DRIFT_QUESTION_ID)) throw new Error('judge down');
+      return j.ask(req);
+    } });
+    const c = await call({ [HOLD]: said('Happy to help with that. What name is it under?', TITLE) }, [HOLD], { wrap: failing });
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'drift-error' });
+    const silent = (j: JevClient): JevClient => ({ async ask(req) {
+      const r = await j.ask(req);
+      if (!Object.hasOwn(req.questions, AGENT_DRIFT_QUESTION_ID)) return r;
+      const { [AGENT_DRIFT_QUESTION_ID]: _a, ...rest } = r.answers;
+      return { ...r, answers: rest };
+    } });
+    const d = await call({ [HOLD]: said('Happy to help with that. What name is it under?', TITLE) }, [HOLD], { wrap: silent });
+    expect(d.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'drift-error' });
+  });
+
+  it('words the screen flagged are never answered by the reply; words the screen did not read are never answered either', async () => {
+    const flagging = (j: JevClient): JevClient => ({ async ask(req) {
+      const r = await j.ask(req);
+      return Object.hasOwn(req.questions, 'manipulation') ? { ...r, answers: { ...r.answers, manipulation: noulAnswer(0.97) } } : r;
+    } });
+    const flagged = await call({ [HOLD]: said('Happy to help with that. What name is it under?', TITLE) }, [HOLD], { wrap: flagging });
+    expect(flagged.last.result.quarantined).toBe(true);
+    expect(flagged.last.record.agent).toMatchObject({ use: 'dropped', replySaid: false });
+    expect(sayTexts(flagged.last).join(' ')).not.toContain('Happy to help');
+    const unread = (j: JevClient): JevClient => ({ async ask(req) {
+      const r = await j.ask(req);
+      if (!Object.hasOwn(req.questions, 'manipulation')) return r;
+      const { manipulation: _m, ...rest } = r.answers;
+      return { ...r, answers: rest };
+    } });
+    const c = await call({ [HOLD]: said('Happy to help with that. What name is it under?', TITLE) }, [HOLD], { wrap: unread });
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', skipped: 'screen' });
+    expect(heard(c.last)).toBe(NAME_Q);
+  });
+
+  it('an aside at the read-back that fails says nothing extra: the read-back again as it stands, uncounted', async () => {
+    const details = 'Avery Lane, two copies, Thursday morning, and call me at 555 555 0144';
+    const c = await call({
+      [HOLD]: said('Happy to help. What name is it under?', TITLE),
+      [details]: said('Thanks, Avery.', [['patronName', 'Avery Lane', 'Avery Lane'], ['copies', 'two', 'two copies'], ['day', '2026-11-12', 'Thursday'], ['window', 'morning', 'morning'], ['callbackNumber', '5555550144', '555 555 0144']]),
+      'do you guarantee it?': said('We guarantee every hold.', [], { fromFacts: true }),
+    }, [HOLD, details, 'do you guarantee it?']);
+    const [, , readBack, asked] = c.runs;
+    expect(readBack!.result.decision).toMatchObject({ promptId: 'readback_request' });
+    expect(asked!.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'drift', act: 'acknowledge', fixed: '' });
+    expect(asked!.result.decision).toMatchObject({ promptId: 'readback_request' });
+    expect(sayTexts(asked!)).toEqual(sayTexts(readBack!));
+    expect(asked!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: (readBack!.result.session.pendingConfirmation as { attempts: number }).attempts });
+  });
+
+  it('the fixed line said in a reply\'s place is the prompt\'s own line (its said line noted), with its chat buttons; an aside leaves the question its buttons', async () => {
+    const chatty = { ...app, chat: { ...(app.chat ?? {}), replies: 'on' as const } };
+    resetAppsForTest();
+    registerApp(chatty);
+    try {
+      const fell = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [NAMED]: said('Hi, this is Dana. How many copies?', [['patronName', 'Avery Lane', 'Avery Lane']]) }, [HOLD, NAMED], { chat: true });
+      expect(fell.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'drift' });
+      const last = fell.last.result.actions.at(-1)!;
+      expect(last.type === 'say' && saidLineOf(last)?.promptId).toBe('ask_request_copies');
+      expect(last.type === 'say' ? last.replies : undefined).toEqual(['One', 'Two', 'Three']);
+      const aside = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [NAMED]: said('Thanks, Avery.', [['patronName', 'Avery Lane', 'Avery Lane']]) }, [HOLD, NAMED], { chat: true });
+      expect(aside.last.record.agent!.line).toMatchObject({ mode: 'generated', act: 'acknowledge' });
+      const asks = aside.last.result.actions.at(-1)!;
+      expect(asks.type === 'say' ? asks.replies : undefined).toEqual(['One', 'Two', 'Three']);
+    } finally {
+      resetAppsForTest();
+      registerApp(app);
+    }
+  });
+
+  it('a slow judge is the caller\'s wait: the turn\'s total time counts it', async () => {
+    const slow = (j: JevClient): JevClient => ({ async ask(req) {
+      if (Object.hasOwn(req.questions, AGENT_DRIFT_QUESTION_ID)) await new Promise((r) => setTimeout(r, 120));
+      return j.ask(req);
+    } });
+    const c = await call({ [HOLD]: said('Happy to help with that. What name is it under?', TITLE) }, [HOLD], { wrap: slow, checkTimeoutMs: 1000 });
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'generated' });
+    expect(c.last.record.timing.renderMs).toBeGreaterThanOrEqual(110);
+    expect(c.last.record.timing.totalMs).toBeGreaterThanOrEqual(c.last.record.timing.renderMs!);
   });
 });

@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
-import { followUpOf, followUpQuestions, plan, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
+import { followUpOf, followUpQuestions, plan, sensitiveDigit, slotContext, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
 import { pronounceFor, unpronounce } from '../channel/pronounce';
@@ -573,7 +573,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const held = appOf(session).mode === 'agent'
     ? await holdAgentLine({
       result: resolved, event, judge: opts.renderer?.drift ?? opts.client, clips: opts.render ?? null, seen: agentShown?.seen ?? [], todayIso: opts.todayIso,
-      ...(opts.renderer?.checkTimeoutMs !== undefined ? { checkTimeoutMs: opts.renderer.checkTimeoutMs } : {}),
+      slotContext: () => slotContext(resolved.session, '', turnTc),
+      // The judge's budget, RENDER_CHECK_TIMEOUT_MS: the agent runner's (an app in agent mode need generate no line), else the renderer's.
+      ...((opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs) !== undefined ? { checkTimeoutMs: (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs)! } : {}),
     })
     : null;
   const decided = held?.result ?? resolved;

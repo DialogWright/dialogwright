@@ -12,7 +12,10 @@ import type { PromptDecision } from '../core/decision';
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
-import { promptSay, promptText, saidLineOf, spokenText, type RenderContext } from '../prompts/render';
+import { noteSaidLine, promptSay, promptText, saidLineOf, spokenText, type RenderContext } from '../prompts/render';
+import { maskedConversation } from '../agent/history';
+import { withReplies } from '../core/replies';
+import type { SlotContext } from '../core/slots/types';
 import { AGENT_DRIFT_QUESTION_ID, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, digitRuns, foreignAddress, foreignFigure, renderAgentDriftQuestion, renderAgentDriftState, spelledNumbers, wordCount, words, type AgentUnderstood } from './checks';
 import { keepChatExtras, withRenderAudit } from './turn';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge, type RenderLine } from './types';
@@ -35,9 +38,9 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge,
  * - `avoid`: a phrase style.yaml says to avoid.
  * - `foreign`: a web address, or a figure (a number, an amount, a date word), that none of what the line
  *   holds has: the facts (what it may say, its fixed lines), the values understood (each as held and as
- *   shown, a date by its weekday and month, today and tomorrow), the caller's own words on the call (their
- *   numbers and date words, which a reply may say back), a visible tool's result, and the turn's own fixed
- *   lines. A text value is no source of its own: it is the model's short version (the bake-off's rule, agent/bakeoff.ts).
+ *   shown, a date by its weekday and month, today and tomorrow) and the words each accepted value was cited
+ *   from, a visible tool's result, and the turn's own fixed lines. Never the caller's own words: a figure the
+ *   caller proposes is not the line's to agree to. A text value is no source of its own: it is the model's short version.
  * - `drift` (asked of the decision model once the rest pass; renderAgentDriftQuestion): the reply says
  *   something the business has not given its line to say: a claim, a promise, a service or an availability
  *   not held, speaking as a person the line is not, a value or availability confirmed that the engine has
@@ -69,19 +72,26 @@ export function callerFigures(text: string): string {
   return [...digitRuns(text), ...spelledNumbers(text), ...words(text).filter((w) => DATE_WORDS.has(w))].join(' ');
 }
 
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * Whether a reply says a piece of the answer's own shape: a key of it run into the reply's words with no
- * space between ("name?values"), or written as the shape spells it, a capital inside it (fromFacts). A key
- * on its own as a word ("a few words") is the language's, and passes.
+ * Whether a reply says a piece of the answer's own shape: a key of it run into another word by the marks
+ * the answer's JSON is written with (`?`, `!`, `.`, `:`, `,`, a quote, a brace or a bracket), no space
+ * between ("name?values", 'reply:"Thanks"'), or written as the shape spells it, a capital inside it
+ * (fromFacts). A key as a word of the language ("a few words", "the value/price", "two words—that is all")
+ * passes.
  */
 export function shapeLeak(text: string, keys: ReadonlySet<string> = AGENT_SHAPE_KEYS): boolean {
-  const lower = new Set([...keys].map((k) => k.toLowerCase()));
-  for (const run of text.split(/\s+/)) {
-    const parts = run.split(/[^\p{L}\p{N}'’-]+/u).filter((p) => p !== '');
-    if (parts.some((p) => keys.has(p) && /\p{Lu}/u.test(p))) return true;
-    if (parts.length >= 2 && parts.some((p) => lower.has(p.toLowerCase()))) return true;
+  const word = String.raw`[\p{L}\p{N}]`;
+  for (const k of keys) {
+    if (/\p{Lu}/u.test(k.slice(1)) && new RegExp(`(?<!${word})${escapeRegExp(k)}(?!${word})`, 'u').test(text)) return true;
   }
-  return false;
+  const alt = [...keys].map(escapeRegExp).join('|');
+  const before = new RegExp(`${word}[?!.:,"{}\\[\\]]+(?:${alt})(?!${word})`, 'iu');
+  const after = new RegExp(`(?<!${word})(?:${alt})[:,"{}\\[\\]]+["{\\[]*${word}`, 'iu');
+  // A key as the JSON writes it, quoted with its colon ('"values":').
+  const quoted = new RegExp(`"(?:${alt})"\\s*:`, 'iu');
+  return before.test(text) || after.test(text) || quoted.test(text);
 }
 
 /** What an agent reply is held to by code (checkAgentReply). */
@@ -125,21 +135,21 @@ function heldFields(app: App, s: Session): { field: string; slot: string; type: 
 }
 
 /**
- * What a figure or a web address in an agent reply may come from (the bake-off's rule): the facts (what the
- * line may say, its fixed lines), every value held but a text value (as held and as shown, a date with how it
- * is said), the words each value accepted this turn was cited from, the caller's own numbers and date words on
- * the call, a visible tool's result, and `fixed`, the turn's own fixed lines.
+ * What a figure or a web address in an agent reply may come from: the facts (what the line may say, its
+ * fixed lines), every value held but a text value (as held and as shown, a date with how it is said), the
+ * words each value accepted this turn was cited from ("two copies" said back), a visible tool's result, and
+ * `fixed`, the turn's own fixed lines. Never the caller's own words: a figure the caller proposes ("is it
+ * under a hundred?", "in two days?") is not the line's to state or agree to, as a generated line may not
+ * state the caller's figure as its own (render/checks.ts allowedFigures; the review of Task 7).
  */
 export function agentFigureSources(app: App, s: Session, today: string, opts: { cited?: readonly string[]; seen?: readonly { tool: string; result: unknown }[]; fixed?: readonly string[] } = {}): string[] {
   const facts = app.agent?.facts;
-  const caller = (s.agent?.conversation ?? []).filter((u) => u.who === 'caller').map((u) => callerFigures(u.text));
   const values = heldFields(app, s).filter((f) => f.type !== 'text').flatMap((f) => [f.value, f.display, ...(f.type === 'date' ? dateWords(f.value, today) : [])]);
   return [
     ...(facts?.says ?? []),
     ...Object.values(facts?.fixed ?? {}),
     ...values,
     ...(opts.cited ?? []),
-    ...caller,
     ...(opts.seen ?? []).map((x) => JSON.stringify(x.result) ?? ''),
     ...(opts.fixed ?? []),
   ].filter((x) => x.trim() !== '');
@@ -170,6 +180,8 @@ export interface AgentLineInput {
   seen?: readonly { tool: string; result: unknown }[];
   /** Today, ISO: a date value's weekday and month as a reply may say them. */
   todayIso: string;
+  /** What a slot's chat buttons are read from (core/turn.ts slotContext), for the fixed line said in a reply's place; absent, a slot's own buttons are not given. */
+  slotContext?: () => SlotContext;
 }
 
 /** The turn with its agent line held: said, or replaced by its fixed line and the records corrected; what the judge cost, and how long it all took. */
@@ -243,6 +255,7 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
       fixedLines: Object.values(app.agent!.facts.fixed),
       understood,
       seen: input.seen ?? [],
+      conversation: judgedHistory(app, session, heard),
       ...(heard !== null ? { heard } : {}),
     });
     const budget = (input.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[channel];
@@ -278,7 +291,11 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
   if (aside) actions.splice(index, 1);
   else {
     const was = actions[index] as Say;
-    actions[index] = keepChatExtras(was, promptSay(app, d.promptId, { ...d.vars }, was.interruptible, input.clips ?? null, session.locale, undefined, shown));
+    const instead = keepChatExtras(was, promptSay(app, d.promptId, { ...d.vars }, was.interruptible, input.clips ?? null, session.locale, undefined, shown));
+    // The fixed line is the prompt's own, as any line decisionToActions makes, with its chat buttons (app.yaml's chat.replies).
+    noteSaidLine(instead, { promptId: d.promptId, vars: d.vars, role: 'ask' });
+    actions[index] = instead;
+    if (index === actions.length - 1 && input.slotContext !== undefined) withReplies(app, fixedDecision, actions, { shown: shown.shown, locale: session.locale, ctx: input.slotContext });
   }
   const line: RenderLine = {
     ...base,
@@ -300,6 +317,20 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
     usage,
     ms,
   };
+}
+
+/**
+ * The call before this turn as the drift judge is told it, as the agent model is sent it (agent/history.ts):
+ * the conversation kept, without this turn's own words and line (the words are quoted apart, the line is
+ * what is judged), each value the records hide masked once understood.
+ */
+function judgedHistory(app: App, s: Session, heard: string | null): { who: 'caller' | 'line'; text: string }[] {
+  const conversation = [...(s.agent?.conversation ?? [])];
+  if (conversation.at(-1)?.who === 'line') conversation.pop();
+  const last = conversation.at(-1);
+  if (heard !== null && last?.who === 'caller' && last.text === oneLine(heard)) conversation.pop();
+  const fields = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields.map((x) => x.slot));
+  return maskedConversation(app, s.slots, fields, conversation);
 }
 
 /**

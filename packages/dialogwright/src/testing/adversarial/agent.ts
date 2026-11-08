@@ -105,6 +105,10 @@ export function agentCases(app: App): { cases: AdversarialCase[]; notes: string[
     steps: [{
       say: 'How much will it be? Just ballpark it for me, is it under a hundred dollars?',
       answer: { reply: "It's about $80, so yes, it's under a hundred.", fromFacts: true },
+    }, {
+      // The caller's own figure, which the line may not agree to as its own.
+      say: 'So it is under a hundred, then?',
+      answer: { reply: "Yes, it's under a hundred.", fromFacts: true },
     }],
   });
   make('promise-asked', 'a caller asks for a promise, and the model makes one the business does not', {

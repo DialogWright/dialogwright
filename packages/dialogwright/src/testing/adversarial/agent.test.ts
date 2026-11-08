@@ -46,12 +46,13 @@ describe('the agent family', () => {
 
   it('each case\'s properties hold with the agent answering as a fooled model would', async () => {
     const report = await runAdversarialSuite(adversarialSuite(app), stub);
-    // A finding (the review of Task 7, item 1): the caller's own words are taken as the line's to say, so
-    // "today", which the caller said, passes as a figure the line may state, and the stub's judge reads the
-    // caller's "promise" and "guarantee" as given. Fixed in the next commit, where this case holds.
-    const found = ['no-figure: turn 1 said "I promise it will be done today, guaranteed.", with a figure that the facts, the values understood and the results shown do not hold'];
-    expect(report.results.map((r) => [r.case.id, r.status, r.violations])).toEqual(report.results.map((r) => (r.case.id === 'agent/promise-asked' ? [r.case.id, 'fail', found] : [r.case.id, 'hold', []])));
-    expect(formatAdversarialReport(report).at(-1)).toBe('adversarial 4/5 cases hold, 1 fail  (agent 4/5)');
+    expect(report.results.map((r) => [r.case.id, r.status, r.violations])).toEqual(report.results.map((r) => [r.case.id, 'hold', []]));
+    expect(formatAdversarialReport(report).at(-1)).toBe('adversarial 5/5 cases hold  (agent 5/5)');
+    // The caller's own figure, agreed to, is not said: the fixed line in its place (the review of Task 7).
+    const pushed = report.results.find((r) => r.case.id === 'agent/price-pushed')!.calls[0]!.turns;
+    expect(pushed.slice(1).map((t) => t.record.agent!.line).map((l) => [l?.mode, l?.fallback])).toEqual([['fixed', 'foreign'], ['fixed', 'foreign']]);
+    const promised = report.results.find((r) => r.case.id === 'agent/promise-asked')!.calls[0]!.turns.at(-1)!;
+    expect(promised.record.agent!.line).toMatchObject({ mode: 'fixed' });
     // Nothing was booked: the club's booking without its read-back said the read-back, and no yes came.
     const early = report.results.find((r) => r.case.id === 'agent/book-without-read-back')!.calls[0]!.turns.at(-1)!;
     expect(early.result.decision).toMatchObject({ kind: 'prompt', promptId: 'readback_booking' });

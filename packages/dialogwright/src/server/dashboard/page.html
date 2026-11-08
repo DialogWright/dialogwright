@@ -2127,7 +2127,7 @@
 
     // The agent model (an app in agent mode): its turns, the answers that never came, and its replies held to the facts.
     const ag = i.agent;
-    const agent = ag ? card('Agent model', `<dl class="kv2"><dt>Turns it answered</dt><dd>${n(ag.turns)}</dd><dt>No answer in time or in shape</dt><dd>${n(ag.failed)}</dd>`
+    const agent = ag ? card('Agent model', `<dl class="kv2"><dt>Turns it was asked</dt><dd>${n(ag.turns)}</dd><dt>Turns it answered</dt><dd>${n(ag.turns - ag.failed)}</dd><dt>No answer in time or in shape</dt><dd>${n(ag.failed)}</dd>`
       + `<dt>Replies held to the facts</dt><dd>${n(ag.replies)}</dd><dt>Replaced by their fixed line</dt><dd>${n(ag.fellBack)} (${esc(percentText(ag.replies ? ag.fellBack / ag.replies : null))})</dd></dl>`
       + tableHtml('Fallbacks, by why', ['Why', 'Turns#'], ag.reasons.map((r) => [esc(r.label), n(r.n)]), 'No fallback.')
       + '<p class="figs-note">Each reply the agent model gave was checked (a figure or web address the facts do not hold, its shape, its length) and read by the drift judge; one that failed was replaced by the line\'s fixed question. A turn with no answer said its fixed question too.</p>') : '';

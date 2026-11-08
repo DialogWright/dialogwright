@@ -496,6 +496,31 @@ describe('the review of Task 6', () => {
     expect(c.sys.holds).toEqual([]);
   });
 
+  it('asides at a read-back are bounded: only the first in a row is uncounted, so six questions reach the keypad, then a person (the review of Task 7)', async () => {
+    const qs = ['how long do you keep holds', 'how long again', 'and on weekends', 'what about holidays', 'really a week', 'and after that'];
+    const c = await call({ ...toReadBack, ...Object.fromEntries(qs.map((q) => [q, said('Holds are kept at the front desk for a week.', [], 'none', true)])) }, [HOLD, DETAILS, ...qs]);
+    const after = c.runs.slice(3);
+    // The first is an aside, uncounted; the second in a row counts, as any other turn.
+    expect(after[0]!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 0, aside: true });
+    expect(after[1]!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
+    const ids = after.map((r) => (r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
+    expect(ids).toContain('confirm_dtmf');
+    expect(ids).toContain('handoff');
+    expect(ids.indexOf('confirm_dtmf')).toBeLessThan(ids.indexOf('handoff'));
+    expect(c.sys.holds).toEqual([]);
+  });
+
+  it('an aside at a read-back with nothing said in answer counts', async () => {
+    const c = await call({ ...toReadBack, 'how long do you keep holds': said('', [], 'none', true) }, [HOLD, DETAILS, 'how long do you keep holds']);
+    expect(c.last.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
+  });
+
+  it('after "What should I change?", a reply that asks nothing is followed by the question (a chat: no keypad rung)', async () => {
+    const c = await call({ ...toReadBack, no: said('What should I change?'), 'um': said('No rush.') }, [HOLD, DETAILS, 'no', 'um'], { chat: true });
+    expect(promptOf(c.last)).toBe('ask_change');
+    expect(heard(c.last)).toBe('No rush. What should I change?');
+  });
+
   it('"no", then a question, then "no" never asks "What should I change?" twice', async () => {
     const q = 'how long do you keep holds';
     const c = await call({ ...toReadBack, no: said('What should I change?'), [q]: said('Holds are kept at the front desk for a week.', [], 'none', true), 'no.': said('Okay.') }, [HOLD, DETAILS, 'no', q, 'no.']);

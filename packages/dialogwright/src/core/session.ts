@@ -157,7 +157,14 @@ export type PendingConfirmation =
    * `summary.onNo: read-back`), so the next bare no asks what to change. Absent until then (and in a
    * session saved before it, which behaves as one that has not read it back).
    */
-  | { target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string; readBack?: boolean }
+  | {
+      target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string; readBack?: boolean;
+      /**
+       * An app in agent mode: the turn before at this read-back was an aside (a question answered from the
+       * facts, or the price line), so the next aside in a row is counted (core/agentTurn.ts). Absent otherwise.
+       */
+      aside?: true;
+    }
   /**
    * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts
    * stopForm): the check by its action, and what the gate said (its verdict and reason), so a yes

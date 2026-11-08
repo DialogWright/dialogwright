@@ -231,6 +231,12 @@ export interface AgentRunner {
   timeoutMs?: { voice: number; chat: number };
   /** The model's price, US dollars a million tokens, for an answer's cost where the provider gives none (render/providers.ts RENDER_PRICE_BY_MODEL); absent, the model's own where known. */
   price?: { input: number; output: number };
+  /**
+   * How long the drift judge may take on an agent reply, per channel (RENDER_CHECK_TIMEOUT_MS, render/providers.ts
+   * renderSettings): the server passes the render settings' own, so the option applies to an app in agent mode as
+   * to one that generates lines. Absent, the renderer's where the run has one, else DEFAULT_RENDER_CHECK_TIMEOUT_MS.
+   */
+  checkTimeoutMs?: { voice: number; chat: number };
 }
 
 /**
