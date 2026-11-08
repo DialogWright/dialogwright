@@ -16,9 +16,9 @@ import { noteSaidLine, promptSay, promptText, saidLineOf, spokenText, type Rende
 import { maskedConversation } from '../agent/history';
 import { withReplies } from '../core/replies';
 import type { SlotContext } from '../core/slots/types';
-import { AGENT_DRIFT_QUESTION_ID, SPAN_DRIFT_QUESTION_ID, renderSpanDriftQuestion, renderSpanDriftState, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, digitRuns, foreignAddress, foreignFigure, renderAgentDriftQuestion, renderAgentDriftState, spelledNumbers, wordCount, words, type AgentUnderstood } from './checks';
+import { AGENT_DRIFT_QUESTION_ID, AGENT_VALUE_QUESTION_ID, renderAgentValueQuestion, renderAgentValueState, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, digitRuns, foreignAddress, foreignFigure, renderAgentDriftQuestion, renderAgentDriftState, spelledNumbers, wordCount, words, type AgentUnderstood } from './checks';
 import { keepChatExtras, withRenderAudit } from './turn';
-import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, SPAN_GAP, type RenderFallback, type RenderJudge, type RenderLine, type SpanAct } from './types';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge, type RenderLine } from './types';
 
 /**
  * An agent line held to the facts (an app in agent mode; docs/designs/2026-11-08-agent-mode.md, "A turn",
@@ -219,13 +219,15 @@ export interface TextValueJudged {
 
 /**
  * The text values accepted on a turn that are not the caller's words as cited (the model's short version),
- * each judged against those words by the drift judge a framed summary is (renderSpanDriftQuestion: a faithful
- * summary, nothing added, turned around or dropped), given the field's description as its goal; the
- * agent-mode design, call 40. A value it refuses, or that it does not read in time, is not held (call 45:
- * the field keeps what it held before, or none, and its question is asked again). In parallel, each within `timeoutMs`. Empty where no such value was accepted.
+ * each judged against those words (renderAgentValueQuestion: what the words say of its field, nothing added,
+ * changed or turned around; the other details they give left to the form's other fields), given the
+ * field's description as its goal; the agent-mode design, calls 40 and 45. A value it refuses, or that it
+ * does not read in time, is not held (call 45: the field keeps what it held before, or none, and its
+ * question is asked again). In parallel, each within `timeoutMs`. Empty where no such value was accepted.
  */
-export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, language: string): Promise<{ judged: TextValueJudged[]; usage: JevUsage | null }> {
-  const fields = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields);
+export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, _language: string): Promise<{ judged: TextValueJudged[]; usage: JevUsage | null }> {
+  const forms = Object.values(app.agent?.forms ?? {});
+  const fields = forms.flatMap((f) => f.fields);
   const same = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
   const asked = values.filter((v) => v.outcome === 'accepted' && fields.find((f) => f.slot === v.slot)?.type === 'text' && !same(v.value, v.words));
   let usage: JevUsage | null = null;
@@ -234,25 +236,20 @@ export async function judgeTextValues(app: App, values: readonly { field: string
   };
   const judged = await Promise.all(asked.map(async (v): Promise<TextValueJudged> => {
     const field = fields.find((f) => f.slot === v.slot)!;
-    const act: SpanAct = {
-      kind: 'span',
-      goal: `the ${field.name} the line understood, held for the caller to confirm${field.about !== undefined ? `: ${field.about}` : ''}`,
-      sentence: SPAN_GAP,
-      content: [{ name: field.name, value: v.words }],
-      channel: 'chat',
-      language,
-      style: { persona: '', words: 400, avoid: [] },
-    };
+    // The form's other fields, by name and what each holds: where the caller's other details are kept apart.
+    const form = forms.find((f) => f.fields.some((x) => x.slot === v.slot));
+    const others = (form?.fields ?? []).filter((x) => x.slot !== field.slot).map((x) => (x.about !== undefined ? `${x.name}: ${x.about}` : x.name));
+    const state = renderAgentValueState({ field: field.name, goal: field.about ?? field.name, others, said: v.value, words: v.words });
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<'late'>((resolve) => {
       timer = setTimeout(() => resolve('late'), timeoutMs);
     });
     try {
-      const r = await Promise.race([judge.ask({ state: renderSpanDriftState(act, v.value) as unknown as JsonValue, questions: renderSpanDriftQuestion(), timeoutMs, signal: abort.signal }), late]);
+      const r = await Promise.race([judge.ask({ state: state as unknown as JsonValue, questions: renderAgentValueQuestion(), timeoutMs, signal: abort.signal }), late]);
       if (r === 'late') return { field: v.field, refuseAt, held: 'before' };
       if (r.usage) add(r.usage);
-      const a = r.answers[SPAN_DRIFT_QUESTION_ID];
+      const a = r.answers[AGENT_VALUE_QUESTION_ID];
       if (!isNoul(a)) return { field: v.field, refuseAt, held: 'before' };
       return { field: v.field, score: a.noul, refuseAt, held: a.noul >= refuseAt ? 'before' : 'value' };
     } catch {

@@ -113,6 +113,28 @@ export function stubSpanDrift(state: unknown): boolean {
 }
 
 /**
+ * The stub's agent text value judge (render/checks.ts renderAgentValueQuestion): a test double, deterministic,
+ * conservative and simple, that reads no grammar. It refuses a value that carries words of an injection or
+ * an instruction, a figure or a capitalized name its words do not have, or two words or more of its own (in
+ * neither the words, its goal nor common filler). What its words say of other fields it may leave out; a
+ * negation dropped or turned around is a real judge's to read.
+ */
+export function stubAgentValue(state: unknown): boolean {
+  const s = state as { value?: { said?: unknown; goal?: unknown }; quoted?: { words?: unknown }[] } | null;
+  const said = typeof s?.value?.said === 'string' ? s.value.said : '';
+  const goal = new Set(tokens(typeof s?.value?.goal === 'string' ? s.value.goal : ''));
+  const quoted = new Set((s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? tokens(q.words) : [])));
+  const bare = (w: string): string => w.replace(/'s$/, '');
+  const given = (w: string): boolean => quoted.has(w) || quoted.has(bare(w));
+  const own = tokens(said).filter((w) => !given(w));
+  if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
+  if (own.some(isFigureWord)) return true;
+  const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => straight(w).toLowerCase());
+  if (capitalized.some((w) => !given(w))) return true;
+  return own.filter((w) => !FILLER.has(w) && !goal.has(w)).length >= 2;
+}
+
+/**
  * The stub's answer drift judge (render/checks.ts renderAnswerDriftQuestion): a test double, deterministic,
  * conservative and simple, that reads no grammar. It refuses a knowledge answer's wording that leaves out a
  * time, an amount or a name of the passage (mustKeep); that says a figure or a capitalized name the passage
@@ -293,6 +315,7 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'renderAnswerDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAnswerDrift)
     case 'renderDocumentsDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDocumentsDrift)
     case 'renderAgentDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentDrift)
+    case 'renderAgentValue': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentValue)
     default: return quietAnswer(id, q, 0.9, app);
   }
 }
@@ -329,6 +352,8 @@ export class HeuristicStubClient implements JevClient {
     if (Object.hasOwn(req.questions, 'renderDocumentsDrift')) answers.renderDocumentsDrift = noulAnswer(stubDocumentsDrift(req.state) ? 0.9 : 0.04);
     // An agent line (an app in agent mode): the agent model's reply, held to the business's facts.
     if (Object.hasOwn(req.questions, 'renderAgentDrift')) answers.renderAgentDrift = noulAnswer(stubAgentDrift(req.state) ? 0.9 : 0.04);
+    // A text value the agent model understood: held to the caller's words it was taken from.
+    if (Object.hasOwn(req.questions, 'renderAgentValue')) answers.renderAgentValue = noulAnswer(stubAgentValue(req.state) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

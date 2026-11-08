@@ -979,11 +979,11 @@ function judgedBy(refuse: RegExp | 'late'): JevClient {
   const stub = jev();
   return {
     async ask(req) {
-      const q = req.questions.renderSpanDrift;
+      const q = req.questions.renderAgentValue;
       if (q === undefined) return stub.ask(req);
       if (refuse === 'late') return new Promise<JevResponse>(() => undefined);
-      const said = (req.state as { span?: { said?: string } }).span?.said ?? '';
-      return { answers: { renderSpanDrift: noulAnswer(refuse.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 7000, outputTokens: 3, estimated: false }, source: 'model' } as unknown as JevResponse;
+      const said = (req.state as { value?: { said?: string } }).value?.said ?? '';
+      return { answers: { renderAgentValue: noulAnswer(refuse.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 7000, outputTokens: 3, estimated: false }, source: 'model' } as unknown as JevResponse;
     },
   };
 }
@@ -1016,6 +1016,23 @@ describe('a text value the judge refuses is never held as raw words (call 45)', 
     expect(value(c.last, 'request_title')).toBeNull();
     expect(c.last.result.session.slots.request_title!.attempts).toBe(1);
     expect(promptOf(c.last)).toBe('ask_request_title_retry');
+  });
+
+  it('the judge is asked of the field alone: its name and what it holds, the form\'s other fields, which hold the other details apart, and the words the value came from', async () => {
+    const states: unknown[] = [];
+    const stub = jev();
+    const capture: JevClient = {
+      async ask(req) {
+        if (req.questions.renderAgentValue !== undefined) states.push(req.state);
+        return stub.ask(req);
+      },
+    };
+    await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: capture });
+    expect(states).toHaveLength(1);
+    const st = states[0] as { value: { field: string; goal: string; others: string[]; said: string }; quoted: { name: string; words: string }[] };
+    expect(st.value).toMatchObject({ field: 'title', goal: "The book's title, as the caller gave it.", said: 'Quiet Harbor' });
+    expect(st.value.others).toEqual(expect.arrayContaining(['patronName', 'copies', 'callbackNumber']));
+    expect(st.quoted).toEqual([{ name: 'title', words: 'The Quiet Harbor' }]);
   });
 
   it('a judge that does not answer in time holds nothing either: the question asked again', async () => {

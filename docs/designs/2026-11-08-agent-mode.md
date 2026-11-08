@@ -31,7 +31,7 @@ Success for the prototype: a demo call good enough that a real one-man wheel-rep
 
 - The web page a business fills in, accounts, buying numbers, billing, and a console per business. That is the product work, designed after this.
 - A real calendar. The prototype books into a stand-in calendar in the app's code. The real connection waits until the owner says what he uses.
-- Sending texts. The photo link and the owner's summary are printed and shown in the trace until texting is registered (10DLC). The tools are written so that sending is a setting.
+- Sending texts. The photo link and the owner's summary are printed and shown in the trace until texting is registered (10DLC). The tools are written so that sending is a setting. (Built 2026-11-08 as a capability of the engine, with the caller's consent through the gate and a photo sent back by reply: [the texting design](2026-11-08-texting.md).)
 - Replacing the scripted mode, or changing how any existing app behaves.
 
 ## Anti-goals: a failure even if everything else works
@@ -330,6 +330,7 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
     - **Refused, failed or late, the value is not held.** Where the drift judge refuses a newly understood text value against the caller's words, fails or is late, the field keeps the value it held before, or none (the value's outcome is `judged`; `agent.textJudged`'s `held` is `before`). The engine never substitutes the cited words; a value the model itself gives as the caller's words as cited is not judged, as before.
     - **Its question is asked again.** The turn is resolved again with the field marked (`TurnContext.agentTextRefused`): the field's fixed question, the reply not said (it was written with the value). The first such refusal of a field counts no attempt; a second, with no value of the field held between (`Session.agent.judged`), counts one and walks the slot's own ladder, so a field the judge keeps refusing still reaches the keypad and a person. The turn's other values stand.
     - **At a read-back** a text correction the judge refuses keeps the value read back, sets the read-back aside and asks the field's question, under the same count; the next answer is read back again.
+    - **The judge of a text value has a question of its own** (`renderAgentValue`, render/checks.ts), found with the texting build's recording: the span drift question holds a summary to keep every amount its words give, so "curb rash" cited from "It's two wheels, both with curb rash." was refused (0.62 to 0.69, three askings), and with nothing held the damage was asked until the attempts ran out and the call was handed off. A field's value is one detail of what the caller said: the judge is now given the field, what it holds and the form's other fields, which hold the other details apart, and asked whether the value is anything but what the words say of its field. Measured live (three askings each): the extractions pass ("curb rash" from that sentence 0.20 to 0.27, "Civic and Model 3" from "take the Tacoma off. It's just the Civic and the Model 3" 0.10 to 0.17, "2020 BMW 3 Series" 0.05), and what a value must not do is refused ("curb rash" from "It's not curb rash, the rim is cracked." 0.94 to 0.95; "curb rash on all four wheels" from "curb rash on the front one" 0.96; "The Quiet Harbor, a signed copy" from "The Quiet Harbor" 0.89; "Civic and Tacoma" from the Tacoma taken off 0.91 to 0.93). The stub's judge (`stubAgentValue`) refuses a value's own figures, names and words, never what it leaves out.
     - Tests: core/agentTurn.test.ts, "a text value the judge refuses is never held as raw words (call 45)".
 
 ## Left to the builder
@@ -553,4 +554,11 @@ What the measurement showed, for the tasks that follow:
   | with the owner's sample replies | 98% | 85% (0 wrong, 11 missed) | 98% | 1 | 531 / 799 | 681 / 949 | not met (values right) |
 
   The one answer not in the shape named an action not offered; the figure is the caller's own "$20" and "7am" repeated in a refusal ("I can't confirm a booking for 7am or quote a price of $20."), which the figure check refuses, so the field's question is said. Values right is the sample: at 8 repeats into a scratch folder (not committed) the old voice read 91% (0 wrong, 17 missed; 2 figures not in the facts) and the new 91% (0 wrong, 18 missed; none), p50 468 and 517 ms, p95 723 and 844 ms.
+- **The bake-off after texting** (2026-11-08, call 45 and the consent field; `instant`, realtime, the owner's sample replies, 3 repeats, the judge's 150 ms added, recorded fresh, since business.yaml's fields, price line and the damage's description changed every request; load average about 2):
+
+  | Mercury 3 on Inception's API, `instant`, realtime | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | with judge | bar |
+  |---|---|---|---|---|---|---|---|
+  | with the owner's sample replies | 100% | 86% (0 wrong, 10 missed) | 100% | 2 (1 "one" alone) | 526 / 1227 | 676 / 1377 | not met (values right) |
+
+  As after call 44, the misses are values left out (0 wrong), each asked for by its field's question; the cases hold no consent turn.
 - **Variance.** The same words read otherwise from one recording to the next on the opening turns: the dealer's day given or not, "on my Audi" taken once in three, the claimed account's day and window lost once live and once recorded. A scripted call's pass rests on one sample of each turn; the regression now replays one answer per request (call 35), so it is at least the same sample every time.
