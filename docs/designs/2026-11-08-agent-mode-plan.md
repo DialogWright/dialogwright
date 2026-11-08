@@ -109,19 +109,19 @@ The inputs the spec implies but no single task obviously owns, most likely first
 ### Task 2: Measure Mercury 3 on the two demo calls (a checkpoint)
 
 **Files:**
-- Create: `packages/dialogwright/src/agent/bakeoff.ts`, `agent/bakeoffCases.ts` (the two demo calls as scripted caller turns, each turn labelled with the values a correct answer holds).
+- Create: `packages/dialogwright/src/agent/bakeoff.ts`, `agent/bakeoffCases.ts` (the shape of a cases file and its reading), and the demo's cases, `apps/wheelshop/fixtures/agent/cases.yaml` (the two demo calls as scripted caller turns, each turn labelled with the values a correct answer holds). The engine's tests use an invented library's cases, `agent/fixture/library.cases.yaml`.
 - Modify: `define/cli.ts`, adding `agent:bakeoff`; root `package.json`, adding the `agent:bakeoff` script.
 - Test: `agent/bakeoff.test.ts` (on the fake agent).
 
 **Interfaces:**
-- Consumes `openRouterAgent`, `agentMessages`, `agentAnswerSchema` (Task 1). The facts come from a hand-written `AgentFacts` literal in `bakeoffCases.ts` that mirrors the spec's appendix, because Task 4 doesn't exist yet.
-- Produces `pnpm agent:bakeoff --models <provider>:<model>[,...] [--replay] [--out <file.md>]`, which reports, per model:
+- Consumes `openRouterAgent`, `agentMessages`, `agentAnswerSchema` (Task 1). The facts are written by hand in the cases file, mirroring the spec's appendix, because Task 4 doesn't exist yet.
+- Produces `pnpm agent:bakeoff --cases <file> --models <provider>:<model>[,...] [--replay] [--out <file.md>]`, which reports, per model:
   - the share of valid JSON;
   - values right against the labels;
   - p50 and p95 of the answer's time;
   - cost.
 
-  Recordings go to `packages/dialogwright/src/agent/recorded/<model>.jsonl`, refused in CI, as `render:bakeoff` does.
+  Recordings go beside the cases file (`<cases dir>/recorded/<model>.jsonl`, or `--recorded <dir>`), refused in CI, as `render:bakeoff` does.
 
 - [ ] **Step 1:** Write the test `the table counts valid answers, labelled values right, and timings` (fake agent with set latencies). Run it: it fails. Implement, run: it passes. Commit.
 - [ ] **Step 2: Run the measurement.** With the author's keys in the git-ignored `.env`, compare:

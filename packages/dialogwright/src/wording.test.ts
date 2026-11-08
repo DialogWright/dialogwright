@@ -67,9 +67,11 @@ describe('the wording of the apps, the docs, the templates, the skill and the si
   });
 
   it('has no em dash', () => {
-    // A recording (fixtures/recorded/) is a model's own output kept as it came, so a replay says what was said or
-    // refused: a wording with an em dash, which an app's style.yaml avoid refuses, stays in it.
-    const dashed = files().filter((file) => !pathOf(file).includes('/fixtures/recorded/') && readFileSync(file, 'utf8').includes('\u2014')).map(pathOf);
+    // A recording (a recorded/ folder under fixtures/: fixtures/recorded/, fixtures/agent/recorded/) is a model's own
+    // output kept as it came, so a replay says what was said or refused: a wording with an em dash, which an app's
+    // style.yaml avoid refuses, stays in it.
+    const recording = (path: string): boolean => /\/fixtures\/(?:[^/]+\/)*recorded\//.test(path);
+    const dashed = files().filter((file) => !recording(pathOf(file)) && readFileSync(file, 'utf8').includes('\u2014')).map(pathOf);
     expect(dashed).toEqual([]);
   });
 });

@@ -1,0 +1,106 @@
+# An invented business's bake-off cases, for the engine's own tests of agent:bakeoff (no model is asked):
+# a library's holds and a member's study room. No real place, person or number.
+facts:
+  name: Example Library
+  voice: Warm, quiet and brief, like the person at the front desk. Talks about the library and nothing else.
+  says:
+    - Holds are kept at the front desk for a week.
+    - "Pick-up windows: morning, 9 to noon; afternoon, noon to 5."
+    - The library is at 12 Example Street, Rivergate.
+    - "Not offered: book sales."
+  background:
+    - The desk has one person on most afternoons.
+  fixed:
+    fees: Fees are explained at the desk, by the person who looks at your account.
+    handoff: I'll have someone from the desk call you back. What's the best number to reach you?
+    closing: Thanks for calling Example Library.
+examples:
+  - Happy to help with that. Which book is it?
+forms:
+  hold:
+    about: a hold placed on a book, collected in a pick-up window
+    fields:
+      - { name: patronName, type: name }
+      - { name: title, type: text, about: The book's title. }
+      - { name: copies, type: choice, options: [one, two, three] }
+      - { name: day, type: date, about: The day they will collect it. }
+      - { name: window, type: choice, options: [morning, afternoon] }
+      - { name: callbackNumber, type: digits, about: A 10-digit number to call them back on. }
+    actions:
+      - { name: submit, about: "The caller has given what the hold needs: the line reads it back for them to confirm." }
+      - { name: callback, about: "The caller wants a person: the line takes a callback note." }
+  room:
+    about: a member's study room booking
+    fields:
+      - { name: people, type: choice, options: [one, two, three, four, five, six] }
+      - { name: day, type: date }
+      - { name: window, type: choice, options: [morning, afternoon] }
+    actions:
+      - { name: submit, about: "The caller has given what the booking needs: the line reads it back for them to confirm." }
+calls:
+  - id: hold-request
+    about: A hold on two copies, a fee pushed for, a name, a day and a window, a number.
+    form: hold
+    today: "2026-11-09"
+    before:
+      - { who: line, text: Thanks for calling Example Library. How can I help? }
+    turns:
+      - caller: Hi, I'd like to put a hold on The Quiet Harbor, two copies for my book club.
+        values:
+          title: { has: [quiet harbor], as: The Quiet Harbor }
+          copies: two
+        line: Happy to. What's your name?
+      - caller: How much is the late fee if we keep them too long? Just ballpark it.
+        noFigure: true
+        review: "fee pushed: no figure"
+        line: Fees are explained at the desk, by the person who looks at your account. What's your name?
+      - caller: Fine. I'm Dana Reyes, and could I pick them up Thursday morning?
+        values: { patronName: Dana Reyes, day: "2026-11-12", window: morning }
+        line: Thursday morning works. What's the best number to reach you?
+      - caller: You can call 555 555 0144.
+        values: { callbackNumber: "5555550144" }
+        action: [submit, none]
+        line: "Here's the hold: Dana Reyes, two copies of The Quiet Harbor, collected Thursday, November 12 in the morning. Is that right?"
+  - id: room-booking
+    about: A member, recognized by its number, books the study room and changes how many people at the read-back.
+    form: room
+    channel: chat
+    caller: { account: Rivergate Book Club }
+    today: "2026-11-10"
+    before:
+      - { who: line, text: "Hi, Rivergate Book Club. How can I help?" }
+    turns:
+      - caller: Book the study room for four of us tomorrow afternoon.
+        values: { people: four, day: "2026-11-11", window: afternoon }
+        action: [submit, none]
+        line: So that's the study room for four, Wednesday, November 11 in the afternoon. Shall I book it?
+      - caller: Actually make it five people.
+        values: { people: five }
+        action: [submit, none]
+        line: So that's the study room for five, Wednesday, November 11 in the afternoon. Shall I book it?
+  - id: correction-in-one-turn
+    about: A correction and two new values in one turn.
+    form: hold
+    today: "2026-11-09"
+    collected: { patronName: Alex Kim, title: The Quiet Harbor, copies: one }
+    before:
+      - { who: line, text: Thanks for calling Example Library. How can I help? }
+      - { who: caller, text: "It's Alex Kim, I'd like one copy of The Quiet Harbor held." }
+      - { who: line, text: "Happy to, Alex. What day will you collect it?" }
+    turns:
+      - caller: Actually it's two copies, not one, and Friday afternoon works.
+        values: { copies: two, day: "2026-11-13", window: afternoon }
+        line: Friday afternoon. What's the best number to reach you?
+  - id: over-the-greeting
+    about: A request heard while the greeting was still playing.
+    form: hold
+    today: "2026-11-09"
+    before:
+      - { who: line, text: Thanks for calling Example Library. How can I help? }
+    turns:
+      - caller: yeah hi I want to hold a book, The Long Field
+        overLine: true
+        values:
+          title: { has: [long field], as: The Long Field }
+        may: { copies: one }
+        line: The Long Field, happy to. How many copies?
