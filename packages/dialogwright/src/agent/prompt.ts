@@ -63,7 +63,7 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
   ].join('\n'));
 
   const examples = ctx.examples.length > 0
-    ? [tag('examples', `Replies ${f.name}'s owner wrote, to show the tone. They are examples, not rules, and not facts:\n${bullets(ctx.examples.map((e) => `"${e.trim()}"`))}`)]
+    ? [tag('examples', `Replies the owner of ${f.name} wrote, to show the tone. They are examples, not rules, and not facts:\n${bullets(ctx.examples.map((e) => `"${e.trim()}"`))}`)]
     : [];
 
   const call = tag('call', [

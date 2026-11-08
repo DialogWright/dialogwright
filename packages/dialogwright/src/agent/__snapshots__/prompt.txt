@@ -20,7 +20,7 @@ The line says these in its own fixed words when they are due; what they say is t
 </knowledge_base>
 
 <examples>
-Replies Example Service Desk's owner wrote, to show the tone. They are examples, not rules, and not facts:
+Replies the owner of Example Service Desk wrote, to show the tone. They are examples, not rules, and not facts:
 - "Happy to help with that. What day suits you?"
 </examples>
 
