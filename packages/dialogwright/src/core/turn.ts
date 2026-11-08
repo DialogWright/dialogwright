@@ -108,6 +108,13 @@ export interface TurnContext {
    * code: no condition, no gate rule and no record reads it. Absent, every setting is unset.
    */
   settings?: (name: string) => string | undefined;
+  /**
+   * The session a turn set aside as speech over a line returns (TurnResult.setAside), when it is not the one
+   * the turn ran on: a Continuation's joined turn runs on the session before its first fragment, and is set
+   * aside to the session it was given, after the fragments' own turns, whose lines the caller heard
+   * (run/continuation.ts). Unset, the session the turn ran on.
+   */
+  setAsideAs?: Session;
 }
 
 /**
@@ -221,6 +228,8 @@ interface TurnIO {
    * notFoundReply, caughtFrustration); read only for speech over a line (overLineMiss).
    */
   missed?: true;
+  /** The form's own summary hook said lines in answer (FormDef.onSummaryAnswer): a reply, never a miss, whatever is counted. */
+  replied?: true;
 }
 
 export interface Plan {
@@ -1975,6 +1984,7 @@ function formHeard(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): vo
  */
 function summaryMove(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): SummaryMove | null {
   const move = formOf(io.app, form).onSummaryAnswer?.(appContext(s, io.tc, io.out), answers) ?? null;
+  if (move !== null && move.acks.length > 0) io.replied = true;
   return move !== null && (move.moved || move.acks.length > 0) ? move : null;
 }
 
@@ -3145,12 +3155,15 @@ const OVER_LINE_ROW: GateRow = { gate: 'speechOverLine', value: null, threshold:
  * with its person) on a verdict a miss is reached on (MISS_VERDICTS), and did nothing else: no slot
  * filled, narrowed, disambiguated or helped, no language switched, no knowledge answer, and nothing
  * through the gate or handed to a service (a tool that ran cannot be taken back, so such a turn runs as
- * it is). A request, a yes or a no, a correction, a repeat, a person, a moment and a priority switch are
- * never misses. The count before the turn is not read: a third such miss after two real ones is set aside
+ * it is). A request, a yes or a no, a correction, a repeat, a person, a moment, a priority switch, a
+ * summary hook's own lines in answer (TurnIO.replied) and a code said aloud at the code prompt (which is
+ * replaced, or ends with a person, as ever) are never misses. The count before the turn is not read: a third such miss after two real ones is set aside
  * too, and no one is put through.
  */
 function overLineMiss(before: Session, after: Session, event: SessionEvent, verdict: Verdict, events: readonly FillEvent[], io: TurnIO): boolean {
-  if (event.type !== 'user.speech' || event.overLine !== true || io.missed !== true || !MISS_VERDICTS.has(verdict.kind)) return false;
+  if (event.type !== 'user.speech' || event.overLine !== true || io.missed !== true || io.replied === true || !MISS_VERDICTS.has(verdict.kind)) return false;
+  // A code said aloud at the code prompt is a code said: it is replaced, or the call goes to a person, as ever.
+  if (before.promptedFor === 'otp' && saidCode(event.text)) return false;
   if (io.out.gateEvents.length > 0 || io.out.effects.length > 0 || io.out.kb !== null || io.prefix.length > 0 || after.locale !== before.locale) return false;
   return events.every((e) => e.outcome.kind === 'invalid' || e.outcome.kind === 'absent');
 }
@@ -3374,8 +3387,11 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // is: nothing said, nothing counted, the session as it was (overLineMiss). The rows say what was read.
       if (overLineMiss(session, s, event, verdict, events, io)) {
         const read = [...rows, ...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined)];
+        // As side speech does, the barge-in marker goes: it would be reported to the model on a turn it is not about.
+        const kept = cloneSession(tc.setAsideAs ?? session);
+        kept.lastInterrupt = null;
         return {
-          session: cloneSession(session), turnState, rows: [...screened, ...read.map((r) => (r.decided ? { ...r, decided: false } : r)), OVER_LINE_ROW],
+          session: kept, turnState, rows: [...screened, ...read.map((r) => (r.decided ? { ...r, decided: false } : r)), OVER_LINE_ROW],
           verdict: { kind: 'ignore' }, fillEvents: [], ...newTurnOut(), decision: { kind: 'ignore' }, actions: [], screen, quarantined: false, setAside: 'speech-over-line',
         };
       }

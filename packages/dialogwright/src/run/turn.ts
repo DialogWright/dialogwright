@@ -336,8 +336,10 @@ function heardAsWritten(session: Session, event: SessionEvent): SessionEvent {
  * whose words join the final prompts of a caller who had not finished: the prompts, in order, which
  * the trace record keeps beside the joined words; and by the voice server for words it held for the
  * rest of a value, with `waitedFor`, the slot whose value they began (run/continuation.ts HeldWords).
+ * `setAsideAs`, a Continuation's only: the session a joined turn set aside as speech over a line returns
+ * (TurnContext.setAsideAs).
  */
-export async function runTurn(session: Session, heard: SessionEvent, opts: RunOptions, arrival?: Arrival, joined?: readonly string[], waitedFor?: string): Promise<TurnRun> {
+export async function runTurn(session: Session, heard: SessionEvent, opts: RunOptions, arrival?: Arrival, joined?: readonly string[], waitedFor?: string, setAsideAs?: Session): Promise<TurnRun> {
   // A code said aloud at the code prompt goes no further than this, whoever called: the screen,
   // perception, the core and the trace all get the masked words. This is the same masking the voice
   // adapter applies to the wire frame (maskCodeFrame) before its frame log, so there it is already
@@ -362,6 +364,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     ...conditionEnv(session, opts.env),
     ...settingsOf(opts),
     ...digit,
+    // A joined turn set aside as speech over a line returns the session it was given (TurnContext.setAsideAs).
+    ...(setAsideAs !== undefined ? { setAsideAs } : {}),
   };
   const tr = performance.now();
   // Retrieval, the turn's one async step before planning: questions are built synchronously, so the
