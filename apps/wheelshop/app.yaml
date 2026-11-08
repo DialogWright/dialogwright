@@ -24,7 +24,13 @@ chat:
   page:
     serve: public
     intro: |
-      Example Wheel Works is an invented one-person wheel repair shop, answered by DialogWright's agent mode: a model words the conversation from the shop's facts, every value is checked, and nothing is sent until you confirm the read-back. Try describing some curb rash, ask whether your wheel is diamond cut, or push for a price. The shop's hours, windows and turnaround are demo assumptions.
+      Example Wheel Works is an invented wheel repair shop, answered by DialogWright's agent mode: a model words the conversation from the shop's facts, every value is checked, and nothing is sent until you confirm the read-back. Try describing some curb rash, ask whether your wheel is diamond cut, or push for a price. The shop's hours, windows and turnaround are demo assumptions.
+    # Ways to start: a chat carries no number, so a dealership's booking (recognized by caller ID) is never offered here.
+    starters:
+      - I curbed my wheel
+      - Is my wheel diamond cut?
+      - How much does a repair cost?
+      - Leave a callback note
 
 # The console's header: a button that opens the shop page (src/shopPage.ts, /wheelshop/shop): the requests,
 # bookings, texts and callback notes the line took in, served as the console is (on this machine, or behind
