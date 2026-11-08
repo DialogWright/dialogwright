@@ -26,7 +26,7 @@
           "description": "How the line sounds, in the business's own words, for the agent model: the persona."
         },
         "owner": {
-          "description": "The owner's name, where the line refers to the owner (\"Sam\").",
+          "description": "The owner's name, where the line refers to the owner (\"Dana\").",
           "type": "string",
           "minLength": 1
         },
@@ -59,7 +59,7 @@
           "name": {
             "type": "string",
             "minLength": 1,
-            "description": "The service as the line names it (\"curb rash repair\")."
+            "description": "The service as the line names it (\"holds\")."
           },
           "about": {
             "description": "What it is, in the business's words: something the line may say.",
@@ -76,7 +76,7 @@
       "description": "What the business does: the only services the line speaks of."
     },
     "notOffered": {
-      "description": "What it does not do, which the line may say it does not (\"cracked wheels\"). Default: none.",
+      "description": "What it does not do, which the line may say it does not (\"book sales\"). Default: none.",
       "type": "array",
       "items": {
         "type": "string",
@@ -104,7 +104,7 @@
       "type": "object",
       "properties": {
         "quote": {
-          "description": "How a price is given, for the agent model (\"from a photo\"). Never a figure.",
+          "description": "How a price is given, for the agent model (\"at the desk\"). Never a figure.",
           "type": "string",
           "minLength": 1
         },
@@ -221,7 +221,7 @@
       "type": "object",
       "properties": {
         "about": {
-          "description": "What the form is for, as the agent model is told (\"a retail caller's request for a quote\"). Default: the form's name.",
+          "description": "What the form is for, as the agent model is told (\"a hold on a book, collected in a pick-up window\"). Default: the form's name.",
           "type": "string",
           "minLength": 1
         },
@@ -244,7 +244,7 @@
               "type": {
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-                "description": "The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name, text or birthdate. A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it."
+                "description": "The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name or text. birthdate is refused (an identity factor's type, and the conversation is sent to the agent model). A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it."
               },
               "question": {
                 "type": "string",
@@ -287,6 +287,11 @@
                 "description": "A digits field that may be the number the caller is calling from: \"callerNumber\" offers it (the slot's callerNumber). Only on a digits field.",
                 "type": "string",
                 "const": "callerNumber"
+              },
+              "countryCode": {
+                "description": "With offer: callerNumber, the country calling code the carrier writes before the number (\"1\" for +1), taken off the number calling to fill the field. Default \"1\".",
+                "type": "string",
+                "pattern": "^\\d{1,3}$"
               },
               "sees": {
                 "description": "A tool whose result the agent model may see once the field is filled (the maintainer's decision 2): the tool, in the app's code, is called through the gate with the field's value, and its result, checked by the tool's reply check in a closed form, reaches the model. For example availability, for a day.",
@@ -351,7 +356,7 @@
           "description": "Who may book: \"accounts\", a caller the number they call from matches to one of `accounts` (identity level 1 by a caller-ID match). Any other caller may not."
         },
         "about": {
-          "description": "What the form is for, as the agent model is told (\"a retail caller's request for a quote\"). Default: the form's name.",
+          "description": "What the form is for, as the agent model is told (\"a hold on a book, collected in a pick-up window\"). Default: the form's name.",
           "type": "string",
           "minLength": 1
         },
@@ -374,7 +379,7 @@
               "type": {
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-                "description": "The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name, text or birthdate. A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it."
+                "description": "The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name or text. birthdate is refused (an identity factor's type, and the conversation is sent to the agent model). A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it."
               },
               "question": {
                 "type": "string",
@@ -417,6 +422,11 @@
                 "description": "A digits field that may be the number the caller is calling from: \"callerNumber\" offers it (the slot's callerNumber). Only on a digits field.",
                 "type": "string",
                 "const": "callerNumber"
+              },
+              "countryCode": {
+                "description": "With offer: callerNumber, the country calling code the carrier writes before the number (\"1\" for +1), taken off the number calling to fill the field. Default \"1\".",
+                "type": "string",
+                "pattern": "^\\d{1,3}$"
               },
               "sees": {
                 "description": "A tool whose result the agent model may see once the field is filled (the maintainer's decision 2): the tool, in the app's code, is called through the gate with the field's value, and its result, checked by the tool's reply check in a closed form, reaches the model. For example availability, for a day.",
@@ -479,7 +489,7 @@
       "type": "object",
       "properties": {
         "about": {
-          "description": "What the form is for, as the agent model is told (\"a retail caller's request for a quote\"). Default: the form's name.",
+          "description": "What the form is for, as the agent model is told (\"a hold on a book, collected in a pick-up window\"). Default: the form's name.",
           "type": "string",
           "minLength": 1
         },
@@ -502,7 +512,7 @@
               "type": {
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-                "description": "The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name, text or birthdate. A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it."
+                "description": "The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name or text. birthdate is refused (an identity factor's type, and the conversation is sent to the agent model). A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it."
               },
               "question": {
                 "type": "string",
@@ -545,6 +555,11 @@
                 "description": "A digits field that may be the number the caller is calling from: \"callerNumber\" offers it (the slot's callerNumber). Only on a digits field.",
                 "type": "string",
                 "const": "callerNumber"
+              },
+              "countryCode": {
+                "description": "With offer: callerNumber, the country calling code the carrier writes before the number (\"1\" for +1), taken off the number calling to fill the field. Default \"1\".",
+                "type": "string",
+                "pattern": "^\\d{1,3}$"
               },
               "sees": {
                 "description": "A tool whose result the agent model may see once the field is filled (the maintainer's decision 2): the tool, in the app's code, is called through the gate with the field's value, and its result, checked by the tool's reply check in a closed form, reaches the model. For example availability, for a day.",
@@ -608,7 +623,7 @@
     "handoff": {
       "type": "string",
       "minLength": 1,
-      "description": "The line said when a caller asks for a person, in fixed words: a callback, not a transfer."
+      "description": "The line said when a caller asks for a person, in fixed words: a callback, not a transfer. A statement, not a question (\"I'll have someone from the desk call you back.\"): it is said where nothing waits for an answer, and the callback form, where there is one, asks for the number."
     },
     "closing": {
       "type": "string",
@@ -646,7 +661,7 @@
       "additionalProperties": false
     },
     "tools": {
-      "description": "What each tool a form calls does, in a few words, by its name (\"send_photo_link: text the caller a link to send a photo\"): the action's description on the policy card, the console and the audit. Default: the tool's name in words.",
+      "description": "What each tool a form calls does, in a few words, by its name (\"placeHold: place the hold\"): the action's description on the policy card, the console and the audit. Default: the tool's name in words.",
       "type": "object",
       "propertyNames": {
         "type": "string",

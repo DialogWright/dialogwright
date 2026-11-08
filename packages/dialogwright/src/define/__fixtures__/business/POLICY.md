@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `aab20881e29f2cdcaccca4be0111c0799db07c695c75fc4a1a59b02404db0cdf` |
+| `business.yaml` | `3864fde0a0fd7cc9f54cada0d6f1c55ddc3371071eb7722ceceecfa5aa066f93` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -14,7 +14,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 - The rules of an action run in the order shown, and the first one that fails decides.
 - Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.
 - A caller has 1 tries at each identity check (the account). After that a person takes the call.
-- In traces and the audit a caller's values are recorded as they are said, except: callback by its last four.
+- In traces and the audit a caller's values are recorded as they are said, except: callback number by its last four.
 
 ## Identity
 
@@ -23,7 +23,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 | 0 | anonymous | nothing | |
 | 1 | recognized by the number calling | nothing they say: the number they call from, on file for one account | recognize the account by the number calling (`recognizeAccount`) |
 
-- Each level includes the one below it. An account below an action's level is asked for what the next level needs; any other caller is refused.
+- Each level includes the one below it. A caller the number they call from does not recognize is asked nothing to step up: an action that needs level 1 is refused with its line (`identity_not_recognized`), and a form only for recognized callers says its line and offers another (Agent mode, below).
 - The identity checks (recognize the account by the number calling, `recognizeAccount`) are for accounts only: a caller not yet verified may use them, and any other party (one who acts for accounts, or anyone else) is refused them before their rules run.
 - On a call from a number on file for one account, the account is taken from the match, never said and never asked, and recognized by `recognizeAccount`: in agent mode the caller ID recognizes an account on its own (Agent mode, below).
 - The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.
@@ -39,7 +39,7 @@ flowchart LR
 
 This app is in agent mode (app.yaml's `mode: agent`): a model, `mercury-3` on inception at `instant` (style.yaml's `agent`), leads the conversation from the business's facts in `business.yaml`, and the engine decides what is done.
 
-- **The conversation is sent to the agent model:** the caller's words, the line's own replies and the fixed lines said, with what the business may say. No identity factor is sent (the app takes none a caller says), and a value the records hide is sent masked as the records mask it.
+- **The conversation is sent to the agent model:** the caller's words as they said them (a number they say included), the line's own replies and the fixed lines said, with what the business may say. No identity factor is sent: the app takes none a caller says. A value the records hide (the callback number by its last four) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.
 - **The model proposes; the engine decides.** It never calls a tool. Each value it understands is checked by its field's slot type, and the caller confirms every value at the read-back, said in fixed words, before any action. Every action is decided by the gate, as below.
 - **What it may say** is the business's: 9 statements (its claims, services, what it does not offer, where it is, its days and windows), and 1 line of background it is told never to claim. Its sample replies (2) are sent as examples of tone.
 
@@ -47,16 +47,18 @@ The tools whose results the model sees (business.yaml's `sees`), each called thr
 
 | Field | Tool | Reply check |
 | --- | --- | --- |
-| booking day (`booking_day`) | read the study room's free windows near a day (`roomAvailability`) | declared |
+| day (`booking_day`) | read the study room's free windows near a day (`roomAvailability`) | declared |
 
 Said in fixed words, never worded by a model:
 
 | Line | Said |
 | --- | --- |
 | `greeting` | Thanks for calling Example Library. How can I help? |
-| `handoff_live_agent` | I'll have someone from the desk call you back. What's the best number to reach you? |
+| `handoff_live_agent` | I'll have someone from the desk call you back. |
 | `goodbye` | Thanks for calling Example Library. |
 | `price` | Fees are explained at the desk, by the person who looks at your account. |
+| `identity_not_recognized` | That's for our account holders, recognized by the number they call from. |
+| `booking_for_accounts` | Bookings are for our account holders; I can send a request instead. |
 | `readback_request` | Here's the hold: {request_patronName}, {request_copies} of {request_title}, collected {request_day} in the {request_window}, and we'll call you at {request_callbackNumber}. Is that right? |
 | `done_request` | Thanks, {request_patronName}. The desk will call you when it's ready. |
 | `readback_booking` | So that's the study room for {account}, {booking_people} people, {booking_day} in the {booking_window}. Shall I book it? |

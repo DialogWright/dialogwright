@@ -1,6 +1,8 @@
 import { buildSlot } from '../slots/defineSlot';
-import { ACCOUNT_SLOT, businessForms, slotIdOf } from './business';
-import { AGENT_ACCOUNT_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_OFFER_LINE } from './businessLines';
+import { ACCOUNT_SLOT, businessForms, optionKey, slotIdOf } from './business';
+export { optionKey };
+import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
+import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
 import { WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml } from './schema/business';
 import {
   SCHEMAS, normalizeIdentity, slotsSchema,
@@ -66,15 +68,9 @@ const FORM_WORDS: Readonly<Record<BusinessFormName, { label: string; criteria: s
   callback: { label: 'leave a callback note', criteria: 'Wants someone to call them back' },
 };
 
-/** A few words of a name written in code ("callbackNumber", "send_photo_link"): "callback number", "send photo link". */
+/** A few words of a name written in code ("callbackNumber", "place_hold"): "callback number", "place hold". */
 export function wordsOf(id: string): string {
   return id.replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().trim();
-}
-
-/** An option's key: its words as an id ("not sure" is not_sure); a key that would start with a digit is prefixed. */
-export function optionKey(said: string): string {
-  const key = said.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return key === '' ? 'option' : /^[a-z]/.test(key) ? key : `n_${key}`;
 }
 
 /** A choice field's options, key to say: its own words, or the business's windows by name. */
@@ -107,7 +103,7 @@ export function fieldSlotConfig(b: BusinessYaml, f: BusinessFieldYaml): Record<s
         type: 'digits',
         noun: digitsNoun(f.name),
         ...(f.length !== undefined ? { length: f.length } : {}),
-        ...(f.offer === 'callerNumber' ? { callerNumber: { countryCode: '1' } } : {}),
+        ...(f.offer === 'callerNumber' ? { callerNumber: { countryCode: f.countryCode ?? '1' } } : {}),
         ...(f.redact !== undefined ? { redact: f.redact } : {}),
         ...optional,
       };
@@ -185,7 +181,8 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
     formsYaml[name] = {
       slots: form.fields.map((f) => slotIdOf(name, f.name)),
       summaryPromptId: readBackPromptOf(name),
-      hooks: ['confirmedParams', 'complete'],
+      // A form for accounts names the account in its lines: its summary hook gives {account} the recognized account's name.
+      hooks: name === 'booking' ? ['confirmedParams', 'complete', 'onSummaryRead'] : ['confirmedParams', 'complete'],
       calls: [...form.then, ...sees.filter((t) => !form.then.includes(t))],
       writes: form.then[0]!,
     };
@@ -202,10 +199,11 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   for (const id of AGENT_CLOSING_LINES) prompts[id] = { text: b.closing.trim(), interruptible: false };
   for (const [id, text] of Object.entries(b.lines ?? {})) prompts[id] = { ...line(text), ...(AGENT_CLOSING_LINES.includes(id) ? { interruptible: false } : {}) };
   if (b.prices !== undefined) prompts[PRICE_PROMPT] = line(b.prices.say);
-  // The account is recognized by the number calling, never asked; the engine still has its question.
+  // The account is recognized by the number calling, never asked: it has no question. A caller the
+  // number does not recognize is told so where an action needs it, and offered the request.
   if (accounts) {
-    prompts[`ask_${ACCOUNT_SLOT}`] = line(AGENT_ACCOUNT_LINE);
-    prompts[`ask_${ACCOUNT_SLOT}_retry`] = line(AGENT_ACCOUNT_LINE);
+    prompts[NOT_RECOGNIZED_PROMPT] = line(b.lines?.[NOT_RECOGNIZED_PROMPT] ?? AGENT_NOT_RECOGNIZED_LINE);
+    prompts[ACCOUNTS_ONLY_PROMPT] = line(b.lines?.[ACCOUNTS_ONLY_PROMPT] ?? (b.request !== undefined ? AGENT_ACCOUNTS_ONLY_LINE : AGENT_NOT_RECOGNIZED_LINE));
   }
   for (const { name, form } of forms) {
     for (const f of form.fields) {
@@ -257,7 +255,7 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   const identity: IdentityFile | null = accounts
     ? {
         principals: { subject: ACCOUNT_SLOT },
-        levels: { 1: { name: 'recognized by the number calling', factors: [ACCOUNT_SLOT], verify: BUSINESS_TOOLS.recognize, callerId: { identifies: [ACCOUNT_SLOT], ask: 'on-need' } } },
+        levels: { 1: { name: 'recognized by the number calling', factors: [ACCOUNT_SLOT], verify: BUSINESS_TOOLS.recognize, callerId: { identifies: [ACCOUNT_SLOT], ask: 'greeting' } } },
         attempts: 1,
       }
     : null;

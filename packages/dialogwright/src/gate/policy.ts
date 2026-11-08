@@ -68,7 +68,8 @@ const RULE: Record<RuleId, (c: RuleContext) => RuleOutcome> = {
     return pass ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'scope' } };
   },
   R3: (c) => {
-    const keys = c.policy.confirmedFields;
+    // The action's own confirmed fields where the tables give them (they differ by action), else the one list.
+    const keys = c.policy.confirmedBy?.[c.call.tool] ?? c.policy.confirmedFields;
     const paramKeys = Object.keys(c.call.params);
     const extra = paramKeys.filter((k) => !keys.includes(k));
     const missing = keys.filter((k) => !paramKeys.includes(k));

@@ -101,8 +101,21 @@ export function validateApp(app: App): void {
   const fail = (msg: string): never => {
     throw new Error(`app "${app.id}": ${msg}`);
   };
+  // Agent mode is built from business.yaml (define/businessApp.ts), which gives it App.agent.
+  if (app.mode === 'agent' && app.agent === undefined) fail('the app is in agent mode but carries no agent (App.agent): build it from business.yaml with defineApp');
+  if (app.personForm !== undefined) {
+    if (!Object.hasOwn(app.forms, app.personForm.form)) fail(`personForm "${app.personForm.form}" is not a form`);
+    if (!Object.hasOwn(app.prompts.manifest, app.personForm.say)) fail(`personForm's line "${app.personForm.say}" is not a prompt`);
+  }
   for (const [formId, form] of Object.entries(app.forms)) {
     for (const slot of form.slots) if (!Object.hasOwn(app.slots, slot)) fail(`form "${formId}" has unknown slot "${slot}"`);
+    // A form only a verified caller may open: its line is a line, the form offered instead a form, and the app verifies someone.
+    const only = form.recognizedOnly;
+    if (only !== undefined) {
+      if (!Object.hasOwn(app.prompts.manifest, only.say)) fail(`form "${formId}" is for verified callers only, and its line "${only.say}" is not a prompt`);
+      if (only.instead !== undefined && !Object.hasOwn(app.forms, only.instead)) fail(`form "${formId}" offers "${only.instead}" instead, which is not a form`);
+      if (app.identity === undefined) fail(`form "${formId}" is for verified callers only, but the app verifies no one`);
+    }
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
@@ -508,7 +521,6 @@ export function validateApp(app: App): void {
     // app's facts.callerMatch.
     // With ways, its factors are all of one way, never all of that way's.
     const callerId = identity.callerId;
-    if (app.mode === 'agent' && app.agent === undefined) fail('the app is in agent mode but carries no agent (App.agent): build it from business.yaml with defineApp');
     if (callerId !== undefined) {
       for (const slot of callerId.identifies) if (!identity.factorSlots.includes(slot)) fail(`identity callerId identifies "${slot}", which is not a factor of level 1`);
       const ways = identity.ways ?? [{ factorSlots: identity.factorSlots, verifyTool: identity.verifyTool }];

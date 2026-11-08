@@ -8,9 +8,9 @@
 
 | Intent | Kind | Said as | What happens |
 | --- | --- | --- | --- |
-| `request` | form | place a hold | opens the form, which asks for request patron name, request title, request copies, request format, request day, request window, callback |
-| `booking` | form | book the study room | opens the form, which asks for booking people, booking day, booking window |
-| `callback` | form | leave a callback note | opens the form, which asks for callback |
+| `request` | form | place a hold | opens the form, which asks for patron name, title, copies, format, day, window, callback number |
+| `booking` | form | book the study room | opens the form, which asks for people, day, window |
+| `callback` | form | leave a callback note | opens the form, which asks for callback number |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
 | `done` | control | finish up | handled by the engine |

@@ -122,7 +122,7 @@ callback:
   then: [noteCallback]
   done: Thanks. Dana will call you back as soon as she can.
 
-handoff: I'll have someone from the desk call you back. What's the best number to reach you?
+handoff: I'll have someone from the desk call you back.
 closing: Thanks for calling Example Library.
 owner:
   notify: print

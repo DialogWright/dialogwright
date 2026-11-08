@@ -68,7 +68,7 @@ describe('business.yaml', () => {
     // The name type, built without its check: a type an app could register.
     const unchecked: SlotType = { ...name, type: 'unchecked', build: (id, o, w, env) => ({ ...name.build(id, o, w, env), check: undefined }) };
     const types = registerSlotType(unchecked);
-    expect(agentFieldTypes(BUILT_IN_SLOT_TYPES)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'text']);
+    expect(agentFieldTypes(BUILT_IN_SLOT_TYPES)).toEqual(['choice', 'date', 'digits', 'name', 'text']);
     expect(agentFieldTypes(types)).not.toContain('unchecked');
     const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: unchecked\n      question: What\'s your name?') });
     expect(loadBusiness(dir, types).problems).toMatchObject([{ path: 'request.fields[0].type', message: expect.stringContaining('it has no check of a value the model understood') }]);
@@ -76,7 +76,10 @@ describe('business.yaml', () => {
 
   it('a read-back placeholder naming no field is refused', () => {
     const dir = copy({ 'business.yaml': replacing('collected {day} in the {window}', 'collected {day} in the {windw}') });
-    expect(problemsOf(dir)).toMatchObject([{ path: 'request.readBack', message: expect.stringContaining('{windw}'), fix: expect.stringContaining('{window}') }]);
+    expect(problemsOf(dir)).toMatchObject([
+      { path: 'request.readBack', message: expect.stringContaining('{windw}'), fix: expect.stringContaining('{window}') },
+      { path: 'request.readBack', message: expect.stringContaining('does not say {window}') },
+    ]);
   });
 
   it('a done placeholder naming no field is refused; a booking\'s may name {account}', () => {
@@ -138,6 +141,69 @@ describe('business.yaml', () => {
     expect(problemsOf(dir)).toMatchObject([{ path: 'lines.anything_els', fix: expect.stringContaining('anything_else') }]);
   });
 
+  it('birthdate is refused in agent mode: it is an identity factor\'s type', () => {
+    const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: birthdate\n      question: What\'s your name?') });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].type', fix: expect.not.stringContaining('birthdate') }]);
+  });
+
+  it('a read-back must say every required field, and a booking\'s its {account}', () => {
+    const dir = copy({ 'business.yaml': replacing('the study room for {account}, {people} people', 'the study room for {people} people') });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'booking.readBack', message: expect.stringContaining('does not say {account}') }]);
+  });
+
+  it('a field of one name in two forms has one type and one redact', () => {
+    const dir = copy({ 'business.yaml': replacing('    - name: people\n      type: choice\n      options: [one, two, three, four, five, six]', '    - name: copies\n      type: digits\n      length: 1') });
+    expect(problemsOf(dir)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'booking.fields[0]', message: expect.stringContaining('the field "copies" is digits here and choice in the request') })]));
+  });
+
+  it('a tool a field sees is seen from fields of one name only, and is never one a form calls after its read-back', () => {
+    const seen = copy({ 'business.yaml': replacing('      question: How many people?\n', '      question: How many people?\n      sees: roomAvailability\n') });
+    expect(problemsOf(seen)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'booking.fields[1].sees', message: expect.stringContaining('seen by the field "people" too') })]));
+    const called = copy({ 'business.yaml': replacing('then: [bookRoom]', 'then: [bookRoom, roomAvailability]') });
+    expect(problemsOf(called)).toMatchObject([{ path: 'booking.then[1]', message: expect.stringContaining('is a tool a field sees') }]);
+  });
+
+  it('the handoff is a statement: said where nothing waits for an answer', () => {
+    const dir = copy({ 'business.yaml': replacing("handoff: I'll have someone from the desk call you back.", "handoff: I'll have someone call you back. What's your number?") });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'handoff', message: expect.stringContaining('asks a question'), fix: expect.stringContaining('callback form asks for the number') }]);
+  });
+
+  it('every fixed line names only what it is given: the business\'s lines nothing, an engine line its own', () => {
+    const dir = copy({
+      'business.yaml': (t) => `${replacing('closing: Thanks for calling Example Library.', 'closing: Thanks for calling, {patronName}.')(replacing('What day would you like the room?', 'What day would you like the room, {account}?')(t))}greeting: Hello from {name}.\nlines:\n  ack_intent: Glad to {intentLabel}.\n  anything_else: Anything else, {first}?\n`,
+    });
+    expect(problemsOf(dir).map((p) => `${p.path}: ${p.message}`)).toEqual([
+      'booking.fields[1].question: the line names {account}, which it is never given, so it would be said with the braces in it',
+      'closing: the line names {patronName}, which it is never given, so it would be said with the braces in it',
+      'greeting: the line names {name}, which it is never given, so it would be said with the braces in it',
+      'lines.anything_else: the line names {first}, which it is never given, so it would be said with the braces in it',
+    ]);
+  });
+
+  it('windows, options and accounts are each one of a kind: windows by name, options and accounts by their key', () => {
+    const windows = copy({ 'business.yaml': replacing('  - name: afternoon\n    says: from noon to 5', '  - name: morning\n    says: from noon to 5') });
+    expect(problemsOf(windows)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'windows[1].name', message: 'the window "morning" is listed twice' })]));
+    const options = copy({ 'business.yaml': replacing('options: [print, large print, not sure]', 'options: [print, large print, Large-Print]') });
+    expect(problemsOf(options)).toMatchObject([{ path: 'request.fields[3].options[2]', message: expect.stringContaining('both are large_print') }]);
+    const accounts = copy({ 'business.yaml': replacing('  - name: Northside Readers', '  - name: Rivergate book-club') });
+    expect(problemsOf(accounts)).toMatchObject([{ path: 'accounts[1].name', message: expect.stringContaining('both are rivergate_book_club') }]);
+  });
+
+  it('an account\'s name is one a line can say', () => {
+    const dir = copy({ 'business.yaml': replacing('  - name: Northside Readers', '  - name: Northside Readers 2') });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'accounts[1].name', message: expect.stringContaining('not one a line can say') }]);
+  });
+
+  it('accounts with no booking are refused: nothing would recognize them for anything', () => {
+    const dir = copy({ 'business.yaml': (t) => t.replace(/\nbooking:\n[\s\S]*?done: You're booked for \{day\}, \{window\}\. Thanks\.\n/, '\n').replace("  roomAvailability: read the study room's free windows near a day\n", '').replace('  bookRoom: book the study room\n', '') });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'accounts', message: expect.stringContaining('has no booking') }]);
+  });
+
+  it('a field\'s countryCode only with offer: callerNumber', () => {
+    const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: name\n      countryCode: "44"\n      question: What\'s your name?') });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].countryCode' }]);
+  });
+
   it('business.yaml in a scripted app is refused', () => {
     const dir = copy({ 'app.yaml': replacing('mode: agent\n', '') });
     expect(problemsOf(dir)).toEqual(expect.arrayContaining([expect.objectContaining({ file: 'business.yaml', message: expect.stringContaining('read only by an app in agent mode') })]));
@@ -188,7 +254,7 @@ describe('factsOf', () => {
     expect(facts.background).toEqual(['The desk has one person on most afternoons.']);
     expect(facts.fixed).toEqual({
       price: 'Fees are explained at the desk, by the person who looks at your account.',
-      handoff: "I'll have someone from the desk call you back. What's the best number to reach you?",
+      handoff: "I'll have someone from the desk call you back.",
       closing: 'Thanks for calling Example Library.',
     });
     expect(facts.name).toBe('Example Library');

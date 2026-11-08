@@ -80,7 +80,7 @@ import { transferProblems, type TransferProblem, type TransferWorld } from '../c
 export type FormHooks = Omit<Pick<FormDef, FormHook>, 'complete'> & Partial<Pick<FormDef, 'complete'>>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'writes' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'recognizedOnly' | 'summaryPromptId' | 'calls' | 'writes' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 

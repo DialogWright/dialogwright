@@ -237,6 +237,11 @@ export function gridTools(input: GateGridInput): ToolName[] {
   return [...new Set([...Object.keys(policy.rulesFor), ...Object.keys(policy.toolLevel), ...(input.tools ?? []), UNLISTED_TOOL])];
 }
 
+/** The fields a tool's confirmed rule names: its own where the tables give them (PolicyTables.confirmedBy), else the app's one list. */
+function confirmedOf(policy: PolicyTables, tool: ToolName): readonly string[] {
+  return policy.confirmedBy?.[tool] ?? policy.confirmedFields;
+}
+
 /** A tool's named param sets: the matrix's, or one built from what the tool's rules read. */
 function paramSets(input: GateGridInput, tool: ToolName): Array<readonly [string, Record<string, string>]> {
   const given = input.matrix.calls && Object.hasOwn(input.matrix.calls, tool) ? input.matrix.calls[tool]! : null;
@@ -246,7 +251,7 @@ function paramSets(input: GateGridInput, tool: ToolName): Array<readonly [string
   const row = Object.hasOwn(policy.subjects, tool) ? policy.subjects[tool] : undefined;
   const keys = [
     ...(row ? [row.param] : []),
-    ...(rules.includes('R3') ? policy.confirmedFields : []),
+    ...(rules.includes('R3') ? confirmedOf(policy, tool) : []),
     ...(rules.includes('R7') ? policy.serviceFields[tool] ?? [] : []),
   ];
   const values = input.matrix.values ?? {};
@@ -291,7 +296,7 @@ export function gateGridCases(input: GateGridInput): GateGridCase[] {
               const call: ToolCall = purpose === null ? { tool, params: sent } : { tool, params: sent, purpose };
               for (const attempts of [0, policy.maxAttempts]) {
                 for (const confirmation of ['none', 'match', 'mismatch'] as const) {
-                  const confirmedHash = confirmation === 'none' ? null : confirmation === 'match' ? confirmationHash(sent, policy.confirmedFields) : mismatchHash;
+                  const confirmedHash = confirmation === 'none' ? null : confirmation === 'match' ? confirmationHash(sent, confirmedOf(policy, tool)) : mismatchHash;
                   const key = `${tool} ${purpose ?? '-'} ${principal} ${subject} ${paramsLabel} ${fields} a${attempts} ${confirmation}`;
                   const facts: GateFacts = { attempts, confirmedHash, todayIso };
                   const base = { tool, purpose, principal, subject, params: paramsLabel, fields, attempts, confirmation, call, p };

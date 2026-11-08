@@ -27,7 +27,6 @@ export const AGENT_DEFAULT_LINES: Readonly<Record<string, string>> = {
   screen_reprompt_form: "I can't help with that. Let's carry on.",
   identity_verified: 'Thanks, {first}.',
   identity_failed: "I couldn't match the number you're calling from to an account.",
-  identity_caller_match: "I see the number you're calling from is on file.",
 };
 
 /**
@@ -50,10 +49,24 @@ export const AGENT_HANDOFF_LINES: readonly string[] = [
 export const AGENT_CLOSING_LINES: readonly string[] = ['goodbye', 'goodbye_chat'];
 
 /** Every engine line business.yaml's `lines` may give in the business's words. */
-export const AGENT_LINE_IDS: readonly string[] = [...Object.keys(AGENT_DEFAULT_LINES), ...AGENT_HANDOFF_LINES, ...AGENT_CLOSING_LINES];
+export const AGENT_LINE_IDS: readonly string[] = [...Object.keys(AGENT_DEFAULT_LINES), ...AGENT_HANDOFF_LINES, ...AGENT_CLOSING_LINES, 'booking_for_accounts', 'identity_not_recognized'];
 
 /** The line a digits field that offers the number the caller is calling from (`offer: callerNumber`) offers it with: its offer_<slot>. */
 export const AGENT_OFFER_LINE = "Is the number you're calling from, ending in {last4}, the best one to reach you?";
 
-/** The account slot's question: never asked (the account is recognized by the number calling), but the engine has a line for every slot. */
-export const AGENT_ACCOUNT_LINE = 'Which account are you calling for?';
+/**
+ * Said, in place of the booking, to a caller the number they call from does not recognize as an
+ * account, before the request is begun: `booking_for_accounts`. Where the business has no request, the
+ * line refused actions say (AGENT_NOT_RECOGNIZED_LINE).
+ */
+export const ACCOUNTS_ONLY_PROMPT = 'booking_for_accounts';
+export const AGENT_ACCOUNTS_ONLY_LINE = 'Bookings are for our account holders; I can send a request instead.';
+
+/** Said where an action needs an account and the number calling recognized none (core/lifecycle.ts NOT_RECOGNIZED_PROMPT). */
+export const AGENT_NOT_RECOGNIZED_LINE = "That's for our account holders, recognized by the number they call from.";
+
+/** The {variables} the engine gives one of its lines (business.yaml's `lines` may name only these): its default's. */
+export function engineLineVars(id: string): readonly string[] {
+  const text = AGENT_DEFAULT_LINES[id];
+  return text === undefined ? [] : [...new Set([...text.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((m) => m[1]!))];
+}

@@ -23,7 +23,7 @@ import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, ty
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, sensitiveAt, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { afterSlot, appContext, factorsAsked, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
+import { afterSlot, appContext, factorsAsked, recognizeByMatch, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, callerPrivacyOf, callerUriOfRaw, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, usableCallerNumber, yesNoOffer, type OfferPending } from './callerNumber';
@@ -44,7 +44,7 @@ import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from '.
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
-import { callerMatchAsks, callerMatchWay, nextWayAfter, waysOf } from './identityWays';
+import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
 
 export interface TurnContext {
   /**
@@ -1989,10 +1989,30 @@ function summaryMove(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): 
 }
 
 /**
+ * A person asked for, in an app whose person is a form (App.personForm, agent mode: a callback note
+ * where there is no live transfer): its line, then the form, unless the caller is in it already. Null
+ * for any other handoff (frustration, a system's failure, a person needed) and every other app: the
+ * handoff is as always.
+ */
+function personForm(s: Session, reason: string, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } | null {
+  const person = io.app.personForm;
+  if (person === undefined || reason !== 'live-agent' || s.form === person.form) return null;
+  return enterForm(s, person.form, answers, ctx, io, undefined, undefined, { acks: [{ promptId: person.say, vars: {} }] });
+}
+
+/**
  * `answers` are what the form fills from; `yes`, after an explicit intent check, the answers of the
  * yes that confirmed it, which the form hears after the opener's (they are newer) but never fills from.
  */
 function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContext, io: TurnIO, queue?: FormId, yes?: AnswerMap, aside?: { readonly acks: Ack[] }): { decision: Decision; events: FillEvent[] } {
+  // A form only a verified caller may open (FormDef.recognizedOnly), asked for by one still anonymous:
+  // its line, then the form it offers instead, or the open question. Never a step-up question.
+  const only = formOf(io.app, form).recognizedOnly;
+  if (only !== undefined && isAnonymous(s.principal)) {
+    const said: Ack[] = [...(aside?.acks ?? []), { promptId: only.say, vars: {} }];
+    if (only.instead === undefined || only.instead === form) return { decision: prompt('ask_intent', 'intent', {}, said), events: [] };
+    return enterForm(s, only.instead, answers, ctx, io, queue, yes, { acks: said });
+  }
   if (aside === undefined && s.parked !== undefined) {
     // In an aside, the task set aside asked for again ("let's get back to the reschedule"): it resumes
     // where it stood, and what else the words said for it fills, as an informational answer's breath does.
@@ -2114,7 +2134,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (s.pendingConfirmation) return { decision: caughtFrustration(s, io) ?? reaskConfirmation(s, io), events: [] };
       return { decision: caughtFrustration(s, io) ?? failAttempt(s, promptedTarget(s), io), events: [] };
     case 'handoff':
-      return { decision: handoff(s, verdict.reason), events: [] };
+      return personForm(s, verdict.reason, answers, ctx, io) ?? { decision: handoff(s, verdict.reason), events: [] };
     case 'replay': {
       // At "What should I change?", a form whose summary reads back on a no (`summary.onNo: read-back`)
       // reads the pending summary again, word for word, rather than repeat the change question.
@@ -2192,7 +2212,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // for a question there was no answer to (a form's completion, or an informational intent's
       // passage: `why: 'no-answer'`) is not a frustrated caller's.
       if (pc.target === 'transfer') return { decision: handoff(s, pc.why === 'no-answer' || pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
-      if (pc.intent === 'agent') return { decision: handoff(s, 'live-agent'), events: [] };
+      if (pc.intent === 'agent') return personForm(s, 'live-agent', pc.answers, slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated, pc.sections)), io) ?? { decision: handoff(s, 'live-agent'), events: [] };
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
       // An informational intent the model was unsure of (gates.ts, `inform_explicit`): the yes says
       // it, as the inform verdict does, and the call goes back to the intent question. Nothing fills:
@@ -2875,6 +2895,11 @@ function callerMatchAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
   const identity = io.app.identity;
   if (!s.caps.speech || identity?.callerId?.ask !== 'greeting') return null;
   const match = callerMatchOf(s);
+  // A match that proves the level alone (agent mode): recognized now, nothing asked; the greeting is as always.
+  if (match !== null && matchAloneVerifies(io.app)) {
+    recognizeByMatch(s, io.tc, io.out);
+    return null;
+  }
   const slot = match === null ? undefined : callerMatchAsks(io.app).find((id) => !Object.hasOwn(match, id));
   if (slot === undefined) return null;
   // The way the match stands in for factors of (one, for a level with one set of factors) is asked, and its tool checks it.

@@ -38,15 +38,19 @@ notifyDesk · level 0 · identity, confirmed(patronName, title, copies, format, 
 
 bookRoom · level 1 · identity, scope(account), confirmed(account, people, day, window)
   anonymous      STEP_UP to 1
-  subject@1      subject own                               BLOCK confirmation
-                 subject inScope|outOfScope|unknown|empty  BLOCK scope
+  subject@1      subject own, fields exact, confirmed none|mismatch  BLOCK confirmation
+                 subject own, fields exact, confirmed match          ALLOW
+                 subject own, fields extra|missing                   BLOCK confirmation
+                 subject inScope|outOfScope|unknown|empty            BLOCK scope
   subject@2      as subject@1
   unlisted-role  BLOCK scope
   roleless       as unlisted-role
   other-party    as unlisted-role
 
 noteCallback · level 0 · identity, confirmed(callbackNumber)
-  every caller   BLOCK confirmation
+  every caller   fields exact, confirmed none|mismatch  BLOCK confirmation
+                 fields exact, confirmed match          ALLOW
+                 fields extra|missing                   BLOCK confirmation
 
 roomAvailability · level 1 · identity
   anonymous      STEP_UP to 1

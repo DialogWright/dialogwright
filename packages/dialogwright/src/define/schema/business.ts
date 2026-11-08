@@ -44,7 +44,7 @@ const phone = () =>
 const field = z
   .strictObject({
     name: identifier().describe('The field\'s name: the read-back\'s and the done line\'s {placeholder}, the param of the same name in every call the form makes, and the name the agent model gives its value by (for example callerName, day).'),
-    type: identifier().describe('The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name, text or birthdate. A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it.'),
+    type: identifier().describe('The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name or text. birthdate is refused (an identity factor\'s type, and the conversation is sent to the agent model). A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it.'),
     question: text().describe('The field\'s question, said word for word when the line asks for it in fixed words (the agent\'s reply was not said, or the field is next and nothing else is): its ask_<form>_<field> line.'),
     about: text().optional().describe('What the value is, for the agent model ("The make and model, and the year if they know it."). Default: none, the field\'s name alone.'),
     options: z
@@ -57,6 +57,11 @@ const field = z
       .literal('callerNumber')
       .optional()
       .describe('A digits field that may be the number the caller is calling from: "callerNumber" offers it (the slot\'s callerNumber). Only on a digits field.'),
+    countryCode: z
+      .string()
+      .regex(/^\d{1,3}$/, 'countryCode is one to three digits, such as "1"')
+      .optional()
+      .describe('With offer: callerNumber, the country calling code the carrier writes before the number ("1" for +1), taken off the number calling to fill the field. Default "1".'),
     sees: identifier()
       .optional()
       .describe('A tool whose result the agent model may see once the field is filled (the maintainer\'s decision 2): the tool, in the app\'s code, is called through the gate with the field\'s value, and its result, checked by the tool\'s reply check in a closed form, reaches the model. For example availability, for a day.'),
@@ -68,7 +73,7 @@ const field = z
   .describe('One field a form collects: its name, its slot type and its fixed question.');
 
 const formShape = {
-  about: text().optional().describe('What the form is for, as the agent model is told ("a retail caller\'s request for a quote"). Default: the form\'s name.'),
+  about: text().optional().describe('What the form is for, as the agent model is told ("a hold on a book, collected in a pick-up window"). Default: the form\'s name.'),
   label: text().optional().describe('The form in a few words, as the line names it ("send a request"). Default: the engine\'s words for the form.'),
   fields: z.array(field).min(1, { error: 'must list at least one field' }).describe('What the form collects, in the order its fixed questions are asked.'),
   readBack: text().describe('The read-back: the line, in fixed words, that says what the line understood, with each field\'s value as its slot type displays it ({name}), and asks the caller to confirm it. A yes sends the form\'s `then` to the gate.'),
@@ -89,7 +94,7 @@ const booking = z
 
 const service = z
   .strictObject({
-    name: text().describe('The service as the line names it ("curb rash repair").'),
+    name: text().describe('The service as the line names it ("holds").'),
     about: text().optional().describe('What it is, in the business\'s words: something the line may say.'),
   })
   .describe('One service the business offers.');
@@ -117,7 +122,7 @@ export const businessSchema = z
         says: text().optional().describe('The name as the line says it, where it differs. Default: name.'),
         kind: text().optional().describe('What kind of business it is, for the agent model ("a public library").'),
         voice: text().describe('How the line sounds, in the business\'s own words, for the agent model: the persona.'),
-        owner: text().optional().describe('The owner\'s name, where the line refers to the owner ("Sam").'),
+        owner: text().optional().describe('The owner\'s name, where the line refers to the owner ("Dana").'),
         oneOwner: z.boolean().optional().describe('true: the business is one person, and the line never speaks of a team. For the agent model.'),
         examples: z
           .array(text())
@@ -126,12 +131,12 @@ export const businessSchema = z
       })
       .describe('Who the business is and how it sounds.'),
     services: z.array(service).min(1, { error: 'must list at least one service' }).describe('What the business does: the only services the line speaks of.'),
-    notOffered: z.array(text()).optional().describe('What it does not do, which the line may say it does not ("cracked wheels"). Default: none.'),
+    notOffered: z.array(text()).optional().describe('What it does not do, which the line may say it does not ("book sales"). Default: none.'),
     claims: z.array(text()).optional().describe('The reassurance the line may give, in the business\'s words: the only claims, and the only place a turnaround or a promise may come from. Default: none.'),
     background: z.array(text()).optional().describe('Context for the agent model only, never said as a claim. Default: none.'),
     prices: z
       .strictObject({
-        quote: text().optional().describe('How a price is given, for the agent model ("from a photo"). Never a figure.'),
+        quote: text().optional().describe('How a price is given, for the agent model ("at the desk"). Never a figure.'),
         say: text().describe('The price line, said word for word when a caller asks about price: the line never says a figure.'),
       })
       .optional()
@@ -154,7 +159,7 @@ export const businessSchema = z
     booking: booking.optional(),
     callback: form.optional().describe('A callback note a caller who wants a person leaves (there is no live transfer): what it collects (a number to call back on), its read-back, its tools and its done line. Without it, a caller who wants a person hears the handoff line.'),
     greeting: text().optional().describe('The line a call opens on, in fixed words. Default: "Thanks for calling <says>. How can I help?"'),
-    handoff: text().describe('The line said when a caller asks for a person, in fixed words: a callback, not a transfer.'),
+    handoff: text().describe('The line said when a caller asks for a person, in fixed words: a callback, not a transfer. A statement, not a question ("I\'ll have someone from the desk call you back."): it is said where nothing waits for an answer, and the callback form, where there is one, asks for the number.'),
     closing: text().describe('The line a call ends on, in fixed words.'),
     owner: z
       .strictObject({
@@ -167,7 +172,7 @@ export const businessSchema = z
     tools: z
       .record(identifier(), text())
       .optional()
-      .describe('What each tool a form calls does, in a few words, by its name ("send_photo_link: text the caller a link to send a photo"): the action\'s description on the policy card, the console and the audit. Default: the tool\'s name in words.'),
+      .describe('What each tool a form calls does, in a few words, by its name ("placeHold: place the hold"): the action\'s description on the policy card, the console and the audit. Default: the tool\'s name in words.'),
     lines: z
       .record(identifier(), text())
       .optional()

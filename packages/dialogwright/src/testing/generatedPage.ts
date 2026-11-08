@@ -33,6 +33,9 @@ export function capitalize(text: string): string {
 
 /** The words for a slot in running text: the type's own noun, else the console's label, else its id spelled out. */
 export function slotNoun(app: App, slot: SlotId): string {
+  // Agent mode: a field by its own name in business.yaml ("callbackNumber" is "callback number").
+  const field = app.mode === 'agent' ? Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields).find((f) => f.slot === slot) : undefined;
+  if (field !== undefined) return humanize(field.name);
   const spec = Object.hasOwn(app.slots, slot) ? (app.slots[slot] as Partial<LibrarySlotSpec<{ noun?: unknown }>>) : undefined;
   const noun = spec?.config?.noun;
   if (typeof noun === 'string' && noun !== '') return noun;

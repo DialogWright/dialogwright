@@ -197,6 +197,28 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 13. **Turnaround is a claim, and the demo assumes one** ("curb rash on a diamond cut wheel is usually a same-day fix"). A claim is the only place a turnaround may come from, so the owner's real answer replaces it or removes it.
 14. **A regular account is recognized by caller ID** through the existing caller-ID match (identity.yaml level 1 `callerId`). Caller ID stays an identifier, never a factor. The risk that a spoofed dealership number books trade-ins is the business's to accept, and the policy card states it.
 
+15. **(2026-11-09, after the review of Tasks 4 and 5) Only the caller-ID match recognizes an account.**
+    - `recognizeAccount` takes only the account the call-start lookup found for the number calling: the slot filled by the match, the key in the call's number facts, and the number calling on file for it. Anything else is no account.
+    - The account is never asked: it has no question, its slot never listens to what the caller says, and where an action needs it on a call with no match the action is refused with a fixed line (`identity_not_recognized`), never a step-up question.
+    - A matched caller is recognized at call start (identity.yaml's `ask: greeting`), with nothing asked or said; the greeting is as always.
+    - The booking is offered only to a recognized caller. Any other caller asking to book hears `booking_for_accounts` ("Bookings are for our account holders; I can send a request instead.", the engine's words, which `lines` may replace) and is begun on the request.
+16. **The policy matrix reads each action's own confirmed fields** where a policy's actions confirm different lists (PolicyTables.confirmedBy, read by the legacy evaluator's confirmed rule and the gate grid). A policy whose actions share one list keeps its tables, and its matrix, as they were.
+17. **`{account}` in the booking's read-back and done line** is the recognized account's name, given by an engine-written summary hook (`onSummaryRead`) and the completion, never a value said.
+18. **Every fixed line's placeholders are checked**: the greeting, the handoff, the closing, the price line and each question name none; a `lines` entry names only what its engine line is given.
+19. **A read-back says every required field** (and a booking's `{account}`): the caller confirms nothing they never heard.
+20. **A field of one name in two forms has one type and one redact** (it is one param and one audit entry), and a tool a field sees is seen from fields of one name only, never also called after a read-back.
+21. **The handoff is a statement**, said where nothing waits for an answer. A caller who asks for a person hears it and is begun on the callback form, where the business has one, which collects the number. Frustration, a system's failure and a person a request needs are handed off as before.
+22. **No birthdate in agent mode**: it is an identity factor's type, and the conversation is sent to the agent model.
+23. **One of a kind**: windows by name, a choice's options and the accounts by their key (their words as an id), and each number on one account only. An account's name passes the check a name a line says passes (`sayableParty`). Accounts with no booking are refused.
+24. **The policy card says what the model sees**: the caller's words as said, a number they say included. A value the records hide is masked where it is listed as collected, and in the conversation history once the line has understood it (Task 6 masks the history).
+25. **`send_photo_link` stays after the read-back's yes** for the prototype: a `then` tool carries the request's confirmed values, so the gate refuses it before the yes. The price line's promise of a link ("I'll text you a link to send one") is kept only once the request is confirmed, and Task 6 says the price line knowing that.
+26. **A text field is recorded as it is said** (`redact: none`): its value is read back as the line understood it (`say: null`), and a text slot whose words the records keep only by their length cannot read them back. In agent mode the conversation is sent to the agent model anyway.
+27. **What Task 10 changes in the appendix's file**:
+    - neutral keys: `where.place` for `where.shop`, a window's `capacity` for `cars`;
+    - a tool follows one form, so the booking needs its own owner's notice (`notify_owner_booking`, say);
+    - the handoff becomes a statement, and a `callback:` form collects the number;
+    - a digits field may give `countryCode` (default "1").
+
 ## Left to the builder
 
 - each slot type's `check`, within the rule above;

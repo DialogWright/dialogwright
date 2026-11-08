@@ -1,7 +1,8 @@
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
-import { callerMatchAsks, callerMatchWay, waysOf } from '../core/identityWays';
+import { callerMatchAsks, callerMatchWay, matchAloneVerifies, waysOf } from '../core/identityWays';
+import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
 import { recordingOf } from '../core/recording';
 import { answerSpanOf, isSectionsSpan, spanNameVars, summarizedFields } from '../render/config';
 import { DEFAULT_HOLD_TEXT, KB_HOLD_PROMPT } from '../render/turn';
@@ -282,12 +283,17 @@ function agentSection(app: App, source: PolicySource): string[] {
   const agent = app.agent;
   if (app.mode !== 'agent' || agent === undefined) return [];
   const m = agent.model;
+  const how = { last4: 'by its last four', mask: 'hidden', length: 'by its length' } as const;
+  const hidden = [...new Set(Object.values(agent.forms).flatMap((f) => f.fields).flatMap((f) => {
+    const redact = app.slots[f.slot]?.redact;
+    return redact !== undefined ? [`the ${slotNoun(app, f.slot)} ${how[redact]}`] : [];
+  }))];
   const out = [
     '## Agent mode',
     '',
     `This app is in agent mode (app.yaml's \`mode: agent\`): a model, ${code(m.model)} on ${m.provider} at ${code(m.effort)} (style.yaml's \`agent\`), leads the conversation from the business's facts in \`business.yaml\`, and the engine decides what is done.`,
     '',
-    '- **The conversation is sent to the agent model:** the caller\'s words, the line\'s own replies and the fixed lines said, with what the business may say. No identity factor is sent (the app takes none a caller says), and a value the records hide is sent masked as the records mask it.',
+    `- **The conversation is sent to the agent model:** the caller's words as they said them (a number they say included), the line's own replies and the fixed lines said, with what the business may say. No identity factor is sent: the app takes none a caller says. ${hidden.length > 0 ? `A value the records hide (${andList(hidden)}) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.` : 'No value of a field is hidden by the records.'}`,
     '- **The model proposes; the engine decides.** It never calls a tool. Each value it understands is checked by its field\'s slot type, and the caller confirms every value at the read-back, said in fixed words, before any action. Every action is decided by the gate, as below.',
     `- **What it may say** is the business's: ${agent.facts.says.length} statement${agent.facts.says.length === 1 ? '' : 's'} (its claims, services, what it does not offer, where it is, its days and windows), and ${agent.facts.background.length} line${agent.facts.background.length === 1 ? '' : 's'} of background it is told never to claim. Its sample replies (${agent.examples.length}) are sent as examples of tone.`,
     '',
@@ -303,7 +309,7 @@ function agentSection(app: App, source: PolicySource): string[] {
     }
     out.push('');
   }
-  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done)_/.test(id) || ['price', 'greeting', 'goodbye', 'handoff_live_agent'].includes(id));
+  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done)_/.test(id) || ['price', 'greeting', 'goodbye', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
   out.push('Said in fixed words, never worded by a model:', '', '| Line | Said |', '| --- | --- |');
   for (const id of fixedIds) out.push(`| ${code(id)} | ${cell(app.prompts.manifest[id]!.text)} |`);
   const identity = app.identity;
@@ -374,7 +380,12 @@ function identitySection(app: App, source: PolicySource): string[] {
     out.push(`| 2 | ${cell(levelName(app, 2))} | level 1, and a ${identity.codeLength ?? 6}-digit one-time code sent to the contact on file | ${cell(send)}; ${cell(check)} |`);
   }
   out.push('');
-  out.push(`- Each level includes the one below it. ${capitalize(article(identity.subjectKind))} ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
+  if (app.mode === 'agent' && matchAloneVerifies(app)) {
+    // Agent mode: the caller-ID match is the whole of level 1, so a caller below it is asked nothing.
+    out.push(`- Each level includes the one below it. A caller the number they call from does not recognize is asked nothing to step up: an action that needs level 1 is refused with its line (${code(NOT_RECOGNIZED_PROMPT)}), and a form only for recognized callers says its line and offers another (Agent mode, below).`);
+  } else {
+    out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
+  }
   out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
   if (identity.ways !== undefined) {

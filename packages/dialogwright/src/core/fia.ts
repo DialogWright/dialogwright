@@ -1,3 +1,4 @@
+import { matchAloneVerifies } from './identityWays';
 import { isAnonymous } from '../gate/types';
 import type { AnswerMap } from '../jev/types';
 import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } from './slots/types';
@@ -139,6 +140,8 @@ export function activeSlots(session: Session): SlotSpec[] {
  */
 function listeningFactors(session: Session): readonly SlotId[] {
   const identity = identityOf(appOf(session));
+  // A match that proves the level alone (agent mode): its factors come only from it, never from words.
+  if (matchAloneVerifies(appOf(session))) return identity.factorSlots.filter((id) => !identity.callerId!.identifies.includes(id));
   const identified = session.callerMatch === 'offered' ? identity.callerId?.identifies : undefined;
   return identified === undefined ? identity.factorSlots : identity.factorSlots.filter((id) => !identified.includes(id));
 }

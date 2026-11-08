@@ -64,3 +64,13 @@ export function callerMatchAsks(app: App): readonly SlotId[] {
   const identifies = identityOf(app).callerId!.identifies;
   return waysOf(app)[at]!.factorSlots.filter((id) => !identifies.includes(id));
 }
+
+/**
+ * Whether the caller-ID match alone proves level 1: `callerId` identifies every factor of its way, so
+ * nothing is left to ask (validateApp allows it in agent mode only, the business's accepted risk). Its
+ * factors then come only from the match: never asked, never listened for, and a caller with no match
+ * cannot step up.
+ */
+export function matchAloneVerifies(app: App): boolean {
+  return app.mode === 'agent' && identityOf(app).callerId !== undefined && callerMatchWay(app) !== null && callerMatchAsks(app).length === 0;
+}

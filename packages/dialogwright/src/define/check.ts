@@ -13,6 +13,7 @@ import type { RoutePoint } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { BUSINESS_FILE } from './business';
+import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
 import { businessCode, businessCodeProblems } from './businessApp';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
@@ -234,7 +235,10 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (identity.code) needs.push(...CODE_PROMPTS);
     needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
     const callerId = config.identity?.levels[1].callerId;
-    if (callerId !== undefined) {
+    if (callerId !== undefined && matchAlone(config)) {
+      // The match proves the level alone (agent mode): nothing is asked for it, and a caller with no match is refused.
+      needs.push({ id: NOT_RECOGNIZED_PROMPT, why: 'an action needs the level the caller-ID match alone proves, on a call with no match' });
+    } else if (callerId !== undefined) {
       needs.push(...CALLER_ID_PROMPTS);
       // Asked at the greeting, it is said after the greeting's line before a proposal, and the open
       // question follows once it is settled, as for a proposal at the greeting.
@@ -259,8 +263,17 @@ function isLibrary(config: LoadedConfig, slot: string): boolean {
 /** The slots a form or identity asks for, whose lines the engine says: each form's, then the identity factors. */
 function askedSlots(config: LoadedConfig): Set<string> {
   const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
-  for (const slot of identityParts(config)?.factors ?? []) slots.add(slot);
+  // A factor only a caller-ID match that proves the level alone fills (agent mode) is never asked.
+  const fromMatch = matchAlone(config) ? config.identity!.levels[1].callerId!.identifies : [];
+  for (const slot of identityParts(config)?.factors ?? []) if (!fromMatch.includes(slot)) slots.add(slot);
   return slots;
+}
+
+/** Whether identity.yaml's caller-ID match identifies every factor of level 1, so it proves the level alone (agent mode only: the engine's identity for its accounts). */
+function matchAlone(config: LoadedConfig): boolean {
+  const one = config.identity?.levels[1];
+  const identifies = one?.callerId?.identifies;
+  return config.business !== undefined && one !== undefined && identifies !== undefined && one.ways === undefined && one.factors.every((f) => identifies.includes(f));
 }
 
 /** The files an app's module may be, in the order they are looked for. */

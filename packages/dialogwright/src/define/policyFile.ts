@@ -183,6 +183,7 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
   const roles: Record<ToolName, Readonly<Record<string, RoleAccess>>> = {};
   const actions: Record<ToolName, PolicyAction> = {};
   let confirmedFields: readonly string[] | undefined;
+  const confirmedBy: Record<ToolName, readonly string[]> = {};
   let reason: string | undefined;
   for (const [tool, action] of Object.entries(file.actions)) {
     const level = action.level ?? DEFAULT_ACTION_LEVEL;
@@ -193,7 +194,10 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
     for (const rule of rules) {
       if (rule.rule === 'scope' && rule.subject !== null) subjects[tool] = rule.subject;
       else if (rule.rule === 'fields') serviceFields[tool] = rule.fields;
-      else if (rule.rule === 'confirmed') confirmedFields ??= rule.fields;
+      else if (rule.rule === 'confirmed') {
+        confirmedFields ??= rule.fields;
+        confirmedBy[tool] = rule.fields;
+      }
       else if (rule.rule === 'role') {
         roles[tool] = rule.access;
         reason ??= rule.reason;
@@ -211,6 +215,9 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
     maxAttempts,
   };
   if (Object.keys(roles).length > 0) tables.roles = roles;
+  // Each action's own confirmed fields, only where the lists differ: every other policy's tables are as they were.
+  const sameList = (a: readonly string[]): boolean => confirmedFields !== undefined && a.length === confirmedFields.length && a.every((f, i) => f === confirmedFields![i]);
+  if (Object.values(confirmedBy).some((fields) => !sameList(fields))) tables.confirmedBy = Object.freeze(confirmedBy);
   if (reason !== undefined) tables.rolePersonReason = reason;
   tables.subjects = subjects;
   if (options.customRules !== undefined) tables.customRules = options.customRules;

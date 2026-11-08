@@ -1,9 +1,10 @@
 import type { AgentApp, AgentAppField, AgentAppForm } from '../agent/types';
-import type { App, Completion, CompletionContext, FactsConfig, ToolDef } from '../core/app/types';
+import type { App, Completion, CompletionContext, FactsConfig, SummaryContext, ToolDef } from '../core/app/types';
 import type { Session, SessionFacts } from '../core/session';
 import { replyShape } from '../core/replyShape';
 import { isAnonymous, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, slotIdOf } from './business';
+import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
 import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, formParams } from './businessFiles';
 import type { AppCode } from './defineApp';
 import type { LoadedConfig } from './load';
@@ -99,10 +100,17 @@ export function accountTools(b: BusinessYaml): Record<string, ToolDef> {
     },
     [BUSINESS_TOOLS.recognize]: {
       params: [ACCOUNT_SLOT],
-      run(call) {
+      // Only the caller-ID match recognizes an account: the account the call-start lookup found for the
+      // number calling, held in the slot as the match filled it. Anything else (a name said, a key
+      // given, a match gone stale) is no account.
+      run(call, _sys, ctx) {
         const key = call.params[ACCOUNT_SLOT] ?? '';
         const name = keys[key];
-        return name === undefined
+        const slot = ctx.s.slots[ACCOUNT_SLOT];
+        const found = (ctx.s.facts as AccountFacts).numberAccounts ?? [];
+        const byCallerId = slot?.by === 'caller-id' && slot.value === key;
+        const ofNumber = ctx.s.callerNumber !== undefined && byNumber.get(ctx.s.callerNumber) === key;
+        return name === undefined || !byCallerId || !found.includes(key) || !ofNumber
           ? { value: { ok: false }, summary: 'no account' }
           : { value: { ok: true, principal: { kind: ACCOUNT_SLOT, level: 1, id: key, first: name } }, summary: 'recognized' };
       },
@@ -167,9 +175,18 @@ function completeForm(b: BusinessYaml, name: BusinessFormName): (c: CompletionCo
     }
     s.confirmedHash = null;
     s.pendingHash = null;
-    const vars = Object.fromEntries(Object.entries(s.slots).map(([id, slot]) => [id, slot.display ?? '']));
+    const vars = { ...Object.fromEntries(Object.entries(s.slots).map(([id, slot]) => [id, slot.display ?? ''])), ...accountVars(s) };
     return { kind: 'said', acks: [...acks, { promptId: donePromptOf(name), vars }] };
   };
+}
+
+/**
+ * {account} in a form's lines: the name of the account the caller-ID match recognized (the principal's,
+ * as the recognition gave it), never a value said. Nothing for a caller not recognized.
+ */
+export function accountVars(s: Session): Record<string, string> {
+  const p = s.principal;
+  return !isAnonymous(p) && p.kind === ACCOUNT_SLOT ? { [ACCOUNT_SLOT]: p.first } : {};
 }
 
 /**
@@ -179,7 +196,12 @@ function completeForm(b: BusinessYaml, name: BusinessFormName): (c: CompletionCo
  */
 export function businessCode(b: BusinessYaml, code: AppCode): AppCode {
   const accounts = b.booking !== undefined;
-  const forms = Object.fromEntries(businessForms(b).map(({ name }) => [name, { confirmedParams: formValues(b, name), complete: completeForm(b, name) }]));
+  const forms = Object.fromEntries(businessForms(b).map(({ name }) => [name, {
+    confirmedParams: formValues(b, name),
+    complete: completeForm(b, name),
+    // The booking's read-back names {account}: the recognized account's name.
+    ...(name === 'booking' ? { onSummaryRead: (c: SummaryContext) => ({ vars: accountVars(c.s) }) } : {}),
+  }]));
   const systems: AppCode['systems'] = () => {
     const made = code.systems();
     // The policy is the engine's, built from business.yaml: its scope rule is an account's own.
@@ -259,5 +281,12 @@ export function businessCodeProblems(b: BusinessYaml, code: AppCode, codeFile: s
 export function asAgentApp(app: App, b: BusinessYaml, style: LoadedConfig['style']): App {
   app.mode = 'agent';
   app.agent = agentAppOf(b, style);
+  // The booking is offered only to an account the number calling recognized: any other caller is told
+  // so, in the business's words, and begun on the request.
+  // A person asked for is the callback note, where the business takes one: the handoff line, then its number.
+  if (b.callback !== undefined) app.personForm = { form: 'callback', say: 'handoff_live_agent' };
+  if (b.booking !== undefined && app.forms.booking !== undefined) {
+    app.forms.booking = { ...app.forms.booking, recognizedOnly: { say: ACCOUNTS_ONLY_PROMPT, ...(b.request !== undefined ? { instead: 'request' } : {}) } };
+  }
   return app;
 }

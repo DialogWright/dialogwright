@@ -165,6 +165,13 @@ export type AckRepeat = 'say' | 'skip';
 export interface FormDef {
   /** Business slots, in prompt priority order. */
   slots: readonly SlotId[];
+  /**
+   * A form only a caller already verified may open (agent mode: a booking, for an account the number
+   * calling recognized). Asked for by a caller still anonymous, `say` is said in its place, and `instead`
+   * (another form) is entered, or with none the open question follows: never a step-up question.
+   * Absent: any caller may open it, and a step-up asks what its calls need, as always.
+   */
+  recognizedOnly?: { readonly say: string; readonly instead?: FormId };
   /** The manifest prompt confirming the filled form, or null. */
   summaryPromptId: string | null;
   /**
@@ -807,7 +814,14 @@ export interface PolicyTables {
   rulesFor: Readonly<Record<ToolName, readonly string[]>>;
   /** R7 (fields): the fields each tool may send on to a downstream service; a tool with no row sends none. */
   serviceFields: Readonly<Partial<Record<ToolName, readonly string[]>>>;
+  /** R3 (confirmed): the fields the first action with a confirmed rule names; each action's own are confirmedBy's where they differ. */
   confirmedFields: readonly string[];
+  /**
+   * R3 (confirmed), per tool: each action's own confirmed fields, only for a policy whose actions' lists
+   * differ (each form's read-back confirms its own action: core/confirmedFields.ts). Absent where every
+   * list is confirmedFields, as in an app whose read-backs share one list: those tables are as they were.
+   */
+  confirmedBy?: Readonly<Record<ToolName, readonly string[]>>;
   /** R6 (attempts): failed attempts allowed at each identity check (the factors, the one-time code). */
   maxAttempts: number;
   /**
@@ -1415,6 +1429,12 @@ export interface App {
   mode?: 'scripted' | 'agent';
   /** What an app in agent mode carries for its agent model (agent/types.ts AgentApp). Only with `mode: 'agent'`. */
   agent?: AgentApp;
+  /**
+   * A person asked for opens this form, after `say` (agent mode: the callback note, where the business
+   * has one and no live transfer). Only a caller's request for a person: frustration, a system's failure
+   * and a person a request needs are handed off as always. Absent: every handoff is a handoff.
+   */
+  personForm?: { readonly form: FormId; readonly say: string };
   intents: Record<Intent, IntentDef>;
   /** Keypad menu order: digit to intent. */
   menu: ReadonlyArray<MenuEntry>;

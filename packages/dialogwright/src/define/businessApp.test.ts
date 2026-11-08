@@ -12,6 +12,15 @@ import { confirmationHash } from '../gate/lines';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
 import type { LibrarySlotSpec } from '../slots/types';
+import { parseCorpus } from '../jev/corpus';
+import { mockCodeVerifier } from '../core/tools';
+import { FixtureStubClient } from '../jev/fixtureStub';
+import { HeuristicStubClient } from '../jev/heuristicStub';
+import type { JevClient } from '../jev/types';
+import { runScenario, type ScenarioRun } from '../harness-text/runner';
+import { spokenText } from '../prompts/render';
+import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import type { TurnResult } from '../core/turn';
 import { expectAppMap, expectPolicyCard, expectPolicyMatrix, policyInvariants, runRuleExamples } from '../testing/index';
 import { factsOf } from './business';
 import { BUSINESS_TOOLS } from './businessFiles';
@@ -118,31 +127,37 @@ describe('the gate, for an unknown caller and for an account', () => {
     expect(decide({ tool: 'bookRoom', params: room }, ANONYMOUS, { confirmedHash: confirmationHash(room, Object.keys(room)) })).toMatchObject({ verdict: 'STEP_UP' });
   });
 
-  it('an account\'s number reaches level 1 by the caller-ID match, and the account may book its own room only', () => {
+  it('the account the call-start lookup found is the only one recognized, and an account may book its own room only', () => {
     // The call-start lookup, through the gate, held to the number calling.
     const lookup = { tool: BUSINESS_TOOLS.lookup, params: { callerNumber: ACCOUNT_NUMBER } };
     expect(decide(lookup, ANONYMOUS, { callerNumber: ACCOUNT_NUMBER }).verdict).toBe('ALLOW');
     expect(decide({ ...lookup, params: { callerNumber: '+15555550199' } }, ANONYMOUS, { callerNumber: ACCOUNT_NUMBER })).toMatchObject({ verdict: 'BLOCK', reason: 'not-caller-number' });
     const sys = app.systems().sys;
-    const ctx = {} as never;
+    const s = newSession('S-0', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    s.callerNumber = ACCOUNT_NUMBER;
+    const ctx = { s } as never;
     const found = app.tools[BUSINESS_TOOLS.lookup]!.run(lookup, sys, ctx) as { value: unknown };
     expect(found.value).toEqual({ accounts: ['rivergate_book_club'] });
     expect((app.tools[BUSINESS_TOOLS.lookup]!.run({ ...lookup, params: { callerNumber: '+15555550199' } }, sys, ctx) as { value: unknown }).value).toBeNull();
-    // The match the facts keep, and the recognition it stands in for.
-    const facts = app.facts!.initial();
-    app.facts!.fromCallerLookup!(facts, found.value);
-    const match = app.facts!.callerMatch!(facts);
-    expect(match).toEqual({ account: 'rivergate_book_club' });
-    const recognize = { tool: BUSINESS_TOOLS.recognize, params: match! };
-    expect(decide(recognize, ANONYMOUS).verdict).toBe('ALLOW');
-    const recognized = (app.tools[BUSINESS_TOOLS.recognize]!.run(recognize, sys, ctx) as { value: { ok: boolean; principal: Principal } }).value;
-    expect(recognized).toEqual({ ok: true, principal: { kind: 'account', level: 1, id: 'rivergate_book_club', first: 'Rivergate Book Club' } });
+    app.facts!.fromCallerLookup!(s.facts, found.value);
+    expect(app.facts!.callerMatch!(s.facts)).toEqual({ account: 'rivergate_book_club' });
+    const recognize = (account: string): unknown => (app.tools[BUSINESS_TOOLS.recognize]!.run({ tool: BUSINESS_TOOLS.recognize, params: { account } }, sys, ctx) as { value: unknown }).value;
+    // An account said, not filled by the match, is no account.
+    Object.assign(s.slots.account!, { value: 'rivergate_book_club', display: null });
+    expect(recognize('rivergate_book_club')).toEqual({ ok: false });
+    // Filled by the match: recognized.
+    Object.assign(s.slots.account!, { value: 'rivergate_book_club', display: null, by: 'caller-id' });
+    expect(recognize('rivergate_book_club')).toEqual({ ok: true, principal: { kind: 'account', level: 1, id: 'rivergate_book_club', first: 'Rivergate Book Club' } });
+    // Another account than the number's, even one on file, is no account.
+    Object.assign(s.slots.account!, { value: 'northside_readers', by: 'caller-id' });
+    expect(recognize('northside_readers')).toEqual({ ok: false });
     // The account books its own room, once it confirmed the read-back; never another account's.
+    const club: Principal = { kind: 'account', level: 1, id: 'rivergate_book_club', first: 'Rivergate Book Club' };
     const room = { account: 'rivergate_book_club', people: 'four', day: '2026-11-12', window: 'morning' };
-    expect(decide({ tool: 'bookRoom', params: room }, recognized.principal, { confirmedHash: confirmationHash(room, Object.keys(room)) }).verdict).toBe('ALLOW');
-    expect(decide({ tool: 'bookRoom', params: room }, recognized.principal)).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
+    expect(decide({ tool: 'bookRoom', params: room }, club, { confirmedHash: confirmationHash(room, Object.keys(room)) }).verdict).toBe('ALLOW');
+    expect(decide({ tool: 'bookRoom', params: room }, club)).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
     const other = { ...room, account: 'northside_readers' };
-    expect(decide({ tool: 'bookRoom', params: other }, recognized.principal, { confirmedHash: confirmationHash(other, Object.keys(other)) })).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
+    expect(decide({ tool: 'bookRoom', params: other }, club, { confirmedHash: confirmationHash(other, Object.keys(other)) })).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
   });
 
   it('a caller claiming to be an account from a number not on file stays anonymous: no match, and book is refused', () => {
@@ -151,6 +166,59 @@ describe('the gate, for an unknown caller and for an account', () => {
     expect(app.facts!.callerMatch!(facts)).toBeNull();
     const room = { account: 'rivergate_book_club', people: 'four', day: '2026-11-12', window: 'morning' };
     expect(decide({ tool: 'bookRoom', params: room }, ANONYMOUS, { confirmedHash: confirmationHash(room, Object.keys(room)) }).verdict).not.toBe('ALLOW');
+  });
+});
+
+describe('a call through the core', () => {
+  const corpus = parseCorpus([
+    '{"id":"bk-01","text":"I would like to book the study room for four of us tomorrow morning","intent":"booking","context":"no_form","labels":{"booking_people":"four","booking_dayMode":"relative_day","booking_dayRelative":"tomorrow","booking_window":"morning"}}',
+    '{"id":"bk-02","text":"This is Rivergate Book Club, I would like to book the study room","intent":"booking","context":"no_form"}',
+    '{"id":"bk-03","text":"yes, book it","intent":"none","context":"confirm_booking","confirm":"yes"}',
+    '{"id":"pp-01","text":"can I talk to a person","intent":"agent","context":"no_form"}',
+  ].join('\n'), app);
+  const client: JevClient = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY }) });
+  const call = (callerNumber: string | undefined, ...said: string[]): Promise<ScenarioRun> => runScenario(
+    { id: 'call', steps: said.map((say) => ({ say })), expect: { decision: 'any' }, ...(callerNumber !== undefined ? { callerNumber } : {}) },
+    { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier } },
+  );
+  const promptOf = (t: TurnResult): string | undefined => ('promptId' in t.decision ? t.decision.promptId : undefined);
+  const heard = (t: TurnResult): string => spokenText(app, t.decision);
+  const calls = (r: ScenarioRun, tool: string) => r.runs.flatMap((x) => x.result.gateEvents.filter((e) => e.decision.call.tool === tool));
+
+  it('a matched number is recognized at call start with nothing asked, and books straight in once it confirms the read-back', async () => {
+    const r = await call(ACCOUNT_NUMBER, 'I would like to book the study room for four of us tomorrow morning', 'yes, book it');
+    const [greeted, asked, booked] = r.runs.map((x) => x.result);
+    // The greeting is as always: the account is recognized behind it, by the match alone, through the gate.
+    expect(promptOf(greeted!)).toBe('greeting');
+    expect(greeted!.session.principal).toEqual({ kind: 'account', level: 1, id: 'rivergate_book_club', first: 'Rivergate Book Club', via: 'caller-id' });
+    expect(calls(r, BUSINESS_TOOLS.recognize).map((e) => e.decision.verdict)).toEqual(['ALLOW']);
+    // The read-back names the account by its name.
+    expect(promptOf(asked!)).toBe('readback_booking');
+    expect(heard(asked!)).toContain("So that's the study room for Rivergate Book Club, four people, ");
+    expect(promptOf(booked!)).toBe('anything_else');
+    expect(heard(booked!)).toContain("You're booked for ");
+    expect(calls(r, 'bookRoom').map((e) => e.decision.verdict)).toEqual(['ALLOW']);
+    // The account was never asked: no line of the call is a question for it.
+    expect(r.runs.flatMap((x) => x.result.decision.kind === 'prompt' ? [x.result.decision.promptId] : [])).not.toContain('ask_account');
+  });
+
+  it('an unmatched caller saying the account\'s name cannot book: told so, and begun on the request, with no step-up question', async () => {
+    const r = await call('+15555550199', 'This is Rivergate Book Club, I would like to book the study room');
+    const t = r.runs.at(-1)!.result;
+    expect(t.session.principal).toEqual(ANONYMOUS);
+    expect(t.session.form).toBe('request');
+    expect(heard(t)).toBe("Bookings are for our account holders; I can send a request instead. What's your name?");
+    // The name said is never taken for the account.
+    expect(t.session.slots.account!.value).toBeNull();
+    expect(calls(r, BUSINESS_TOOLS.recognize)).toEqual([]);
+    expect(calls(r, 'bookRoom')).toEqual([]);
+  });
+
+  it('a caller who asks for a person is told the handoff line and begun on the callback note', async () => {
+    const r = await call('+15555550199', 'can I talk to a person');
+    const t = r.runs.at(-1)!.result;
+    expect(t.session.form).toBe('callback');
+    expect(heard(t)).toBe("I'll have someone from the desk call you back. Is the number you're calling from, ending in 0199, the best one to reach you?");
   });
 });
 
@@ -173,6 +241,17 @@ describe('a form\'s completion, written by the engine', () => {
     const done = app.forms.request!.complete!(c);
     expect(calls).toEqual([{ tool: 'placeHold', params: HOLD }, { tool: 'notifyDesk', params: HOLD }]);
     expect(done).toMatchObject({ kind: 'said', acks: [{ promptId: 'done_request', vars: { request_patronName: 'Avery Lane' } }] });
+  });
+
+  it('the booking\'s read-back and done line say the recognized account\'s name as {account}', () => {
+    const club = { kind: 'account', level: 1, id: 'rivergate_book_club', first: 'Rivergate Book Club', via: 'caller-id' } as const;
+    const s = newSession('S-3', 0, VOICE_RELAY, club, app.id);
+    s.pendingHash = 'hash';
+    expect(app.forms.booking!.onSummaryRead!({ s, acks: [] } as never)).toEqual({ vars: { account: 'Rivergate Book Club' } });
+    const c = { s, acks: [], callTool: () => ({ decision: { verdict: 'ALLOW' }, value: { ok: true } }), refusal: () => ({ kind: 'refused', acks: [] }) } as unknown as CompletionContext;
+    expect(app.forms.booking!.complete!(c)).toMatchObject({ kind: 'said', acks: [{ promptId: 'done_booking', vars: { account: 'Rivergate Book Club' } }] });
+    // A caller not recognized has no account to name.
+    expect(app.forms.booking!.onSummaryRead!({ s: newSession('S-4', 0, VOICE_RELAY, ANONYMOUS, app.id), acks: [] } as never)).toEqual({ vars: {} });
   });
 
   it('stops at a refusal, and reads the summary again when the values changed after it', () => {
@@ -239,11 +318,22 @@ describe('the fixture\'s pages', () => {
   it('POLICY.md', () => expectPolicyCard(app, page('POLICY.md')));
   it('APP-MAP.md', () => expectAppMap(app, page('APP-MAP.md')));
 
+  it('the matrix shows the booking and the callback allowed where the gate allows them, each with its own confirmed values', () => {
+    const matrix = readFileSync(page('policy.matrix'), 'utf8');
+    const block = (tool: string): string => matrix.slice(matrix.indexOf(`${tool} · `), matrix.indexOf('\n\n', matrix.indexOf(`${tool} · `)));
+    expect(block('bookRoom')).toMatch(/subject own, fields exact, confirmed match\s+ALLOW/);
+    expect(block('noteCallback')).toMatch(/fields exact, confirmed match\s+ALLOW/);
+  });
+
   it('the policy card says the app is in agent mode, that the conversation is sent to the model, what the model sees, and the forged-number risk', () => {
     const card = readFileSync(page('POLICY.md'), 'utf8');
     expect(card).toContain('## Agent mode');
     expect(card).toContain('**The conversation is sent to the agent model:**');
-    expect(card).toContain('| booking day (`booking_day`) | read the study room\'s free windows near a day (`roomAvailability`) | declared |');
+    expect(card).toContain('| day (`booking_day`) | read the study room\'s free windows near a day (`roomAvailability`) | declared |');
+    // Honest about what the model sees: the caller's words as said, and what is masked where.
+    expect(card).toContain('the caller\'s words as they said them (a number they say included)');
+    expect(card).toContain('A value the records hide (the callback number by its last four) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.');
+    expect(card).toContain('callback number by its last four.');
     expect(card).toContain('**Caller ID can be forged:**');
     expect(card).toContain('book the study room (`bookRoom`), still only once the caller confirms its read-back');
   });

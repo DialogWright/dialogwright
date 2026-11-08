@@ -4,7 +4,7 @@ import { raise } from '../gate/principal';
 import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { typedHere } from './typedFactors';
-import { callerMatchWay, wayInUse, waysOf } from './identityWays';
+import { callerMatchWay, matchAloneVerifies, wayInUse, waysOf } from './identityWays';
 export { factorsAsked } from './typedFactors';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, SlotId, ToolName, VerifyOutcome } from './app/types';
@@ -612,6 +612,12 @@ function signInImpossible(s: Session): boolean {
   return s.caps.signIn && !typedHere(s) && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
+/**
+ * Said where an action needs the level a caller-ID match alone proves (agent mode) on a call with no
+ * match: nothing can be asked for it, so the action is refused with this line.
+ */
+export const NOT_RECOGNIZED_PROMPT = 'identity_not_recognized';
+
 /** The caller-ID question (identity.yaml's `callerId`), said in place of the first factor it leaves to ask. */
 export const CALLER_MATCH_PROMPT = 'identity_caller_match';
 
@@ -713,6 +719,9 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
       if (byMatch !== null) fillFromCallerMatch(s, byMatch);
       return verifyFactors(s, tc, out, acks) ?? ensureEntry(s, tc, out, acks);
     }
+    // A match that proves the level alone (agent mode) and none on this call: nothing may be asked for
+    // it, and no other way up, so the action is refused with its line, never a question.
+    if (match === null && matchAloneVerifies(appOf(s))) return { kind: 'refused', acks: [...acks, { promptId: NOT_RECOGNIZED_PROMPT, vars: {} }] };
     const missing = askedFactors(s, match).find((id) => s.slots[id]!.value === null);
     if (missing) {
       const window = s.slots[missing]!.window;
@@ -736,6 +745,38 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
 function fillFromCallerMatch(s: Session, match: Readonly<Record<SlotId, string>>): void {
   for (const [id, value] of Object.entries(match)) Object.assign(s.slots[id]!, { value, display: null, confirmed: false, window: null, by: 'caller-id' });
   s.callerMatch = 'offered';
+}
+
+/**
+ * At call start, where a caller-ID match proves level 1 alone (matchAloneVerifies, agent mode): on a
+ * call whose number the call-start lookup matched to one account, the account is recognized now, with
+ * nothing asked and nothing said, through the verify tool and the gate as any check is. Anything but a
+ * recognition (a refusal, a failure, a party the tool does not prove) leaves the caller anonymous, the
+ * match set aside for the call and no attempt counted. Nothing for any other app.
+ */
+export function recognizeByMatch(s: Session, tc: TurnContext, out: TurnOut): void {
+  const app = appOf(s);
+  if (!matchAloneVerifies(app) || !isAnonymous(s.principal)) return;
+  const match = callerMatchOf(s);
+  if (match === null) return;
+  fillFromCallerMatch(s, match);
+  const { subjectKind } = identityOf(app);
+  const way = waysOf(app)[callerMatchWay(app) ?? 0]!;
+  const params = Object.fromEntries(way.factorSlots.map((id) => [id, s.slots[id]!.value ?? '']));
+  const { decision, value } = identityCall<VerifyOutcome>(s, way.verifyTool, params, tc, out);
+  const proven = decision.verdict === 'ALLOW' && value?.ok === true && isParty(value.principal) && value.principal.kind === subjectKind && value.principal.level === 1 && sayableParty(value.principal);
+  if (proven) {
+    const { via: _via, ...principal } = value.principal;
+    s.principal = { ...principal, via: 'caller-id' };
+    noteCallerMatch(s, out, 'verified');
+    return;
+  }
+  noteCallerMatch(s, out, 'failed');
+  for (const id of way.factorSlots) {
+    const st = s.slots[id]!;
+    Object.assign(st, emptySlot(), { attempts: st.attempts });
+    delete st.by;
+  }
 }
 
 /** Whether the check about to run, or just run, has factors the caller-ID match filled (SlotState.by `caller-id`). */
