@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { cassetteFileName } from '../jev/provider';
-import { digitRuns, foreignFigure, spelledNumbers } from '../render/checks';
+import { figuresOf, foreignFigure } from '../render/checks';
 import { callerFigures, dateWords } from '../render/agentLine';
 import { openRouterThinkingOf, RENDER_EFFORTS, RENDER_THINKING_MODES, resolveRenderProvider, type RenderEffort, type RenderThinkingMode } from '../render/providers';
 import type { RenderPrice, RenderUsage } from '../render/types';
@@ -194,9 +194,9 @@ function matches(label: ValueLabel | '*', value: string, type: string): boolean 
   return options.some((o) => (type === 'digits' ? value.replace(/\D/g, '') === o.replace(/\D/g, '') : type === 'date' ? value.trim() === o.trim() : sameWords(value, o)));
 }
 
-/** The numbers a text says, in digits or in words, as digits ("about four hundred" is 400, "the 2019 edition" 2019), as foreignFigure reads them. */
+/** The numbers a text says, in digits or in words, as digits ("about four hundred" is 400, "the 2019 edition" 2019, "twenty twenty three" 2023), as foreignFigure reads them (render/checks.ts figuresOf). */
 export function figuresIn(text: string): string[] {
-  return [...digitRuns(text), ...spelledNumbers(text)];
+  return figuresOf(text);
 }
 
 /**

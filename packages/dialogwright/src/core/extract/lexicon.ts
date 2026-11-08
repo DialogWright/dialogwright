@@ -54,6 +54,14 @@ export interface Lexicon {
   readonly nameParticles: ReadonlySet<string>;
   /** The month names, folded, January first. */
   readonly months: readonly string[];
+  /**
+   * How a year is said in two pairs ("twenty twenty three" is 2023, "nineteen ninety nine" 1999, "nineteen
+   * oh five" 1905), or null where the language says its years whole ("dos mil veintitrés", a number like
+   * any other). `firstPairs`: the words a year's first pair is said with, by their value (its century);
+   * `noughts`: the words said for a nought before the second pair's unit ("oh"). The second pair is a
+   * teen, a tens word with or without its unit, or a nought and a unit (yearPairAt, core/extract/spokenNumber.ts).
+   */
+  readonly yearPairs: { readonly firstPairs: Readonly<Record<string, number>>; readonly noughts: ReadonlySet<string> } | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -74,6 +82,8 @@ const EN_TENS: Record<string, number> = {
 };
 const EN_REPEATS: Record<string, number> = { double: 2, triple: 3 };
 const EN_MULTIPLIERS: Record<string, number> = { hundred: 100, thousand: 1000 };
+/** A year's first pair, said in pairs: ten to twenty (the years 1000 to 2099). */
+const EN_YEAR_FIRST_PAIRS: Record<string, number> = { ...EN_TEENS, twenty: 20 };
 
 /**
  * tokenize() strips apostrophes, so a contraction arrives split into fragments: "it's" as "it s",
@@ -113,6 +123,7 @@ export const ENGLISH: Lexicon = Object.freeze({
   fillers: new Set(EN_FILLERS),
   nameParticles: new Set<string>(),
   months: EN_MONTHS,
+  yearPairs: Object.freeze({ firstPairs: EN_YEAR_FIRST_PAIRS, noughts: new Set(['oh', 'o']) }),
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -186,6 +197,7 @@ export const SPANISH: Lexicon = Object.freeze({
   fillers: new Set(ES_FILLERS),
   nameParticles: new Set(ES_NAME_PARTICLES),
   months: ES_MONTHS,
+  yearPairs: null,
 });
 
 /** Whether a locale is Spanish: `es`, or any tag in the language (`es-US`, `es-MX`). */

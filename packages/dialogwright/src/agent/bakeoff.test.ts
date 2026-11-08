@@ -79,6 +79,9 @@ describe('scoreAnswer', () => {
     expect(scoreAnswer(reply(t, 'Fees are explained at the desk.'), t).figure).toBe(false);
     expect(numbersNotIn('someone at the desk', [])).toEqual([]);
     expect(numbersNotIn('It is 2 dollars, or about four hundred', ['The fee is $2.'])).toEqual(['400']);
+    // A year said in pairs is its year, on either side (call 47).
+    expect(numbersNotIn('A 2023 Kia Sorento, nice.', ['a twenty twenty three Kia Sorento'])).toEqual([]);
+    expect(numbersNotIn('A twenty twenty four Sorento.', ['the 2023 Sorento'])).toEqual(['2024']);
   });
 
   it('a figure refused that is the number one alone is counted apart ("a lovely one"), so what the check costs is measured', () => {

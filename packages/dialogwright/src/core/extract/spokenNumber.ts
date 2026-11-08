@@ -1,4 +1,4 @@
-import { ENGLISH, lexiconOf } from './lexicon';
+import { ENGLISH, lexiconOf, type Lexicon } from './lexicon';
 
 /** English number words (the en lexicon's), as the engine has always read them. */
 export const NUMBER_WORDS: ReadonlySet<string> = ENGLISH.numberWords;
@@ -161,4 +161,34 @@ export function spokenToDigits(text: string, locale?: string): string {
   }
   close();
   return parts.join('');
+}
+
+/**
+ * A year said in two pairs at `i` of `tokens` (lower case, as the lexicon tokenizes them): "twenty twenty
+ * three" is 2023, "nineteen ninety nine" 1999, "nineteen oh five" 1905, "twenty twenty" 2020. Its value and
+ * the index after it, or null. The first pair is one of the lexicon's year pairs' `firstPairs` (its
+ * century); the second a teen, a tens word with or without its unit, or a nought and a unit (Lexicon.yearPairs,
+ * data). A language with no year pairs reads none, and anything else at `i` is no year said in pairs
+ * ("twenty one" is a count, "two thousand twenty three" a number said whole).
+ */
+export function yearPairAt(tokens: readonly string[], i: number, lex: Lexicon = ENGLISH): { value: number; next: number } | null {
+  const pairs = lex.yearPairs;
+  const head = tokens[i] === undefined ? undefined : lex.fold(tokens[i]!);
+  if (pairs === null || head === undefined || !Object.hasOwn(pairs.firstPairs, head)) return null;
+  const century = pairs.firstPairs[head]! * 100;
+  const second = tokens[i + 1] === undefined ? undefined : lex.fold(tokens[i + 1]!);
+  const third = tokens[i + 2] === undefined ? undefined : lex.fold(tokens[i + 2]!);
+  if (second === undefined) return null;
+  // A unit of one to nine (never a nought said as "oh", nor zero).
+  const unit = (w: string | undefined): number | null => (w !== undefined && Object.hasOwn(lex.units, w) && !pairs.noughts.has(w) && lex.units[w]! > 0 ? lex.units[w]! : null);
+  if (pairs.noughts.has(second)) {
+    const u = unit(third);
+    return u === null ? null : { value: century + u, next: i + 3 };
+  }
+  if (Object.hasOwn(lex.teens, second)) return { value: century + lex.teens[second]!, next: i + 2 };
+  if (Object.hasOwn(lex.tens, second)) {
+    const u = unit(third);
+    return { value: century + lex.tens[second]! + (u ?? 0), next: u === null ? i + 2 : i + 3 };
+  }
+  return null;
 }

@@ -354,6 +354,9 @@ describe('the review of Task 7', () => {
     expect(asked.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
     expect(textValueFigures('2020 BMW 3 Series', "it's a 2020 BMW 3 Series")).toBe('2020 3');
     expect(textValueFigures('2020 BMW 3 Series', "it's a BMW, the 3 Series")).toBe('3');
+    // A year said in pairs is the year a value writes in digits (a live call, call 47).
+    expect(textValueFigures('2023 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe('2023');
+    expect(textValueFigures('2024 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe('');
   });
 
   it('"in two days?" against "Yes, two days is fine": the caller\'s figure, refused', async () => {

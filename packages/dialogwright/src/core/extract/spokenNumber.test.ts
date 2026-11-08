@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { spokenToDigits } from './spokenNumber';
+import { SPANISH } from './lexicon';
+import { spokenToDigits, yearPairAt } from './spokenNumber';
 
 describe('spokenToDigits', () => {
   it.each([
@@ -59,5 +60,30 @@ describe('chunked groups', () => {
     ['double four hundred', '44100'],
   ])('%s -> %s', (input, expected) => {
     expect(spokenToDigits(input)).toBe(expected);
+  });
+});
+
+describe('a year said in pairs (yearPairAt)', () => {
+  const at = (text: string, i = 0, lex?: typeof SPANISH) => yearPairAt(text.split(' '), i, lex);
+  it('reads the two pairs as the year: a teen or a tens word, with its unit, or a nought and a unit', () => {
+    expect(at('twenty twenty three kia')).toEqual({ value: 2023, next: 3 });
+    expect(at('nineteen ninety nine')).toEqual({ value: 1999, next: 3 });
+    expect(at('twenty twenty')).toEqual({ value: 2020, next: 2 });
+    expect(at('nineteen oh five')).toEqual({ value: 1905, next: 3 });
+    expect(at('twenty twelve')).toEqual({ value: 2012, next: 2 });
+    expect(at('a twenty twenty three', 1)).toEqual({ value: 2023, next: 4 });
+  });
+  it('reads no year where the words are a count, a number said whole, or a nought with no unit', () => {
+    expect(at('twenty one')).toBeNull();
+    expect(at('two thousand twenty three')).toBeNull();
+    expect(at('thirty forty')).toBeNull();
+    expect(at('nineteen oh')).toBeNull();
+    expect(at('twenty')).toBeNull();
+  });
+  it('reads none in a language that says its years whole', () => {
+    expect(at('veinte veinte', 0, SPANISH)).toBeNull();
+  });
+  it('agrees with the digits spokenToDigits reads', () => {
+    for (const said of ['twenty twenty three', 'nineteen ninety nine', 'nineteen oh five', 'twenty twenty']) expect(String(at(said)!.value)).toBe(spokenToDigits(said));
   });
 });

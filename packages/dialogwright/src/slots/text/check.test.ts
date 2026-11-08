@@ -42,6 +42,21 @@ describe('text check', () => {
     expect(title('The Quiet Harbor 2', 'The Quiet Harbor 2', 'a hold on The Quiet Harbor 2', ctx)).toMatchObject({ ok: true });
   });
 
+  it('compares figures as numbers on both sides: a year said in pairs, a count in words (a live call, call 47)', () => {
+    const vehicle = defineSlot('vehicle', { type: 'text', what: 'the car', say: null, redact: 'none', maxLength: 80 }).check!;
+    const said = "It's a twenty twenty three Kia Sorento.";
+    const cited = 'twenty twenty three Kia Sorento';
+    expect(vehicle('2023 Kia Sorento', cited, said, ctx)).toMatchObject({ ok: true, value: '2023 Kia Sorento' });
+    expect(vehicle('2024 Kia Sorento', cited, said, ctx)).toEqual({ ok: false, reason: 'words' });
+    // A count in words is the figure in digits, either way round.
+    expect(vehicle('2 wheels', 'two wheels', 'two wheels', ctx)).toMatchObject({ ok: true });
+    expect(vehicle('two wheels', '2 wheels', 'the 2 wheels', ctx)).toMatchObject({ ok: true });
+    expect(vehicle('3 wheels', 'two wheels', 'two wheels', ctx)).toEqual({ ok: false, reason: 'words' });
+    // A year of the last century, and one with a nought said "oh".
+    expect(vehicle('1999 Civic', 'nineteen ninety nine Civic', 'a nineteen ninety nine Civic', ctx)).toMatchObject({ ok: true });
+    expect(vehicle('1905 roadster', 'nineteen oh five roadster', 'a nineteen oh five roadster', ctx)).toMatchObject({ ok: true });
+  });
+
   it('refuses words the caller never said', () => {
     expect(note('leave it by the gate', 'leave it by the gate', 'ring the bell', ctx)).toEqual({ ok: false, reason: 'words' });
   });

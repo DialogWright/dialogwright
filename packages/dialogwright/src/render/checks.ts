@@ -1,4 +1,5 @@
 import type { Answer, NoulQuestion, QuestionMap, ScoreQuestion } from '../jev/types';
+import { yearPairAt } from '../core/extract/spokenNumber';
 import { sentenceSaid } from './prompt';
 import { SPAN_GAP, type RenderFallback, type SpanAct, type SpeechAct } from './types';
 
@@ -77,7 +78,9 @@ const SCALE_VALUES: Readonly<Record<string, number>> = { hundred: 100, thousand:
 
 /**
  * The numbers a text says in words, as digits ("one hundred fifty" is "150", "a thousand" is "1000"):
- * each run of number words read as one number. Only what a figure is; nothing of grammar.
+ * each run of number words read as one number, and a year said in pairs as the year it is ("twenty twenty
+ * three" is "2023", "nineteen oh five" "1905": the lexicon's year pairs, core/extract/spokenNumber.ts
+ * yearPairAt). Only what a figure is; nothing of grammar.
  */
 export function spelledNumbers(text: string): string[] {
   const ws = words(text);
@@ -94,6 +97,13 @@ export function spelledNumbers(text: string): string[] {
   for (let i = 0; i < ws.length; i += 1) {
     const w = ws[i]!;
     const next = ws[i + 1];
+    // A year said in pairs, where no number is open ("twenty twenty three", not 20 + 20 + 3).
+    const year = open ? null : yearPairAt(ws, i);
+    if (year !== null) {
+      out.push(String(year.value));
+      i = year.next - 1;
+      continue;
+    }
     if (Object.hasOwn(UNIT_VALUES, w)) {
       current += UNIT_VALUES[w]!;
       open = true;
@@ -116,6 +126,19 @@ export function spelledNumbers(text: string): string[] {
   return out;
 }
 
+/** A figure as the number it is, compared by value: its leading zeros taken off ("07" is "7", "0" stays "0"). */
+const asNumber = (digits: string): string => digits.replace(/^0+(?=\d)/, '');
+
+/**
+ * The numbers a text says, in digits or in words, each as the number it is ("2023" and "twenty twenty three"
+ * are both "2023", "two" and "2" both "2", "07" is "7"): what figures are compared by, on both sides, wherever
+ * a line's or a value's figures are held to their sources (foreignFigure, the agent line's figure sources,
+ * the bake-off's scoring).
+ */
+export function figuresOf(text: string): string[] {
+  return [...digitRuns(text), ...spelledNumbers(text)].map(asNumber);
+}
+
 /** What an amount word says, as a sign a source may have instead ("dollars" for "$"). */
 const AMOUNT_SIGNS: Readonly<Record<string, RegExp>> = {
   dollar: /\$/, dollars: /\$/, bucks: /\$/, cent: /\u00a2/, cents: /\u00a2/, percent: /%/, euro: /\u20ac/, euros: /\u20ac/, pound: /\u00a3/, pounds: /\u00a3/,
@@ -128,8 +151,8 @@ const AMOUNT_SIGNS: Readonly<Record<string, RegExp>> = {
  * does not say. Data, compared exactly.
  */
 export function foreignFigure(text: string, sources: readonly string[]): boolean {
-  const allowed = new Set(sources.flatMap((s) => [...digitRuns(s), ...spelledNumbers(s)]));
-  if ([...digitRuns(text), ...spelledNumbers(text)].some((n) => !allowed.has(n))) return true;
+  const allowed = new Set(sources.flatMap(figuresOf));
+  if (figuresOf(text).some((n) => !allowed.has(n))) return true;
   const said = new Set(sources.flatMap(words));
   // A currency sign, where a source has it or says its word ("$" for "dollars").
   const signs: [RegExp, string[]][] = [[/\$/, ['dollar', 'dollars', 'bucks']], [/\u20ac/, ['euro', 'euros']], [/\u00a3/, ['pound', 'pounds']]];

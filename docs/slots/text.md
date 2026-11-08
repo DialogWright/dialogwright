@@ -417,7 +417,7 @@ place:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood: not empty and at most `maxLength` characters as given, before the slot writes it (`numbers`, `case`). The value need not be a part of the words cited (a short version is allowed), but the words cited must be in this turn's words. It is stored as the slot writes its words, and shown as the display says it (the stand-in, or the words with `say: null`).
+In agent mode the slot checks a value the model understood: not empty and at most `maxLength` characters as given, before the slot writes it (`numbers`, `case`). The value need not be a part of the words cited (a short version is allowed), but the words cited must be in this turn's words, and it carries no figure or web address of its own: each figure in it must be in the words cited (or the value held before), compared as numbers, so "2023 Kia Sorento" from "twenty twenty three Kia Sorento" and "2 wheels" from "two wheels" pass, and "2024 Kia Sorento" from the same words is refused. It is stored as the slot writes its words, and shown as the display says it (the stand-in, or the words with `say: null`).
 
 ## Notes
 

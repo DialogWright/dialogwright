@@ -44,6 +44,17 @@ describe('a figure, by its value', () => {
     expect(spelledNumbers('no figure here')).toEqual([]);
   });
 
+  it('reads a year said in pairs as the year it is, and a count as the count (call 47)', () => {
+    expect(spelledNumbers('a twenty twenty three Kia Sorento')).toEqual(['2023']);
+    expect(spelledNumbers('nineteen ninety nine, twenty twenty, nineteen oh five')).toEqual(['1999', '2020', '1905']);
+    expect(spelledNumbers('two wheels, twenty one cars, two thousand twenty three')).toEqual(['2', '21', '2023']);
+    expect(foreignFigure('A 2023 Kia Sorento.', ['twenty twenty three Kia Sorento'])).toBe(false);
+    expect(foreignFigure('A twenty twenty three Kia Sorento.', ['the 2023 Sorento'])).toBe(false);
+    expect(foreignFigure('A 2024 Kia Sorento.', ['twenty twenty three Kia Sorento'])).toBe(true);
+    expect(foreignFigure('On 2 wheels.', ['two wheels'])).toBe(false);
+    expect(foreignFigure('Unit 07.', ['unit seven'])).toBe(false);
+  });
+
   it('said in words is the figure a source writes in digits, and the other way round; an amount word is its sign', () => {
     const row = 'Emergency room services: $150/visit plus 20%; the deductible applies.';
     expect(foreignFigure('You pay one hundred fifty dollars per visit plus twenty percent.', [row])).toBe(false);
