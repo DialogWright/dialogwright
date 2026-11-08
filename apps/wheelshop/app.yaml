@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
+# Example Wheel Works: a fictional one-man wheel repair shop's line, in agent mode. A model leads the
+# conversation from the shop's facts (business.yaml): it greets, reassures from the approved claims and
+# asks for what a request or a booking needs in whatever order fits. The engine checks every value it
+# understands by its slot type, says every read-back in the shop's fixed words, and gates every action.
+# The app has no intents.yaml, forms.yaml, prompts.yaml, slots.yaml, policy.yaml or identity.yaml: the
+# engine builds them from business.yaml. Invented throughout: no real business, place, person or number.
+id: wheelshop
+locale: en-US
+mode: agent
+
+brand:
+  name: Example Wheel Works
+  mark: EW
+  key: wheelshop
+
+voice:
+  hints: [curb rash, diamond cut, rim, wheel, wheels, refinishing, lathe, two-tone, BMW, trade-ins, Rivergate, Commerce Drive]
+
+fixtures:
+  dir: fixtures
+
+testing:
+  adversarial: on

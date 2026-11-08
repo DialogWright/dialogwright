@@ -44,3 +44,6 @@ jobs:
       - run: pnpm --filter @dialogwright/example-secretary regress
       - run: pnpm --filter @dialogwright/example-harbor regress
       - run: pnpm --filter @dialogwright/example-harbor regress --client recorded
+      # The agent-mode demo: its stub regression, the agent's answers from each scripted call's steps (no
+      # model). Its recorded regression joins once the agent cassette is recorded (the author's step).
+      - run: pnpm --filter @dialogwright/example-wheelshop regress

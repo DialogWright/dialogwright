@@ -1,0 +1,22 @@
+{"id":"bk-01","text":"Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.","intent":"booking","context":"no_form"}
+{"id":"bk-02","text":"A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.","intent":"none","context":"booking","prompted":"booking_vehicles"}
+{"id":"bk-03","text":"yes, book it","intent":"none","context":"confirm_booking","confirm":"yes"}
+{"id":"bk-04","text":"Oh wait, make it four. There's an Accord too, front right.","intent":"none","context":"confirm_booking","confirm":"no"}
+{"id":"bk-05","text":"This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.","intent":"booking","context":"no_form"}
+{"id":"rq-01","text":"Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?","intent":"request","context":"no_form"}
+{"id":"rq-02","text":"It's a 2020 BMW 3 Series. Just the front passenger wheel.","intent":"none","context":"request","prompted":"request_vehicle"}
+{"id":"rq-03","text":"I'm not sure. What's diamond cut? How would I tell?","intent":"none","context":"request","prompted":"request_diamondCut"}
+{"id":"rq-04","text":"Oh, yeah. It's two-tone, black with shiny silver lines.","intent":"none","context":"request","prompted":"request_diamondCut"}
+{"id":"rq-05","text":"How much is that going to cost me? Just ballpark it.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-06","text":"Fine. It's Jordan Lee.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-07","text":"Could I bring it Thursday? Morning would be best, before work.","intent":"none","context":"request","prompted":"request_day"}
+{"id":"rq-08","text":"yes, that's my cell","intent":"none","context":"request","confirm":"yes","prompted":"request_callbackNumber"}
+{"id":"rq-09","text":"yes, that's right","intent":"none","context":"confirm_request","confirm":"yes"}
+{"id":"rq-10","text":"How much do you charge to fix curb rash?","intent":"request","context":"no_form"}
+{"id":"rq-11","text":"Come on, roughly. Is it under a hundred bucks?","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-12","text":"Seriously, just give me a number.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-13","text":"I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?","intent":"request","context":"no_form"}
+{"id":"rq-14","text":"The afternoon's fine.","intent":"none","context":"request","prompted":"request_window"}
+{"id":"rq-15","text":"It's Casey Morgan, and you can text me at 555 555 0123.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-16","text":"OK, it's a Honda Civic and I'm Mike Dunn.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-17","text":"yeah hi I need a wheel fixed, curb rash on my Audi","intent":"request","context":"no_form"}

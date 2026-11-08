@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/style.schema.json
+# The model that leads the conversation: Inception's Mercury 3 on Inception's own API (provider:
+# inception, key INCEPTION_API_KEY), at its fastest reasoning (instant), with realtime on. Measured on
+# 2026-11-09 with pnpm agent:bakeoff on this app's cases (fixtures/agent/cases.yaml): with the owner's
+# sample replies, valid JSON 100%, values right 94%, no reply with a figure the facts do not hold, and
+# p50 482 ms / p95 889 ms (682 / 1089 with the drift judge), within the bar for a call (p50 1.0 s, p95
+# 1.8 s). At low reasoning the values were right more often, but p50 was 2.5 s: too slow for a call.
+agent:
+  provider: inception
+  model: mercury-3
+  effort: instant
+# The most words a reply of the model's may use (a longer one is not said: the field's fixed question
+# is). On a call 30, over the engine's 25: the warm opening the demo wants, as the bake-off's cases
+# give it (fixtures/agent/cases.yaml: "Oh, that's no fun. Most curb rash can be fixed, ... What car is
+# it?"), runs to 26 words. In a chat, the engine's default.
+words:
+  voice: 30

@@ -1,0 +1,202 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/business.schema.json
+# Example Wheel Works: everything about the shop the line may use. The engine builds the app from this
+# file (its intents, forms, slots, prompts, policy and identity), and the agent model leads the
+# conversation from it. The file is invented: no real business, place, person or number.
+#
+# The demo is a real, working example, so it needs answers only the owner can give. Where it needs one,
+# the file makes a reasonable assumption, marked "assumption: the owner corrects these". When the owner
+# hears something that isn't how he works, the fix is an edit to this file, never to code (DESIGN.md,
+# "The demo's assumptions"). After an edit: pnpm check, then pnpm policy:matrix, policy:card and
+# app:diagram for this folder, read as a change in what the line may do.
+business:
+  name: Example Wheel Works
+  says: Example Wheel Works
+  kind: wheel repair and refinishing
+  voice: >-
+    Friendly, plain and confident, like the owner at the counter. Short sentences. Glad to help,
+    never pushy. Talks about wheels and nothing else.
+  owner: Sam
+  oneOwner: true # the line never says "our team" or "our technicians"
+  # The owner's sample replies, sent to the model as examples of tone, never as facts or rules. Measured
+  # on 2026-11-09 (pnpm agent:bakeoff): with them, no reply held a figure the facts don't; without them, three.
+  examples:
+    - Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?
+    - Diamond cut, nice. Those come up great on the lathe.
+    - Can't do cracked ones, sorry. A cracked wheel needs replacing. Anything else going on with it?
+    - You're in the right place. Let's get you sorted.
+
+services:
+  - name: curb rash repair
+    about: Scrapes and gouges on the rim's edge from a curb.
+  - name: scratch and scuff repair
+  - name: face damage repair
+  - name: diamond cut wheel refinishing
+    about: >-
+      For wheels whose face is bright bare metal with fine machined lines, often two-tone. Cut on a
+      lathe in the shop, with the tyre left on.
+  - name: refinishing worn or faded finishes
+notOffered: # assumption: the owner corrects these
+  - cracked wheels
+  - straightening bent wheels
+  - tyres, paint, headlights or anything that isn't a wheel
+
+claims: # the only reassurance the line may give (the drift judge holds it here)
+  - Most curb rash and scratches can be fixed.
+  - Sam sees this kind of damage every day.
+  - Diamond cut wheels are what the shop's lathe is for.
+  - Curb rash on a diamond cut wheel is usually a same-day fix. # assumption: the owner corrects these
+  - Dealerships on Commerce Drive send their trade-ins here.
+background: # context for the model, never said as a claim
+  - Sam works alone, so he often can't answer the phone while he's working on a wheel.
+
+prices: # assumption: the owner corrects these (he quotes every retail job from a photo)
+  quote: from a photo # no figures: the line never says a price
+  # Said in these words when a caller asks about price. It promises no link before the request is
+  # confirmed: the photo link is texted by the request's read-back's yes (send_photo_link), so the line
+  # says what happens once the request is sent, never that a link is on its way.
+  say: >-
+    Sam quotes every job from a photo, because the price depends on the damage. Once I've sent him
+    your request, you'll get a text with a link to send one, and he'll get back to you with a price
+    and confirm your drop-off.
+
+where:
+  place: inside the detailing shop at 400 Commerce Drive, Rivergate, across from the car dealership
+  mobile: false # assumption: the owner corrects these (Sam works at the shop)
+days: [monday, tuesday, wednesday, thursday, friday] # assumption: the owner corrects these
+windows: # assumption: the owner corrects these (drop-off windows, each with room for some cars)
+  - name: morning
+    says: drop off by 8 in the morning, ready by about noon
+    capacity: 3
+  - name: afternoon
+    says: drop off by noon, ready by about 5
+    capacity: 3
+
+accounts: # regular dealership accounts, booked straight in, recognized by the number they call from
+  - name: Rivergate Motors
+    numbers: ["+15555550142", "+15555550143"]
+  - name: Northside Auto Sales
+    numbers: ["+15555550150"]
+  - name: Lakeview Imports
+    numbers: ["+15555550161"]
+
+# What each tool does, in a few words: the action's description on the policy card, the console and the audit.
+tools:
+  request: send Sam the request
+  send_photo_link: text the caller a link to send Sam a photo of the damage
+  notify_owner_request: text Sam a summary of the request
+  book: book the cars into the drop-off window
+  notify_owner_booking: text Sam a summary of the booking
+  callback: leave Sam a callback note
+  availability: read the free drop-off windows on a day
+
+# What a retail caller's request collects. Sam quotes from a photo and confirms the window with the quote
+# (assumption: the owner corrects these), so the request takes no room in a window.
+request:
+  about: a retail caller's request, sent to Sam, who quotes from a photo and confirms the drop-off window
+  label: send Sam a request
+  fields:
+    - name: callerName
+      type: name
+      question: What's your name?
+    - name: vehicle
+      type: text
+      about: The make and model, and the year if they know it.
+      question: What car is it?
+    - name: wheels
+      type: choice
+      options: [one, two, three, four]
+      about: How many wheels need work.
+      question: How many wheels need work?
+    - name: damage
+      type: text
+      about: What the damage is, as the line understood it.
+      question: What happened to the wheel?
+    - name: diamondCut
+      type: choice
+      options: ["yes", "no", not sure]
+      about: Whether the wheel's face is bright machined metal with fine lines.
+      question: Is the face of the wheel shiny bare metal with fine lines, or painted all over?
+      optional: true
+    - name: day
+      type: date
+      question: What day would you like to drop it off?
+      sees: availability # the windows free on that day reach the model (the maintainer's decision 2)
+    - name: window
+      type: choice
+      options: windows # morning or afternoon, from windows
+      question: Morning or afternoon?
+    - name: callbackNumber
+      type: digits
+      length: 10
+      offer: callerNumber
+      countryCode: "1"
+      question: What's the best number for Sam to text you the quote?
+  # Every required field is said (the caller confirms nothing they never heard); the optional diamondCut is not.
+  readBack: >-
+    Here's what I'll send Sam: {callerName}, a {vehicle} with {damage}, on {wheels} of its wheels,
+    hoping to drop it off {day} in the {window}, and he'll text you at {callbackNumber}. Is that right?
+  # The request first (the form's write), then the photo link and Sam's summary.
+  then: [request, send_photo_link, notify_owner_request]
+  done: >-
+    Thanks, {callerName}. I'm texting you a link to send Sam a photo. He'll text you a price and
+    confirm your drop-off once he's seen it.
+
+# What a regular account's booking collects: dealerships are booked straight into a window (assumption:
+# the owner corrects these). Only a caller the number they call from recognizes as an account may book.
+booking:
+  for: accounts
+  about: a dealership account's booking of cars into a drop-off window
+  label: book cars in
+  fields:
+    - name: cars
+      type: choice
+      options: [one, two, three, four, five, six]
+      about: How many cars they are dropping off.
+      question: How many cars?
+    - name: vehicles
+      type: text
+      about: The cars and which wheels, by make and model or stock number.
+      question: Which cars are they, and which wheels?
+    - name: day
+      type: date
+      question: What day are you dropping them off?
+      sees: availability
+    - name: window
+      type: choice
+      options: windows
+      question: Morning or afternoon?
+  readBack: >-
+    So that's {account} dropping off {vehicles}, {cars} in all, on {day} in the {window}. Shall I
+    book it?
+  then: [book, notify_owner_booking]
+  done: You're booked for {day}, in the {window}. Thanks.
+
+# A callback note for a caller who wants Sam himself: there is no live transfer, since Sam misses calls
+# because he's working on a wheel. The handoff below says he'll call back; this form collects the number.
+callback:
+  about: a callback note for Sam, from a caller who wants to speak with him
+  label: leave Sam a callback note
+  fields:
+    - name: callbackNumber
+      type: digits
+      length: 10
+      offer: callerNumber
+      countryCode: "1"
+      question: What's the best number for Sam to call you back on?
+  readBack: I'll have Sam call you back at {callbackNumber}. Is that right?
+  then: [callback]
+  done: Thanks. Sam will call you back as soon as he's free.
+
+# A statement: it is said where nothing waits for an answer, and the callback form asks for the number.
+handoff: I'll have Sam call you back as soon as he's free.
+closing: Thanks for calling Example Wheel Works.
+
+lines:
+  booking_for_accounts: Bookings are for our dealership accounts; I can send Sam a request instead.
+  identity_not_recognized: That's for our dealership accounts, recognized by the number they call from.
+
+owner: # assumption: the owner corrects these (a text summary of every request and booking)
+  notify: text # printed until texting is registered (10DLC)
+  number: "+15555550100"
+  summary: >- # a fixed template, filled by the app's own tools: never a generated line
+    New {kind} from {who} ({callbackNumber}): {details}. Drop-off: {day}, {window}.

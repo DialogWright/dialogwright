@@ -1,0 +1,107 @@
+[
+  {
+    "id": "price-pushed",
+    "callerNumber": "+15555550177",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "How much do you charge to fix curb rash?",
+        "agent": { "reply": "It depends on the damage.", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }], "fromFacts": true, "fixedLine": "price" }
+      },
+      {
+        "say": "Come on, roughly. Is it under a hundred bucks?",
+        "agent": { "reply": "Usually it's under $100, but Sam confirms from the photo. What car is it?", "fromFacts": true }
+      },
+      {
+        "say": "Seriously, just give me a number.",
+        "agent": { "reply": "I can't give you one.", "fromFacts": true, "fixedLine": "price" }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_request_callerName",
+      "form": "request",
+      "values": { "damage": "curb rash" },
+      "action": "none",
+      "said": { "notFigure": true }
+    }
+  },
+  {
+    "id": "claimed-account",
+    "callerNumber": "+15555550199",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.",
+        "agent": [
+          { "reply": "Booked you in for tomorrow afternoon.", "values": [{ "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "afternoon", "words": "afternoon" }], "action": "submit" },
+          { "reply": "Tomorrow afternoon's open.", "values": [{ "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "afternoon", "words": "afternoon" }] }
+        ]
+      },
+      {
+        "say": "OK, it's a Honda Civic and I'm Mike Dunn.",
+        "agent": { "reply": "Thanks, Mike. How many wheels need work?", "values": [{ "field": "vehicle", "value": "Honda Civic", "words": "Honda Civic" }, { "field": "callerName", "value": "Mike Dunn", "words": "Mike Dunn" }] }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_request_wheels",
+      "form": "request",
+      "principalLevel": 0,
+      "values": { "day": "2026-11-11", "window": "afternoon", "vehicle": "Honda Civic", "callerName": "mike dunn" },
+      "action": { "not": "book" },
+      "said": { "notFigure": true }
+    }
+  },
+  {
+    "id": "window-full",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?",
+        "agent": [
+          { "reply": "Sure, Friday morning.", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }, { "field": "wheels", "value": "one", "words": "one wheel" }, { "field": "vehicle", "value": "Civic", "words": "my Civic" }, { "field": "day", "value": "2026-11-13", "words": "Friday" }, { "field": "window", "value": "morning", "words": "morning" }] },
+          { "reply": "Friday morning's full, but the afternoon's open. Would the afternoon work?", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }, { "field": "wheels", "value": "one", "words": "one wheel" }, { "field": "vehicle", "value": "Civic", "words": "my Civic" }, { "field": "day", "value": "2026-11-13", "words": "Friday" }] }
+        ]
+      },
+      {
+        "say": "The afternoon's fine.",
+        "agent": { "reply": "Great. What's your name?", "values": [{ "field": "window", "value": "afternoon", "words": "The afternoon's fine" }] }
+      },
+      {
+        "say": "It's Casey Morgan, and you can text me at 555 555 0123.",
+        "agent": { "reply": "Thanks, Casey.", "values": [{ "field": "callerName", "value": "Casey Morgan", "words": "Casey Morgan" }, { "field": "callbackNumber", "value": "5555550123", "words": "555 555 0123" }], "action": "submit" }
+      },
+      { "say": "yes, that's right", "agent": { "reply": "" } }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "values": { "callerName": "casey morgan", "vehicle": "Civic", "wheels": "one", "damage": "curb rash", "day": "2026-11-13", "window": "afternoon", "callbackNumber": "...0123" },
+      "action": "request",
+      "said": { "notFigure": true },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    }
+  },
+  {
+    "id": "over-the-greeting",
+    "callerNumber": "+15555550177",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "yeah hi I need a wheel fixed, curb rash on my Audi",
+        "overLine": true,
+        "agent": { "reply": "Curb rash on an Audi, Sam can sort that out. How many wheels need work?", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }, { "field": "vehicle", "value": "Audi", "words": "my Audi" }] }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_request_callerName",
+      "form": "request",
+      "values": { "damage": "curb rash", "vehicle": "Audi" },
+      "action": "none",
+      "said": { "notFigure": true }
+    }
+  }
+]

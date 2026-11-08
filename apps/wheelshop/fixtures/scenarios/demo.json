@@ -1,0 +1,114 @@
+[
+  {
+    "id": "dealer-trade-ins",
+    "callerNumber": "+15555550142",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": [
+          { "reply": "Three for tomorrow morning, sure.", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] },
+          { "reply": "Tomorrow morning's open. Which cars are they, and which wheels?", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] }
+        ]
+      },
+      {
+        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
+        "agent": { "reply": "Got it.", "values": [{ "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left", "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left." }], "action": "submit" }
+      },
+      { "say": "yes, book it", "agent": { "reply": "" } }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "values": { "account": "rivergate_motors", "cars": "three", "vehicles": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left", "day": "2026-11-11", "window": "morning" },
+      "action": "book",
+      "said": { "notFigure": true },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    }
+  },
+  {
+    "id": "retail-bmw",
+    "callerNumber": "+15555550177",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?",
+        "agent": { "reply": "Oh, that's no fun. Most curb rash can be fixed, and Sam sees it every day, so you're in the right place. What car is it?", "values": [{ "field": "damage", "value": "curb rash from a parking garage curb", "words": "I scraped my wheel on a curb pulling into a parking garage" }], "fromFacts": true }
+      },
+      {
+        "say": "It's a 2020 BMW 3 Series. Just the front passenger wheel.",
+        "agent": { "reply": "Nice car. Is the face of the wheel shiny bare metal with fine lines, or painted all over?", "values": [{ "field": "vehicle", "value": "2020 BMW 3 Series", "words": "2020 BMW 3 Series" }, { "field": "wheels", "value": "one", "words": "Just the front passenger wheel" }] }
+      },
+      {
+        "say": "I'm not sure. What's diamond cut? How would I tell?",
+        "agent": { "reply": "A diamond cut wheel has a bright bare-metal face with fine machined lines, and it's often two-tone. Does yours look like that?", "fromFacts": true }
+      },
+      {
+        "say": "Oh, yeah. It's two-tone, black with shiny silver lines.",
+        "agent": { "reply": "Then it's a diamond cut wheel, which is what the shop's lathe is for. What's your name?", "values": [{ "field": "diamondCut", "value": "yes", "words": "yeah" }], "fromFacts": true }
+      },
+      {
+        "say": "How much is that going to cost me? Just ballpark it.",
+        "agent": { "reply": "Sam quotes from a photo.", "fromFacts": true, "fixedLine": "price" }
+      },
+      {
+        "say": "Fine. It's Jordan Lee.",
+        "agent": { "reply": "Thanks, Jordan. What day would you like to drop it off?", "values": [{ "field": "callerName", "value": "Jordan Lee", "words": "Jordan Lee" }] }
+      },
+      {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": [
+          { "reply": "Thursday morning it is.", "values": [{ "field": "day", "value": "2026-11-12", "words": "Thursday" }, { "field": "window", "value": "morning", "words": "Morning" }] },
+          { "reply": "Thursday morning's open.", "values": [{ "field": "day", "value": "2026-11-12", "words": "Thursday" }, { "field": "window", "value": "morning", "words": "Morning" }] }
+        ]
+      },
+      { "say": "yes, that's my cell" },
+      { "say": "yes, that's right", "agent": { "reply": "" } }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": { "callerName": "jordan lee", "vehicle": "2020 BMW 3 Series", "wheels": "one", "damage": "curb rash from a parking garage curb", "diamondCut": "yes", "day": "2026-11-12", "window": "morning", "callbackNumber": "...0177" },
+      "action": "send_photo_link",
+      "said": { "notFigure": true },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    }
+  },
+  {
+    "id": "correction-at-read-back",
+    "callerNumber": "+15555550142",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.",
+        "agent": [
+          { "reply": "Three for tomorrow morning, sure.", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] },
+          { "reply": "Tomorrow morning's open. Which cars are they, and which wheels?", "values": [{ "field": "cars", "value": "three", "words": "three trade-ins" }, { "field": "day", "value": "2026-11-11", "words": "tomorrow" }, { "field": "window", "value": "morning", "words": "morning" }] }
+        ]
+      },
+      {
+        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
+        "agent": { "reply": "Got it.", "values": [{ "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left", "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left." }], "action": "submit" }
+      },
+      {
+        "say": "Oh wait, make it four. There's an Accord too, front right.",
+        "agent": { "reply": "Sure, four.", "values": [{ "field": "cars", "value": "four", "words": "make it four" }, { "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left, Accord front right", "words": "There's an Accord too, front right" }], "action": "submit" }
+      },
+      { "say": "yes, book it", "agent": { "reply": "" } }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "values": { "account": "rivergate_motors", "cars": "four", "vehicles": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left, Accord front right", "day": "2026-11-11", "window": "morning" },
+      "action": "book",
+      "said": { "notFigure": true },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    }
+  }
+]
