@@ -8,9 +8,8 @@ import type { AppRoute } from './appRoutes';
  * else's request for /dashboard or an app's page, and its agent connects from 127.0.0.1, so the
  * socket's remote address alone cannot tell a tunnelled request from a local one. What gives the
  * tunnel away is what it adds: forwarding headers, its own `ngrok-*` headers, or the public
- * hostname in `Host`. On a laptop with no public name (PUBLIC_HOST=localhost, or another loopback
- * name), a direct request's `Host` is that same name, so there it is the other way round: `Host` must
- * name this machine.
+ * hostname in `Host`. So a direct request's `Host` must name this machine (`localhost`, `127.0.0.1`,
+ * `[::1]`), on a laptop and a server alike (isDirectLocalRequest).
  */
 
 /** The engine's own console paths, always local-only under CONSOLE_LOCAL_ONLY. */
@@ -37,18 +36,21 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * True only for a request made directly on this machine: from a loopback address, with no header
- * a proxy or tunnel adds, and not addressed to the public hostname; or, on a laptop whose public host
- * is itself a name for this machine (PUBLIC_HOST=localhost), addressed to such a name.
+ * True only for a request made directly on this machine: from a loopback address, with no header a
+ * proxy or tunnel adds, and addressed to a name for this machine (`Host` of `localhost`, `127.0.0.1` or
+ * `[::1]`, any port). The `Host` rule holds on every machine, not only a laptop's: a page on another site
+ * whose name was pointed at 127.0.0.1 (DNS rebinding) reaches the server from a loopback address with no
+ * forwarding header, and only its `Host` (`attacker.example:3000`) gives it away. An ssh tunnel to the
+ * console (`ssh -L 3000:localhost:3000`) sends `Host: localhost:3000`, and still works. The server's public
+ * name (`_publicHost`) is no longer read: a public name is never a loopback name, and a laptop's
+ * (PUBLIC_HOST=localhost) is one already. It stays in the signature for its callers.
  */
-export function isDirectLocalRequest(req: IncomingMessage, publicHost: string): boolean {
+export function isDirectLocalRequest(req: IncomingMessage, _publicHost: string): boolean {
   if (!LOOPBACK.has(req.socket.remoteAddress ?? '')) return false;
   for (const name of Object.keys(req.headers)) {
     if (FORWARDING_HEADERS.includes(name) || name.startsWith('ngrok-')) return false;
   }
   const host = (req.headers.host ?? '').toLowerCase().replace(/:\d+$/, '');
-  // A laptop's own name: a direct request names this machine too, and one naming anything else came
-  // some other way (a tunnel that adds no header, a page whose name was pointed at 127.0.0.1).
-  if (isLoopbackHost(publicHost)) return isLoopbackHost(host);
-  return host !== publicHost.toLowerCase();
+  // Only a name for this machine: a tunnel that adds no header, or a page whose name was pointed at 127.0.0.1, names something else.
+  return isLoopbackHost(host);
 }

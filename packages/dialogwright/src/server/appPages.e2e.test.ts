@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +64,18 @@ async function start(env: Env, overrides: Partial<ServerOverrides> = {}): Promis
   return { base: `http://127.0.0.1:${running.port}`, logs };
 }
 
+/** A GET from this machine with the `Host` given, as a page whose name was pointed at 127.0.0.1 would send it. */
+function rawGet(port: string, path: string, host: string): Promise<{ status: number }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port: Number(port), path, method: 'GET', headers: { host } }, (res) => {
+      res.resume();
+      res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 /** Through a tunnel: the headers it adds, addressed to the public name. */
 const TUNNEL = { 'x-forwarded-for': '203.0.113.9', host: 'demo.example.com' };
 
@@ -97,6 +110,27 @@ describe('an app\'s own pages on a server of one app', () => {
     expect((await fetch(`${base}/callback/records`, { headers: TUNNEL })).status).toBe(404);
     expect(running!.routes.find((r) => r.path === '/callback/records')?.auth).toBe('console');
     expect(logs.join('\n')).toContain('console: /dashboard, /callback/private and /callback/records local only');
+  });
+
+  it('never serves a console page through the tunnel with no sign-in, even with CONSOLE_LOCAL_ONLY=off (which opens the app\'s other local-only pages)', async () => {
+    const { base, logs } = await start({ DEMO_PAGES: 'on', CONSOLE_LOCAL_ONLY: 'off' });
+    expect((await fetch(`${base}/callback/records`)).status).toBe(200);
+    const res = await fetch(`${base}/callback/records`, { headers: TUNNEL });
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('app=callback');
+    expect((await fetch(`${base}/callback/private`, { headers: TUNNEL })).status).toBe(200);
+    expect(logs.join('\n')).toContain('/callback/records local only all the same (a console page is never public)');
+  });
+
+  it('refuses a request from this machine addressed to another name (DNS rebinding): the console page and the local-only page alike', async () => {
+    const { base } = await start({ DEMO_PAGES: 'on' });
+    const port = new URL(base).port;
+    for (const path of ['/callback/records', '/callback/private']) {
+      expect((await rawGet(port, path, 'attacker.example:3000')).status, path).toBe(404);
+      // An ssh tunnel to the console sends Host: localhost:<port>.
+      expect((await rawGet(port, path, `localhost:${port}`)).status, path).toBe(200);
+      expect((await rawGet(port, path, `[::1]:${port}`)).status, path).toBe(200);
+    }
   });
 
   it('serves a console page behind the console\'s sign-in with CONSOLE_AUTH=token: through the tunnel, and on this machine, only signed in', async () => {

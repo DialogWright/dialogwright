@@ -722,7 +722,18 @@ describe('CONSOLE_LOCAL_ONLY', () => {
     ['x-forwarded-proto', { 'x-forwarded-proto': 'https' }],
     ['an ngrok header', { 'ngrok-skip-browser-warning': '1' }],
     ['the public Host', { host: 'demo.ngrok.app' }],
+    // DNS rebinding: a page on another site whose name was pointed at 127.0.0.1 reaches the server from a
+    // loopback address with no forwarding header; only its Host gives it away.
+    ['another name in Host (DNS rebinding)', { host: 'attacker.example:3000' }],
   ];
+
+  it('takes a request on this machine addressed to a name for it, with or without a port: an ssh tunnel to the console sends Host: localhost:<port>', async () => {
+    const d = { ...deps(), bus: new DashboardBus(), routes: [fakeChat] };
+    const base = await listen(d);
+    for (const host of ['localhost:3000', 'localhost', '127.0.0.1:3000', '[::1]:3000', 'LOCALHOST:3000']) {
+      expect((await raw(base, 'GET', '/chat', { host })).body, host).toBe('chat');
+    }
+  });
 
   it.each(tunnelled)('answers 404 on the console and chat to a request with %s', async (_label, headers) => {
     const d = { ...deps(), bus: new DashboardBus(), routes: [fakeChat] };

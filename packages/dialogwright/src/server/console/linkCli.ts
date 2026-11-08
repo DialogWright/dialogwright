@@ -12,7 +12,8 @@ import { consoleAuthMethodOf, consoleLinkFileOf } from './settings';
  * console of a server running with CONSOLE_AUTH=token, printed here, on the machine the server runs on. The
  * link the server made before it stops working. `--next` names one of the app's console pages (AppRoute
  * `auth: 'console'`, by its path on the server, "/wheelshop/shop"): the link then goes there once signed in
- * rather than to the console. The server goes there only if it is one; any other path signs in to the console.
+ * rather than to the console. The server makes the link only if it is one; for any other path it makes none,
+ * and this says which pages it serves (exit 2).
  *
  * It reads the settings the server reads (the app's `.env`, or the files ENV_FILE or `--env-file` names,
  * comma-separated, a later one winning, a variable in the environment winning over them all), finds the link file the server wrote (CONSOLE_LINK_FILE, by
@@ -149,7 +150,8 @@ export async function main(argv: readonly string[], io: LinkIo): Promise<number>
   }
   let res: Response;
   try {
-    res = await (io.fetch ?? fetch)(`http://127.0.0.1:${link.port}${LINK_PATH}`, { method: 'POST', headers: { [LINK_KEY_HEADER]: link.key }, signal: AbortSignal.timeout(ASK_MS), redirect: 'manual' });
+    const ask = next === undefined ? LINK_PATH : `${LINK_PATH}?next=${encodeURIComponent(next)}`;
+    res = await (io.fetch ?? fetch)(`http://127.0.0.1:${link.port}${ask}`, { method: 'POST', headers: { [LINK_KEY_HEADER]: link.key }, signal: AbortSignal.timeout(ASK_MS), redirect: 'manual' });
   } catch (e) {
     io.out(`the server is not answering on port ${link.port}: is it running? (${messageOf(e)})`);
     return 1;
@@ -158,13 +160,19 @@ export async function main(argv: readonly string[], io: LinkIo): Promise<number>
     io.out('the server refused the link file\'s key: the file is from an earlier run; restart the server, which writes it again');
     return 1;
   }
+  if (res.status === 404 && next !== undefined && res.headers.get('content-type')?.startsWith('application/json')) {
+    const said = (await res.json()) as { pages?: string[] };
+    const pages = said.pages ?? [];
+    io.out(`${next} is not one of this server's console pages${pages.length === 0 ? ' (it serves none)' : `: ${pages.join(', ')}`}; no link was made`);
+    return 2;
+  }
   if (res.status !== 200) {
     io.out(`the server on port ${link.port} answered ${res.status}: is it this app's server, with CONSOLE_AUTH=token?`);
     return 1;
   }
   const made = (await res.json()) as { url: string; expiresAt: string };
   io.out(next === undefined ? 'Open this on your phone (or anywhere) to sign in to the console:' : `Open this on your phone (or anywhere) to sign in to the console and go to ${next}:`);
-  io.out(next === undefined ? made.url : `${made.url}&next=${encodeURIComponent(next)}`);
+  io.out(made.url);
   io.out(`It works once, for ${CODE_TTL_MS / 60_000} minutes (until ${made.expiresAt.slice(11, 16)} UTC). The link before it no longer works.`);
   return 0;
 }

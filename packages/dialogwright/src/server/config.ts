@@ -1064,9 +1064,13 @@ export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/d
   if (c.consoleLocalOnly) {
     return `console: ${listed(paths)} local only (${localBase(c.port)}); 404 through ${laptop ? 'any tunnel' : `the tunnel on ${c.publicHost}`}`;
   }
+  // An app's console pages stay local only with no sign-in, CONSOLE_LOCAL_ONLY=off or not: they are never public.
+  const open = paths.filter((p) => !consolePages.includes(p));
+  const kept = paths.filter((p) => consolePages.includes(p));
+  const still = kept.length === 0 ? '' : `; ${listed(kept)} local only all the same (a console page is never public)`;
   return laptop
-    ? `console: ${listed(paths)} on ${localBase(c.port)}, and PUBLIC through any tunnel to it (CONSOLE_LOCAL_ONLY=off)`
-    : `console: ${listed(paths)} PUBLIC on https://${c.publicHost} (CONSOLE_LOCAL_ONLY=off)`;
+    ? `console: ${listed(open)} on ${localBase(c.port)}, and PUBLIC through any tunnel to it (CONSOLE_LOCAL_ONLY=off)${still}`
+    : `console: ${listed(open)} PUBLIC on https://${c.publicHost} (CONSOLE_LOCAL_ONLY=off)${still}`;
 }
 
 /** Where a person on this machine opens the server's pages. */

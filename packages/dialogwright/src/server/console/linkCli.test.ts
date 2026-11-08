@@ -54,10 +54,17 @@ describe('pnpm console:link', () => {
 
   it('with --next, prints the link with the page to go to once signed in, and refuses a path that is not one', async () => {
     const s = await setup();
+    s.auth!.servePages(['/wheelshop/shop']);
     expect(await s.run(['--next', '/wheelshop/shop'])).toBe(0);
     expect(s.out.find((l) => l.startsWith('https://'))).toMatch(/^https:\/\/demo\.example\.net\/dashboard\/login\?code=[0-9a-f]{64}&next=%2Fwheelshop%2Fshop$/);
     expect(s.out.join('\n')).toContain('to sign in to the console and go to /wheelshop/shop:');
     for (const bad of ['https://evil.example/', '//evil.example', '/shop/../dashboard', 'shop']) expect(await s.run(['--next', bad]), bad).toBe(2);
+    // A path of the right shape that is not one of the server's console pages: no link is made, and the pages are named.
+    const before = readFileSync(s.linkFile, 'utf8');
+    s.out.length = 0;
+    expect(await s.run(['--next', '/wheelshop/chat'])).toBe(2);
+    expect(s.out).toEqual(['/wheelshop/chat is not one of this server\'s console pages: /wheelshop/shop; no link was made']);
+    expect(readFileSync(s.linkFile, 'utf8')).toBe(before);
   });
 
   it('reads several settings files in ENV_FILE, comma-separated, a later one winning, and refuses one that names no file', async () => {

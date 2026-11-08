@@ -703,7 +703,9 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
     void (async () => {
       const path = (req.url ?? '/').split('?')[0] ?? '/';
       // Before any route handles it: through the tunnel, the console and the local-only app pages do not exist.
-      if (deps.config.consoleLocalOnly && isConsolePath(path, localOnly) && !isDirectLocalRequest(req, deps.config.publicHost)) {
+      // An app's console page with no console sign-in is local only whatever CONSOLE_LOCAL_ONLY says: it is never public.
+      const guarded = (deps.config.consoleLocalOnly && isConsolePath(path, localOnly)) || (!auth && isConsolePath(path, consolePages));
+      if (guarded && !isDirectLocalRequest(req, deps.config.publicHost)) {
         reply(res, 404, 'text/plain', 'not found');
         return;
       }

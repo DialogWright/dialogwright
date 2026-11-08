@@ -1516,7 +1516,9 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     for (const r of running.routes) {
       // A console page goes where the console goes: behind its sign-in on the public address with CONSOLE_AUTH=token.
       const signedIn = r.auth === 'console' && config.consoleAuth !== undefined && running.bus !== undefined;
-      console.log(`[server] ${r.label} ${(signedIn ? base : r.localOnly ? consoleBase : base)}${r.path}${signedIn ? ' (behind the console\'s sign-in)' : ''}`);
+      // With no sign-in a console page is local only, whatever CONSOLE_LOCAL_ONLY says.
+      const local = r.auth === 'console' ? localBase(running.port) : consoleBase;
+      console.log(`[server] ${r.label} ${(signedIn ? base : r.localOnly ? local : base)}${r.path}${signedIn ? ' (behind the console\'s sign-in)' : ''}`);
     }
   } catch (e) {
     console.error(`error: ${e instanceof Error ? e.message : String(e)}`);

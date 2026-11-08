@@ -597,9 +597,17 @@ export class ConsoleAuth implements ConsoleGate {
       if (noted) await noted;
       return this.text(res, 403, 'the link file\'s key is needed: run pnpm console:link');
     }
+    // `next`: one of the console pages, or no link at all (pnpm console:link --next says which pages there are).
+    const asked = new URL(req.url ?? LINK_PATH, 'http://console.invalid').searchParams.get('next');
+    if (asked !== null && !this.isPage(asked)) {
+      const refused = JSON.stringify({ error: 'not a console page', pages: this.pages });
+      res.writeHead(404, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(refused) });
+      res.end(refused);
+      return;
+    }
     const made = this.mint('console:link');
     if (this.minted) await this.minted;
-    const body = JSON.stringify({ url: made.url, expiresAt: new Date(made.expiresAt).toISOString() });
+    const body = JSON.stringify({ url: asked === null ? made.url : `${made.url}&next=${encodeURIComponent(asked)}`, expiresAt: new Date(made.expiresAt).toISOString() });
     res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
     res.end(body);
   }
