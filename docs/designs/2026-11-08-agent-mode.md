@@ -360,3 +360,23 @@ owner:
   summary: >                  # a fixed template, not a generated line
     New {kind} from {who} ({callbackNumber}): {details}. Drop-off: {day}, {window}.
 ```
+
+## Measured (2026-11-09, `pnpm agent:bakeoff`, plan Task 2)
+
+The run covered 7 calls and 18 caller turns, each asked 3 times. The figures assume the drift judge adds 200 ms (Jev's p50 on spans, 2026-10-14). The bar is p50 ≤ 1.0 s, p95 ≤ 1.8 s, valid JSON 98%, values right 90%.
+
+| model | prompt | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | with judge | bar |
+|---|---|---|---|---|---|---|---|---|
+| Mercury 3, Inception API, `instant`, realtime | examples | 98% | 91% | 85% | 0 | 509 / 766 | 709 / 966 | met |
+| Mercury 3, Inception API, `instant`, realtime | no examples | 100% | 92% | 83% | 4 | 513 / 758 | 713 / 958 | met |
+| Mercury 3, Inception API, `low`, realtime | examples | 100% | 99% | 98% | 0 | 2476 / 4799 | 2676 / 4999 | missed |
+| Mercury 3, Inception API, `low`, realtime | no examples | 98% | 93% | 93% | 0 | 2352 / 4981 | 2552 / 5181 | missed |
+
+**Chosen:** Mercury 3 on Inception's API at `instant`, realtime, with the owner's sample replies. Without them, four replies said a figure the facts don't hold; with them, none did. `AGENT_TIMEOUT_VOICE_MS` defaults to 1100 (p95 + 300, rounded) and `AGENT_TIMEOUT_CHAT_MS` to 2800.
+
+What the measurement showed, for the tasks that follow:
+- **OpenRouter no longer serves `inception/mercury-3`** (HTTP 404). Gemini 3.5 Flash Lite on OpenRouter refuses reasoning off ("Reasoning is mandatory"), so the bake-off's OpenRouter rows asked nothing. The agent's provider is Inception's API.
+- **Most action misses are `send_photo_link` proposed before the request is done.** That is harmless, since the action is gated, but Task 6 should decide when it may go.
+- **A `text` field built over several turns** (the dealership's cars) was given as only this turn's part ("Accord front right"). The prompt or Task 6 must say a text value is the whole value.
+- **One reply ended "...What's your name?values"**, a piece of the JSON shape leaking into the words. Task 7's checks should refuse a reply that names a field of the answer's shape.
+- **Once, the model introduced itself as the owner** ("Hi, this is Sam at Example Wheel Works"). The judge (Task 7) must refuse the line speaking as a person it is not, and the persona says it is the line.
