@@ -10,13 +10,19 @@ persona: a friendly, plain-spoken member services agent at an insurance company
 avoid:
   - unfortunately
   - I apologize for the inconvenience
-# The model that words the answers: inception/mercury-3 (a diffusion model; no reasoning setting). Measured
-# 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low reasoning (render:bakeoff, 43 lines):
-# p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around 2 of 144 for both, a third of the cost.
-# (gemini-3.1-flash-lite-preview, the model before, was shut down by Google on 2026-05-25.)
+# The model that words the answers: Inception's Mercury 3 (a diffusion model), on Inception's own API
+# (provider: inception, key INCEPTION_API_KEY), at its fastest reasoning (reasoning_effort instant, the
+# default) with realtime on. It was reached through OpenRouter (inception/mercury-3) until OpenRouter
+# dropped it, on or before 2026-11-09 (HTTP 404: no provider serves this model anymore), so every line
+# fell back on a call. Measured 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low
+# reasoning (render:bakeoff, 43 lines): p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around
+# 2 of 144 for both, a third of the cost. (gemini-3.1-flash-lite-preview, the model before, was shut
+# down by Google on 2026-05-25.) No temperature is set: Mercury takes only 0.5 to 1.
+# On this app's own lines through Inception (render:bakeoff, 2026-11-08): 24 tried, 21 worded, 3 refused by
+# the judge; wording p50 352 ms, p95 831 ms, none of 19 over the 900 ms call budget.
 model:
-  provider: openrouter
-  id: inception/mercury-3
+  provider: inception
+  id: mercury-3
 # The drift judge refuses a wording it doubts at 0.3 or more, below the engine's 0.5: on Harbor's
 # labelled answer cases (fixtures/judge/answers.jsonl, `pnpm render:judge-eval`), the two unfaithful
 # wordings the default let by were exclusions dropped on low-risk topics (0.45, 0.35), and no faithful

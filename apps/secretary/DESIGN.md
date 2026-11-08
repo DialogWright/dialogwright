@@ -401,6 +401,13 @@ The decision model and the render model recorded (Jev, and Gemini 3.1 Flash-Lite
 - **The watch items held**: "can I talk to Sam", "could you put me through to Riley" and "I'd like to speak with Jordan Lee please" reach the status and its offer (wantsHuman did not take them to the main line); the answers to an offer ("yes please", "a message is fine") are read as the offer's.
 - Generated lines: 39 tried, 18 said generated, 18 unchanged, 3 fell back (drift).
 
+### The render model moved to Inception's own API (2026-11-08)
+
+OpenRouter stopped serving `inception/mercury-3` (on or before 2026-11-09, HTTP 404: "no provider serves this model anymore"), so every summary fell back on a call. style.yaml now names the same model on Inception's own API (`provider: inception, id: mercury-3`; key `INCEPTION_API_KEY`), at `reasoning_effort: instant` with `realtime: true`. The spans were recorded with `pnpm render:bakeoff apps/secretary --models inception:mercury-3` (into `fixtures/recorded/render/mercury-3.jsonl`, each with its latency), then `regress --client record` asked the decision model only the drift checks of the new wordings (13 requests), and `cassette:trim` kept the 281 answers a run asks for. The old cassette, `inception__mercury-3.jsonl`, is removed: nothing reads it. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`; no baseline changed.
+
+- Generated lines: 39 tried, 18 said generated, 19 unchanged, 2 fell back: `drift` 1, `frame` 1 (before: 18, 20 and 1 `drift`). The `frame` one is ms-11 ("the project is complete and I just need him to give his approval"): the wording began with the frame's own words, "I'll make sure Riley Moreno hears ...", and the check refused it, so the exact-words frame was said. The `drift` one is `message-for-anyone` ("just say Alex called" worded "you called, just say Alex called", refused at 0.78). In the bake-off's own checks a second span was refused for `drift` (17 generated there): one span reads near the 0.5 cutoff (0.45 in this recording), and which side it falls varies between recordings.
+- Wording time, from the bake-off's recording: p50 280 ms, p95 568 ms; none of the 18 over the 900 ms call budget.
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.
