@@ -170,6 +170,7 @@ export function askedTurns(cases: Pick<BakeoffCases, 'facts' | 'examples'>, call
       form: call.form,
       fields: call.fields.map((f) => ({ ...f, value: collected[f.name] ?? null })),
       actions: call.actions,
+      ...(call.lines !== undefined ? { lines: [...call.lines] } : {}),
       conversation: now,
       caller: call.caller,
       channel: call.channel,

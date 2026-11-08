@@ -116,13 +116,18 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
         report(at([key]), `the ${key === 'readBack' ? 'read-back' : 'done line'} names {${v}}, which is not a field of the ${name}${name === 'booking' ? ` nor {${ACCOUNT_SLOT}}` : ''}`, near ? `rename it to {${near}} if it is that field, or add a field "${v}"` : `name one of ${known.map((k) => `{${k}}`).join(', ')}, or add a field "${v}"`);
       }
     }
-    // A field that may be left empty would read nothing in the read-back (as an engine slot that may be skipped).
+    // A field that may be left empty would read nothing in the read-back, unless it says what is said then
+    // (says.unset); and every field is sent by the form's then, so an optional one is still named there.
     const read = placeholdersOf(form.readBack);
-    for (const f of form.fields) {
-      if (f.optional === true && read.includes(f.name)) {
-        report(at(['readBack']), `the read-back names {${f.name}}, but the field is optional, so the line would read nothing there when it is left empty`, `take {${f.name}} out of the read-back, or make the field required (delete "optional: true")`);
+    form.fields.forEach((f, i) => {
+      if (f.optional !== true) return;
+      if (read.includes(f.name) && f.says?.unset === undefined) {
+        report(at(['readBack']), `the read-back names {${f.name}}, but the field is optional, so the line would read nothing there when it is left empty`, `give the field "says: { unset: ... }", what the read-back says when it is left empty, or make the field required (delete "optional: true")`);
       }
-    }
+      if (!read.includes(f.name)) {
+        report(at(['fields', i, 'optional']), `the field "${f.name}" is optional, but the ${name}'s then sends it, and the read-back does not name it, so the caller would confirm a value they never heard`, `name {${f.name}} in the read-back with "says" for each option and "unset" for none, or make the field required`);
+      }
+    });
     // The read-back is what the caller confirms: it says every value the form's calls carry but an optional one.
     const unsaid = [...extras, ...form.fields.filter((f) => f.optional !== true).map((f) => f.name)].filter((v) => !read.includes(v));
     if (unsaid.length > 0) {
@@ -261,6 +266,17 @@ function fieldProblems(b: BusinessYaml, f: BusinessFieldYaml, at: DataPath, allo
   } else if (!allowed.includes(f.type)) {
     report([...at, 'type'], `the slot type "${f.type}" takes no value from outside its own fill (it has no check of a value the model understood), so in agent mode it cannot hold a field`, `write one of ${allowed.join(', ')}; a field's value is understood by the agent model and checked by its slot type`);
   }
+  if (f.says !== undefined) {
+    if (f.type !== 'choice') report([...at, 'says'], `only a choice field says its options in its own words, and "${f.name}" is ${f.type}`, 'delete "says"');
+    else {
+      const named = f.options === WINDOWS_OPTIONS ? (b.windows ?? []).map((w) => w.name) : (f.options ?? []);
+      for (const key of Object.keys(f.says)) {
+        if (key === 'unset') {
+          if (f.optional !== true) report([...at, 'says', key], `"unset" is what is said of an optional field left empty, and "${f.name}" is required`, 'delete it, or make the field optional');
+        } else if (!named.some((o) => optionKey(o) === optionKey(key))) report([...at, 'says', key], `"${key}" is not an option of "${f.name}"`, `say one of ${named.map((o) => `"${o}"`).join(', ')}, or "unset"`);
+      }
+    }
+  }
   if (f.type === 'choice') {
     if (f.options === undefined) report(at, `the choice field "${f.name}" has no options`, `add "options: [...]", the words each option is said by${b.windows !== undefined ? `, or "options: ${WINDOWS_OPTIONS}"` : ''}`);
     else if (f.options === WINDOWS_OPTIONS && b.windows === undefined) report([...at, 'options'], `the field "${f.name}" takes the business's windows, but the file has no windows`, 'add "windows:", each with its name and what it is, or list the options');
@@ -291,6 +307,12 @@ function fieldProblems(b: BusinessYaml, f: BusinessFieldYaml, at: DataPath, allo
       if (!takes.includes(f.redact)) report([...at, 'redact'], `a ${f.type} field takes ${takes.length > 0 ? `redact ${takes.join(', ')}` : 'no redact'}, not "${f.redact}"`, takes.length > 0 ? `write one of ${takes.join(', ')}, or delete it` : 'delete "redact"');
     }
   }
+}
+
+/** Whether a form's read-back is read through its summary hook: it names {account}, or a field says its options in its own words. */
+export function readsThroughHook(b: BusinessYaml, name: BusinessFormName): boolean {
+  const form = businessForms(b).find((f) => f.name === name)?.form;
+  return name === 'booking' || (form?.fields ?? []).some((f) => f.type === 'choice' && f.says !== undefined);
 }
 
 /**

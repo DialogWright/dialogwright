@@ -16,9 +16,9 @@ import { noteSaidLine, promptSay, promptText, saidLineOf, spokenText, type Rende
 import { maskedConversation } from '../agent/history';
 import { withReplies } from '../core/replies';
 import type { SlotContext } from '../core/slots/types';
-import { AGENT_DRIFT_QUESTION_ID, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, digitRuns, foreignAddress, foreignFigure, renderAgentDriftQuestion, renderAgentDriftState, spelledNumbers, wordCount, words, type AgentUnderstood } from './checks';
+import { AGENT_DRIFT_QUESTION_ID, SPAN_DRIFT_QUESTION_ID, renderSpanDriftQuestion, renderSpanDriftState, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, digitRuns, foreignAddress, foreignFigure, renderAgentDriftQuestion, renderAgentDriftState, spelledNumbers, wordCount, words, type AgentUnderstood } from './checks';
 import { keepChatExtras, withRenderAudit } from './turn';
-import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge, type RenderLine } from './types';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, SPAN_GAP, type RenderFallback, type RenderJudge, type RenderLine, type SpanAct } from './types';
 
 /**
  * An agent line held to the facts (an app in agent mode; docs/designs/2026-11-08-agent-mode.md, "A turn",
@@ -157,7 +157,7 @@ export function agentFigureSources(app: App, s: Session, today: string, opts: { 
 
 /**
  * The figures of a text value that are both in the value as held and in the words it was cited from, as one
- * source (the review of wheelshop): a figure the caller said outside the value's own words stays no source.
+ * source (the design's call 34): a figure the caller said outside the value's own words stays no source.
  */
 export function textValueFigures(held: string, words: string): string {
   const cited = new Set([...digitRuns(words), ...spelledNumbers(words)]);
@@ -193,13 +193,65 @@ export function citedFigureSources(app: App, s: Session, accepted: readonly { sl
 
 /**
  * The most words an agent reply may use: the channel's budget (style.yaml's `words`), or for a reply that
- * answers from the facts (AgentAnswer.fromFacts: an explanation of a service, "what's diamond cut?") style.yaml's
- * `words.answer`, by default the channel's and half again, rounded (the wheelshop recording: the
- * diamond-cut explanation ran to 45 words over a budget of 30, and the caller heard only the next question).
+ * answers from the facts (AgentAnswer.fromFacts: an explanation of a service the caller asked about) style.yaml's
+ * `words.answer`, by default the channel's and half again, rounded (a recording: an explanation of a service
+ * ran to 45 words over a budget of 30, and the caller heard only the next question).
  */
 export function agentWordBudget(style: Pick<RenderStyle, 'words'>, channel: 'voice' | 'chat', fromFacts: boolean): number {
   if (!fromFacts) return style.words[channel];
   return style.words.answer ?? Math.round(style.words[channel] * 1.5);
+}
+
+/** A text value the agent gave and the turn accepted, as its drift judge reads it (judgeTextValues). */
+export interface TextValueJudged {
+  field: string;
+  /** The judge's reading (its `noul`), and the cutoff it was held to; absent where the judge failed or was late. */
+  score?: number;
+  refuseAt: number;
+  /** `value`: held as the model gave it; `words`: the cited words held in its place (the judge refused it, failed or was late). */
+  held: 'value' | 'words';
+}
+
+/**
+ * The text values accepted on a turn that are not the caller's words as cited (the model's short version),
+ * each judged against those words by the drift judge a framed summary is (renderSpanDriftQuestion: a faithful
+ * summary, nothing added, turned around or dropped), given the field's description as its goal; the
+ * agent-mode design, call 40. A value it refuses, or that it does not read in time, is held as its cited words.
+ * In parallel, each within `timeoutMs`. Empty where no such value was accepted.
+ */
+export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, language: string): Promise<TextValueJudged[]> {
+  const fields = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields);
+  const same = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
+  const asked = values.filter((v) => v.outcome === 'accepted' && fields.find((f) => f.slot === v.slot)?.type === 'text' && !same(v.value, v.words));
+  return Promise.all(asked.map(async (v): Promise<TextValueJudged> => {
+    const field = fields.find((f) => f.slot === v.slot)!;
+    const act: SpanAct = {
+      kind: 'span',
+      goal: `the ${field.name} the line understood, held for the caller to confirm${field.about !== undefined ? `: ${field.about}` : ''}`,
+      sentence: SPAN_GAP,
+      content: [{ name: field.name, value: v.words }],
+      channel: 'chat',
+      language,
+      style: { persona: '', words: 400, avoid: [] },
+    };
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => resolve('late'), timeoutMs);
+    });
+    try {
+      const r = await Promise.race([judge.ask({ state: renderSpanDriftState(act, v.value) as unknown as JsonValue, questions: renderSpanDriftQuestion(), timeoutMs, signal: abort.signal }), late]);
+      if (r === 'late') return { field: v.field, refuseAt, held: 'words' };
+      const a = r.answers[SPAN_DRIFT_QUESTION_ID];
+      if (!isNoul(a)) return { field: v.field, refuseAt, held: 'words' };
+      return { field: v.field, score: a.noul, refuseAt, held: a.noul >= refuseAt ? 'words' : 'value' };
+    } catch {
+      return { field: v.field, refuseAt, held: 'words' };
+    } finally {
+      clearTimeout(timer);
+      abort.abort();
+    }
+  }));
 }
 
 /** What the agent line is held with, on its turn. */

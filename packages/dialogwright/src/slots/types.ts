@@ -19,6 +19,11 @@ export type SlotValue = string;
 export interface SlotCheckContext {
   readonly locale?: string;
   readonly today: string;
+  /**
+   * The value the slot holds before this one, where it holds one: a value that adds to it (a text value is
+   * the whole value so far) may keep what it held, its figures among them. Absent where the slot is empty.
+   */
+  readonly held?: string;
 }
 
 /**

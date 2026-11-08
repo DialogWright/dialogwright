@@ -256,7 +256,7 @@ export interface AgentRunner {
 /**
  * How long a turn waits for the agent's answer by default, ms: 1800 on a call, the bar's p95 (the
  * agent-mode design, call 36: a turn that asks the model twice, shown a seen tool's result, took up to
- * 1.75 s in apps/wheelshop's recording, where the first default, 1200, the p95 of a single asking and
+ * 1.75 s in an app's recording, where the first default, 1200, the p95 of a single asking and
  * 300 ms, would have cut most of them), and 4000 in a chat.
  */
 export const DEFAULT_AGENT_TIMEOUT_MS: Readonly<{ voice: number; chat: number }> = Object.freeze({ voice: 1800, chat: 4000 });

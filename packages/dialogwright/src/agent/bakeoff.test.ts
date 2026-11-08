@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -281,3 +281,53 @@ describe('warmedUp', () => {
     expect(client.spent!.costUsd).toBeCloseTo(0.00021);
   });
 });
+
+describe('cases that read the app\'s business.yaml (call 40)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bakeoff-business-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const BUSINESS = join(__dirname, '..', 'define', '__fixtures__', 'business', 'business.yaml');
+  const write = (yaml: string): string => {
+    const path = join(dir, `cases-${Math.random().toString(36).slice(2)}.yaml`);
+    writeFileSync(path, yaml);
+    return path;
+  };
+  const CALLS = `calls:
+  - id: hold
+    about: a hold
+    form: request
+    today: 2026-11-09
+    turns:
+      - caller: a hold on The Quiet Harbor
+        values: { title: { has: [Quiet Harbor], as: The Quiet Harbor } }
+        line: What's your name?
+  - id: room
+    about: the study room
+    form: booking
+    today: 2026-11-09
+    turns:
+      - caller: four people on Thursday
+        values: { people: four }
+        line: Morning or afternoon?
+`;
+
+  it('takes the facts, the persona, the sample replies, the forms, their actions and fixed lines from the business.yaml the cases name, as the app sends them', () => {
+    const c = loadBakeoffCases(write(`business: ${BUSINESS}\n${CALLS}`));
+    expect(c.facts).toMatchObject({ name: 'Example Library', kind: 'a small public library', owner: 'Dana' });
+    expect(c.examples.length).toBeGreaterThan(0);
+    const [hold, room] = c.calls;
+    expect(hold!.fields.map((f) => f.name)).toEqual(['patronName', 'title', 'copies', 'format', 'day', 'window', 'callbackNumber']);
+    expect(hold!.fields.find((f) => f.name === 'callbackNumber')).toMatchObject({ redact: 'last4' });
+    expect(hold!.actions.map((a) => a.name)).toEqual(['submit', 'callback']);
+    expect(hold!.lines).toEqual(['price']);
+    // The fee line is the hold's only (prices.forms): never offered in the booking.
+    expect(room!.lines).toBeUndefined();
+    expect(askedTurns(c, hold!, 'examples')[0]!.ctx.lines).toEqual(['price']);
+  });
+
+  it('a --business path wins over the one the cases name, and facts written beside one are refused', () => {
+    expect(loadBakeoffCases(write(`business: nowhere/business.yaml\n${CALLS}`), BUSINESS).facts.name).toBe('Example Library');
+    expect(() => loadBakeoffCases(write(`business: ${BUSINESS}\nfacts: { name: X, voice: Y }\n${CALLS}`))).toThrow(/are the business.yaml's/);
+    expect(() => loadBakeoffCases(write(CALLS))).toThrow(/give the facts and the forms, or the app's business.yaml/);
+  });
+});
+

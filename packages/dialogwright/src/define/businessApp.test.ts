@@ -97,7 +97,7 @@ describe('the app built from business.yaml', () => {
 
   it('the read-back prompt is the readBack with its placeholders, each the field\'s slot', () => {
     expect(app.forms.request!.summaryPromptId).toBe('readback_request');
-    expect(app.prompts.manifest.readback_request!.text).toBe("Here's the hold: {request_patronName}, {request_copies} of {request_title}, collected {request_day} in the {request_window}, and we'll call you at {request_callbackNumber}. Is that right?");
+    expect(app.prompts.manifest.readback_request!.text).toBe("Here's the hold: {request_patronName}, {request_copies} of {request_title} {request_format}, collected {request_day} in the {request_window}, and we'll call you at {request_callbackNumber}. Is that right?");
     expect(app.prompts.manifest.readback_booking!.text).toBe('So that\'s the study room for {account}, {booking_people} people, {booking_day} in the {booking_window}. Shall I book it?');
     expect(app.prompts.manifest.done_booking!.text).toBe("You're booked for {booking_day}, {booking_window}. Thanks.");
   });

@@ -3,7 +3,7 @@ import type { App, Completion, CompletionContext, FactsConfig, SummaryContext, T
 import type { Session, SessionFacts } from '../core/session';
 import { openPart, replyShape, shapeOf } from '../core/replyShape';
 import { isAnonymous, type Principal } from '../gate/types';
-import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, slotIdOf } from './business';
+import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, optionKey, readsThroughHook, slotIdOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
 import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, fieldSlotConfig, formParams, PRICE_PROMPT, wordsOf } from './businessFiles';
 import { buildSlot } from '../slots/defineSlot';
@@ -198,9 +198,26 @@ function completeForm(b: BusinessYaml, name: BusinessFormName): (c: CompletionCo
     }
     s.confirmedHash = null;
     s.pendingHash = null;
-    const vars = { ...Object.fromEntries(Object.entries(s.slots).map(([id, slot]) => [id, slot.display ?? ''])), ...accountVars(s) };
+    const vars = { ...Object.fromEntries(Object.entries(s.slots).map(([id, slot]) => [id, slot.display ?? ''])), ...saysVars(b, name, s), ...accountVars(s) };
     return { kind: 'said', acks: [...acks, { promptId: donePromptOf(name), vars }] };
   };
+}
+
+/**
+ * A form's choice fields with `says`, as its read-back and done line say them: each option in the business's
+ * words for it (its own words where `says` gives none), and `says.unset` for an optional field left empty.
+ */
+export function saysVars(b: BusinessYaml, name: BusinessFormName, s: Session): Record<string, string> {
+  const form = businessForms(b).find((f) => f.name === name)?.form;
+  const out: Record<string, string> = {};
+  for (const f of form?.fields ?? []) {
+    if (f.type !== 'choice' || f.says === undefined) continue;
+    const slot = s.slots[slotIdOf(name, f.name)];
+    const value = slot?.value ?? null;
+    const said = Object.entries(f.says).find(([k]) => k !== 'unset' && optionKey(k) === value)?.[1];
+    out[slotIdOf(name, f.name)] = value === null ? (f.says.unset ?? '') : (said ?? slot?.display ?? String(value));
+  }
+  return out;
 }
 
 /**
@@ -222,8 +239,8 @@ export function businessCode(b: BusinessYaml, code: AppCode): AppCode {
   const forms = Object.fromEntries(businessForms(b).map(({ name }) => [name, {
     confirmedParams: formValues(b, name),
     complete: completeForm(b, name),
-    // The booking's read-back names {account}: the recognized account's name.
-    ...(name === 'booking' ? { onSummaryRead: (c: SummaryContext) => ({ vars: accountVars(c.s) }) } : {}),
+    // The booking's read-back names {account}: the recognized account's name; a choice field with `says`, its option in the business's words.
+    ...(readsThroughHook(b, name) ? { onSummaryRead: (c: SummaryContext) => ({ vars: { ...saysVars(b, name, c.s), ...accountVars(c.s) } }) } : {}),
   }]));
   const systems: AppCode['systems'] = () => {
     const made = code.systems();

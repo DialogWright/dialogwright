@@ -74,6 +74,8 @@ request:
       about: Whether they want the large print edition.
       question: Would you like regular print or large print?
       optional: true
+      # Said in the read-back in these words; every field is sent with the hold, so the caller hears it.
+      says: { print: in print, large print: in large print, not sure: in either print, unset: in either print }
     - name: day
       type: date
       question: What day would you like to collect it?
@@ -86,7 +88,7 @@ request:
       length: 10
       offer: callerNumber
       question: What's the best number to reach you when it's ready?
-  readBack: "Here's the hold: {patronName}, {copies} of {title}, collected {day} in the {window}, and we'll call you at {callbackNumber}. Is that right?"
+  readBack: "Here's the hold: {patronName}, {copies} of {title} {format}, collected {day} in the {window}, and we'll call you at {callbackNumber}. Is that right?"
   then: [placeHold, notifyDesk]
   done: Thanks, {patronName}. The desk will call you when it's ready.
 

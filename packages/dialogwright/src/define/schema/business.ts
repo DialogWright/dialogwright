@@ -51,7 +51,11 @@ const field = z
       .union([z.literal(WINDOWS_OPTIONS), unique(text(), 'option').min(2, { error: 'must list at least two options' })])
       .optional()
       .describe(`A choice field's options: a list of the words each option is said by ("one", "not sure"), or "${WINDOWS_OPTIONS}", the names of the business's windows. Only on a choice field, which needs it.`),
-    optional: z.boolean().optional().describe('true: the form may be read back without it. Default false: the read-back waits for it.'),
+    optional: z.boolean().optional().describe('true: the form may be read back without it. Default false: the read-back waits for it. Every field is sent by the form\'s `then`, so an optional field is still named in the read-back (the caller confirms what is sent), with `says.unset` for when it is left empty.'),
+    says: z
+      .record(text(), text())
+      .optional()
+      .describe('A choice field: how each option is said in the form\'s read-back and done line, by the option\'s words ("large print": "in large print"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.'),
     length: z.int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(40, { error: 'must be at most 40' }).optional().describe('A digits field\'s number of digits (10 for a phone number with its area code). Only on a digits field, which needs it.'),
     offer: z
       .literal('callerNumber')
@@ -144,7 +148,7 @@ export const businessSchema = z
         forms: unique(z.enum(BUSINESS_FORMS), 'form')
           .min(1, { error: 'must name at least one form' })
           .optional()
-          .describe('The forms in which the agent model may name the price line: with another form open, it is not offered (and not said if named), so a price line about one kind of work is never said in another ("[request]": dealership bookings are billed otherwise). With no form open it is offered. Default: every form.'),
+          .describe('The forms in which the agent model may name the price line: with another form open, it is not offered (and not said if named), so a price line about one kind of work is never said in another ("[request]": an account\'s bookings are billed otherwise). With no form open it is offered. Default: every form.'),
       })
       .optional()
       .describe('How prices are given. Without it, the line has no price line to say.'),

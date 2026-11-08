@@ -10,12 +10,12 @@ import { isFormIntent } from './app/intents';
 import { formOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, SlotId } from './app/types';
-import { handoff, prompt, type Decision, type PromptDecision } from './decision';
+import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack, FillEvent } from './fia';
 import type { Verdict } from './gates';
 import { atLeast, type Thresholds } from './thresholds';
 import { localeOf, slotLocaleOf } from './locale';
-import { setForm, type PendingConfirmation, type Session } from './session';
+import { emptySlot, setForm, type PendingConfirmation, type Session } from './session';
 import { callTool } from './lifecycle';
 import { namedPart, openPart } from './replyShape';
 import type { SlotContext } from './slots/types';
@@ -81,11 +81,13 @@ import type { RenderLine } from '../render/types';
  *    app checks an unsure request at), it is checked with the caller first ("Just to check, do you want to
  *    speak with someone?": the `agent` intent's explicit check), its values kept: a yes opens the person
  *    form, a no goes back to the form where it stood; where it read none, the callback is not taken, and its
- *    reply is not said (the recording of apps/wheelshop: the model read "I'll have Sam call you back to
- *    confirm" as a callback, mid-request, the decision model reading wantsHuman 0.02).
+ *    reply is not said (a recording: the model read "I'll have the owner call you back to confirm" as a
+ *    callback, mid-request, the decision model reading wantsHuman 0.02).
  *    A form's `then` tools are the engine's, called only by the yes at its read-back; the model never runs a tool.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
- *    says why (`fallback`); the second such turn in a row ends the call with the handoff line. A call with
+ *    says why (`fallback`); at a read-back the turn is read again the scripted way (run/turn.ts
+ *    scriptedReading). The second such turn in a row hands off: the handoff line, then the person form,
+ *    the rest of the call run as a scripted app (core/turn.ts handoffToPersonForm). A call with
  *    no agent client (no key) runs as a scripted app from that turn for the rest of the call
  *    (scriptedFromNow): one begun so, and one resumed on a server without the key.
  *
@@ -152,6 +154,12 @@ export interface AgentTurnRecord {
    * reading came in the turn's budget, and the read-back was said again. Absent on every other turn.
    */
   scripted?: 'read' | 'none';
+  /**
+   * The text values accepted that are not the caller's words as cited, each as the drift judge read it
+   * against them (run/turn.ts, render/agentLine.ts judgeTextValues; call 40): held as given, or as the cited
+   * words where it refused it, failed or was late. Absent where none was judged.
+   */
+  textJudged?: { field: string; score?: number; refuseAt: number; held: 'value' | 'words' }[];
 }
 
 /** What a value's check came to: accepted, refused by its slot type (ValueCheck's reason), or `field`, naming no field of the form it was given in. */
@@ -241,12 +249,16 @@ function heldValue(app: App, session: Session, f: AgentAppField): string | null 
   return f.type === 'choice' ? (slot.display ?? slot.value) : slot.value;
 }
 
+/** What `submit` and `callback` are, as the model is told (actionsFor; the bake-off's turns, agent/bakeoffCases.ts, are told the same). */
+export const SUBMIT_ABOUT = 'every required field is filled: the line reads back what it understood for the caller to confirm';
+export const CALLBACK_ABOUT = 'the caller asks to speak with a person rather than go on: the line takes a callback note in place of what it was doing. Never for a call or a text the business makes anyway (a quote, a confirmation)';
+
 /** What the model may propose on this turn: `submit` with a form open, `callback` where there is a person form not open, and always none. A form's `then` is the engine's, never offered. */
 function actionsFor(app: App, session: Session): AgentActionChoice[] {
   const out: AgentActionChoice[] = [];
   const form = session.form;
-  if (form !== null) out.push({ name: SUBMIT_ACTION, about: 'every required field is filled: the line reads back what it understood for the caller to confirm' });
-  if (app.personForm !== undefined && form !== app.personForm.form) out.push({ name: CALLBACK_ACTION, about: 'the caller asks to speak with a person rather than go on: the line takes a callback note in place of what it was doing. Never for a call or a text the business makes anyway (a quote, a confirmation)' });
+  if (form !== null) out.push({ name: SUBMIT_ACTION, about: SUBMIT_ABOUT });
+  if (app.personForm !== undefined && form !== app.personForm.form) out.push({ name: CALLBACK_ACTION, about: CALLBACK_ABOUT });
   return out;
 }
 
@@ -500,7 +512,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     }
     // The value the field holds, given back as the model was shown it (masked where the records hide it:
     // "...0177" at a callback number's read-back): no new value, nor a correction, so nothing to check and
-    // nothing changed (the wheelshop recording: a yes at the callback note's read-back, the number restated
+    // nothing changed (a recording: a yes at the callback note's read-back, the number restated
     // masked, was refused as a correction and the read-back set aside).
     const onFile = s.slots[field.slot];
     if (onFile !== undefined && onFile.value !== null && restatesHeld(app, field, onFile, v.value)) {
@@ -508,7 +520,8 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
       continue;
     }
     const spec = app.slots[field.slot] as BuiltSlotSpec | undefined;
-    const check: ValueCheck = spec?.check !== undefined ? spec.check(v.value, v.words, said, { today: tc.todayIso, ...(locale !== undefined ? { locale } : {}) }) : { ok: false, reason: 'unsupported' };
+    const before = s.slots[field.slot]?.value;
+    const check: ValueCheck = spec?.check !== undefined ? spec.check(v.value, v.words, said, { today: tc.todayIso, ...(locale !== undefined ? { locale } : {}), ...(before !== null && before !== undefined ? { held: String(before) } : {}) }) : { ok: false, reason: 'unsupported' };
     const proposed = { field: field.name, slot: field.slot, value: v.value, words: v.words };
     if (!check.ok) {
       record.values.push({ ...proposed, outcome: check.reason });
@@ -576,6 +589,25 @@ export function withFirstValues(app: App, first: Pick<AgentTurnRecord, 'values'>
     return Array.isArray(list) && list.includes(v.value);
   });
   return kept.length === 0 ? second : { ...second, values: [...second.values, ...kept.map(({ field, value, words }) => ({ field, value, words }))] };
+}
+
+/**
+ * Every value the open form holds for a `freeFrom` field that the latest result kept for its day no longer
+ * lists, cleared (its attempts kept, none counted): the first such field's slot, or null where none is.
+ */
+function clearUnfree(app: App, s: Session, tc: TurnContext): SlotId | null {
+  if (s.form === null) return null;
+  let first: SlotId | null = null;
+  for (const field of app.agent?.forms[s.form]?.fields ?? []) {
+    if (field.freeFrom === undefined) continue;
+    const slot = s.slots[field.slot];
+    if (slot === undefined || slot.value === null) continue;
+    const free = freeOptions(app, s, field, tc);
+    if (free === null || free.includes(String(slot.value))) continue;
+    Object.assign(slot, emptySlot(), { attempts: slot.attempts });
+    first ??= field.slot as SlotId;
+  }
+  return first;
 }
 
 /**
@@ -811,6 +843,13 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     actionDone('ignored');
     return { decision: steps.failAttempt(s, applied.refused, io, acks), events: applied.events };
   }
+  // A value held to a seen result (`freeFrom`) that the latest result no longer lists (the day changed after
+  // it was given): cleared, no attempt counted, and its question asked (the agent-mode design, call 40).
+  const cleared = clearUnfree(app, s, io.tc);
+  if (cleared !== null) {
+    actionDone('ignored');
+    return { decision: askSlot(s, cleared, null, acks), events: applied.events };
+  }
   if (action === CALLBACK_ACTION && personCheckable(app, s) && personSupported(app, answers, io.tc.thresholds)) {
     // 6. A callback the agent model proposed that the decision model read some sign of, not enough to
     // act on: the caller is asked first, so a model's misreading never takes them off what they were
@@ -853,8 +892,8 @@ function personRead(app: App, verdict: Verdict): boolean {
  * or its request read as a person or the person form (the `agent` intent and the person form's together),
  * at the bar a scripted app checks an unsure request at ("Just to check, do you want to ...?",
  * INTENT_EXPLICIT). Under it the decision model reads none, and the agent model's `callback` alone is not
- * taken: the recording of apps/wheelshop read wantsHuman 0.02 on every turn the model proposed one
- * mid-request ("I'll have Sam call you back to confirm"), and a person asked for outright the gates hand
+ * taken: a recording read wantsHuman 0.02 on every turn the model proposed one mid-request ("I'll have
+ * the owner call you back to confirm"), and a person asked for outright the gates hand
  * off on at GATE_WANTS_HUMAN, before the answer is read.
  */
 function personSupported(app: App, answers: AnswerMap, t: Thresholds): boolean {
@@ -901,9 +940,24 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     actionDone('ignored');
     const looked = lookUpSeen(app, s, io, record);
     if (looked.again !== null) io.agentAgain = { seen: looked.again, changed: true };
+    // A value held to a seen result that the latest no longer lists: the read-back set aside, the value cleared and asked.
+    const cleared = clearUnfree(app, s, io.tc);
+    if (cleared !== null) {
+      s.pendingConfirmation = null;
+      s.pendingHash = null;
+      return { decision: askSlot(s, cleared, null, []), events: applied.events };
+    }
     const again = steps.askSummary(s, pc.form, [], io);
     const informed = io.tc.agentSeen !== undefined && !looked.unseen && again.kind === 'prompt';
     return { decision: informed ? withAside(again as PromptDecision, answer?.reply ?? null, record) : again, events: applied.events };
+  }
+  // A value held to a seen result that the latest no longer lists: never confirmed as it stands.
+  const unfree = clearUnfree(app, s, io.tc);
+  if (unfree !== null) {
+    actionDone('ignored');
+    s.pendingConfirmation = null;
+    s.pendingHash = null;
+    return { decision: askSlot(s, unfree, null, []), events: applied.events };
   }
   // The yes, with nothing changed: the form completes through its engine-written complete hook, whatever was proposed.
   if (verdict.kind === 'confirmed') {

@@ -1,5 +1,5 @@
 import { buildSlot } from '../slots/defineSlot';
-import { ACCOUNT_SLOT, businessForms, optionKey, slotIdOf } from './business';
+import { ACCOUNT_SLOT, businessForms, optionKey, readsThroughHook, slotIdOf } from './business';
 export { optionKey };
 import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
@@ -182,7 +182,7 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
       slots: form.fields.map((f) => slotIdOf(name, f.name)),
       summaryPromptId: readBackPromptOf(name),
       // A form for accounts names the account in its lines: its summary hook gives {account} the recognized account's name.
-      hooks: name === 'booking' ? ['confirmedParams', 'complete', 'onSummaryRead'] : ['confirmedParams', 'complete'],
+      hooks: readsThroughHook(b, name) ? ['confirmedParams', 'complete', 'onSummaryRead'] : ['confirmedParams', 'complete'],
       calls: [...form.then, ...sees.filter((t) => !form.then.includes(t))],
       writes: form.then[0]!,
     };

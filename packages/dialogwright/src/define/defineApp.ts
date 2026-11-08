@@ -833,7 +833,9 @@ export function crossLink(
   // A slot that may be left empty (a callerNumber offer with onNo or ifNone: skip, or onMaxAttempts
   // skip; SlotState.declined) is never named in its form's summary line: the line would read an empty
   // value. A form's summary hook (onSummaryRead) may read another line that names it when it is filled.
-  for (const [id, spec] of Object.entries(linked.slots)) {
+  // In agent mode business.yaml says what such a field reads when empty (`says.unset`, through the form's
+  // summary hook), and its own check holds that (define/business.ts): not this rule's.
+  for (const [id, spec] of Object.entries(config.app.mode === 'agent' ? {} : linked.slots)) {
     const offer = spec?.callerNumber;
     const why = offer?.onNo === 'skip' ? 'its callerNumber says onNo: skip' : offer?.ifNone === 'skip' ? 'its callerNumber says ifNone: skip' : spec !== undefined && slotOutcomeOf(spec).then === 'skip' ? 'its onMaxAttempts skips it' : null;
     if (why === null) continue;

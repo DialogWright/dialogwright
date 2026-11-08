@@ -42,7 +42,7 @@ export function agentAnswerSchema(actions: readonly string[], fields?: readonly 
   return z.strictObject({
     reply: z.string(),
     // An answer that gives no values may leave the list out: Mercury 3 did on two turns in fifty of
-    // apps/wheelshop's recording ("reply", "action", "fromFacts", "fixedLine", nothing else), and a yes at
+    // an app's recording ("reply", "action", "fromFacts", "fixedLine", nothing else), and a yes at
     // a read-back so read was never taken. Absent is none, unambiguously; a list that is there is held to
     // its shape as ever.
     values: z.array(z.strictObject({ field, value: nonEmpty, words: nonEmpty })).default([]),

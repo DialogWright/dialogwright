@@ -129,7 +129,7 @@ const DETAILS_ANSWER = said('Thanks, Avery.', [
   ['window', 'morning', 'morning'],
   ['callbackNumber', '5555550144', '555 555 0144'],
 ]);
-const READ_BACK = "Here's the hold: Avery Lane, two of The Quiet Harbor, collected Thursday, November 12 in the morning, and we'll call you at 5555550144. Is that right?";
+const READ_BACK = "Here's the hold: Avery Lane, two of The Quiet Harbor in either print, collected Thursday, November 12 in the morning, and we'll call you at 5555550144. Is that right?";
 
 describe('the agent turn: values', () => {
   it('a value with words the caller never said is dropped and the field asked', async () => {
@@ -251,8 +251,8 @@ describe('the agent turn: the read-back', () => {
   });
 
   it('a callback the decision model reads no sign of is not taken: the form goes on, the values kept, the reply not said', async () => {
-    // The wheelshop recording: "Could I bring it Thursday?" read by the model as a callback ("I'll have Sam call
-    // you back to confirm"), the decision model reading wantsHuman 0.02: the request is never left on the model's word.
+    // A recording: "Could I bring it Thursday?" read by the model as a callback ("someone will call you back to
+    // confirm"), the decision model reading wantsHuman 0.02: the request is never left on the model's word.
     const THURSDAY = 'could I bring it Thursday';
     const c = await call({ [HOLD]: HOLD_ANSWER, [THURSDAY]: said('Thursday works, someone will call you back to confirm.', [['day', '2026-11-12', 'Thursday']], 'callback') }, [HOLD, THURSDAY]);
     expect(c.last.result.session.form).toBe('request');
@@ -398,6 +398,68 @@ describe('the agent turn: the second asking keeps the first answer\'s values (ca
     expect(r.record.agent!.values.some((v) => v.field === 'window')).toBe(false);
     expect(promptOf(r)).toBe('ask_booking_window');
     expect(r.result.session.slots.booking_window!.attempts).toBe(0);
+  });
+});
+
+describe('the review of the branch (call 40)', () => {
+  it('a text value with a figure of its own is refused: "$40 agreed" never reaches the read-back or the write', async () => {
+    const c = await call({ [HOLD]: said('Happy to help.', [['title', 'The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor']]), [DETAILS]: DETAILS_ANSWER, yes: said('') }, [HOLD, DETAILS, 'yes']);
+    expect(c.runs[1]!.record.agent!.values).toMatchObject([{ field: 'title', outcome: 'words' }]);
+    for (const r of c.runs) expect(heard(r)).not.toContain('$40');
+    expect(c.sys.holds.every((h) => !String(h.title).includes('40'))).toBe(true);
+  });
+
+  it('a text value the drift judge refuses against the caller\'s words is held as the words cited', async () => {
+    const stub = jev();
+    const judged: JevClient = {
+      async ask(req) {
+        const q = req.questions.renderSpanDrift;
+        if (q === undefined) return stub.ask(req);
+        const said = (req.state as { span?: { said?: string } }).span?.said ?? '';
+        return { answers: { renderSpanDrift: noulAnswer(/signed/.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 1, outputTokens: 1, estimated: true }, source: 'model' } as unknown as JevResponse;
+      },
+    };
+    const c = await call({ [HOLD]: said('Happy to help.', [['title', 'The Quiet Harbor, a signed copy', 'The Quiet Harbor']]) }, [HOLD], { jev: judged });
+    expect(value(c.last, 'request_title')).toBe('The Quiet Harbor');
+    expect(c.last.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.9, held: 'words' }]);
+    const kept = await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: judged });
+    expect(value(kept.last, 'request_title')).toBe('Quiet Harbor');
+    expect(kept.last.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.1, held: 'value' }]);
+  });
+
+  it('after a system\'s failure the rest of the call is scripted: the decision model fills the callback note, and it is filed', async () => {
+    const all = { [HOLD]: { fail: 'timeout' as const }, 'Avery Lane': { fail: 'timeout' as const }, '555 555 0144': { fail: 'timeout' as const }, yes: { fail: 'timeout' as const } };
+    // The decision model reads the number where it is asked it (the scripted form's own questions).
+    const stub = jev();
+    const reads: JevClient = {
+      async ask(req) {
+        const r = await stub.ask(req);
+        const span = req.questions.callback_callbackNumberSpan;
+        if (span === undefined || span.type !== 'choice' || !/555 555 0144/.test((req.state as { asr?: { text?: string } }).asr?.text ?? '')) return r;
+        return { ...r, answers: { ...r.answers, intelligible: noulAnswer(0.95), callback_callbackNumberGiven: noulAnswer(0.95), callback_callbackNumberSpan: choiceAnswer(sharp(Object.keys(span.criteria), '555 555 0144', 0.95)), callback_callbackNumberComplete: noulAnswer(0.95) } };
+      },
+    };
+    const c = await call(all, [HOLD, 'Avery Lane', '555 555 0144', 'yes'], { chat: true, jev: reads });
+    expect(c.runs[2]!.result.session.form).toBe('callback');
+    expect(c.runs[2]!.result.session.agent?.scripted).toBe(true);
+    expect(c.sys.notes).toHaveLength(1);
+    expect(c.sys.notes[0]).toMatchObject({ callbackNumber: '5555550144' });
+  });
+
+  it('a window given before the day is re-checked once the day\'s result is shown: cleared, its question asked, nothing booked', async () => {
+    const BOOK = 'I would like the study room for four people in the afternoon';
+    const script = {
+      [BOOK]: said('Lovely.', [['people', 'four', 'four people'], ['window', 'afternoon', 'afternoon']]),
+      Saturday: said('Saturday it is.', [['day', '2026-11-14', 'Saturday']]),
+      yes: said(''),
+    };
+    const c = await call(script, [BOOK, 'Saturday'], { number: CLUB });
+    expect(value(c.last, 'booking_window')).toBeNull();
+    expect(promptOf(c.last)).toBe('ask_booking_window');
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(0);
+    expect(heard(c.last)).not.toContain('Saturday it is');
+    const yes = await call(script, [BOOK, 'Saturday', 'yes'], { number: CLUB });
+    expect(yes.sys.bookings).toEqual([]);
   });
 });
 

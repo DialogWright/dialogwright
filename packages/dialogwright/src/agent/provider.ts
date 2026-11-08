@@ -30,7 +30,7 @@ export type InceptionEffort = (typeof INCEPTION_EFFORTS)[number];
 /**
  * The most tokens an answer may take (`max_tokens`, the OpenAI-compatible chat API's, which Inception's
  * and OpenRouter's take): a turn's reply and its values. 400: the largest valid answer of the bake-off and
- * the wheelshop recordings was 302 tokens (of 560), and a third more is headroom; the answers that ran on
+ * the recordings of an app in agent mode was 302 tokens (of 560), and a third more is headroom; the answers that ran on
  * ("Goodbye. Goodbye. ...", 950 to 1000 tokens) were none of them valid. An answer cut off at it is
  * `invalid` at once (finish_reason `length`), never parsed. More where the model may reason, since its
  * reasoning counts against the limit (the agent-mode design, call 38).

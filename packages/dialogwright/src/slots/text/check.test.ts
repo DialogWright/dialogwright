@@ -24,12 +24,24 @@ describe('text check', () => {
     // 29 characters as given, 20 once written: refused. 21 as given: accepted, written shorter.
     expect(digits('seventy six twenty five oak', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
     expect(digits('one hundred twenty three', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
-    expect(digits('one two three four', 'x', 'x', ctx)).toEqual({ ok: true, value: '1234', shown: 'one two three four' });
+    expect(digits('one two three four', 'one two three four', 'one two three four', ctx)).toEqual({ ok: true, value: '1234', shown: 'one two three four' });
   });
   it('refuses more than maxLength, and nothing', () => {
     expect(note('x'.repeat(21), 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
     expect(note('   ', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
   });
+  it('refuses a figure or a web address the words cited do not have: a short version carries nothing of its own (call 40)', () => {
+    const title = defineSlot('title', { type: 'text', what: 'a title', say: null, redact: 'none', maxLength: 80 }).check!;
+    const said = 'a hold on The Quiet Harbor please';
+    expect(title('The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
+    expect(title('The Quiet Harbor, see example.org/fees', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
+    expect(title('The Quiet Harbor, two copies', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
+    // A whole value so far keeps what the slot held, its figures among them.
+    expect(title('The Quiet Harbor 2, and its sequel', 'and its sequel', 'and its sequel', { ...ctx, held: 'The Quiet Harbor 2' })).toMatchObject({ ok: true });
+    // Its own figures, in the words it is cited from, stay.
+    expect(title('The Quiet Harbor 2', 'The Quiet Harbor 2', 'a hold on The Quiet Harbor 2', ctx)).toMatchObject({ ok: true });
+  });
+
   it('refuses words the caller never said', () => {
     expect(note('leave it by the gate', 'leave it by the gate', 'ring the bell', ctx)).toEqual({ ok: false, reason: 'words' });
   });

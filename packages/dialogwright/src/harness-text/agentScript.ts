@@ -203,7 +203,7 @@ export function agentCassetteMissed(run: Pick<TurnRun, 'record'>): boolean {
  *   first `then` tool, allowed by the gate), as the call is recorded (a value the records hide by its mask,
  *   "...0144"); with none, the values the form open at the end holds. Each is the value exactly, or `{ "has":
  *   [...] }`, words the value holds, each as written, in any case and any order (a text value is the model's
- *   own short version of the caller's words: "front two" may be "the front two wheels");
+ *   own short version of the caller's words: "two copies" may be "two copies of it");
  * - `action`: a tool the gate allowed on the call (`"bookRoom"`), `"none"` for no form's write allowed, or
  *   `{ "not": "<tool>" }` for one never allowed;
  * - `said.notFigure`: no reply of the agent's that was said holds a figure that the facts, the values the

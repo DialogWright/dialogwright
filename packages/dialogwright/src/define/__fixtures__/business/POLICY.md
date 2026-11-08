@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `3db97317061b550247661c247a82252c228179fb0f51832ed1ce17a7d0e80439` |
+| `business.yaml` | `44b973cf7905a0a9eeb8a41c5fa30d6a1abe849143425a13d1872795bb20221c` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -59,7 +59,7 @@ Said in fixed words, never worded by a model:
 | `price` | Fees are explained at the desk, by the person who looks at your account. |
 | `identity_not_recognized` | That's for our account holders, recognized by the number they call from. |
 | `booking_for_accounts` | Bookings are for our account holders; I can send a request instead. |
-| `readback_request` | Here's the hold: {request_patronName}, {request_copies} of {request_title}, collected {request_day} in the {request_window}, and we'll call you at {request_callbackNumber}. Is that right? |
+| `readback_request` | Here's the hold: {request_patronName}, {request_copies} of {request_title} {request_format}, collected {request_day} in the {request_window}, and we'll call you at {request_callbackNumber}. Is that right? |
 | `done_request` | Thanks, {request_patronName}. The desk will call you when it's ready. |
 | `readback_booking` | So that's the study room for {account}, {booking_people} people, {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, {booking_window}. Thanks. |

@@ -22,7 +22,9 @@ import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
 import { renderTurn, withRenderAudit, type EarlyLines } from '../render/turn';
-import { holdAgentLine } from '../render/agentLine';
+import { holdAgentLine, judgeTextValues } from '../render/agentLine';
+import { DRIFT_FIRE } from '../render/checks';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS } from '../render/types';
 import { defaultRenderPrice } from '../render/providers';
 import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
@@ -604,6 +606,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // (the calls already made kept, none made twice). Where no second answer comes, the turn as it first stood.
   let agentShown = agentCtx;
   let again: { result: AgentResult; tools: string[] } | null = null;
+  // The agent answer the turn was last resolved with, and its context (for the text values' judge below).
+  let used: TurnContext | null = agentResult !== null && agentResult.ok ? turnTc : null;
   if (resolved.agentAgain !== undefined && agentCtx !== null && opts.agent != null) {
     const seen = resolved.agentAgain.seen;
     const asked = await askAgain(opts.agent, agentCtx, seen, session.caps.speech, agentAskedAt);
@@ -611,7 +615,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     if (asked.result.ok) {
       // The first answer's accepted values the second leaves out are kept (call 39), a free-from field's only while the result lists it.
       const carried: AgentResult = resolved.agent !== undefined ? { ...asked.result, answer: withFirstValues(appOf(session), resolved.agent, resolved.session.form, asked.result.answer, seen) } : asked.result;
-      const next = await resolveWaiting(session, event, turnAnswers, { ...turnTc, agent: carried, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}) } }, error, screen, channel, toolTimeout, first.memo);
+      used = { ...turnTc, agent: carried, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}) } };
+      const next = await resolveWaiting(session, event, turnAnswers, used, error, screen, channel, toolTimeout, first.memo);
       resolved = next.result;
       waited = next.waited ?? waited;
       agentShown = asked.ctx;
@@ -627,6 +632,25 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   if (reread !== null) {
     resolved = reread.result;
     waited = reread.waited ?? waited;
+  }
+  // The text values the agent gave that are not the caller's words as cited, each held to them by the drift
+  // judge a framed summary is (call 40): one it refuses, or does not read in time, is held as its cited
+  // words, and the turn is resolved again with them (the tools already called kept, none called twice).
+  if (reread === null && used !== null && used.agent?.ok === true && resolved.agent?.use === 'used' && resolved.agent.values.length > 0) {
+    const app = appOf(session);
+    const budget = (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[session.caps.speech ? 'voice' : 'chat'];
+    const judged = await judgeTextValues(app, resolved.agent.values, opts.renderer?.drift ?? opts.client, budget, app.agent?.style.refuseAt ?? DRIFT_FIRE, localeOf(session));
+    if (judged.length > 0) {
+      const asWords = new Set(judged.filter((j) => j.held === 'words').map((j) => j.field));
+      if (asWords.size > 0) {
+        const answer = used.agent.answer;
+        const held: AgentResult = { ...used.agent, answer: { ...answer, values: answer.values.map((v) => (asWords.has(v.field) ? { ...v, value: v.words } : v)) } };
+        const next = await resolveWaiting(session, event, turnAnswers, { ...used, agent: held }, error, screen, channel, toolTimeout, first.memo);
+        resolved = next.result;
+        waited = next.waited ?? waited;
+      }
+      if (resolved.agent !== undefined) resolved = { ...resolved, agent: { ...resolved.agent, textJudged: judged } };
+    }
   }
   const t3 = performance.now();
   // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.

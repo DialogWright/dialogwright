@@ -114,7 +114,7 @@
           "description": "The price line, said word for word when a caller asks about price: the line never says a figure."
         },
         "forms": {
-          "description": "The forms in which the agent model may name the price line: with another form open, it is not offered (and not said if named), so a price line about one kind of work is never said in another (\"[request]\": dealership bookings are billed otherwise). With no form open it is offered. Default: every form.",
+          "description": "The forms in which the agent model may name the price line: with another form open, it is not offered (and not said if named), so a price line about one kind of work is never said in another (\"[request]\": an account's bookings are billed otherwise). With no form open it is offered. Default: every form.",
           "minItems": 1,
           "type": "array",
           "items": {
@@ -287,8 +287,20 @@
                 ]
               },
               "optional": {
-                "description": "true: the form may be read back without it. Default false: the read-back waits for it.",
+                "description": "true: the form may be read back without it. Default false: the read-back waits for it. Every field is sent by the form's `then`, so an optional field is still named in the read-back (the caller confirms what is sent), with `says.unset` for when it is left empty.",
                 "type": "boolean"
+              },
+              "says": {
+                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
               },
               "length": {
                 "description": "A digits field's number of digits (10 for a phone number with its area code). Only on a digits field, which needs it.",
@@ -427,8 +439,20 @@
                 ]
               },
               "optional": {
-                "description": "true: the form may be read back without it. Default false: the read-back waits for it.",
+                "description": "true: the form may be read back without it. Default false: the read-back waits for it. Every field is sent by the form's `then`, so an optional field is still named in the read-back (the caller confirms what is sent), with `says.unset` for when it is left empty.",
                 "type": "boolean"
+              },
+              "says": {
+                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
               },
               "length": {
                 "description": "A digits field's number of digits (10 for a phone number with its area code). Only on a digits field, which needs it.",
@@ -565,8 +589,20 @@
                 ]
               },
               "optional": {
-                "description": "true: the form may be read back without it. Default false: the read-back waits for it.",
+                "description": "true: the form may be read back without it. Default false: the read-back waits for it. Every field is sent by the form's `then`, so an optional field is still named in the read-back (the caller confirms what is sent), with `says.unset` for when it is left empty.",
                 "type": "boolean"
+              },
+              "says": {
+                "description": "A choice field: how each option is said in the form's read-back and done line, by the option's words (\"large print\": \"in large print\"), and `unset`, what is said there when an optional field is left empty. An option not listed is said by its words. Only on a choice field. Default: none, each option by its words.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
               },
               "length": {
                 "description": "A digits field's number of digits (10 for a phone number with its area code). Only on a digits field, which needs it.",

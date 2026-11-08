@@ -90,9 +90,16 @@ describe('business.yaml', () => {
     expect(readFileSync(join(FIXTURE, 'business.yaml'), 'utf8')).toContain('for {account}');
   });
 
-  it('an optional field named in the read-back is refused: it would read nothing', () => {
-    const dir = copy({ 'business.yaml': replacing('{copies} of {title}', '{copies} {format} of {title}') });
-    expect(problemsOf(dir)).toMatchObject([{ path: 'request.readBack', message: expect.stringContaining('optional') }]);
+  it('an optional field is named in the read-back, with what it says when left empty (says.unset): the then sends it', () => {
+    // Named without says.unset: the line would read nothing when it is left empty.
+    const unsaid = copy({ 'business.yaml': replacing(', unset: in either print }', ' }') });
+    expect(problemsOf(unsaid)).toMatchObject([{ path: 'request.readBack', message: expect.stringContaining('optional') }]);
+    // Not named at all: the caller would confirm a value they never heard, though the then sends it.
+    const unread = copy({ 'business.yaml': replacing('{title} {format},', '{title},') });
+    expect(problemsOf(unread)).toMatchObject([{ path: 'request.fields[3].optional', message: expect.stringContaining('the read-back does not name it') }]);
+    // says: only on a choice, its keys the options or unset, unset only on an optional field.
+    const key = copy({ 'business.yaml': replacing('large print: in large print', 'huge print: in large print') });
+    expect(problemsOf(key)).toMatchObject([{ path: 'request.fields[3].says["huge print"]', message: expect.stringContaining('is not an option') }]);
   });
 
   it('an account number that is not E.164 is refused', () => {
@@ -213,7 +220,7 @@ describe('business.yaml', () => {
     const windows = copy({ 'business.yaml': replacing('  - name: afternoon\n    says: from noon to 5', '  - name: morning\n    says: from noon to 5') });
     expect(problemsOf(windows)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'windows[1].name', message: 'the window "morning" is listed twice' })]));
     const options = copy({ 'business.yaml': replacing('options: [print, large print, not sure]', 'options: [print, large print, Large-Print]') });
-    expect(problemsOf(options)).toMatchObject([{ path: 'request.fields[3].options[2]', message: expect.stringContaining('both are large_print') }]);
+    expect(problemsOf(options)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'request.fields[3].options[2]', message: expect.stringContaining('both are large_print') })]));
     const accounts = copy({ 'business.yaml': replacing('  - name: Northside Readers', '  - name: Rivergate book-club') });
     expect(problemsOf(accounts)).toMatchObject([{ path: 'accounts[1].name', message: expect.stringContaining('both are rivergate_book_club') }]);
   });

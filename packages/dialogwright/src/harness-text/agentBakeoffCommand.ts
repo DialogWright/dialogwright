@@ -23,8 +23,9 @@ import { parsePrices } from './renderBakeoff';
  */
 
 export const AGENT_BAKEOFF_USAGE = [
-  'usage: dialogwright agent:bakeoff --cases <file> --models <model>[,<model>...] [--recorded <dir>] [--examples on|off|both] [--repeat N] [--replay] [--judge-ms N] [--price <model>=<input>,<output>]... [--by-turn] [--print-prompt] [--out <file.md>] [--json]',
-  '  --cases: the calls to measure on (YAML or JSON: the facts, the owner\'s sample replies, the forms, and each caller turn labelled; packages/dialogwright/src/agent/bakeoffCases.ts)',
+  'usage: dialogwright agent:bakeoff --cases <file> [--business <business.yaml>] --models <model>[,<model>...] [--recorded <dir>] [--examples on|off|both] [--repeat N] [--replay] [--judge-ms N] [--price <model>=<input>,<output>]... [--by-turn] [--print-prompt] [--out <file.md>] [--json]',
+  '  --cases: the calls to measure on (YAML or JSON: each caller turn labelled, and the facts, the owner\'s sample replies and the forms, or the app\'s business.yaml they name; packages/dialogwright/src/agent/bakeoffCases.ts)',
+  '  --business: the app\'s business.yaml, whose facts, persona, sample replies, forms and fixed lines the turns are sent (over the one the cases name)',
   '  --models: inception:<model>[:<effort>][:realtime] (effort: instant, low, medium, high; Inception\'s own API, INCEPTION_API_KEY)',
   '    or openrouter:<vendor/model>[:<thinking>][:<effort>] (OPENROUTER_API_KEY; with neither, no reasoning setting is sent); comma-separated or repeated',
   '  asks every caller turn of each model, one at a time, recording into <cases dir>/recorded/<model>.jsonl (or --recorded <dir>) with your own keys (refused in CI);',
@@ -58,6 +59,7 @@ export async function agentBakeoffCommand(argv: readonly string[], io: AgentBake
       allowPositionals: false,
       options: {
         cases: { type: 'string' },
+        business: { type: 'string' },
         recorded: { type: 'string' },
         models: { type: 'string', multiple: true, default: [] },
         examples: { type: 'string' },
@@ -101,7 +103,7 @@ export async function agentBakeoffCommand(argv: readonly string[], io: AgentBake
   const casesFile = resolve(io.invokedFrom, args.cases);
   let cases: BakeoffCases;
   try {
-    cases = loadBakeoffCases(casesFile);
+    cases = loadBakeoffCases(casesFile, args.business !== undefined ? resolve(io.invokedFrom, args.business) : undefined);
   } catch (e) {
     io.err(`dialogwright agent:bakeoff: ${e instanceof Error ? e.message : String(e)}`);
     return 1;

@@ -2752,6 +2752,10 @@ function uncheckedHandoff(s: Session, decision: Decision, unchecked: readonly Un
 function handoffToPersonForm(s: Session, before: Session, decision: Decision, io: TurnIO): Decision {
   const person = io.app.personForm;
   if (decision.kind !== 'handoff' || person === undefined || decision.reason === RESULT_UNCHECKED) return decision;
+  // A system's failure in agent mode (the agent model failing twice in a row): the rest of the call runs
+  // as a scripted app, so the callback form is filled by the decision model, not by the model that failed
+  // (the agent-mode design, call 40).
+  if (decision.reason === 'system-failure' && io.app.mode === 'agent' && s.agent?.scripted !== true) s.agent = { conversation: s.agent?.conversation ?? [], failures: s.agent?.failures ?? 0, ...s.agent, scripted: true };
   if (s.form === person.form || before.form === person.form || s.ended) return decision;
   s.pendingConfirmation = null;
   s.pendingHash = null;

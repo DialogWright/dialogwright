@@ -1,4 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { loadBusiness, businessForms } from '../define/business';
+import { agentAppOf } from '../define/businessApp';
+import { CALLBACK_ABOUT, CALLBACK_ACTION, SUBMIT_ABOUT, SUBMIT_ACTION } from '../core/agentTurn';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import type { AgentActionChoice, AgentFacts, AgentField, AgentUtterance } from './types';
@@ -47,6 +51,8 @@ export interface BakeoffCall {
   form: { name: string; about: string };
   fields: Omit<AgentField, 'value'>[];
   actions: AgentActionChoice[];
+  /** The fixed lines an answer may name in place of its reply in this form (the price line, where the business allows it there); absent: none. */
+  lines?: string[];
   caller: { account: string | null };
   channel: 'voice' | 'chat';
   today: string;
@@ -110,31 +116,51 @@ const callSchema = z.strictObject({
   turns: z.array(turnSchema).min(1),
 });
 
-/** The shape of a cases file. */
+/**
+ * The shape of a cases file: the facts, the owner's sample replies and the forms written in it, or `business`,
+ * the app's business.yaml (a path from the cases file), whose facts, persona, sample replies, forms and
+ * fixed lines are the ones the app sends its agent model, so the calls and their labels alone are the cases'.
+ */
 export const bakeoffCasesSchema = z.strictObject({
+  business: text.optional(),
   facts: z.strictObject({
     name: text,
     voice: text,
+    kind: text.optional(),
+    owner: text.optional(),
+    oneOwner: z.boolean().optional(),
     says: z.array(text).default([]),
     background: z.array(text).default([]),
     fixed: z.record(z.string(), text).default({}),
-  }),
-  examples: z.array(text).default([]),
-  forms: z.record(z.string(), formSchema),
+  }).optional(),
+  examples: z.array(text).optional(),
+  forms: z.record(z.string(), formSchema).optional(),
   calls: z.array(callSchema).min(1),
 });
+
+/** What a business.yaml gives a cases file (businessCases): the facts, the sample replies, the forms with their fields and actions, and the fixed lines each form may name. */
+export interface CasesBusiness {
+  facts: AgentFacts;
+  examples: string[];
+  forms: Record<string, { about: string; fields: Omit<AgentField, 'value'>[]; actions: AgentActionChoice[]; lines: string[] }>;
+}
 
 /**
  * A cases file's content checked and resolved: its shape, then each call's form, every label's field
  * and action, and each id once. Throws, naming where (`calls.1.turns.0.values.day`) and what is wrong.
  */
-export function parseBakeoffCases(content: unknown, where = 'the cases'): BakeoffCases {
+export function parseBakeoffCases(content: unknown, where = 'the cases', business?: CasesBusiness): BakeoffCases {
   const parsed = bakeoffCasesSchema.safeParse(content);
   if (!parsed.success) {
     const issue = parsed.error.issues[0]!;
     throw new Error(`${where}: ${issue.path.join('.') || '(root)'}: ${issue.message}`);
   }
-  const c = parsed.data;
+  const written = parsed.data;
+  if (business === undefined && (written.facts === undefined || written.forms === undefined)) throw new Error(`${where}: give the facts and the forms, or the app's business.yaml (business:, or --business)`);
+  if (business !== undefined && (written.facts !== undefined || written.forms !== undefined || written.examples !== undefined)) throw new Error(`${where}: the facts, the sample replies and the forms are the business.yaml's: take them out of the cases`);
+  const c = business !== undefined
+    ? { facts: business.facts, examples: business.examples, forms: Object.fromEntries(Object.entries(business.forms).map(([n, f]) => [n, { about: f.about, fields: f.fields.map((x) => ({ ...x, required: x.required })), actions: f.actions, lines: f.lines }])), calls: written.calls }
+    : { facts: written.facts!, examples: written.examples ?? [], forms: written.forms! as Record<string, z.infer<typeof formSchema> & { lines?: string[] }>, calls: written.calls };
   const problems: string[] = [];
   const ids = new Set<string>();
   const calls: BakeoffCall[] = c.calls.map((call, i): BakeoffCall | null => {
@@ -160,6 +186,7 @@ export function parseBakeoffCases(content: unknown, where = 'the cases'): Bakeof
       form: { name: call.form, about: form.about },
       fields: form.fields.map((f) => ({ name: f.name, type: f.type, required: f.required, ...(f.about !== undefined ? { about: f.about } : {}), ...(f.options !== undefined ? { options: f.options } : {}), ...(f.redact !== undefined ? { redact: f.redact } : {}) })),
       actions: form.actions,
+      ...((form as { lines?: string[] }).lines !== undefined && (form as { lines?: string[] }).lines!.length > 0 ? { lines: (form as { lines: string[] }).lines } : {}),
       caller: call.caller,
       channel: call.channel,
       today: call.today,
@@ -172,13 +199,39 @@ export function parseBakeoffCases(content: unknown, where = 'the cases'): Bakeof
   return { facts: c.facts, examples: c.examples, calls };
 }
 
-/** Reads a cases file (YAML, or JSON, which YAML reads too). Throws, naming the file, when it cannot be read or is wrong. */
-export function loadBakeoffCases(path: string): BakeoffCases {
+/**
+ * Reads a cases file (YAML, or JSON, which YAML reads too), with the business.yaml it names (`business:`, a
+ * path from the cases file) or `businessPath` (--business), which wins. Throws, naming the file, when either
+ * cannot be read or is wrong.
+ */
+export function loadBakeoffCases(path: string, businessPath?: string): BakeoffCases {
   let content: unknown;
   try {
     content = parseYaml(readFileSync(path, 'utf8'));
   } catch (e) {
     throw new Error(`${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
-  return parseBakeoffCases(content, path);
+  const named = typeof content === 'object' && content !== null && typeof (content as { business?: unknown }).business === 'string' ? resolve(dirname(path), (content as { business: string }).business) : undefined;
+  const file = businessPath ?? named;
+  return parseBakeoffCases(content, path, file !== undefined ? businessCases(file) : undefined);
+}
+
+/** What a business.yaml gives the cases (CasesBusiness): as the app's agent model is sent them (define/business.ts factsOf, define/businessApp.ts agentAppOf). */
+export function businessCases(file: string): CasesBusiness {
+  const read = loadBusiness(dirname(file));
+  if (read.business === null) throw new Error(`${file}: ${read.problems.map((p) => `${p.path}: ${p.message}`).join('; ')}`);
+  const b = read.business;
+  const app = agentAppOf(b, null);
+  const person = b.callback !== undefined ? 'callback' : undefined;
+  const forms: CasesBusiness['forms'] = {};
+  for (const [name, f] of Object.entries(app.forms)) {
+    const fields = f.fields.map((x) => {
+      const redact = businessForms(b).find((y) => y.name === name)?.form.fields.find((y) => y.name === x.name)?.redact ?? (x.type === 'digits' ? 'last4' : undefined);
+      return { name: x.name, type: x.type, required: x.required, ...(x.about !== undefined ? { about: x.about } : {}), ...(x.options !== undefined ? { options: [...x.options] } : {}), ...(redact !== undefined && redact !== 'none' && redact !== 'length-summarized' ? { redact: redact as 'last4' | 'mask' | 'length' } : {}) };
+    });
+    const actions: AgentActionChoice[] = [{ name: SUBMIT_ACTION, about: SUBMIT_ABOUT }, ...(person !== undefined && name !== person ? [{ name: CALLBACK_ACTION, about: CALLBACK_ABOUT }] : [])];
+    const lines = Object.keys(app.lines).filter((l) => Object.hasOwn(app.facts.fixed, l) && (app.lineForms?.[l] === undefined || app.lineForms[l]!.includes(name)));
+    forms[name] = { about: f.about, fields, actions, lines };
+  }
+  return { facts: app.facts, examples: [...app.examples], forms };
 }
