@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveRenderProvider } from '../render/providers';
-import { agentKeyVar, appAgentClient, INCEPTION_URL, inceptionAgent, openRouterAgent, resolveInceptionAgent } from './provider';
+import { agentKeyVar, appAgentClient, INCEPTION_URL, inceptionAgent, openRouterAgent, resolveInceptionAgent, AGENT_MAX_TOKENS } from './provider';
 import type { AgentContext } from './types';
 
 /**
@@ -158,6 +158,9 @@ describe('inceptionAgent', () => {
     expect(INCEPTION_URL).toBe('https://api.inceptionlabs.ai/v1/chat/completions');
     expect(req!.headers.authorization).toBe(`Bearer ${KEY}`);
     expect(req!.body).toMatchObject({ model: 'mercury-3', reasoning_effort: 'instant', realtime: true, temperature: 0.6, response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true } } });
+    // The answer is capped (call 38): sized from the largest valid answer recorded (302 tokens), a third more.
+    expect(req!.body).toMatchObject({ max_tokens: AGENT_MAX_TOKENS });
+    expect(AGENT_MAX_TOKENS).toBe(400);
     expect(req!.body).not.toHaveProperty('reasoning');
   });
 
