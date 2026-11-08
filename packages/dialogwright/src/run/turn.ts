@@ -557,9 +557,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   if (resolved.agentAgain !== undefined && agentCtx !== null && opts.agent != null) {
     const seen = resolved.agentAgain.seen;
     const asked = await askAgain(opts.agent, agentCtx, seen, session.caps.speech, agentAskedAt);
-    again = { result: asked.result, tools: seen.map((x) => x.tool) };
+    again = { result: asked.result, tools: [...new Set(seen.map((x) => x.tool))] };
     if (asked.result.ok) {
-      const next = await resolveWaiting(session, event, turnAnswers, { ...turnTc, agent: asked.result, agentSeen: { seen } }, error, screen, channel, toolTimeout, first.memo);
+      const next = await resolveWaiting(session, event, turnAnswers, { ...turnTc, agent: asked.result, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}) } }, error, screen, channel, toolTimeout, first.memo);
       resolved = next.result;
       waited = next.waited ?? waited;
       agentShown = asked.ctx;

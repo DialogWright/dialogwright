@@ -26,7 +26,8 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * composite the checks it is made of. A check written by hand has none.
  */
 export type ReplyShapeTag =
-  | { readonly kind: 'text' | 'digits' | 'code' | 'isoDate' | 'amount' | 'number' | 'boolean' | 'oneOf' }
+  | { readonly kind: 'text' | 'digits' | 'isoDate' | 'amount' | 'number' | 'boolean' | 'oneOf' }
+  | { readonly kind: 'code'; readonly max: number }
   | { readonly kind: 'nullable' | 'list'; readonly of: ReplyCheck }
   | { readonly kind: 'object'; readonly fields: Readonly<Record<string, ReplyCheck>> }
   | { readonly kind: 'all' | 'any'; readonly of: readonly ReplyCheck[] };
@@ -43,6 +44,9 @@ export function shapeOf(check: unknown): ReplyShapeTag | undefined {
   return typeof check === 'function' ? TAGS.get(check as ReplyCheck) : undefined;
 }
 
+/** The longest code() a closed form allows (the default code's): a reference, never words run together. */
+export const CODE_MAX_SHOWN = 20;
+
 /** The kinds of value a closed form allows (a value from a set the app wrote, a number of a fixed shape, a day, yes or no): never free text. */
 const CLOSED_KINDS: ReadonlySet<ReplyShapeTag['kind']> = new Set(['digits', 'code', 'isoDate', 'amount', 'number', 'boolean', 'oneOf']);
 
@@ -58,6 +62,8 @@ export function openPart(check: unknown, at = ''): string | null {
   const shape = shapeOf(check);
   if (shape === undefined) return `${where} is checked by a function written by hand, which the engine cannot read`;
   if (shape.kind === 'text') return `${where} is free text (replyShape.text())`;
+  // A code is a reference, not a sentence: one longer than a reference is no closed form (the review of Task 8).
+  if (shape.kind === 'code' && shape.max > CODE_MAX_SHOWN) return `${where} is a code() of up to ${shape.max} characters, more than the ${CODE_MAX_SHOWN} a reference shown to a model may have`;
   if (CLOSED_KINDS.has(shape.kind)) return null;
   switch (shape.kind) {
     case 'nullable':
@@ -165,7 +171,8 @@ export const replyShape = {
   },
   /** Letters and digits with a hyphen between (a reference such as OT401 or A-1001), `min` to `max` characters (default 1 to 20). */
   code(opts: { min?: number; max?: number } = {}): ReplyCheck {
-    return tag((v) => typeof v === 'string' && /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(v) && v.length >= (opts.min ?? 1) && v.length <= (opts.max ?? 20), { kind: 'code' });
+    const max = opts.max ?? 20;
+    return tag((v) => typeof v === 'string' && /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(v) && v.length >= (opts.min ?? 1) && v.length <= max, { kind: 'code', max });
   },
   /** A calendar date written yyyy-mm-dd, one that exists. */
   isoDate(): ReplyCheck {
@@ -201,7 +208,9 @@ export const replyShape = {
    * call is made from.
    */
   object(fields: Readonly<Record<string, ReplyCheck>>): ReplyCheck {
-    return tag((v) => isObject(v) && Object.entries(fields).every(([k, check]) => check(Object.hasOwn(v, k) ? v[k] : undefined)), { kind: 'object', fields: { ...fields } });
+    // One frozen copy, which the check and what it is both read: the fields given cannot be changed under it.
+    const own: Readonly<Record<string, ReplyCheck>> = Object.freeze({ ...fields });
+    return tag((v) => isObject(v) && Object.entries(own).every(([k, check]) => check(Object.hasOwn(v, k) ? v[k] : undefined)), { kind: 'object', fields: own });
   },
   /** Every one of `checks`. */
   all(...checks: ReplyCheck[]): ReplyCheck {

@@ -218,6 +218,12 @@ export interface TurnScore {
   wordsNotSaid: number;
   actionRight: boolean;
   figure: boolean;
+  /**
+   * The figure refused is the number one alone (every number the reply says that no source holds is 1, as
+   * "one" is read: "a lovely one", "which one?"): what the engine's figure check costs where a reply says
+   * "one" as a word, not a figure (the design's call 32), measured here.
+   */
+  figureOne: boolean;
   /** What was wrong, for the list of mistakes. */
   mistakes: string[];
 }
@@ -239,7 +245,7 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   }
   const labels = t.turn.values ?? {};
   const may = t.turn.may ?? {};
-  const s: TurnScore = { labelled: 0, right: 0, wrong: 0, missed: 0, extra: 0, wordsNotSaid: 0, actionRight: false, figure: false, mistakes: [] };
+  const s: TurnScore = { labelled: 0, right: 0, wrong: 0, missed: 0, extra: 0, wordsNotSaid: 0, actionRight: false, figure: false, figureOne: false, mistakes: [] };
   const givenTwice = (field: string): string => `${field} given twice: ${a.values.filter((v) => v.field === field).map((v) => `"${v.value}"`).join(' and ')}`;
   for (const [field, label] of Object.entries(labels)) {
     s.labelled += 1;
@@ -309,6 +315,10 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
     s.figure = true;
     s.mistakes.push(`a figure not in the facts: "${a.reply}"`);
   }
+  if (s.figure) {
+    const foreign = numbersNotIn(a.reply, strict ? Object.values(t.ctx.facts.fixed) : sources);
+    s.figureOne = foreign.length > 0 && foreign.every((n) => n === '1');
+  }
   return s;
 }
 
@@ -343,6 +353,8 @@ export interface AgentVariantResult {
   actions: { right: number; of: number };
   /** Valid answers whose reply says a figure the facts and values do not hold, or any number on a `noFigure` turn. */
   figures: number;
+  /** Of them, those whose only such figure is the number one (TurnScore.figureOne). */
+  figuresOne: number;
   ms: { measured: number; p50: number | null; p95: number | null };
   tokens: { input: number; output: number };
   /** The provider's own cost where it gave one, else the tokens at `--price`; null when neither is known. */
@@ -390,7 +402,7 @@ function quantile(xs: readonly number[], q: number): number | null {
 function emptyResult(entry: string, model: string, variant: AgentVariant): AgentVariantResult {
   return {
     entry, model, variant, status: 'ran', asked: 0, notRecorded: 0, failed: 0, answered: 0, valid: 0, invalid: 0, timeouts: 0, errors: {},
-    values: { labelled: 0, right: 0, wrong: 0, missed: 0, extra: 0, wordsNotSaid: 0 }, actions: { right: 0, of: 0 }, figures: 0,
+    values: { labelled: 0, right: 0, wrong: 0, missed: 0, extra: 0, wordsNotSaid: 0 }, actions: { right: 0, of: 0 }, figures: 0, figuresOne: 0,
     ms: { measured: 0, p50: null, p95: null }, tokens: { input: 0, output: 0 }, costUsd: null, mistakes: [], reviewed: [], invalidWhy: [],
   };
 }
@@ -474,6 +486,7 @@ export async function runAgentBakeoff(models: readonly { entry: string; client: 
               r.values.wordsNotSaid += s.wordsNotSaid;
               if (s.actionRight) r.actions.right += 1;
               if (s.figure) r.figures += 1;
+              if (s.figureOne) r.figuresOne += 1;
               for (const what of s.mistakes) r.mistakes.push({ call: call.id, turn: t.index + 1, what });
               replies.push(res.answer.reply);
             }
@@ -516,7 +529,7 @@ export function meetsBar(r: AgentVariantResult, judgeMs: number): boolean | null
 }
 
 function head(r: AgentBakeoffReport): string[] {
-  return ['model', 'prompt', 'asked', 'answered', 'valid JSON', 'values right', 'wrong / missed / extra', 'words not said', 'actions right', 'figure not in facts', 'ms p50 / p95', ...(r.judgeMs !== undefined ? [`with judge (+${r.judgeMs} ms)`, 'meets the bar'] : []), 'tokens in / out', 'cost'];
+  return ['model', 'prompt', 'asked', 'answered', 'valid JSON', 'values right', 'wrong / missed / extra', 'words not said', 'actions right', 'figure not in facts', 'of them, "one" alone', 'ms p50 / p95', ...(r.judgeMs !== undefined ? [`with judge (+${r.judgeMs} ms)`, 'meets the bar'] : []), 'tokens in / out', 'cost'];
 }
 
 function row(x: AgentVariantResult, r: AgentBakeoffReport): string[] {
@@ -526,7 +539,7 @@ function row(x: AgentVariantResult, r: AgentBakeoffReport): string[] {
   const judged = r.judgeMs === undefined ? [] : [x.ms.p50 === null ? '-' : `${x.ms.p50 + r.judgeMs} / ${x.ms.p95! + r.judgeMs}`, bar === null ? '-' : bar ? 'yes' : 'no'];
   return [
     x.entry, x.variant, String(x.asked), share(x.answered, x.asked), share(x.valid, x.answered), share(x.values.right, x.values.labelled),
-    `${x.values.wrong} / ${x.values.missed} / ${x.values.extra}`, String(x.values.wordsNotSaid), share(x.actions.right, x.actions.of), String(x.figures),
+    `${x.values.wrong} / ${x.values.missed} / ${x.values.extra}`, String(x.values.wordsNotSaid), share(x.actions.right, x.actions.of), String(x.figures), String(x.figuresOne),
     latency, ...judged, `${x.tokens.input} / ${x.tokens.output}`, x.costUsd === null ? 'no price' : `$${x.costUsd.toFixed(4)}`,
   ];
 }

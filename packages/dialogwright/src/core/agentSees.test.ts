@@ -11,7 +11,7 @@ import type { JevClient, JevRequest, JevResponse } from '../jev/types';
 import { spokenText } from '../prompts/render';
 import { AGENT_AGAIN_NO_TIME, runTurn, type RunOptions, type TurnRun } from '../run/turn';
 import { registerApp, resetAppsForTest } from './app/registry';
-import { RESULT_UNCHECKED } from './lifecycle';
+import { RESULT_UNCHECKED, TOOL_FAILED_SUMMARY } from './lifecycle';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { mockCodeVerifier } from './tools';
 import { newSession, type Session } from './session';
@@ -152,7 +152,8 @@ describe('the tools the model sees', () => {
       },
     }, [THURSDAY, 'actually make it Saturday afternoon']);
     const t = c.last;
-    expect(c.contexts.at(-1)!.seen).toEqual([{ tool: 'roomAvailability', result: { day: '2026-11-14', windows: ['morning'] } }]);
+    // Both days' results kept on the call, the latest last.
+    expect(c.contexts.at(-1)!.seen).toEqual([{ tool: 'roomAvailability', result: { day: '2026-11-12', windows: ['morning', 'afternoon'] } }, { tool: 'roomAvailability', result: { day: '2026-11-14', windows: ['morning'] } }]);
     expect(promptOf(t)).toBe('readback_booking');
     expect(heard(t)).toBe("Saturday afternoon is full, but the morning is free. So that's the study room for Rivergate Book Club, four people, Saturday, November 14 in the morning. Shall I book it?");
   });
@@ -212,5 +213,64 @@ describe('the tools the model sees', () => {
     const c = await call({ [THURSDAY]: { blind: THURSDAY_ANSWER } }, [THURSDAY]);
     expect(c.contexts[1]!.seen).toEqual([{ tool: 'roomAvailability', result: { day: '2026-11-12', windows: ['morning'] } }]);
     expect(JSON.stringify(c.last.record)).not.toContain('Quinn');
+  });
+
+  it('at a read-back, a yes said with a change ("yes, but make it Saturday afternoon") never completes on the second resolution: the read-back again, nothing booked (the review of Task 8)', async () => {
+    const change = 'yes, but make it Saturday afternoon';
+    for (const shown of [said('Saturday afternoon is full, but the morning is free.', [['day', '2026-11-14', 'Saturday']]), said('Saturday afternoon is full.')]) {
+      const run = vi.spyOn(app.tools.bookRoom!, 'run');
+      const c = await call({ [THURSDAY]: { blind: THURSDAY_ANSWER }, [change]: { blind: said('Done.', [['day', '2026-11-14', 'Saturday'], ['window', 'afternoon', 'afternoon']]), shown } }, [THURSDAY, change]);
+      const t = c.last;
+      expect(t.record.agent!.again).toMatchObject({ tools: ['roomAvailability'] });
+      expect(t.record.agent!.again!.fallback).toBeUndefined();
+      expect(promptOf(t)).toBe('readback_booking');
+      expect(heard(t)).toContain(shown.reply);
+      expect(run).not.toHaveBeenCalled();
+      expect(t.result.gateEvents.map((e) => e.decision.call.tool)).not.toContain('bookRoom');
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('a seen tool that throws shows nothing, and the turn goes on: the calendar down, the read-back still said', async () => {
+    vi.spyOn(app.tools.roomAvailability!, 'run').mockImplementation(() => {
+      throw new Error('calendar down');
+    });
+    const c = await call({ [THURSDAY]: { blind: THURSDAY_ANSWER } }, [THURSDAY]);
+    const t = c.last;
+    expect(c.contexts).toHaveLength(1);
+    expect(promptOf(t)).toBe('readback_booking');
+    expect(seenCalls(t).map((e) => [e.decision.verdict, e.summary])).toEqual([['ALLOW', TOOL_FAILED_SUMMARY]]);
+    expect(t.result.session.agent?.seen).toBeUndefined();
+    expect(t.record.agent!.again).toBeUndefined();
+  });
+
+  it('the first resolution\'s lookup is kept in the turn\'s records and on the call when the second answer moves the day', async () => {
+    const monday = said('Saturday afternoon is full; Monday afternoon is free.', [['people', 'four', 'four people'], ['day', '2026-11-16', 'Monday'], ['window', 'afternoon', 'afternoon']]);
+    const c = await call({ [`${SATURDAY} or Monday`]: { blind: said('Lovely.', [['people', 'four', 'four people'], ['day', '2026-11-14', 'Saturday'], ['window', 'afternoon', 'afternoon']]), shown: monday } }, [`${SATURDAY} or Monday`]);
+    const t = c.last;
+    // Both lookups, the first resolution's and the second's, in the gate events and the audit drafts.
+    expect(seenCalls(t).map((e) => e.decision.call.params.day)).toEqual(['2026-11-14', '2026-11-16']);
+    const audited = JSON.stringify(t.result.audit);
+    expect(audited).toContain('2026-11-14');
+    expect(t.result.session.agent!.seen!.map((x) => x.value)).toEqual(['2026-11-14', '2026-11-16']);
+    // The second answer moved the day to one whose result it was not shown: its reply is not said.
+    expect(t.record.agent!.replySaid).toBe(false);
+    expect(promptOf(t)).toBe('readback_booking');
+  });
+
+  it('a check not known closed at run time shows nothing, and the tool is not called for it', async () => {
+    const run = vi.spyOn(app.tools.roomAvailability!, 'run');
+    vi.spyOn(app.tools.roomAvailability!, 'check');
+    const c = await call({ [THURSDAY]: { blind: THURSDAY_ANSWER } }, [THURSDAY]);
+    expect(run).not.toHaveBeenCalled();
+    expect(c.contexts).toHaveLength(1);
+    expect(c.last.result.session.agent?.seen).toBeUndefined();
+  });
+
+  it('no second asking where a value was refused on the same turn', async () => {
+    const c = await call({ [THURSDAY]: { blind: said('Lovely.', [['people', 'four', 'four people'], ['day', '2026-11-12', 'Thursday'], ['window', 'afternoon', 'in the afternoon']]) } }, [THURSDAY]);
+    expect(c.contexts).toHaveLength(1);
+    expect(c.last.record.agent!.again).toBeUndefined();
+    expect(c.last.record.agent!.values.map((v) => v.outcome)).toContain('words');
   });
 });

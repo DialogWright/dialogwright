@@ -149,6 +149,10 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
   for (const { name, form } of forms) {
     form.fields.forEach((f, i) => {
       if (f.sees === undefined) return;
+      // A seen tool is called with the field's value, and its result shown to the model: a value the
+      // records hide would reach the model whole in the result (the review of Task 8).
+      const redact = f.redact ?? (f.type === 'digits' ? 'last4' : 'none');
+      if (redact !== 'none') report([name, 'fields', i, 'sees'], `the field "${f.name}" is recorded ${redact === 'last4' ? 'by its last four' : `by its ${redact}`} (redact ${redact}${f.redact === undefined ? ', its type\'s default' : ''}), but it sees "${f.sees}": its value, and what the tool returns for it, would be shown to the agent model whole`, `see "${f.sees}" from a field the records keep as it is (redact: none), or take sees off "${f.name}"`);
       const first = seers.get(f.sees);
       if (first === undefined) seers.set(f.sees, f.name);
       else if (first !== f.name) report([name, 'fields', i, 'sees'], `the tool "${f.sees}" is seen by the field "${first}" too, but a seen tool is called with one field's value, by its name`, `see "${f.sees}" from fields named "${first}" only, or give "${f.name}" a tool of its own`);

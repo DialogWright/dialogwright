@@ -81,6 +81,14 @@ describe('scoreAnswer', () => {
     expect(numbersNotIn('It is 2 dollars, or about four hundred', ['The fee is $2.'])).toEqual(['400']);
   });
 
+  it('a figure refused that is the number one alone is counted apart ("a lovely one"), so what the check costs is measured', () => {
+    const t = turnOf('hold-request', 1);
+    expect(scoreAnswer(reply(t, 'That is a lovely one.'), t)).toMatchObject({ figure: true, figureOne: true });
+    expect(scoreAnswer(reply(t, 'It would be about four hundred.'), t)).toMatchObject({ figure: true, figureOne: false });
+    expect(scoreAnswer(reply(t, 'One for four hundred.'), t)).toMatchObject({ figure: true, figureOne: false });
+    expect(scoreAnswer(reply(t, 'Fees are explained at the desk.'), t)).toMatchObject({ figure: false, figureOne: false });
+  });
+
   it('a reply may say back a figure the caller said, a year among them, but not one it makes from theirs', () => {
     const counted = parseBakeoffCases({
       facts: { name: 'Example Library', voice: 'Brief.' },

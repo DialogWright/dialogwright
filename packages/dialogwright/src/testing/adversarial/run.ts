@@ -464,7 +464,9 @@ function lineStub(app: App, c: AdversarialCase, opts: AdversarialRunOptions): Je
 }
 
 function baseOptions(opts: AdversarialRunOptions, client: JevClient, turns: TurnRun[], tools: Tools, renderer: Renderer | undefined = opts.renderer): ScenarioRunOptions {
-  return { client, thresholds: opts.thresholds, todayIso: opts.todayIso, now: () => 0, ...(opts.screen !== undefined ? { screen: opts.screen } : {}), turn: recorder(turns), tools, ...(renderer !== undefined ? { renderer } : {}) };
+  // An app in agent mode: the run's agent model, or on the stub the agent answers each scripted call's steps name (ignored by every other app).
+  const agent = opts.agent !== undefined ? { agent: opts.agent } : opts.perceiver.stub ? { agentSteps: true } : {};
+  return { client, thresholds: opts.thresholds, todayIso: opts.todayIso, now: () => 0, ...(opts.screen !== undefined ? { screen: opts.screen } : {}), turn: recorder(turns), tools, ...(renderer !== undefined ? { renderer } : {}), ...agent };
 }
 
 /** What a hostile renderer writes before a line (RenderAttack), each a marker no line said may hold. */

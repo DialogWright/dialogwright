@@ -137,7 +137,7 @@ function heldFields(app: App, s: Session): { field: string; slot: string; type: 
 /**
  * What a figure or a web address in an agent reply may come from: the facts (what the line may say, its
  * fixed lines), every value held but a text value (as held and as shown, a date with how it is said), the
- * words each value accepted this turn was cited from ("two copies" said back), a visible tool's result, and
+ * words a digits or name value accepted this turn was cited from (tied to the value by its check), a visible tool's result, and
  * `fixed`, the turn's own fixed lines. Never the caller's own words: a figure the caller proposes ("is it
  * under a hundred?", "in two days?") is not the line's to state or agree to, as a generated line may not
  * state the caller's figure as its own (render/checks.ts allowedFigures; the review of Task 7).
@@ -154,6 +154,9 @@ export function agentFigureSources(app: App, s: Session, today: string, opts: { 
     ...(opts.fixed ?? []),
   ].filter((x) => x.trim() !== '');
 }
+
+/** The slot types whose values' cited words are a source of figures: those whose check ties the value to its words. */
+const CITED_TYPES: ReadonlySet<string> = new Set(['digits', 'name']);
 
 /** A field's slot type, by its slot, in any of the app's forms (text where none has it: no source of figures). */
 function typeOfSlot(app: App, slot: string | undefined): string {
@@ -229,7 +232,9 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
     // A reply written from words the injection screen flagged or did not read is never said.
     if (heard !== null && (result.screen === null || result.screen.fired || result.screen.error !== null || result.quarantined)) return { fallback: 'screen' };
     const sources = agentFigureSources(app, session, input.todayIso, {
-      cited: accepted.filter((v) => typeOfSlot(app, v.slot) !== 'text').map((v) => v.words),
+      // A digits or name value's cited words are tied to it (its check holds them to it); a choice's or a date's are
+      // not (a synonym, "Thursday"), so only its held value and display are sources (the review of Task 8).
+      cited: accepted.filter((v) => CITED_TYPES.has(typeOfSlot(app, v.slot))).map((v) => v.words),
       seen: input.seen ?? [],
       fixed: [spokenText(app, fixedDecision, session.locale, shown)],
     });
@@ -255,7 +260,7 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
       fixedLines: Object.values(app.agent!.facts.fixed),
       understood,
       seen: input.seen ?? [],
-      conversation: judgedHistory(app, session, heard),
+      conversation: judgedHistory(app, session, heard, oneLine(spokenText(app, d, session.locale, shown))),
       ...(heard !== null ? { heard } : {}),
     });
     const budget = (input.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[channel];
@@ -322,11 +327,13 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
 /**
  * The call before this turn as the drift judge is told it, as the agent model is sent it (agent/history.ts):
  * the conversation kept, without this turn's own words and line (the words are quoted apart, the line is
- * what is judged), each value the records hide masked once understood.
+ * what is judged): only the line this turn noted (`noted`, its words as said) is taken off, never an earlier
+ * one; each value the records hide masked once understood.
  */
-function judgedHistory(app: App, s: Session, heard: string | null): { who: 'caller' | 'line'; text: string }[] {
+export function judgedHistory(app: App, s: Session, heard: string | null, noted: string): { who: 'caller' | 'line'; text: string }[] {
   const conversation = [...(s.agent?.conversation ?? [])];
-  if (conversation.at(-1)?.who === 'line') conversation.pop();
+  const end = conversation.at(-1);
+  if (end?.who === 'line' && end.text === noted) conversation.pop();
   const last = conversation.at(-1);
   if (heard !== null && last?.who === 'caller' && last.text === oneLine(heard)) conversation.pop();
   const fields = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields.map((x) => x.slot));

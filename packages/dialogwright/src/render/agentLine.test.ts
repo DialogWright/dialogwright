@@ -14,7 +14,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { mockCodeVerifier } from '../core/tools';
 import { newSession, type Session } from '../core/session';
-import { checkAgentReply, shapeLeak } from './agentLine';
+import { checkAgentReply, judgedHistory, shapeLeak } from './agentLine';
 import { redactRecordSlots } from '../trace/redact';
 import { AGENT_DRIFT_QUESTION_ID } from './checks';
 
@@ -295,6 +295,16 @@ describe('the review of Task 7', () => {
     expect(heard(c.last)).toBe(NAME_Q);
   });
 
+  it('a choice value\'s cited words are no source: "two copies, is it under a hundred" cited for copies=two does not let "under a hundred" pass (the review of Task 8)', async () => {
+    const words = 'two copies, is it under a hundred dollars';
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, and yes, under a hundred dollars. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words]);
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'copies', outcome: 'accepted' }]);
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
+    // Its held value and display stay sources: "two copies" said back passes.
+    const ok = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, lovely. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words]);
+    expect(ok.last.record.agent!.line).toMatchObject({ mode: 'generated' });
+  });
+
   it('"in two days?" against "Yes, two days is fine": the caller\'s figure, refused', async () => {
     const asked = 'can you have it ready in two days?';
     const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [asked]: said('Yes, two days is fine. What name is it under?', [], { fromFacts: true }) }, [HOLD, asked]);
@@ -317,6 +327,13 @@ describe('the review of Task 7', () => {
     expect(state.agent.conversation[3]!.text).not.toContain('0144 ');
     expect(JSON.stringify(state.agent.conversation)).not.toContain('555 555 0144');
     expect(state.quoted).toEqual([{ name: 'heard', words: 'two please' }]);
+  });
+
+  it('the history the judge is given takes off only the line this turn noted, never an earlier one', () => {
+    const s = newSession('S-history', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    s.agent = { conversation: [{ who: 'line', text: 'Thanks for calling.' }, { who: 'caller', text: 'hello' }, { who: 'line', text: 'How can I help?' }], failures: 0 };
+    expect(judgedHistory(app, s, 'hello', 'How can I help?')).toEqual([{ who: 'line', text: 'Thanks for calling.' }]);
+    expect(judgedHistory(app, s, 'something else', 'Another line.')).toEqual(s.agent.conversation);
   });
 
   it('the stub judge reads the caller\'s quoted words as the caller\'s: a promise asked for and made is refused', async () => {

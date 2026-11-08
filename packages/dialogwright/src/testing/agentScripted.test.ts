@@ -11,7 +11,8 @@ import { choiceAnswer, sharp } from '../jev/distributions';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient, JevRequest, JevResponse } from '../jev/types';
 import { runScenario, type Scenario, type ScenarioRunOptions } from '../harness-text/runner';
-import { agentCassetteFile, harnessAgent, isScriptedAgentStep, validAgentProperties } from '../harness-text/agentScript';
+import { agentCassetteFile, agentPropertyMismatches, harnessAgent, isScriptedAgentStep, validAgentProperties } from '../harness-text/agentScript';
+import type { TurnRun } from '../run/turn';
 
 /**
  * Testing an app in agent mode (plan Task 9), on the fixture business: scripted calls whose steps name the
@@ -113,6 +114,44 @@ describe('a scripted call of an app in agent mode', () => {
     expect(validAgentProperties({ values: { day: '2026-11-12' }, action: { not: 'bookRoom' }, said: { notFigure: true }, readBackSaid: true, nothingDoneBefore: 'confirm' })).toBe(true);
     expect(validAgentProperties({ nothingDoneBefore: 'yes' })).toBe(false);
     expect(validAgentProperties({ said: { figure: true } })).toBe(false);
+  });
+});
+
+describe('the review of Task 9', () => {
+  it('where the turn asks again, one answer per asking is required: a missing one fails the call', async () => {
+    const r = await runScenario({ ...booking(HOLDS), steps: [{ say: BOOK, agent: { reply: 'Lovely.', values: BOOK_VALUES } }, booking(HOLDS).steps[1]!] }, opts());
+    expect(r.pass).toBe(false);
+    expect(r.mismatches).toContain(`agent: step 1 (${JSON.stringify(BOOK)}) asked the agent again (shown a tool's result), but names 1 answer: give one per asking`);
+  });
+
+  it('readBackSaid holds the read-back\'s values to the write\'s, and allows the keypad rung between them', async () => {
+    const r = await runScenario(booking(HOLDS), opts());
+    const turns = r.runs;
+    expect(agentPropertyMismatches(app, { readBackSaid: true }, turns, TODAY)).toEqual([]);
+    // The write carrying a value the read-back never said.
+    const write = turns.findIndex((t) => t.result.gateEvents.some((e) => e.decision.call.tool === 'bookRoom'));
+    const moved = turns.map((t, i) => (i === write ? { ...t, result: { ...t.result, gateEvents: t.result.gateEvents.map((e) => (e.decision.call.tool === 'bookRoom' ? { ...e, decision: { ...e.decision, call: { ...e.decision.call, params: { ...e.decision.call.params, day: '2026-11-14' } } } } : e)) } } : t));
+    expect(agentPropertyMismatches(app, { readBackSaid: true }, moved, TODAY)).toEqual([`readBackSaid: turn ${write} ran bookRoom with day "2026-11-14", but the read-back on turn ${write - 1} said "2026-11-12"`]);
+    // The keypad rung said between the read-back and the yes.
+    const rung = { ...turns[write - 1]!, result: { ...turns[write - 1]!.result, decision: { kind: 'prompt', promptId: 'confirm_dtmf', vars: {}, acks: [], target: 'confirm', options: ['yes', 'no'] } } } as unknown as TurnRun;
+    const keyed = [...turns.slice(0, write), rung, ...turns.slice(write)];
+    expect(agentPropertyMismatches(app, { readBackSaid: true }, keyed, TODAY)).toEqual([]);
+  });
+
+  it('readBackSaid compares a value the records hide as the call records it (a callback number by its last four)', async () => {
+    const r = await runScenario({
+      id: 'callback', steps: [
+        { say: 'can someone call me back', agent: { action: 'callback' } },
+        { say: 'my number is 555 555 0144', agent: { values: [{ field: 'callbackNumber', value: '5555550144', words: '555 555 0144' }] } },
+        { say: 'yes please', agent: {} },
+      ],
+      expect: { decision: 'prompt', action: 'noteCallback', readBackSaid: true, values: { callbackNumber: '...0144' } },
+    }, opts());
+    expect(r.mismatches).toEqual([]);
+  });
+
+  it('a live agent model is refused in CI, as recording it is', () => {
+    expect(() => harnessAgent('jev', app, '/rec', { CI: '1', INCEPTION_API_KEY: 'test-key' })).toThrow(/asking the agent model live .* refused in CI/);
   });
 });
 

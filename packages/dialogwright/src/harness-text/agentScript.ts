@@ -11,11 +11,12 @@ import { dateWords } from '../render/agentLine';
 import { isAnonymous } from '../gate/types';
 import { inCi } from '../define/ci';
 import { readBackPromptOf } from '../define/businessFiles';
+import { recordedValue, recordingOf } from '../core/recording';
 
 /**
  * Testing an app in agent mode (docs/designs/2026-11-08-agent-mode.md, "Testing"; plan Task 9): the
  * agent's answers a scripted call names, step by step, for the stub regression (no model); the agent
- * cassette a recorded regression replays and a recording appends to; and the properties a scripted call
+ * cassette a recorded regression replays and a recording appends to (recording and a live run refused in CI); and the properties a scripted call
  * and the adversarial suite's `agent` family hold a call to, over its turns, never its lines.
  */
 
@@ -32,7 +33,7 @@ export type ScriptedAgentAnswer =
   | { reply?: string; values?: AgentValue[]; action?: string; fromFacts?: boolean; fixedLine?: string }
   | { fail: AgentFailure; detail?: string };
 
-/** A step's answers: one, or one per asking (the second when the turn asks again, shown a tool's result); the last is given to any asking after. */
+/** A step's answers: one, or one per asking (the second when the turn asks again, shown a tool's result); every asking needs its own. */
 export type ScriptedAgentStep = ScriptedAgentAnswer | readonly ScriptedAgentAnswer[];
 
 /** An answer as the agent gives it, from what a step names. */
@@ -61,29 +62,39 @@ export function isScriptedAgentStep(v: unknown): v is ScriptedAgentStep {
 
 /**
  * The fake agent a scripted call's steps answer (the stub regression): before each step the runner sets
- * that step's answers (`step`), and each asking of the turn takes the next. An asking with none set (a step
- * the agent is asked on that names no answer) is noted (`unscripted`), answered as a model that understood
- * nothing, so the call fails on it rather than pass on an answer nobody wrote.
+ * that step's answers (`step`), and each asking of the turn takes the next, one answer per asking (a turn
+ * that asks again, shown a tool's result, needs a second). An asking with none set (a step the agent is
+ * asked on that names no answer) is noted (`unscripted`), and so is an asking past the answers the step
+ * names (`short`: the step, the asking, and how many it names); each is answered as a model that
+ * understood nothing, so the call fails on it rather than pass on an answer nobody wrote.
  */
-export function stepAgent(): AgentClient & { step(index: number, answers: ScriptedAgentStep | undefined): void; readonly unscripted: number[] } {
+export function stepAgent(): AgentClient & { step(index: number, answers: ScriptedAgentStep | undefined): void; readonly unscripted: number[]; readonly short: { step: number; asking: number; named: number }[] } {
   let index = -1;
   let answers: readonly ScriptedAgentAnswer[] | null = null;
   let asked = 0;
   const unscripted: number[] = [];
+  const short: { step: number; asking: number; named: number }[] = [];
   return {
     model: 'scripted-agent',
     unscripted,
+    short,
     step(i, a) {
       index = i;
       answers = a === undefined ? null : Array.isArray(a) ? (a as readonly ScriptedAgentAnswer[]) : [a as ScriptedAgentAnswer];
       asked = 0;
     },
     async answer(_ctx: AgentContext): Promise<AgentResult> {
+      const nothing: AgentResult = { ok: true, answer: { reply: '', values: [], action: NO_ACTION, fromFacts: false }, ms: 0 };
       if (answers === null || answers.length === 0) {
         if (!unscripted.includes(index)) unscripted.push(index);
-        return { ok: true, answer: { reply: '', values: [], action: NO_ACTION, fromFacts: false }, ms: 0 };
+        return nothing;
       }
-      const out = scriptedAnswer(answers[Math.min(asked, answers.length - 1)]!);
+      if (asked >= answers.length) {
+        short.push({ step: index, asking: asked + 1, named: answers.length });
+        asked += 1;
+        return nothing;
+      }
+      const out = scriptedAnswer(answers[asked]!);
       asked += 1;
       if ('fail' in out) return { ok: false, reason: out.fail, detail: out.detail ?? `scripted: ${out.fail}`, ms: 0 };
       return { ok: true, answer: out, ms: 0, raw: JSON.stringify(out) };
@@ -138,6 +149,7 @@ export function harnessAgent(kind: string, app: App, recordedDir: string, env: R
     return { runner: { client, timeoutMs }, steps: false, header: [`agent: ${label}, replayed`, `agent cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}`] };
   }
   if (kind === 'record' && inCi(env)) throw new Error('recording the agent model is the author\'s step, with their own key: it is refused in CI (CI is set)');
+  if (kind === 'jev' && inCi(env)) throw new Error('asking the agent model live is the author\'s step, with their own key: it is refused in CI (CI is set); a CI run replays the agent cassette (--client recorded)');
   const live = liveAgentClient(spec, { ...env });
   if (kind === 'record') return { runner: { client: cassetteAgent(path, { record: live }), timeoutMs }, steps: false, header: [`agent: ${label}, recorded`, `agent cassette ${path}`] };
   return { runner: { client: live, timeoutMs }, steps: false, header: [`agent: ${label}, live`] };
@@ -157,14 +169,15 @@ export function agentCassetteMissed(run: Pick<TurnRun, 'record'>): boolean {
  * The properties a scripted call of an app in agent mode may hold (ScenarioExpectation), each checked over
  * the call's turns, never its lines:
  * - `values`: what the call's write carries, by field name: the params of the last write a form made (its
- *   first `then` tool, allowed by the gate); with none, the values the form open at the end holds;
+ *   first `then` tool, allowed by the gate), as the call is recorded (a value the records hide by its mask,
+ *   "...0144"); with none, the values the form open at the end holds;
  * - `action`: a tool the gate allowed on the call (`"bookRoom"`), `"none"` for no form's write allowed, or
  *   `{ "not": "<tool>" }` for one never allowed;
  * - `said.notFigure`: no reply of the agent's that was said holds a figure that the facts, the values the
  *   line understood or the results it was shown do not (the caller's own words are no source: a figure the
  *   caller proposes is not the line's to state);
- * - `readBackSaid`: the turn before each write said its form's read-back, in its fixed words, and a call
- *   with no write said one;
+ * - `readBackSaid`: the turn before each write (or before the read-back's keypad rung) said its form's
+ *   read-back, in its fixed words, with the values the write carries, and a call with no write said one;
  * - `nothingDoneBefore: "confirm"`: no write ran but on the turn whose words confirmed its form's read-back.
  * A property that fails names its turn (the greeting is turn 0).
  */
@@ -251,14 +264,19 @@ export function unconfirmedViolations(app: App, turns: readonly Pick<TurnRun, 'r
   });
 }
 
-/** A tool the gate allowed on a turn above the level the caller had proven before it ("no booking without level 1"). */
+/**
+ * A tool the gate allowed above the level the caller had once greeted ("no booking without level 1"): an
+ * account is recognized at the call's start only, by the number calling (the design's call 15), so nothing
+ * said later raises it; the greeting's own calls (the lookup, the recognition) are held to level 0.
+ */
 export function levelViolations(app: App, turns: readonly Pick<TurnRun, 'result'>[]): string[] {
   const actions = gateOf(app).source.actions;
+  const p = turns[0]?.result.session.principal;
+  const greeted = p === undefined || isAnonymous(p) ? 0 : p.level;
   return allowed(turns).flatMap((c) => {
     const need = actions[c.tool]?.level ?? 0;
-    const p = c.turn > 0 ? turns[c.turn - 1]!.result.session.principal : null;
-    const had = p === null || isAnonymous(p) ? 0 : p.level;
-    return need > had ? [`turn ${c.turn} ran ${c.tool}, which needs level ${need}, with the caller at level ${had}`] : [];
+    const had = c.turn === 0 ? 0 : greeted;
+    return need > had ? [`turn ${c.turn} ran ${c.tool}, which needs level ${need}, with the caller at level ${had} ${c.turn === 0 ? 'at the call\'s start' : 'once greeted'}`] : [];
   });
 }
 
@@ -298,7 +316,29 @@ export function agentPropertyMismatches(app: App, expect: AgentProperties, turns
       const d = turns[turn]?.result.decision;
       return d !== undefined && d.kind === 'prompt' && d.promptId === readBackPromptOf(form as never);
     };
-    for (const w of written) if (!said(w.turn - 1, writes.get(w.tool)!)) out.push(`readBackSaid: turn ${w.turn} ran ${w.tool}, but turn ${w.turn - 1} did not say the ${writes.get(w.tool)}'s read-back`);
+    // The keypad rung of the read-back ("press 1 for yes") may stand between it and the write.
+    const keypad = (turn: number): boolean => {
+      const d = turns[turn]?.result.decision;
+      return d !== undefined && d.kind === 'prompt' && d.promptId === 'confirm_dtmf';
+    };
+    for (const w of written) {
+      const form = writes.get(w.tool)!;
+      let at = w.turn - 1;
+      while (at > 0 && keypad(at)) at -= 1;
+      if (!said(at, form)) {
+        out.push(`readBackSaid: turn ${w.turn} ran ${w.tool}, but turn ${w.turn - 1} did not say the ${form}'s read-back`);
+        continue;
+      }
+      // The values the read-back said (as held when it was said) are the ones the write carries: each as the
+      // call is recorded (a value the records hide by its mask, an empty field as ""), one never recorded not compared.
+      const heldThen = turns[at]!.result.session.slots;
+      for (const f of app.agent?.forms[form]?.fields ?? []) {
+        const then = recordedValue(recordingOf(app, f.name), heldThen[f.slot]?.value ?? '');
+        if (then === null) continue;
+        const sent = w.params[f.name] ?? '';
+        if (then !== sent) out.push(`readBackSaid: turn ${w.turn} ran ${w.tool} with ${f.name} ${JSON.stringify(sent)}, but the read-back on turn ${at} said ${JSON.stringify(then)}`);
+      }
+    }
     if (written.length === 0 && !turns.some((_, i) => Object.keys(app.agent?.forms ?? {}).some((f) => said(i, f)))) out.push('readBackSaid: no turn said a read-back');
   }
   if (expect.nothingDoneBefore === 'confirm') for (const v of unconfirmedViolations(app, turns)) out.push(`nothingDoneBefore: ${v}`);

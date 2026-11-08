@@ -16,7 +16,7 @@ import type { Verdict } from './gates';
 import { localeOf, slotLocaleOf } from './locale';
 import { setForm, type PendingConfirmation, type Session } from './session';
 import { callTool } from './lifecycle';
-import { namedPart } from './replyShape';
+import { namedPart, openPart } from './replyShape';
 import type { SlotContext } from './slots/types';
 import { resolve, type TurnContext, type TurnError, type TurnIO, type TurnResult } from './turn';
 import type { ScreenResult } from './screen';
@@ -522,18 +522,56 @@ interface Looked {
   unseen: boolean;
 }
 
+/** How many results of the tools the model sees a call keeps (Session.agent.seen): the latest, one per tool, field and value. */
+export const SEEN_KEPT = 8;
+
+const sameCall = (a: Pick<SeenResult, 'tool' | 'field' | 'value'>, b: Pick<SeenResult, 'tool' | 'field' | 'value'>): boolean => a.tool === b.tool && a.field === b.field && a.value === b.value;
+
+/** Nothing looked up: no tool run, nothing to ask again. */
+const LOOKED_NOTHING: Looked = { again: null, unseen: false };
+
 /**
  * The tools the model sees (business.yaml's `sees`, App.agent.sees), each run through the gate for an
  * accepted value of its field whose result the model has not yet been shown (step 3a at the top), its
- * result, once it passes its reply check, kept on the call (Session.agent.seen) with only the fields that
- * check names. A call still waiting makes the pass provisional (core/toolWait.ts); one the gate refuses,
- * or with no result, shows nothing; one whose reply fails its check ends the turn with a person
- * (TurnOut.unchecked, as for any tool), and nothing is asked again.
+ * result, once it passes its reply check, kept on the call (Session.agent.seen, the latest SEEN_KEPT, one
+ * per tool, field and value) with only the fields that check names. A call still waiting makes the pass
+ * provisional (core/toolWait.ts); one the gate refuses, with no result, that throws or replies late (its
+ * failure recorded by callTool), or whose check is not known closed (a guard: pnpm check refuses such a
+ * tool), shows nothing, and the turn goes on; one whose reply fails its check ends the turn with a person
+ * (TurnOut.unchecked, as for any tool), and nothing is asked again. On the second resolution every call
+ * the first made is made again, through the turn's memo (no tool runs twice), so the turn's records and
+ * the call keep each one, whatever the second answer gave.
  */
 function lookUpSeen(app: App, s: Session, io: TurnIO, record: AgentTurnRecord): Looked {
   const sees = app.agent!.sees;
   const given = io.tc.agentSeen;
   const kept = [...(s.agent?.seen ?? [])];
+  const keep = (x: SeenResult): void => {
+    const at = kept.findIndex((k) => sameCall(k, x));
+    if (at >= 0) kept.splice(at, 1);
+    kept.push(x);
+    if (kept.length > SEEN_KEPT) kept.splice(0, kept.length - SEEN_KEPT);
+  };
+  const shown = (tool: string, field: string, value: string): unknown => {
+    const check = app.tools[tool]?.check;
+    if (openPart(check) !== null) return undefined;
+    const before = io.out.effects.length;
+    let ran: ReturnType<typeof callTool>;
+    try {
+      ran = callTool(s, { tool, params: { [field]: value } }, io.tc, io.out);
+    } catch {
+      // The tool threw, or replied late: recorded as failed by callTool; what it queued is dropped, and nothing is shown.
+      io.out.effects.length = before;
+      return undefined;
+    }
+    if (ran.pending === true || ran.decision.verdict !== 'ALLOW' || ran.value === null || ran.value === undefined) return undefined;
+    return namedPart(check, ran.value);
+  };
+  for (const g of given?.seen ?? []) {
+    if (kept.some((k) => sameCall(k, g))) continue;
+    const result = shown(g.tool, g.field, g.value);
+    if (result !== undefined) keep({ tool: g.tool, field: g.field, value: g.value, result });
+  }
   let fresh = false;
   let unseen = false;
   for (const v of record.values) {
@@ -541,18 +579,14 @@ function lookUpSeen(app: App, s: Session, io: TurnIO, record: AgentTurnRecord): 
     if (tool === undefined) continue;
     const value = s.slots[v.slot!]?.value;
     if (value === null || value === undefined) continue;
-    // Shown on an earlier turn: the model was sent it with this turn's words.
-    if (kept.some((k) => k.tool === tool && k.field === v.field && k.value === value)) continue;
-    const ran = callTool(s, { tool, params: { [v.field]: value } }, io.tc, io.out);
-    if (ran.pending === true || ran.decision.verdict !== 'ALLOW' || ran.value === null || ran.value === undefined) continue;
-    const result = namedPart(app.tools[tool]?.check, ran.value);
+    const call = { tool, field: v.field, value };
+    // Shown on an earlier turn (the model was sent it with this turn's words), or, on the second resolution, on the first.
+    if (kept.some((k) => sameCall(k, call))) continue;
+    const result = shown(tool, v.field, value);
     if (result === undefined) continue;
-    const at = kept.findIndex((k) => k.tool === tool);
-    const seen: SeenResult = { tool, field: v.field, value, result };
-    if (at >= 0) kept[at] = seen;
-    else kept.push(seen);
+    keep({ ...call, result });
     if (given === undefined) fresh = true;
-    else if (!given.seen.some((g) => g.tool === tool && g.field === v.field && g.value === value)) unseen = true;
+    else unseen = true;
   }
   if (kept.length > 0) s.agent = { conversation: s.agent?.conversation ?? [], failures: s.agent?.failures ?? 0, ...s.agent, seen: kept };
   const checkedAll = (io.out.unchecked?.length ?? 0) === 0;
@@ -636,8 +670,9 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
 
   // 3. Values.
   const applied = applyValues(app, s, answer?.values ?? [], said, io.tc, record);
-  // 3a. The tools the model sees, for the values it gave: asked again with their results where any is new.
-  const looked = lookUpSeen(app, s, io, record);
+  // 3a. The tools the model sees, for the values it gave: asked again with their results where any is new;
+  // not where a value was refused, whose slot's own question is asked (no second asking for it).
+  const looked = applied.refused === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
   if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
   if (answer !== null && understoodNothing(answer) && !opened) io.missed = true;
@@ -695,10 +730,12 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   // A correction ("no, it's two"): stored, and the read-back said again with it. A correction of a field whose
   // tool the model sees runs it and asks the model again (step 3a); the second answer's reply, written with
   // the result, is said before the read-back as an aside ("Saturday afternoon is full, so the morning?").
-  if (applied.changed) {
+  // On the second resolution, the first having changed a value: the read-back again, never the yes, whatever
+  // the second answer gave (a yes said with a change, "yes, but make it Saturday", confirms nothing yet).
+  if (applied.changed || io.tc.agentSeen?.changed === true) {
     actionDone('ignored');
     const looked = lookUpSeen(app, s, io, record);
-    if (looked.again !== null) io.agentAgain = { seen: looked.again };
+    if (looked.again !== null) io.agentAgain = { seen: looked.again, changed: true };
     const again = steps.askSummary(s, pc.form, [], io);
     const informed = io.tc.agentSeen !== undefined && !looked.unseen && again.kind === 'prompt';
     return { decision: informed ? withAside(again as PromptDecision, answer?.reply ?? null, record) : again, events: applied.events };

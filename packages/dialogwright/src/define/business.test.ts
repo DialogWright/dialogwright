@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import { BUILT_IN_SLOT_TYPES, registerSlotType } from '../slots/registry';
 import type { SlotType } from '../slots/types';
 import { agentFieldTypes, factsOf, loadBusiness } from './business';
 import { loadAppFolder, type Problem } from './load';
+import { checkAppFully } from './check';
 import { businessSchema } from './schema/business';
 import { SCHEMAS } from './schema/index';
 
@@ -161,6 +162,23 @@ describe('business.yaml', () => {
     expect(problemsOf(seen)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'booking.fields[1].sees', message: expect.stringContaining('seen by the field "people" too') })]));
     const called = copy({ 'business.yaml': replacing('then: [bookRoom]', 'then: [bookRoom, roomAvailability]') });
     expect(problemsOf(called)).toMatchObject([{ path: 'booking.then[1]', message: expect.stringContaining('is a tool a field sees') }]);
+  });
+
+  it('a field the records hide sees no tool: its value, and the result for it, would reach the model whole (the review of Task 8)', () => {
+    const dir = copy({ 'business.yaml': replacing("      question: What's the best number to reach you when it's ready?\n", "      question: What's the best number to reach you when it's ready?\n      sees: roomAvailability\n") });
+    expect(problemsOf(dir)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'request.fields[6].sees', message: expect.stringContaining('is recorded by its last four (redact last4, its type\'s default), but it sees "roomAvailability"') })]));
+  });
+
+  it('pnpm check warns of a corpus line that labels a field: in agent mode a corpus line runs without the agent (the review of Task 8)', async () => {
+    const dir = copy({ 'app.yaml': (t) => `${t}fixtures:\n  dir: fixtures\n` });
+    mkdirSync(join(dir, 'fixtures'));
+    writeFileSync(join(dir, 'fixtures', 'corpus.jsonl'), [
+      '{"id":"yes-01","text":"yes please","intent":"none","context":"confirm_request","confirm":"yes"}',
+      '{"id":"bk-01","text":"the study room for four tomorrow","intent":"booking","context":"no_form","labels":{"booking_people":"four"}}',
+    ].join('\n'));
+    const r = await checkAppFully(dir, { fixturesRoot: dir });
+    expect(r.problems).toEqual([]);
+    expect(r.warnings).toEqual([expect.objectContaining({ file: 'fixtures/corpus.jsonl', line: 2, message: expect.stringContaining('line 2 (bk-01) labels the fields booking_people, but in agent mode a corpus line runs without the agent') })]);
   });
 
   it('the handoff is a statement: said where nothing waits for an answer', () => {

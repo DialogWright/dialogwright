@@ -444,6 +444,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkLocaleLabels(config, loaded.locateKey ?? locate));
   // An app in agent mode has no corpus: the model reads the caller, and no intent is asked of the decision model.
   if (config.business === undefined) problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
+  else warnings.push(...agentCorpusWarnings(config, dir, options.fixturesRoot));
   problems.push(...checkScenarioGaps(config, dir, options.fixturesRoot));
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
@@ -1672,6 +1673,39 @@ export const MAX_CORPUS_BYTES = 16 * 1024 * 1024;
 function isInside(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+/**
+ * The warnings for an app in agent mode's corpus, where it has one (the review of Task 8): a line that
+ * labels a field's values. A corpus line is the decision model's alone and runs without the agent
+ * (harness-text/runner.ts runCorpusEntry), so a field's label there is read only as a scripted app
+ * reads it, never as the agent model understands the value; a scripted call's step names the agent's
+ * answer instead. Never a refusal: the labels may be meant for a call run with no key.
+ */
+function agentCorpusWarnings(config: LoadedConfig, dir: string, fixturesRoot?: string): Problem[] {
+  const fixtures = config.app.fixtures;
+  if (!fixtures) return [];
+  const absolute = resolve(fixturesRoot ?? packageRootOf(dir), `${fixtures.dir.replace(/\/+$/, '')}/corpus.jsonl`);
+  if (!existsSync(absolute) || !statSync(absolute).isFile() || statSync(absolute).size > MAX_CORPUS_BYTES) return [];
+  const file = relative(resolve(dir), absolute).split('\\').join('/');
+  const out: Problem[] = [];
+  readFileSync(absolute, 'utf8').split('\n').forEach((text, i) => {
+    if (text.trim() === '') return;
+    let entry: { id?: unknown; labels?: unknown } | null;
+    try {
+      entry = JSON.parse(text) as { id?: unknown; labels?: unknown } | null;
+    } catch {
+      return;
+    }
+    const labels = entry?.labels;
+    if (typeof labels !== 'object' || labels === null || Array.isArray(labels) || Object.keys(labels).length === 0) return;
+    out.push({
+      file, line: i + 1, column: 1, path: WHOLE_FILE,
+      message: `line ${i + 1}${typeof entry?.id === 'string' ? ` (${entry.id})` : ''} labels the fields ${Object.keys(labels).join(', ')}, but in agent mode a corpus line runs without the agent: the model understands the values, and these labels are read only by a call run as a scripted app (no key)`,
+      fix: 'keep an agent-mode corpus to the decision model\'s turn-level readings (intent, confirm), and name the values in a scripted call\'s step (its `agent` answer)',
+    });
+  });
+  return out;
 }
 
 /** Every intent has a labelled example in the corpus, for an app whose app.yaml names a fixtures directory. */

@@ -75,3 +75,21 @@ describe('replyShape: what a check is (a model may be shown a reply only in a cl
     expect(namedPart((v: unknown) => v !== null, { a: 1 })).toBeUndefined();
   });
 });
+
+describe('replyShape: the review of Task 8', () => {
+  it('an object\'s check closes over a frozen copy of its fields: changing them afterwards changes neither the check nor what it is', () => {
+    const fields: Record<string, (v: unknown) => boolean> = { day: r.isoDate() };
+    const check = r.object(fields);
+    fields.note = r.text();
+    fields.day = () => true;
+    expect(check({ day: 'not a date' })).toBe(false);
+    expect(openPart(check)).toBeNull();
+    expect(namedPart(check, { day: '2026-11-12', note: 'x' })).toEqual({ day: '2026-11-12' });
+  });
+
+  it('a code() longer than a reference is no closed form', () => {
+    expect(openPart(r.object({ ref: r.code() }))).toBeNull();
+    expect(openPart(r.object({ ref: r.code({ max: 20 }) }))).toBeNull();
+    expect(openPart(r.object({ ref: r.code({ max: 200 }) }))).toBe('`ref` is a code() of up to 200 characters, more than the 20 a reference shown to a model may have');
+  });
+});

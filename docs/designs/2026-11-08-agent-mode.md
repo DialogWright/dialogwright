@@ -257,6 +257,20 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
     - Smaller: `shapeLeak` refuses a key only where the answer's JSON marks join it to a word, or as the schema spells it (camelCase), never an ordinary word; Insights shows the turns the agent was asked and those it answered apart.
     - **For Task 10:** the demo's price line must not promise a link before the request is confirmed (decision 25): `send_photo_link` is a `then` tool, called only by the read-back's yes, so a price line said before it ("I'll text you a link to send one") would promise what the line has not yet done; word it as what happens once the request is sent.
 
+33. **(2026-11-09, the review of Tasks 8 and 9) Decided by the maintainer:**
+    - **A yes said with a change never completes on the second asking.** At a read-back, where the first resolution changed a value and asked the model again, the second resolution says the read-back again, the reply as an aside, whatever the second answer gave ("yes, but make it Saturday afternoon": nothing is booked until the caller confirms the read-back as it now stands; `TurnContext.agentSeen.changed`).
+    - **A seen tool that throws or replies late shows nothing,** and the turn goes on; `callTool` records the failure. A result that fails its check still ends with a person. A check not known closed at run time (a guard behind `pnpm check`) shows nothing and runs no tool.
+    - **The first resolution's lookups are kept:** the second resolution makes each of them again through the turn's memo (no tool runs twice), so the turn's gate events, its audit and the call's `seen` keep every lookup that ran, whatever the second answer gave. The call keeps the latest eight results, one per tool, field and value.
+    - **No second asking where a value was refused** on the same turn: its slot's question is asked.
+    - **Figure sources:** a `choice`'s or a `date`'s cited words are no source (they are not tied to the value: a synonym, "Thursday"); its held value and display are. A `digits` or `name` value's cited words stay sources: its check ties them to the value.
+    - **`sees` only on a field the records keep whole** (`redact: none`; a digits field's default is last4): `pnpm check` refuses any other, since the value and its result would reach the model whole. A `code()` longer than 20 characters is no closed form.
+    - **`replyShape.object`** closes over one frozen copy of its fields, which both the check and what it is read.
+    - **The adversarial suite of an agent-mode app** is the `agent` family and the `hostile-reply` family, run over the app's own scripted calls with the agent answers their steps name. The `agent` family adds an injection at a read-back, an injection given as a `text` field's value (read back in its place, and sent to the model and the judge after), and an injection on the callback form; `claimed-account` and `instructions-to-the-model` gain a yes. `level-held` holds every write to the level the caller had once greeted (recognition is at the call's start only, call 15).
+    - **`readBackSaid`** holds the read-back's values (as held when it was said) to the write's params, and allows the keypad rung (`confirm_dtmf`) between them.
+    - **One scripted answer per asking:** where a turn asks the agent again, its step must name a second answer; a missing one fails the call, naming the step.
+    - **`pnpm check` warns of a field's labels in an agent-mode app's corpus**, since a corpus line runs without the agent (the guide's note comes in Task 11). `--client jev` is refused in CI for the agent model, as recording is.
+    - **The judge's history** takes off only the line this turn noted. The bake-off counts, beside the replies with a figure not in the facts, those whose only such figure is the number one, so the cost of call 32's "one" is measured in Task 12.
+
 ## Left to the builder
 
 - each slot type's `check`, within the rule above;

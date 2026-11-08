@@ -727,6 +727,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   if (appOf(session).mode === 'agent') {
     mismatches.push(...agentPropertyMismatches(appOf(session), scenario.expect, runs, o.todayIso));
     for (const step of stepped?.unscripted ?? []) mismatches.push(`agent: step ${step + 1} (${JSON.stringify((scenario.steps[step] as { say?: string }).say ?? '')}) was asked of the agent, but names no agent answer`);
+    for (const s of stepped?.short ?? []) mismatches.push(`agent: step ${s.step + 1} (${JSON.stringify((scenario.steps[s.step] as { say?: string }).say ?? '')}) asked the agent ${s.asking === 2 ? 'again' : `a ${s.asking}th time`} (shown a tool's result), but names ${s.named} answer${s.named === 1 ? '' : 's'}: give one per asking`);
     runs.forEach((r, i) => {
       if (agentCassetteMissed(r)) mismatches.push(`agent: turn ${i} has no answer in the agent cassette (a miss): record it with --client record`);
     });

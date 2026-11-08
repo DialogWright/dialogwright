@@ -128,8 +128,9 @@ export interface TurnContext {
    * value that filled a field whose tool the model sees (business.yaml's `sees`) ran that tool through the
    * gate, and the runner asked the model again with its checked result (TurnResult.agentAgain) before
    * anything was said. Set only on that second resolution of the turn; the turn then asks no more.
+   * `changed`: the first resolution, at a read-back, changed a value, so this one never completes on a yes.
    */
-  agentSeen?: { seen: readonly SeenResult[] };
+  agentSeen?: { seen: readonly SeenResult[]; changed?: true };
   /**
    * The run has no agent client for an app in agent mode (no key): set by the runner on every turn of
    * such a run. A call that begins so runs as a scripted app for the whole call (Session.agent.scripted).
@@ -253,7 +254,7 @@ export interface TurnIO {
   /** What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts). */
   agent?: AgentTurnRecord;
   /** The agent model is to be asked again, with these results shown (TurnResult.agentAgain). */
-  agentAgain?: { seen: SeenResult[] };
+  agentAgain?: { seen: SeenResult[]; changed?: true };
 }
 
 export interface Plan {
@@ -331,9 +332,10 @@ export interface TurnResult {
    * whose results it sees, run for the values it gave: core/agentTurn.ts), before anything is said: the
    * runner asks it and resolves the turn again with its answer (TurnContext.agentSeen). The turn as it
    * stands is what is said where the second answer does not come in time: its values, the agent's reply
-   * not said (it was written without the results). Absent on every other turn.
+   * not said (it was written without the results). `changed`: at a read-back, a value changed (carried to
+   * the second resolution, TurnContext.agentSeen). Absent on every other turn.
    */
-  agentAgain?: { seen: SeenResult[] };
+  agentAgain?: { seen: SeenResult[]; changed?: true };
 }
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */

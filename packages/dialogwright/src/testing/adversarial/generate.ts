@@ -700,14 +700,16 @@ function wording(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): 
  */
 export function adversarialSuite(app: App, opts: AdversarialSuiteOptions = {}): AdversarialSuite {
   if (getApp(defaultAppId()) !== app) throw new Error(`adversarialSuite: app "${app.id}" is not the registered default app; register it first (registerApp)`);
-  // An app in agent mode: the agent family alone. The others seed a call and answer its words by labels
-  // the decision model reads in a scripted app; in agent mode the agent model reads the values.
-  if (app.mode === 'agent' && app.agent !== undefined) {
-    const { cases, notes } = agentCases(app);
-    return { app: app.id, cases, notes: [...notes, 'an app in agent mode: the agent family alone (the scripted families answer a call\'s words by labels the agent model does not take)'] };
-  }
   const shape = shapeOf(app, opts);
   const b = new Builder(shape);
+  // An app in agent mode: the agent family, and the hostile replies of its tools and services over its own
+  // scripted calls (with the agent answers their steps name). The other families seed a call and answer its
+  // words by labels the decision model reads in a scripted app; in agent mode the agent model reads the values.
+  if (app.mode === 'agent' && app.agent !== undefined) {
+    const { cases, notes } = agentCases(app);
+    hostileReplies(b, shape);
+    return { app: app.id, cases: [...cases, ...b.cases], notes: [...notes, ...b.notes, 'an app in agent mode: the agent family and the hostile replies (the other scripted families answer a call\'s words by labels the agent model does not take)'] };
+  }
   for (const tag of shape.languages) {
     const lang = languageOf(tag);
     const t = TEMPLATES[lang];
