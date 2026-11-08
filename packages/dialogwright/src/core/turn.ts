@@ -899,7 +899,8 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   // A silence re-asked: the slot's own no-input line for this failure, where the app has one, is the
   // whole turn, in place of the no-input line and the question (outcome.ts noInputLineOf). Not where
   // the question was the caller-ID match's, which is asked again as it was (askedAgain).
-  if (plain === true && !toDtmf && !callerMatchAgain(s)) {
+  // Nor after words set aside at this question (handleSilence's `spoke`: no no-input line among the acks).
+  if (plain === true && !toDtmf && !callerMatchAgain(s) && acks.includes(NO_INPUT_ACK)) {
     const quiet = noInputLineOf(io.app, target, attempts);
     if (quiet !== null) return prompt(quiet, target, {}, acks.filter((a) => a !== NO_INPUT_ACK));
   }
@@ -1281,8 +1282,14 @@ const NO_INPUT_ACK: Ack = { promptId: 'no_input', vars: {} };
  * Silence is an unanswered turn on whatever was prompted; no model is asked. Right after "anything
  * else?" (the `anything_else` line), the app says what the caller hears (App.anythingElseSilence):
  * that question again, by default, rather than the opening question; or the goodbye.
+ *
+ * `spoke`: the caller's words on the turn before, at this same question, were set aside unanswered (speech
+ * over a line taken as a miss, side speech; Session.spokeAt). The caller spoke, so "I didn't hear anything"
+ * would be untrue: the question is said again without the `no_input` line or a slot's own no-input line, the
+ * attempt counted as for any silence (a live call, the agent-mode design's call 48).
  */
-function handleSilence(s: Session, io: TurnIO): Decision {
+function handleSilence(s: Session, io: TurnIO, spoke = false): Decision {
+  const lead: Ack[] = spoke ? [] : [NO_INPUT_ACK];
   if (s.promptedFor === null) return { kind: 'ignore' };
   // The wait the caller asked for ran out (the `wait` intent): the question they were on, uncounted.
   if (io.tookTime === true) return { kind: 'replay', text: s.lastPromptText };
@@ -1290,14 +1297,14 @@ function handleSilence(s: Session, io: TurnIO): Decision {
   const offered = s.pendingConfirmation;
   if (s.dtmfBuffer !== '' && yesNoOffer(io.app, offered) && keyedAt(s, offered)) return settleKeys(s, offered, io);
   s.dtmfBuffer = '';
-  if (s.pendingConfirmation) return reaskConfirmation(s, io, [NO_INPUT_ACK]);
+  if (s.pendingConfirmation) return reaskConfirmation(s, io, lead);
   if (s.promptedFor === 'intent' && s.lastPromptId === 'anything_else') {
     const after = anythingElseSilenceOf(io.app);
-    if (after === 'goodbye') return goodbye(s, [NO_INPUT_ACK]);
-    if (after === 'repeat') return failAttempt(s, 'intent', io, [NO_INPUT_ACK], true, null, 'anything_else');
+    if (after === 'goodbye') return goodbye(s, lead);
+    if (after === 'repeat') return failAttempt(s, 'intent', io, lead, true, null, 'anything_else');
   }
   // `promptedFor === 'confirm'` without a pending confirmation cannot happen; the fallback is defensive.
-  return failAttempt(s, s.promptedFor === 'confirm' ? 'intent' : s.promptedFor, io, [NO_INPUT_ACK], true);
+  return failAttempt(s, s.promptedFor === 'confirm' ? 'intent' : s.promptedFor, io, lead, true);
 }
 
 /**
@@ -3364,6 +3371,11 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     return { ...base(), decision: { kind: 'ignore' }, actions: [] };
   }
 
+  // Words set aside unanswered on the turn before (Session.spokeAt): read by this turn's silence, if it is
+  // one, and gone after any turn.
+  const spokeAt = s.spokeAt;
+  delete s.spokeAt;
+
   switch (event.type) {
     case 'session.start': {
       // The locale the channel asks for, where the app speaks it; any other request leaves the
@@ -3474,7 +3486,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       return { ...base(), decision, actions: act(decision) };
     }
     case 'user.silence': {
-      const decided = readSummary(s, handleSilence(s, io), io);
+      const decided = readSummary(s, handleSilence(s, io, spokeAt !== undefined && spokeAt === questionOf(s)), io);
       const decision = settle(decided, 'silence');
       // Silence resolves whatever was prompted; a stale barge-in marker does not carry into
       // the next turn, same as a real one.
@@ -3528,6 +3540,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
         // As side speech does, the barge-in marker goes: it would be reported to the model on a turn it is not about.
         const kept = cloneSession(tc.setAsideAs ?? session);
         kept.lastInterrupt = null;
+        // The caller spoke: a silence after it at this question is no silence to apologize for (spokeAt).
+        kept.spokeAt = questionOf(kept);
         return {
           session: kept, turnState, rows: [...screened, ...read.map((r) => (r.decided ? { ...r, decided: false } : r)), OVER_LINE_ROW],
           verdict: { kind: 'ignore' }, fillEvents: [], ...newTurnOut(), decision: { kind: 'ignore' }, actions: [], screen, quarantined: false, setAside: 'speech-over-line',
@@ -3542,6 +3556,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const decided = readSummary(s, escalate(s, resolved, rung), io);
       rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined));
       const decision = settle(decided, verdict.kind);
+      // Words the turn set aside unanswered (side speech): a silence after them at this question is no
+      // silence to apologize for (Session.spokeAt).
+      if (decision.kind === 'ignore') s.spokeAt = questionOf(s);
       // The barge-in has now been reported to the model; it does not carry into the next turn.
       s.lastInterrupt = null;
       return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: act(decision) };

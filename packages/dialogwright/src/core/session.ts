@@ -315,6 +315,14 @@ export interface Session {
    */
   frustrationOnly?: { readonly at: string; readonly turns: number };
   /**
+   * The question (core/turn.ts questionOf) at which the caller's last turn was words the line set aside
+   * unanswered: speech over a line it could not interrupt taken as a miss (SPEECH_OVER_LINE=unless-miss), or
+   * side speech. A silence right after it at the same question says the question again without the
+   * no-input line ("I didn't hear anything." would be untrue: the caller spoke). Gone after the next turn,
+   * whatever it is. Absent until then, so every other session, and one saved before it, is as it was.
+   */
+  spokeAt?: string;
+  /**
    * The call has shown high frustration: a turn the frustration question read as high
    * (GATE_FRUSTRATION_HIGH), meant for us (not side speech or a held partial) and not a dictation. From
    * then a turn read as mild counts as a high one (App.frustration.mild, core/gates.ts). Never unset on

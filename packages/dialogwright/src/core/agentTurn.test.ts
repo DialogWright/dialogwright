@@ -487,7 +487,8 @@ describe('the agent turn: speech over a line', () => {
     expect(c.contexts[1]!.overLine).toBe(true);
     expect(over!.result.setAside).toBe('speech-over-line');
     expect(over!.result.decision).toEqual({ kind: 'ignore' });
-    expect(over!.result.session).toEqual(opened!.result.session);
+    // The session as it was, but for the question the words were set aside at (spokeAt: a silence after them says no no-input line).
+    expect(over!.result.session).toEqual({ ...opened!.result.session, spokeAt: expect.any(String) });
     expect(over!.record.agent).toMatchObject({ dropped: 'speech-over-line' });
   });
 
@@ -721,7 +722,7 @@ describe('the review of Task 6', () => {
     expect(at.last.result.setAside).toBe('speech-over-line');
     const change = await call({ ...toReadBack, no: said('What should I change?'), 'mm hmm': said('Sure.') }, [HOLD, DETAILS, 'no', { text: 'mm hmm', overLine: true }]);
     expect(change.last.result.setAside).toBe('speech-over-line');
-    expect(change.last.result.session).toEqual(change.runs.at(-2)!.result.session);
+    expect(change.last.result.session).toEqual({ ...change.runs.at(-2)!.result.session, spokeAt: expect.any(String) });
   });
 
   it('a client gone on a later turn of a call begun with one (resumed on a server without the key) runs as a scripted app from that turn', async () => {

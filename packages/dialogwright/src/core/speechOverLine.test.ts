@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { resolve, type TurnContext, type TurnResult } from './turn';
 import { newSession, type Session } from './session';
 import { DEFAULT_THRESHOLDS } from './thresholds';
-import { interruptEvent, speechEvent, startEvent, type UserSpeech } from '../channel/events';
+import { interruptEvent, silenceEvent, speechEvent, startEvent, type UserSpeech } from '../channel/events';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap, JevClient } from '../jev/types';
 import type { SlotSpec } from './slots/types';
@@ -62,12 +62,12 @@ function say(session: Session, text: string, over: boolean, a: AnswerMap = {}): 
   return resolve(session, event, answers(a), tc());
 }
 
-/** Set aside: nothing said, the session as it was but for the barge-in marker, the gate row that says why. */
+/** Set aside: nothing said, the session as it was but for the barge-in marker and the question the words were set aside at (spokeAt), the gate row that says why. */
 function expectSetAside(r: TurnResult, before: Session): void {
   expect(r.decision).toEqual({ kind: 'ignore' });
   expect(r.actions).toEqual([]);
   expect(r.setAside).toBe('speech-over-line');
-  expect(r.session).toEqual({ ...before, lastInterrupt: null });
+  expect(r.session).toEqual({ ...before, lastInterrupt: null, spokeAt: expect.any(String) });
   expect(r.rows.filter((g) => g.decided)).toEqual([{ gate: 'speechOverLine', value: null, threshold: null, passed: false, outcome: 'set_aside', decided: true }]);
   expect(r.gateEvents).toEqual([]);
   expect(r.effects).toEqual([]);
@@ -155,7 +155,7 @@ describe('speech over a line that would be a miss is set aside', () => {
     expect(asked.lastInterrupt).not.toBeNull();
     const r = say(asked, 'at', true);
     expect(r.setAside).toBe('speech-over-line');
-    expect(r.session).toEqual({ ...asked, lastInterrupt: null });
+    expect(r.session).toEqual({ ...asked, lastInterrupt: null, spokeAt: expect.any(String) });
   });
 });
 
@@ -216,6 +216,51 @@ describe('speech over a line that answers is acted on', () => {
     expect(r.decision.kind).toBe('ignore');
     expect(r.setAside).toBeUndefined();
     expect(r.rows.find((g) => g.decided)?.gate).toBe('addressedToSystem');
+  });
+});
+
+describe('a silence after words set aside (a live call, the agent-mode design\'s call 48)', () => {
+  const quiet = (s: Session): TurnResult => resolve(s, silenceEvent(), null, tc());
+  const acksOf = (r: TurnResult): string[] => (r.decision.kind === 'prompt' ? (r.decision.acks ?? []).map((a) => a.promptId) : []);
+
+  it('says the question again without "I didn\'t hear anything": the caller spoke', () => {
+    const asked = atPlace();
+    const over = say(asked, 'uh it has both', true);
+    expect(over.setAside).toBe('speech-over-line');
+    const after = quiet(over.session);
+    expect(promptOf(after)).toBe('ask_place');
+    expect(acksOf(after)).toEqual([]);
+    // Counted as any silence is.
+    expect(after.session.slots.place?.attempts).toBe(1);
+    // A second silence is a silence: the no-input line, then the question.
+    const again = quiet(after.session);
+    expect(acksOf(again)).toEqual(['no_input']);
+  });
+
+  it('a silence with no words before it, and one after words at another question, still says the no-input line', () => {
+    expect(acksOf(quiet(atPlace()))).toEqual(['no_input']);
+    // Words set aside at the open question, then a turn that opens the form: the silence at the form's question is one.
+    const over = say(started(), 'can you pass me the blue folder', true).session;
+    const asked = say(over, 'i want to report a problem', false, REPORT).session;
+    expect(asked.spokeAt).toBeUndefined();
+    expect(acksOf(quiet(asked))).toEqual(['no_input']);
+  });
+
+  it('after side speech too: the words were not for the line, but the caller spoke', () => {
+    const asked = atPlace();
+    const aside = say(asked, 'hold on honey', false, { addressedToSystem: noul(0.05) });
+    expect(aside.decision).toEqual({ kind: 'ignore' });
+    const after = quiet(aside.session);
+    expect(promptOf(after)).toBe('ask_place');
+    expect(acksOf(after)).toEqual([]);
+  });
+
+  it('at the summary: the read-back again, without the no-input line', () => {
+    const summary = atSummary();
+    const over = say(summary.session, 'hang on a sec', true);
+    const after = quiet(over.session);
+    expect(promptOf(after)).toBe('confirm_report');
+    expect(acksOf(after)).toEqual([]);
   });
 });
 
@@ -300,7 +345,7 @@ describe('a joined turn (run/continuation.ts)', () => {
     const joined = await continuation.run(s, { ...speechEvent('um'), overLine: true }, opts());
     expect(joined.joined).toEqual(['at', 'um']);
     expect(joined.result.setAside).toBe('speech-over-line');
-    expect(joined.result.session).toEqual({ ...s, lastInterrupt: null });
+    expect(joined.result.session).toEqual({ ...s, lastInterrupt: null, spokeAt: expect.any(String) });
     expect(joined.result.session.slots.place?.attempts).toBe(1);
     expect(joined.record.slots.place?.attempts).toBe(1);
   });

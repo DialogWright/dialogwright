@@ -170,11 +170,13 @@ describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN
     expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 67, expectedMs: GREETING_MS, start: 'speaking' });
     // The server log says what became of it once the turn has run, not before.
     expect(call.log.filter((l) => l.includes('speech'))).toEqual([`${CALL}: speech 0.07 s into lines it could not interrupt (~11.6 s)`, `${CALL}: speech over a line set aside as a miss`]);
-    // The no-input wait asks again from the greeting's end, not from the words.
+    // The no-input wait asks again from the greeting's end, not from the words; the caller spoke, so the
+    // question is said without "I didn't hear anything" (Session.spokeAt, the agent-mode design's call 48).
     await vi.advanceTimersByTimeAsync(GREETING_MS + NO_INPUT_MS - 1_900 - 1);
     expect(call.lines()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
-    expect(call.lines()[1]).toBe(NO_INPUT);
+    expect(call.lines()[1]).toBe(testkitApp.prompts.manifest.ask_intent!.text);
+    expect(call.lines()).not.toContain(NO_INPUT);
     expect(call.records().at(-1)!.event.type).toBe('user.silence');
     await sameOnReplay(call);
   });
