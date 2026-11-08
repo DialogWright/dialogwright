@@ -465,7 +465,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const model = a.app.agent.model;
     const keyVar = agentKeyVar(model);
     if (!a.env[keyVar]?.trim()) {
-      log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: no caller's words are understood, and every turn says its field's fixed question (pnpm diagnose fails)`);
+      log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding (pnpm diagnose fails)`);
       continue;
     }
     agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs, price: defaultRenderPrice(model.model) });

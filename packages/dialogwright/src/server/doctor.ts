@@ -424,7 +424,8 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
 /**
  * Agent mode (app.yaml's mode: agent): the agent model style.yaml's `agent` names, with its key's variable
  * (never the key) and its budgets (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS). With the key unset it
- * fails: the server starts, but no turn is understood, and every one says its field's fixed question.
+ * fails: the server starts, and the app runs as a scripted app (its fixed questions, the decision model
+ * understanding), where a business wants its agent.
  * Nothing for any other app, or a folder that cannot be read. No model is asked.
  */
 export function agentChecks(appDir: string, env: Env): CheckResult[] {
@@ -441,7 +442,7 @@ export function agentChecks(appDir: string, env: Env): CheckResult[] {
     return [{ id: 'agent', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
   }
   if (!env[keyVar]?.trim()) {
-    return [{ id: 'agent', status: 'fail', message: `${said}, but ${keyVar} is unset: no caller's words are understood, and every turn says its field's fixed question`, fix: `set ${keyVar} in the settings file (the agent model's key)` }];
+    return [{ id: 'agent', status: 'fail', message: `${said}, but ${keyVar} is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding`, fix: `set ${keyVar} in the settings file (the agent model's key)` }];
   }
   return [{ id: 'agent', status: 'ok', message: `${said}, key in ${keyVar}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat` }];
 }

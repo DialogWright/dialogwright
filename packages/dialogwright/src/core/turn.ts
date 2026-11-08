@@ -46,7 +46,7 @@ import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
 import type { AgentResult } from '../agent/types';
-import { agentDropped, agentWords, noteConversation, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
+import { agentDropped, agentLed, agentWords, noteConversation, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
   /**
@@ -123,6 +123,11 @@ export interface TurnContext {
    * its shape, or no client is set. Absent on every turn that does not ask it, and for every other app.
    */
   agent?: AgentResult;
+  /**
+   * The run has no agent client for an app in agent mode (no key): set by the runner on every turn of
+   * such a run. A call that begins so runs as a scripted app for the whole call (Session.agent.scripted).
+   */
+  noAgentClient?: true;
 }
 
 /**
@@ -3305,6 +3310,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The data the call or chat came with, only the keys the app names (core/callData.ts).
       const data = keptCallData(io.app, event.callData);
       if (data !== undefined) s.callData = data;
+      // An app in agent mode whose call begins with no agent client (no key) runs as a scripted app for the whole call.
+      if (io.app.mode === 'agent' && tc.noAgentClient === true) s.agent = { conversation: [], failures: 0, scripted: true };
       // The app's start hook, once, for every call, before the call-start lookup (App.onStart).
       startHook(s, io);
       // The app's lookup by that number, once, before the greeting, through the gate.
@@ -3439,7 +3446,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // Acknowledged, the frustration was caught: where the turn would be a miss it is not (caughtFrustration).
       if ((rung === 'ack' || rung === 'ack_only') && frustrationMissOf(io.app) === 'ignore') io.caught = true;
       // An app in agent mode: the agent turn (core/agentTurn.ts), which takes the scripted turn's own steps where it is the scripted one.
-      const { decision: resolved, events } = io.app.mode === 'agent' && io.app.agent !== undefined
+      const { decision: resolved, events } = agentLed(s)
         ? agentWords(s, verdict, answers, ctx, io, SCRIPTED_STEPS, event.text)
         : handleVerdict(s, verdict, answers, ctx, io);
       // Speech over a line the caller could not interrupt that would be a miss is set aside, as side speech

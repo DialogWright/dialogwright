@@ -317,10 +317,11 @@ export interface Session {
    * An app in agent mode's own (core/agentTurn.ts): the conversation so far, the caller's words and what
    * the line said, in order, as the agent model is sent it (each earlier line masked there by what the
    * records hide); and how many turns in a row the agent model failed (a timeout, an answer not in its
-   * shape, an error), two of which end the call with the handoff line. Absent for every other app, so
-   * every other session, and one saved before it, is as it was.
+   * shape, an error), two of which end the call with the handoff line. `scripted`: the call began with no
+   * agent client (no key), so it runs as a scripted app for the whole call (core/agentTurn.ts). Absent for
+   * every other app, so every other session, and one saved before it, is as it was.
    */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number };
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -602,7 +603,7 @@ export function cloneSession(s: Session): Session {
     completed: [...s.completed],
     ...(s.acknowledged ? { acknowledged: [...s.acknowledged] } : {}),
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
-    ...(s.agent ? { agent: { conversation: s.agent.conversation.map((u) => ({ ...u })), failures: s.agent.failures } } : {}),
+    ...(s.agent ? { agent: { ...s.agent, conversation: s.agent.conversation.map((u) => ({ ...u })) } } : {}),
   };
 }
 

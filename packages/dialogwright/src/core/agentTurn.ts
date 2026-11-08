@@ -60,9 +60,9 @@ import type { ScreenResult } from './screen';
  *    form (App.personForm). A form's `then` tools are the engine's, called only by the yes at its read-back;
  *    the model never runs a tool.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
- *    says why (`fallback`); the second such turn in a row ends the call with the handoff line. A run with no
- *    agent client (no key) is no failure: each turn says its fixed question, nothing is counted, and the
- *    decision model's yes at a read-back completes it.
+ *    says why (`fallback`); the second such turn in a row ends the call with the handoff line. A call that
+ *    begins with no agent client (no key) runs as a scripted app for the whole call (agentLed); a client
+ *    missing on a later turn of a call begun with one is no failure: the fixed question, nothing counted.
  *
  * Speech heard over a line the caller could not interrupt whose answer understood nothing (no value
  * accepted or refused, no action, nothing from the facts) is a miss, and is set aside as in a scripted app
@@ -132,10 +132,21 @@ export const CALLBACK_ACTION = 'callback';
 export function agentAsks(session: Session, event: SessionEvent, tc: Pick<TurnContext, 'duringService'>): boolean {
   if (event.type !== 'user.speech' && event.type !== 'user.text') return false;
   const app = appOf(session);
-  if (app.mode !== 'agent' || app.agent === undefined) return false;
+  if (!agentLed(session)) return false;
   if (session.ended || session.pendingService !== null || tc.duringService === true) return false;
   const pc = session.pendingConfirmation;
   return pc === null || pc.target === 'form';
+}
+
+/**
+ * Whether the session's turns are the agent's: an app in agent mode, on a call that began with an agent
+ * client. A call that began with none (no key) runs as a scripted app for the whole call: the decision
+ * model asks each field's own questions and fills it, as in any scripted form, and the read-back's yes,
+ * with any correction in it, is the scripted one (Session.agent.scripted).
+ */
+export function agentLed(session: Session): boolean {
+  const app = appOf(session);
+  return app.mode === 'agent' && app.agent !== undefined && session.agent?.scripted !== true;
 }
 
 /** The forms a caller may open, in the app's order: a form only a recognized caller may open only for one. */
@@ -468,7 +479,7 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
   // Two failures in a row on a call end it with the handoff line; an answer read resets the count. No client counts nothing.
   const conversation = s.agent?.conversation ?? [];
   const failures = answer !== null ? 0 : none ? (s.agent?.failures ?? 0) : (s.agent?.failures ?? 0) + 1;
-  s.agent = { conversation, failures };
+  s.agent = { ...s.agent, conversation, failures };
   const failedTwice = answer === null && !none && failures >= 2;
   const action = record.action;
   const actionDone = (outcome: 'taken' | 'ignored'): void => {
@@ -599,5 +610,5 @@ export function noteConversation(s: Session, event: SessionEvent, decision: Deci
   if (took && (event.type === 'user.speech' || event.type === 'user.text') && oneLine(event.text) !== '') conversation.push({ who: 'caller', text: oneLine(event.text) });
   const line = oneLine(spokenText(appOf(s), decision, s.locale, { shown: !s.caps.speech }));
   if (line !== '') conversation.push({ who: 'line', text: line });
-  s.agent = { conversation: conversation.slice(-AGENT_CONVERSATION_KEPT), failures: s.agent?.failures ?? 0 };
+  s.agent = { ...s.agent, conversation: conversation.slice(-AGENT_CONVERSATION_KEPT), failures: s.agent?.failures ?? 0 };
 }

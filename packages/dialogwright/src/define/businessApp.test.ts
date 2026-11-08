@@ -349,3 +349,55 @@ describe('the fixture\'s pages', () => {
     expect(card).toContain('`booking` is offered only to a caller recognized by the number calling, so in practice only on a phone call');
   });
 });
+
+describe('a call with no agent client (no key): the app runs as a scripted app', () => {
+  const corpus = parseCorpus([
+    '{"id":"bk-01","text":"I would like to book the study room for four of us tomorrow morning","intent":"booking","context":"no_form","labels":{"booking_people":"four","booking_dayMode":"relative_day","booking_dayRelative":"tomorrow","booking_window":"morning"}}',
+    '{"id":"bk-03","text":"yes, book it","intent":"none","context":"confirm_booking","confirm":"yes"}',
+    '{"id":"rq-01","text":"I would like to place a hold","intent":"request","context":"no_form"}',
+    '{"id":"rq-02","text":"Avery Lane","intent":"none","context":"request","prompted":"request_patronName","labels":{"request_patronNameGiven":true,"request_patronNameSpan":"avery lane"}}',
+    '{"id":"rq-03","text":"The Quiet Harbor","intent":"none","context":"request","prompted":"request_title","labels":{"request_titleGiven":true}}',
+    '{"id":"rq-04","text":"two copies","intent":"none","context":"request","prompted":"request_copies","labels":{"request_copies":"two"}}',
+    '{"id":"rq-05","text":"regular print","intent":"none","context":"request","prompted":"request_format","labels":{"request_format":"print"}}',
+    '{"id":"rq-06","text":"tomorrow","intent":"none","context":"request","prompted":"request_day","labels":{"request_dayMode":"relative_day","request_dayRelative":"tomorrow"}}',
+    '{"id":"rq-07","text":"in the morning","intent":"none","context":"request","prompted":"request_window","labels":{"request_window":"morning"}}',
+    '{"id":"rq-08","text":"yes that number is fine","intent":"none","context":"request","prompted":"request_callbackNumber","confirm":"yes"}',
+    '{"id":"rq-09","text":"yes, but make it three copies","intent":"none","context":"confirm_request","confirm":"yes","labels":{"request_copies":"three"}}',
+    '{"id":"rq-10","text":"yes that is right","intent":"none","context":"confirm_request","confirm":"yes"}',
+  ].join('\n'), app);
+  const client: JevClient = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY }) });
+  const call = (callerNumber: string, ...said: string[]): Promise<ScenarioRun> => runScenario(
+    { id: 'call', steps: said.map((say) => ({ say })), expect: { decision: 'any' }, callerNumber },
+    { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier } },
+  );
+  const promptOf = (t: TurnResult): string | undefined => ('promptId' in t.decision ? t.decision.promptId : undefined);
+  const heard = (t: TurnResult): string => spokenText(app, t.decision);
+  const calls = (r: ScenarioRun, tool: string) => r.runs.flatMap((x) => x.result.gateEvents.filter((e) => e.decision.call.tool === tool));
+
+  it('an account books, the values filled by the decision model, and no agent is ever asked', async () => {
+    const r = await call(ACCOUNT_NUMBER, 'I would like to book the study room for four of us tomorrow morning', 'yes, book it');
+    const [greeted, asked, booked] = r.runs.map((x) => x.result);
+    expect(greeted!.session.agent).toMatchObject({ scripted: true });
+    // The decision model asks the fields' own questions, as in any scripted form.
+    expect(Object.keys(r.runs[1]!.questions ?? {})).toEqual(expect.arrayContaining(['booking_people', 'booking_window', 'booking_dayMode']));
+    expect(promptOf(asked!)).toBe('readback_booking');
+    expect(heard(asked!)).toContain("So that's the study room for Rivergate Book Club, four people, Tuesday, November 10 in the morning. Shall I book it?");
+    expect(calls(r, 'bookRoom').map((e) => e.decision.verdict)).toEqual(['ALLOW']);
+    expect(heard(booked!)).toContain("You're booked for Tuesday, November 10, morning.");
+    expect(r.runs.every((x) => x.record.agent === undefined)).toBe(true);
+  });
+
+  it('a request is filled question by question, and "yes, but ..." at its read-back is corrected and read back again before anything is filed', async () => {
+    const r = await call('+15555550199', 'I would like to place a hold', 'Avery Lane', 'The Quiet Harbor', 'two copies', 'regular print', 'tomorrow', 'in the morning', 'yes that number is fine', 'yes, but make it three copies', 'yes that is right');
+    const prompts = r.runs.map((x) => promptOf(x.result));
+    expect(prompts.slice(1, 9)).toEqual(['ask_request_patronName', 'ask_request_title', 'ask_request_copies', 'ask_request_format', 'ask_request_day', 'ask_request_window', 'offer_request_callbackNumber', 'readback_request']);
+    const corrected = r.runs[9]!.result;
+    expect(promptOf(corrected)).toBe('readback_request');
+    expect(heard(corrected)).toContain('Avery Lane, three of The Quiet Harbor');
+    // Nothing was filed on the yes that carried the correction: the gate refused the write against what was
+    // read back (the scripted path), and the read-back was said again; the next yes files the corrected request.
+    expect(calls(r, 'placeHold').map((e) => [e.decision.verdict, e.decision.call.params.copies])).toEqual([['BLOCK', 'three'], ['ALLOW', 'three']]);
+    expect(r.runs[9]!.result.gateEvents.map((e) => e.decision)).toMatchObject([{ verdict: 'BLOCK', reason: 'confirmation' }]);
+    expect(heard(r.runs[10]!.result)).toContain("Thanks, Avery Lane. The desk will call you when it's ready.");
+  });
+});

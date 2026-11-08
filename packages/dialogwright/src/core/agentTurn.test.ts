@@ -332,10 +332,13 @@ describe('the agent turn: a slow or failed model', () => {
     expect(between.last.result.decision.kind).toBe('prompt');
   });
 
-  it('a run with no agent client says each turn\'s fallback, and traces why', async () => {
-    const c = await call({}, [HOLD], { noAgent: true });
-    expect(promptOf(c.last)).toBe('ask_request_patronName');
-    expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'error', detail: 'no agent client' });
+  it('a call begun with no agent client (no key) runs as a scripted app: the decision model asks the fields\' questions', async () => {
+    const j = jev();
+    const c = await call({}, [HOLD, 'Avery Lane'], { noAgent: true, jev: j });
+    expect(c.runs[0]!.result.session.agent).toMatchObject({ scripted: true });
+    expect(Object.keys(j.asked.at(-1)!.questions)).toEqual(expect.arrayContaining(['request_patronNameGiven', 'request_copies', 'intentChange']));
+    expect(c.last.record.agent).toBeUndefined();
+    expect(c.last.result.session.form).toBe('request');
   });
 });
 
@@ -457,14 +460,18 @@ describe('the review of Task 6', () => {
     expect(change.last.result.session).toEqual(change.runs.at(-2)!.result.session);
   });
 
-  it('with no agent client, three turns and more each say the fixed question: no failure counted, never a handoff', async () => {
-    const c = await call({}, [HOLD, 'Avery Lane', 'two copies', 'Thursday'], { noAgent: true });
-    for (const r of c.runs.slice(1)) {
+  it('a client gone on a later turn of a call begun with one is no failure: three turns and more each say the fixed question, never a handoff', async () => {
+    const tools = { ...app.systems(), codes: mockCodeVerifier };
+    const base = { client: jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools };
+    let s = (await runTurn(newSession('S-gone', 0, VOICE_RELAY, ANONYMOUS, app.id), withCallerNumber(startEvent(), STRANGER), { ...base, agent: { client: fakeAgent(() => HOLD_ANSWER) } })).result.session;
+    expect(s.agent?.scripted).toBeUndefined();
+    for (const words of [HOLD, 'Avery Lane', 'two copies', 'Thursday']) {
+      const r = await runTurn(s, speechEvent(words), base);
+      s = r.result.session;
       expect(r.result.decision.kind).toBe('prompt');
       expect(r.record.agent).toMatchObject({ use: 'failed', detail: 'no agent client', replySaid: false });
-      expect(r.result.session.agent!.failures).toBe(0);
+      expect(s.agent!.failures).toBe(0);
     }
-    expect(heard(c.last)).toBe("What's your name?");
   });
 
   it('the history keeps each utterance on one line: words cannot pass for the line\'s', async () => {

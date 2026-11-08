@@ -407,6 +407,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     ...digit,
     // A joined turn set aside as speech over a line returns the session it was given (TurnContext.setAsideAs).
     ...(setAsideAs !== undefined ? { setAsideAs } : {}),
+    // An app in agent mode run with no agent client: its call runs as a scripted app (core/agentTurn.ts agentLed).
+    ...(appOf(session).mode === 'agent' && (opts.agent ?? null) === null ? { noAgentClient: true as const } : {}),
   };
   const tr = performance.now();
   // Retrieval, the turn's one async step before planning: questions are built synchronously, so the

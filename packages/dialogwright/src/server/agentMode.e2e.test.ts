@@ -11,7 +11,7 @@ import { businessFixtureApp } from '../define/__fixtures__/business/app';
 /**
  * The server and an app in agent mode: it builds the app's agent model from style.yaml's `agent` with the
  * app's own settings and says so at start, with its budgets; without the model's key it starts, warns, and
- * runs on the fixed questions. No model is asked: the key is only read.
+ * runs as a scripted app. No model is asked: the key is only read.
  */
 
 let running: RunningServer | null = null;
@@ -42,9 +42,9 @@ describe('an app in agent mode on the server', () => {
     expect(logs.join('\n')).not.toContain('in-test-not-real');
   });
 
-  it('without the key, starts and warns: every turn says its field\'s fixed question', async () => {
+  it('without the key, starts and warns: the app runs as a scripted app', async () => {
     const logs = await start({});
-    expect(logs).toContain("WARNING: agent mode: mercury-3 on inception (style.yaml's agent), but INCEPTION_API_KEY is unset: no caller's words are understood, and every turn says its field's fixed question (pnpm diagnose fails)");
+    expect(logs).toContain("WARNING: agent mode: mercury-3 on inception (style.yaml's agent), but INCEPTION_API_KEY is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding (pnpm diagnose fails)");
   });
 
   it('refuses a budget out of range', async () => {

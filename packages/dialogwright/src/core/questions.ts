@@ -286,7 +286,8 @@ function agentModeQuestions(app: App, session: Session): QuestionMap {
 
 export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap {
   const app = appOf(session);
-  if (app.mode === 'agent') return agentModeQuestions(app, session);
+  // A call of an app in agent mode that began with no agent client runs as a scripted app (Session.agent.scripted).
+  if (app.mode === 'agent' && session.agent?.scripted !== true) return agentModeQuestions(app, session);
   const q: QuestionMap = { ...alwaysOn(app) };
   // Which slot asks each slot question this turn: a slot's question that took another's id, or one
   // of the engine's, would replace it unseen, so it throws instead. A slot that declares its ids

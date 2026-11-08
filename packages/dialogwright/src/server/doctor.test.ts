@@ -934,7 +934,7 @@ describe('pnpm diagnose: the languages a carrier is sent (live findings, 2026-10
 
 describe('agent mode (pnpm diagnose)', () => {
   it('fails for an app in agent mode without its agent model\'s key, with the fix', () => {
-    expect(agentChecks(BUSINESS_FIXTURE_DIR, {})).toEqual([{ id: 'agent', status: 'fail', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), but INCEPTION_API_KEY is unset: no caller's words are understood, and every turn says its field's fixed question", fix: "set INCEPTION_API_KEY in the settings file (the agent model's key)" }]);
+    expect(agentChecks(BUSINESS_FIXTURE_DIR, {})).toEqual([{ id: 'agent', status: 'fail', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), but INCEPTION_API_KEY is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding", fix: "set INCEPTION_API_KEY in the settings file (the agent model's key)" }]);
   });
 
   it('is ok with the key, and says the budgets; a budget out of range fails', () => {
