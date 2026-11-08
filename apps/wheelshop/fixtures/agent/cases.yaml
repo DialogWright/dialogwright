@@ -1,130 +1,11 @@
 # The agent-mode demo's bake-off cases (pnpm agent:bakeoff --cases apps/wheelshop/fixtures/agent/cases.yaml):
 # the two demo calls of docs/designs/2026-11-08-agent-mode.md and short calls for the build plan's review
 # focus, each caller turn labelled with the values and the action a correct answer holds. The business is the
-# design's appendix, Example Wheel Works, invented: no real business, place, person or number. The facts are
-# written by hand to mirror the appendix until business.yaml is read (Task 4); the recordings are beside this
-# file, in recorded/. The shape is packages/dialogwright/src/agent/bakeoffCases.ts (bakeoffCasesSchema).
-facts:
-  name: Example Wheel Works
-  voice: 'Friendly, plain and confident, like the owner at the counter. Short sentences. Glad to help, never pushy. Talks about wheels and nothing else. The shop is one man, Sam, the owner: never "our team" or "our technicians".'
-  says:
-    - Example Wheel Works does wheel repair and refinishing. The owner is Sam.
-    - Most curb rash and scratches can be fixed.
-    - Sam sees this kind of damage every day.
-    - Diamond cut wheels are what the shop's lathe is for.
-    - Curb rash on a diamond cut wheel is usually a same-day fix.
-    - Dealerships on Commerce Drive send their trade-ins here.
-    - "Service: curb rash repair. Scrapes and gouges on the rim's edge from a curb."
-    - "Service: scratch and scuff repair."
-    - "Service: face damage repair."
-    - "Service: diamond cut wheel refinishing. For wheels whose face is bright bare metal with fine machined lines, often two-tone. Cut on a lathe in the shop, with the tyre left on."
-    - "Service: refinishing worn or faded finishes."
-    - "Not offered: cracked wheels."
-    - "Not offered: straightening bent wheels."
-    - "Not offered: tyres, paint, headlights or anything that isn't a wheel."
-    - "Where: inside the detailing shop at 400 Commerce Drive, Rivergate, across from the car dealership. No mobile service: the work is done at the shop."
-    - Drop-offs are Monday to Friday.
-    - "Drop-off windows: morning, drop off by 8 in the morning, ready by about noon; afternoon, drop off by noon, ready by about 5."
-    - Retail jobs are quoted from a photo, and Sam confirms the drop-off window when he sends the quote.
-  background:
-    - Sam works alone, so he often can't answer the phone while he's working on a wheel.
-  fixed:
-    price: Sam quotes every job from a photo, because it depends on the damage. I'll text you a link to send one, and he'll get back to you with a price and confirm your drop-off.
-    handoff: I'll have Sam call you back as soon as he's free. What's the best number to reach you?
-    closing: Thanks for calling Example Wheel Works.
-examples:
-  - Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?
-  - Diamond cut, nice. Those come up great on the lathe.
-  - Can't do cracked ones, sorry. A cracked wheel needs replacing. Anything else going on with it?
-  - You're in the right place. Let's get you sorted.
-forms:
-  booking:
-    about: a regular account's booking into a drop-off window
-    fields:
-      - name: cars
-        type: choice
-        options:
-          - one
-          - two
-          - three
-          - four
-          - five
-          - six
-        about: How many cars.
-        required: true
-      - name: vehicles
-        type: text
-        about: The cars and which wheels, by make and model or stock number.
-        required: true
-      - name: day
-        type: date
-        about: The day they are dropping them off.
-        required: true
-      - name: window
-        type: choice
-        options:
-          - morning
-          - afternoon
-        about: The drop-off window.
-        required: true
-    actions:
-      - name: submit
-        about: "The caller has given what the booking needs: the line reads it back for them to confirm."
-      - name: callback
-        about: "The caller wants Sam himself: the line takes a callback note."
-  request:
-    about: a retail caller's request, sent to Sam, who quotes from a photo and confirms the drop-off window
-    fields:
-      - name: callerName
-        type: name
-        required: true
-      - name: vehicle
-        type: text
-        about: The make and model, and the year if they know it.
-        required: true
-      - name: wheels
-        type: choice
-        options:
-          - one
-          - two
-          - three
-          - four
-        about: How many wheels need work.
-        required: true
-      - name: damage
-        type: text
-        about: What the damage is, as the line understood it.
-        required: true
-      - name: diamondCut
-        type: choice
-        options:
-          - yes
-          - no
-          - not sure
-        about: Whether the wheel's face is bright machined metal with fine lines.
-        required: false
-      - name: day
-        type: date
-        about: The day they would like to drop it off.
-        required: true
-      - name: window
-        type: choice
-        options:
-          - morning
-          - afternoon
-        about: The drop-off window.
-        required: true
-      - name: callbackNumber
-        type: digits
-        about: A 10-digit number for Sam to text the quote to.
-        required: true
-    actions:
-      - name: submit
-        about: "The caller has given what the request needs and wants it sent: the line reads it back for them to confirm."
-      - name: send_photo_link
-        about: Text the caller a link to send Sam a photo of the damage, for his quote.
-      - name: callback
-        about: "The caller wants Sam himself: the line takes a callback note."
+# app's own business.yaml (below): its facts, persona, sample replies, forms and fixed lines are the ones the
+# app sends its agent model, so these are the calls and their labels alone. Invented: no real business, place,
+# person or number. The recordings are beside this file, in recorded/. The shape is
+# packages/dialogwright/src/agent/bakeoffCases.ts (bakeoffCasesSchema).
+business: ../../business.yaml
 calls:
   - id: dealer-trade-ins
     about: A dealership regular, recognized by its number, books three trade-ins into tomorrow morning, and adds a fourth at the read-back.
@@ -209,16 +90,12 @@ calls:
           diamondCut: yes
         line: Then it's a diamond cut wheel, which is what the shop's lathe is for. What's your name?
       - caller: How much is that going to cost me? Just ballpark it.
-        action:
-          - send_photo_link
-          - none
+        action: none
         review: "price pushed: no figure, the photo"
         line: Sam quotes every job from a photo, because it depends on the damage. I'll text you a link to send one, and he'll get back to you with a price and confirm your drop-off.
         noFigure: true
       - caller: Come on, roughly. Is it under a hundred bucks?
-        action:
-          - send_photo_link
-          - none
+        action: none
         review: "price pushed again: no figure"
         line: I know, but Sam really does price each one from the photo. What's your name?
         noFigure: true
@@ -236,7 +113,6 @@ calls:
           callbackNumber: "5555550177"
         action:
           - submit
-          - send_photo_link
           - none
         line: "Here's what I'll send Sam: Jordan Lee, a 2020 BMW 3 Series, one wheel, curb rash from a parking garage curb, hoping to drop it off Thursday, November 12 in the morning, and he'll text you at 5 5 5, 5 5 5, 0 1 7 7. Is that right?"
     form: request

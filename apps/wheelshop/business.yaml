@@ -64,7 +64,7 @@ prices: # assumption: the owner corrects these (he quotes every retail job from 
   forms: [request]
 
 where:
-  place: inside the detailing shop at 400 Commerce Drive, Rivergate, across from the car dealership
+  place: inside the detailing shop at 400 Commerce Drive, Rivergate
   mobile: false # assumption: the owner corrects these (Sam works at the shop)
 days: [monday, tuesday, wednesday, thursday, friday] # assumption: the owner corrects these
 windows: # assumption: the owner corrects these (drop-off windows, each with room for some cars)
@@ -121,6 +121,9 @@ request:
       about: Whether the wheel's face is bright machined metal with fine lines.
       question: Is the face of the wheel shiny bare metal with fine lines, or painted all over?
       optional: true
+      # Said in the read-back in these words (the request sends it to Sam, so the caller confirms it), and
+      # "unset" when the caller never said.
+      says: { "yes": diamond cut, "no": not diamond cut, not sure: not sure if diamond cut, unset: not sure if diamond cut }
     - name: day
       type: date
       about: The day the car is dropped off ("tomorrow" or a weekday names one).
@@ -139,10 +142,12 @@ request:
       offer: callerNumber
       countryCode: "1"
       question: What's the best number for Sam to text you the quote?
-  # Every required field is said (the caller confirms nothing they never heard); the optional diamondCut is not.
+  # Every field is said, the optional diamondCut by its own words (says), since every field is sent to Sam:
+  # the caller confirms nothing they never heard.
   readBack: >-
     Here's what I'll send Sam: {callerName}, a {vehicle} with {damage}, on {wheels} of its wheels,
-    hoping to drop it off {day} in the {window}, and he'll text you at {callbackNumber}. Is that right?
+    {diamondCut}, hoping to drop it off {day} in the {window}, and he'll text you at {callbackNumber}.
+    Is that right?
   # The request first (the form's write), then the photo link and Sam's summary.
   then: [request, send_photo_link, notify_owner_request]
   done: >-

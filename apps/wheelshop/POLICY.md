@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `a6113e5afd3e1a2986040f379e2d82418820647aedd83826c8d90d280e6af0bf` |
+| `business.yaml` | `fe05ccf73fcc1aec21ad316acf74d87f2d6bf914566fd243253e76cefc122644` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -60,7 +60,7 @@ Said in fixed words, never worded by a model:
 | `booking_for_accounts` | Bookings are for our dealership accounts; I can send Sam a request instead. |
 | `identity_not_recognized` | That's for our dealership accounts, recognized by the number they call from. |
 | `price` | Sam quotes every job from a photo, because the price depends on the damage. Once I've sent him your request, you'll get a text with a link to send one, and he'll get back to you with a price and confirm your drop-off. |
-| `readback_request` | Here's what I'll send Sam: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, hoping to drop it off {request_day} in the {request_window}, and he'll text you at {request_callbackNumber}. Is that right? |
+| `readback_request` | Here's what I'll send Sam: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, and he'll text you at {request_callbackNumber}. Is that right? |
 | `done_request` | Thanks, {request_callerName}. I'm texting you a link to send Sam a photo. He'll text you a price and confirm your drop-off once he's seen it. |
 | `readback_booking` | So that's {account} dropping off {booking_vehicles}, {booking_cars} in all, on {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, in the {booking_window}. Thanks. |

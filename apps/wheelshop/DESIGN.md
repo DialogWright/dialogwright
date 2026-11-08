@@ -109,7 +109,7 @@ Failing then, the model's (the maintainer's call 38 made the engine robust to th
 - `dealer-trade-ins`: at "yes, book it" Mercury 3 wrote a reply of 3,000 characters ("... Goodbye. Goodbye. Goodbye.") and no other key, cut at its token limit: not the shape, so the read-back is said again and nothing is booked (a failed answer at a read-back never completes, call 28). The second recording's retail call ended so too, once. So `hostile-reply/recognizeAccount/field` fails `no-new-action`: its variants (the account name replaced, so their requests are new) were recorded with answers that booked, against a clean call that did not.
 - `claimed-account`: the model gave no value at all from "Just book me in for two cars tomorrow afternoon" (the day and window it gave in both earlier recordings).
 
-### The fourth recording (after the maintainer's call 38), the one committed
+### The fourth recording (after the maintainer's call 38)
 
 A failed answer at a read-back is now read again the scripted way (the decision model asked the form's own questions on the same turn: a yes completes, a correction is read back); the agent's answer is capped at 400 tokens (an answer that runs on is cut there and is not in its shape at once); `claimed-account` is held to what it proves (above). The cap changes every request, so the run was recorded fresh: corpus 23/25 (the two known gaps), scenarios 8/8, adversarial 26/26, no misses. No answer failed in it, so no turn needed the scripted reading (the engine's tests hold it).
 
@@ -121,6 +121,15 @@ What the recordings show, for the owner and the maintainer (none fails a call):
 - In `claimed-account` (the second recording) the line said "So it's a Honda Civic, one car." to a caller who had said two cars: the judge passed it at 0.49, and "one" passed the figure check because the offer line's pronoun "one" ("the best one to reach you") is among the fixed lines' figures.
 - The judge refused the owner's own sample reply ("Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?") at 0.53 and 0.54 in the second recording (it passed at 0.47, and at 0.39 in the third): on the bar.
 - Live variance: run live once (`--client jev`, nothing kept), `claimed-account` lost its day and window, as the third recording did; across the three recordings the model read the same words differently on the opening turns (the dealer's day given or not; "on my Audi" taken once in three), so a scripted call's pass rests on one sample of each turn.
+
+### The fifth recording (after the whole-branch review, call 40), the one committed
+
+What changed, each the engine's or the app's: a text value with a figure or an address of its own is refused, and one not in the caller's words is judged against them; a window held from before its day is checked again once the day's windows are shown; after a system's failure the call is scripted; the read-back names the diamond cut (`says`), since every field is sent to Sam; the calendar refuses a window without room for the cars, so `correction-at-read-back` now takes a car off (the Tacoma: two in all) rather than add a fourth to a window of three; the bake-off reads business.yaml; "across from the car dealership" is gone from the shop's place. Recorded fresh: corpus 23/25 (the two known gaps), scenarios 7/8, adversarial 26/26, no misses.
+
+Not at 0 to triage, the model's (shown to the maintainer, not tagged):
+
+- `window-full` fails: on "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?" the model gave the vehicle, the wheels and the damage, and neither the day nor the window ("What day works for you to drop it off?"), where it gave both in every earlier recording. The scripted caller then answers questions it was not asked: its "yes, that's right" is read as the diamond cut, and the request is never read back.
+- `claimed-account` passes but differs from the stub baseline: the model held "two cars" as the vehicle and two wheels, and asked the damage before the wheels. The call holds no values, so it passes.
 
 Baseline edits (`fixtures/expected/`, by hand, never `--update`):
 

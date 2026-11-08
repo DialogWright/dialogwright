@@ -1,7 +1,7 @@
 {"id":"bk-01","text":"Hey, it's Mike over at Rivergate. I've got three trade-ins I want to get in tomorrow morning.","intent":"booking","context":"no_form"}
 {"id":"bk-02","text":"A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.","intent":"none","context":"booking","prompted":"booking_vehicles"}
 {"id":"bk-03","text":"yes, book it","intent":"none","context":"confirm_booking","confirm":"yes"}
-{"id":"bk-04","text":"Oh wait, make it four. There's an Accord too, front right.","intent":"none","context":"confirm_booking","confirm":"no"}
+{"id":"bk-04","text":"Oh wait, take the Tacoma off. It's just the Civic and the Model 3, so two.","intent":"none","context":"confirm_booking","confirm":"no"}
 {"id":"bk-05","text":"This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.","intent":"booking","context":"no_form"}
 {"id":"rq-01","text":"Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?","intent":"request","context":"no_form"}
 {"id":"rq-02","text":"It's a 2020 BMW 3 Series. Just the front passenger wheel.","intent":"none","context":"request","prompted":"request_vehicle"}

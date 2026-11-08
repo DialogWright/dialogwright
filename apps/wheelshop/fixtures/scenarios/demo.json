@@ -95,8 +95,8 @@
         "agent": { "reply": "Got it.", "values": [{ "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left", "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left." }], "action": "submit" }
       },
       {
-        "say": "Oh wait, make it four. There's an Accord too, front right.",
-        "agent": { "reply": "Sure, four.", "values": [{ "field": "cars", "value": "four", "words": "make it four" }, { "field": "vehicles", "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left, Accord front right", "words": "There's an Accord too, front right" }], "action": "submit" }
+        "say": "Oh wait, take the Tacoma off. It's just the Civic and the Model 3, so two.",
+        "agent": { "reply": "Sure, two.", "values": [{ "field": "cars", "value": "two", "words": "so two" }, { "field": "vehicles", "value": "2019 Civic front two, 2021 Model 3 rear left", "words": "It's just the Civic and the Model 3" }], "action": "submit" }
       },
       { "say": "yes, book it", "agent": { "reply": "" } }
     ],
@@ -104,7 +104,7 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "principalLevel": 1,
-      "values": { "account": "rivergate_motors", "cars": "four", "vehicles": { "has": ["2019 Civic", "front two", "Tacoma", "all four", "2021 Model 3", "rear left", "Accord", "front right"] }, "day": "2026-11-11", "window": "morning" },
+      "values": { "account": "rivergate_motors", "cars": "two", "vehicles": { "has": ["Civic", "Model 3"] }, "day": "2026-11-11", "window": "morning" },
       "action": "book",
       "said": { "notFigure": true },
       "readBackSaid": true,

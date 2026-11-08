@@ -95,7 +95,13 @@ export class Systems {
   /** The windows with room left on a day: none on a day the shop is closed. */
   freeWindows(day: string): string[] {
     if (!opensOn(day)) return [];
-    return WINDOW_NAMES.filter((w) => standingCars(day, w) + (this.booked.get(`${day} ${w}`) ?? 0) < capacityOf(w));
+    return WINDOW_NAMES.filter((w) => this.roomIn(day, w) > 0);
+  }
+
+  /** The cars a window has room for on a day: none on a day the shop is closed or in a window it does not have. */
+  roomIn(day: string, window: string): number {
+    if (!opensOn(day) || !WINDOW_NAMES.includes(window)) return 0;
+    return capacityOf(window) - standingCars(day, window) - (this.booked.get(`${day} ${window}`) ?? 0);
   }
 }
 
@@ -213,6 +219,12 @@ export const TOOLS: Record<string, ToolDef> = {
     run(call, sys, { idempotencyKey }) {
       const s = sys as Systems;
       const p = call.params;
+      // The calendar refuses a window without room for the cars, as a real one would (the gate does not
+      // know the calendar): nothing is booked, and its reply is no reference, so the call goes to Sam.
+      const repeat = idempotencyKey !== undefined && s.written.has(`B ${idempotencyKey}`);
+      if (!repeat && s.roomIn(p.day ?? '', p.window ?? '') < (COUNTS[p.cars ?? ''] ?? 1)) {
+        return { value: { full: true }, summary: `${p.day ?? ''} ${p.window ?? ''}: no room for ${p.cars ?? ''} cars, not booked` };
+      }
       return once(s, idempotencyKey, 'B', s.bookings.length, (ref) => {
         s.bookings.push({ ...p, ref });
         const at = `${p.day ?? ''} ${p.window ?? ''}`;

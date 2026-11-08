@@ -100,6 +100,20 @@ describe('the stand-in calendar', () => {
     expect(free(sys, '2026-11-11')).toEqual({ day: '2026-11-11', windows: ['afternoon'] });
   });
 
+  it('refuses a booking without room for its cars, as a real calendar would: nothing booked, and no reference, so the reply fails its check', () => {
+    const sys = new Systems();
+    const full = run(sys, 'book', { ...BOOKING, day: '2026-11-13', window: 'morning' }, 'k-1');
+    expect(TOOLS.book!.check!(full.value)).toBe(false);
+    expect(sys.bookings).toEqual([]);
+    const tooMany = run(sys, 'book', { ...BOOKING, cars: 'four' }, 'k-2');
+    expect(TOOLS.book!.check!(tooMany.value)).toBe(false);
+    expect(sys.bookings).toEqual([]);
+    // A booking repeated for its key after it filled the window is the same booking, not refused.
+    run(sys, 'book', BOOKING, 'k-3');
+    expect(TOOLS.book!.check!(run(sys, 'book', BOOKING, 'k-3').value)).toBe(true);
+    expect(sys.bookings).toHaveLength(1);
+  });
+
   it('takes no room for a request: Sam confirms its window with the quote', () => {
     const sys = new Systems();
     run(sys, 'request', { ...REQUEST, day: '2026-11-11' }, 'k-1');
