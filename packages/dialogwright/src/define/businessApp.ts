@@ -5,7 +5,8 @@ import { replyShape } from '../core/replyShape';
 import { isAnonymous, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, slotIdOf } from './business';
 import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
-import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, formParams } from './businessFiles';
+import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, formParams, PRICE_PROMPT } from './businessFiles';
+import { styleOf } from '../render/config';
 import type { AppCode } from './defineApp';
 import type { LoadedConfig } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
@@ -60,6 +61,10 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
     forms,
     sees,
     model: { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL.model, effort: chosen?.effort ?? DEFAULT_AGENT_MODEL.effort },
+    // The price line, where the business has one: an answer may name it in place of its reply, so a price is never worded.
+    lines: b.prices !== undefined ? { price: PRICE_PROMPT } : {},
+    // How a reply is held: style.yaml's word budget, its phrases to avoid and its judge's cutoff (render/agentLine.ts).
+    style: styleOf(style),
   };
 }
 

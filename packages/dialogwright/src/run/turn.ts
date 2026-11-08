@@ -12,7 +12,7 @@ import type { Thresholds } from '../core/thresholds';
 import { DEFAULT_SCREEN_MODE, inlineScreenQuestions, screenQuestions, screenResult, screenState, splitInlineAnswers, withInlineScreen, type ScreenMode, type ScreenResult } from '../core/screen';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
-import { JevClientError, type AnswerMap, type JevClient, type JevResponse, type JsonValue, type QuestionMap } from '../jev/types';
+import { JevClientError, type AnswerMap, type JevClient, type JevResponse, type JevUsage, type JsonValue, type QuestionMap } from '../jev/types';
 import type { RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceSink } from '../trace/writer';
 import type { FollowUpRecord, TraceRecord } from '../trace/types';
@@ -22,6 +22,7 @@ import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
 import { renderTurn, withRenderAudit, type EarlyLines } from '../render/turn';
+import { holdAgentLine } from '../render/agentLine';
 import { defaultRenderPrice } from '../render/providers';
 import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
@@ -314,6 +315,13 @@ function agentSpent(r: AgentResult, runner: AgentRunner | null | undefined): { u
   return { usage: { inputTokens: r.usage.inputTokens, outputTokens: r.usage.outputTokens }, costUsd };
 }
 
+/** Two usages of the decision model added; null where neither was spent. */
+function sumUsage(a: JevUsage | null, b: JevUsage | null): JevUsage | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return { inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens, estimated: a.estimated || b.estimated };
+}
+
 /** The separate screen's error when it had not answered SCREEN_GRACE_MS after perception did. */
 export const SCREEN_LATE = 'screen late';
 
@@ -498,12 +506,23 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const t3 = performance.now();
   // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.
   const retrievedAny = retrieved ?? second?.retrieved ?? null;
+  // An app in agent mode: the agent's reply, where the turn says it, held to the facts by the checks and the
+  // drift judge (render/agentLine.ts), its fixed line said in its place where one fails, and the records with it.
+  const held = appOf(session).mode === 'agent'
+    ? await holdAgentLine({
+      result: resolved, event, judge: opts.renderer?.drift ?? opts.client, clips: opts.render ?? null, seen: agentCtx?.seen ?? [], todayIso: opts.todayIso,
+      ...(opts.renderer?.checkTimeoutMs !== undefined ? { checkTimeoutMs: opts.renderer.checkTimeoutMs } : {}),
+    })
+    : null;
+  const decided = held?.result ?? resolved;
   // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
   // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
-  const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}) }) : null;
+  const rendered = opts.renderer ? await renderTurn({ before: session, result: decided, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}) }) : null;
   // A turn whose answer line words its answer: its knowledge record says whether the passage or a wording of it was said.
-  const kb = rendered?.kbSaid !== undefined && resolved.kb !== null ? { ...resolved.kb, said: rendered.kbSaid } : resolved.kb;
-  const result = rendered ? { ...resolved, actions: rendered.actions, audit: withRenderAudit(resolved.audit, rendered.audit), kb } : resolved;
+  const kb = rendered?.kbSaid !== undefined && decided.kb !== null ? { ...decided.kb, said: rendered.kbSaid } : decided.kb;
+  const result = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;
+  // The decision model's checks this turn: the agent line's judge and generated wording's, together.
+  const driftUsage = sumUsage(held?.usage ?? null, rendered?.driftUsage ?? null);
   // Chained before anything else is written: the audit is the record of what the turn did.
   // The audit entries are recorded under the session's own channel kind.
   const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];
@@ -534,12 +553,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
       ...(second?.ms != null ? { followUpMs: second.ms } : {}),
       ...(agentResult !== null ? { agentMs: agentResult.ms } : {}),
-      // A turn that rendered a generated line counts its rendering too.
-      ...(rendered?.record.ms !== undefined ? { renderMs: rendered.record.ms, totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
+      // A turn that rendered a generated line, or held an agent line, counts its rendering too.
+      ...(rendered?.record.ms !== undefined || held !== null ? { renderMs: (rendered?.record.ms ?? 0) + (held?.ms ?? 0), totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
     },
     render: rendered?.record ?? null,
     ...(result.agent !== undefined ? { agent: { ...result.agent, ...(agentResult !== null ? agentSpent(agentResult, opts.agent) : {}), ...(agentSent !== null ? { sent: agentSent } : {}) } } : {}),
-    driftUsage: rendered?.driftUsage ?? null,
+    driftUsage,
     retrieval: retrievedAny?.record ?? null,
     followUp: second?.run ? followUpRecord(second.run) : null,
     waited,

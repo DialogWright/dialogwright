@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { cassetteFileName } from '../jev/provider';
-import { DATE_WORDS, digitRuns, foreignFigure, spelledNumbers, words } from '../render/checks';
+import { digitRuns, foreignFigure, spelledNumbers } from '../render/checks';
+import { callerFigures, dateWords } from '../render/agentLine';
 import { openRouterThinkingOf, RENDER_EFFORTS, RENDER_THINKING_MODES, resolveRenderProvider, type RenderEffort, type RenderThinkingMode } from '../render/providers';
 import type { RenderPrice, RenderUsage } from '../render/types';
 import type { BakeoffCall, BakeoffCases, BakeoffTurn, TextLabel, ValueLabel } from './bakeoffCases';
@@ -192,18 +193,6 @@ function matches(label: ValueLabel | '*', value: string, type: string): boolean 
   return options.some((o) => (type === 'digits' ? value.replace(/\D/g, '') === o.replace(/\D/g, '') : type === 'date' ? value.trim() === o.trim() : sameWords(value, o)));
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
-
-/** How a date value may be said (its weekday, month and day, and today or tomorrow), so a reply saying it is not a figure of its own. */
-function dateWords(iso: string, today: string): string[] {
-  const d = new Date(`${iso}T00:00:00Z`);
-  const t = new Date(`${today}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return [];
-  const days = Math.round((d.getTime() - t.getTime()) / 86_400_000);
-  return [`${DAYS[d.getUTCDay()]!} ${MONTHS[d.getUTCMonth()]!} ${d.getUTCDate()}`, ...(days === 0 ? ['today'] : days === 1 ? ['tomorrow'] : [])];
-}
-
 /** The numbers a text says, in digits or in words, as digits ("about four hundred" is 400, "the 2019 edition" 2019), as foreignFigure reads them. */
 export function figuresIn(text: string): string[] {
   return [...digitRuns(text), ...spelledNumbers(text)];
@@ -309,7 +298,7 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   const sources = [
     ...t.ctx.facts.says,
     ...Object.values(t.ctx.facts.fixed),
-    ...(strict ? [] : [[...figuresIn(t.said), ...words(t.said).filter((w) => DATE_WORDS.has(w))].join(' ')]),
+    ...(strict ? [] : [callerFigures(t.said)]),
     ...Object.entries(t.collected).filter(([f]) => typeOf(f) !== 'text').flatMap(([f, v]) => [v, ...(typeOf(f) === 'date' ? dateWords(v, t.call.today) : [])]),
     ...a.values.filter((v) => right(v.field, v.value)).flatMap((v) => [v.value, ...(hasWords(t.said, v.words) ? [v.words] : []), ...(typeOf(v.field) === 'date' ? dateWords(v.value, t.call.today) : [])]),
   ];

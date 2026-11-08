@@ -7,6 +7,7 @@ import { collectGaps, turnOf, GAP_KINDS, type CollectContext, type GapKind, type
 import { consoleMetaOf, type ConsoleMeta } from './meta';
 import { askedWords, formLabel, handoffReasonText, withMeta } from './view.js';
 import type { CallRow } from './rows';
+import { addAgent, agentFactsOf, agentFiguresOf, agentInsightsOf, emptyAgentFigures, type AgentFigures, type AgentInsights } from './agentFigures';
 import { addRenderCall, emptyRenderFigures, renderFactsOf, renderFiguresOf, sumRender, wordingInsightsOf, type RenderCallFacts, type RenderFigures, type WordingInsights } from './wordingFigures';
 
 /**
@@ -62,6 +63,8 @@ export interface CallFacts {
   gapTopics: Record<string, { n: number; latest: string }>;
   /** Generated wording (wordingFigures.ts): only for a call with a render record (an app that generates lines, run with a renderer). */
   render?: RenderCallFacts;
+  /** The agent model's turns, answers missed and replies replaced (agentFigures.ts): only for a call of an app in agent mode. */
+  agent?: AgentFigures;
 }
 
 /** The figures of the calls that started in one hour (or, summed, a range): counts, durations and dollars only. */
@@ -100,6 +103,8 @@ export interface HourFigures {
   gapTopics: Record<string, { n: number; latest: string }>;
   /** Generated wording's figures (wordingFigures.ts): only in an hour with a call of an app that generates lines; absent otherwise, and in figures written before. */
   render?: RenderFigures;
+  /** The agent model's figures (agentFigures.ts): only in an hour with a call of an app in agent mode; absent otherwise, and in figures written before. */
+  agent?: AgentFigures;
 }
 
 /** The minutes a day's calls in progress are counted over: the day's own and the next day's (a call of the day going on past midnight; a call lasts at most a day). */
@@ -244,6 +249,9 @@ export function factsOfTrace(records: readonly TraceRecord[], app: App): CallFac
   // Generated wording: the call's group, and what the two groups are compared on (only a call with a render record).
   const render = renderFactsOf(records, Object.values(facts.asked).reduce((n, s) => n + s.reasks, 0));
   if (render !== null) facts.render = render;
+  // The agent model's turns and its replies held to the facts (only a call of an app in agent mode).
+  const agent = agentFactsOf(records);
+  if (agent !== null) facts.agent = agent;
   return facts;
 }
 
@@ -315,6 +323,7 @@ function addCall(h: HourFigures, { row, facts }: CallSummary): void {
   for (const [k, n] of Object.entries(facts.gaps) as [GapKind, number][]) { h.gaps += n; h.gapKinds[k] = (h.gapKinds[k] ?? 0) + n; }
   mergeTopics(h.gapTopics, facts.gapTopics);
   if (facts.render) addRenderCall((h.render ??= emptyRenderFigures()), facts.render, { ending: row.ending?.kind ?? null, lengthMs: length, costUsd: row.costUsd });
+  if (facts.agent) addAgent((h.agent ??= emptyAgentFigures()), facts.agent);
 }
 
 function mergeTopics(into: HourFigures['gapTopics'], from: HourFigures['gapTopics']): void {
@@ -439,6 +448,7 @@ export function sumHours(hours: readonly HourFigures[]): HourFigures {
     for (const [k, n] of Object.entries(h.gapKinds) as [GapKind, number][]) s.gapKinds[k] = (s.gapKinds[k] ?? 0) + n;
     mergeTopics(s.gapTopics, h.gapTopics);
     if (h.render) sumRender((s.render ??= emptyRenderFigures()), h.render);
+    if (h.agent) addAgent((s.agent ??= emptyAgentFigures()), h.agent);
   }
   s.costUsd = Math.round(s.costUsd * 1e6) / 1e6;
   return s;
@@ -485,6 +495,12 @@ export function hourFiguresOf(raw: unknown, older = false): HourFigures | null {
     const render = renderFiguresOf(raw.render);
     if (render === null) return null;
     h.render = render;
+  }
+  // The agent model's figures, where the hour has them.
+  if (raw.agent !== undefined) {
+    const agent = agentFiguresOf(raw.agent);
+    if (agent === null) return null;
+    h.agent = agent;
   }
   return h;
 }
@@ -550,7 +566,7 @@ export interface CarrierCost {
 
 /** What /dashboard/insights answers: the range's figures, totalled and in each app's words. */
 export interface Insights {
-  totals: Omit<HourFigures, 'asked' | 'tasks' | 'transfers' | 'abandoned' | 'refusals' | 'hours' | 'gapTopics' | 'render'> & { peak: number };
+  totals: Omit<HourFigures, 'asked' | 'tasks' | 'transfers' | 'abandoned' | 'refusals' | 'hours' | 'gapTopics' | 'render' | 'agent'> & { peak: number };
   containment: number | null;
   /** The length of the calls that ended, on average (null with none). */
   meanLengthMs: number | null;
@@ -573,6 +589,11 @@ export interface Insights {
    * `cost.modelUsd` too). Only when a call in the range had generated lines; absent otherwise.
    */
   wording?: WordingInsights;
+  /**
+   * The agent model (agentFigures.ts): its turns, the answers that never came, and its replies held to the
+   * facts with those replaced by their fixed line, by why. Only when a call in the range was of an app in agent mode.
+   */
+  agent?: AgentInsights;
   /** Days shown from figures of an older version, days whose figures could not be read (left out), and days older than FIGURES_RETENTION_DAYS (left out). */
   older: string[];
   unreadable: string[];
@@ -642,7 +663,8 @@ export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<
     const had = hourly.get(h) ?? { calls: 0, peak: 0 };
     hourly.set(h, { ...had, peak: Math.max(had.peak, p) });
   }
-  const { asked: _a, tasks: _t, transfers: _tr, abandoned: _ab, refusals: _r, hours: _h, gapTopics: _g, render: _render, ...rest } = all;
+  const { asked: _a, tasks: _t, transfers: _tr, abandoned: _ab, refusals: _r, hours: _h, gapTopics: _g, render: _render, agent: _agent, ...rest } = all;
+  const agent = agentInsightsOf(all.agent);
   const wording = wordingInsightsOf(apps.map((a) => ({ name: named ? (a.app.brand?.name ?? a.id) : null, render: a.figures.render })));
   const totals = { ...rest, peak: Math.max(0, ...[...hourly.values()].map((h) => h.peak)) };
   return {
@@ -666,6 +688,7 @@ export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<
     gapTopics: labelled((a) => Object.entries(a.figures.gapTopics).map(([topic, g]) => [topic, topicTitle(a.app, topic), g] as [string, string, { n: number; latest: string }]))
       .sort((x, y) => y.value.n - x.value.n || (y.value.latest > x.value.latest ? 1 : y.value.latest < x.value.latest ? -1 : 0) || x.key.localeCompare(y.key)),
     ...(wording !== null ? { wording } : {}),
+    ...(agent !== null ? { agent } : {}),
     older: [...new Set(apps.flatMap((a) => a.older))].sort(),
     unreadable: [...new Set(apps.flatMap((a) => a.unreadable))].sort(),
     expired: [...new Set(apps.flatMap((a) => a.expired ?? []))].sort(),

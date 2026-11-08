@@ -28,12 +28,16 @@ beforeAll(() => {
   registerApp(app);
 });
 
-/** The heuristic stub, each answer `delayMs` late. */
+/**
+ * The heuristic stub, each answer to the turn's questions `delayMs` late. The drift judge of the agent's
+ * reply (render/agentLine.ts) is asked after both, in series, by design: it answers at once here, so the
+ * timings below are the turn's own.
+ */
 function slowJev(delayMs: number): JevClient {
   const stub = new HeuristicStubClient({ todayIso: TODAY, app });
   return {
     async ask(req: JevRequest): Promise<JevResponse> {
-      await new Promise((r) => setTimeout(r, delayMs));
+      if (!Object.hasOwn(req.questions, 'renderAgentDrift')) await new Promise((r) => setTimeout(r, delayMs));
       return stub.ask(req);
     },
   };

@@ -1,3 +1,4 @@
+import type { RenderStyle } from '../core/app/types';
 import type { RenderUsage } from '../render/types';
 
 /**
@@ -36,6 +37,12 @@ export interface AgentAnswer {
   action: AgentAction;
   /** Whether the reply answers something from the facts. */
   fromFacts: boolean;
+  /**
+   * A line the business says in its own fixed words that answers the caller in place of the reply (one of
+   * AgentContext.lines, the price line among them), or `none`; absent where the turn offered none. Where it
+   * names one, the line says that line whole and never the reply: a price is never worded.
+   */
+  fixedLine?: string;
 }
 
 /**
@@ -95,6 +102,11 @@ export interface AgentContext {
   fields: AgentField[];
   /** What the model may propose (`none` is always allowed besides). */
   actions: AgentActionChoice[];
+  /**
+   * The fixed lines (by their names in facts.fixed) the answer may name in `fixedLine`, said whole in place
+   * of its reply: the price line, where the business has one. Absent or empty, the answer has no `fixedLine`.
+   */
+  lines?: string[];
   /** The conversation so far, the caller's latest words last. */
   conversation: AgentUtterance[];
   /** Who the caller is, where caller ID recognized them (an account's name); null otherwise. */
@@ -187,6 +199,13 @@ export interface AgentApp {
   sees: Readonly<Record<string, string>>;
   /** The model, from style.yaml's `agent` (Mercury 3 on Inception at instant by default). */
   model: AgentModelChoice;
+  /**
+   * The fixed lines an answer may name in place of its reply (AgentAnswer.fixedLine), by their names in
+   * facts.fixed, each with the prompt it is said through: the price line (`price`), where the business has one.
+   */
+  lines: Readonly<Record<string, string>>;
+  /** How an agent line is held (render/agentLine.ts): its word budget on each channel, style.yaml's `avoid` and the judge's `refuseAt`. */
+  style: RenderStyle;
 }
 
 /**

@@ -957,7 +957,7 @@ export function withRenderAudit(drafts: readonly AuditDraft[], render: readonly 
  * the question being the same, and where its answer comes from (core/sources.ts), the source being the
  * same; `sources` narrows them (a fallback's lines, from some of the sections only).
  */
-function keepChatExtras(was: Say, line: Say, sources?: (s: NonNullable<Say['sources']>[number]) => boolean): Say {
+export function keepChatExtras(was: Say, line: Say, sources?: (s: NonNullable<Say['sources']>[number]) => boolean): Say {
   // Narrowed to none (a heading the lines and the sources give differently): all of them, never none.
   const narrowed = was.sources?.filter((s) => sources?.(s) ?? true);
   const kept = narrowed !== undefined && narrowed.length === 0 ? was.sources : narrowed;

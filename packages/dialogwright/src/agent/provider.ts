@@ -43,7 +43,7 @@ function chatRequest(model: string, maxTokens: number, extra: Record<string, unk
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         temperature: AGENT_TEMPERATURE,
         max_tokens: maxTokens,
-        response_format: { type: 'json_schema', json_schema: { name: AGENT_SCHEMA_NAME, strict: true, schema: agentJsonSchema(ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name)) } },
+        response_format: { type: 'json_schema', json_schema: { name: AGENT_SCHEMA_NAME, strict: true, schema: agentJsonSchema(ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name), ctx.lines) } },
         ...extra,
       };
     },
@@ -149,7 +149,7 @@ function chatAgent(e: ChatEndpoint, fetchFn: typeof fetch): AgentClient {
         if (c.text === null) return { ok: false, reason: 'invalid', detail: `${e.provider}: the response had no message`, ms: ms(), ...paid };
         // An answer cut off at the token limit is not an answer, whatever it parses to.
         if (c.finish === 'length') return { ok: false, reason: 'invalid', detail: `${e.provider}: the answer was cut off at the token limit`, ms: ms(), raw: c.text, ...paid };
-        const parsed = parseAgentAnswer(c.text, ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name));
+        const parsed = parseAgentAnswer(c.text, ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name), ctx.lines);
         if (!parsed.ok) return { ok: false, reason: 'invalid', detail: safeErrorText(parsed.detail, e.apiKey), ms: ms(), raw: c.text, ...paid };
         return { ok: true, answer: parsed.answer, ms: ms(), raw: c.text, ...paid };
       } finally {

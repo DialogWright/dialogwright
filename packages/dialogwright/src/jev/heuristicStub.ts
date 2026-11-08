@@ -151,6 +151,33 @@ export function stubAnswerDrift(state: unknown, keepAll = true): boolean {
   return own.filter((w) => !FILLER.has(w) && !goal.has(w) && !question.has(w)).length >= 2;
 }
 
+/**
+ * The stub's agent drift judge (render/checks.ts renderAgentDriftQuestion): a test double, deterministic,
+ * lenient and simple, standing in for a judge that reads the reply against the business's facts. It refuses
+ * a reply that carries words of an injection or an instruction, or a promise, a guarantee or a refund of its
+ * own (DRIFT_CUES); that names itself as a person by a name that is not the business's ("this is Dana");
+ * or that calls something available, free, booked or confirmed when no system's result was seen and the
+ * facts do not say so. What else a reply claims is a real judge's to read.
+ */
+export function stubAgentDrift(state: unknown): boolean {
+  const s = state as { agent?: { said?: unknown; speaks?: unknown; may_say?: unknown; fixed_lines?: unknown; seen?: unknown; understood?: unknown }; quoted?: { words?: unknown }[] } | null;
+  const a = s?.agent;
+  const said = typeof a?.said === 'string' ? a.said : '';
+  const texts = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  const understood = Array.isArray(a?.understood) ? (a!.understood as { value?: unknown; words?: unknown }[]).flatMap((u) => [u.value, u.words].filter((x): x is string => typeof x === 'string')) : [];
+  const business = new Set(tokens(typeof a?.speaks === 'string' ? a.speaks : ''));
+  const given = new Set([...texts(a?.may_say), ...texts(a?.fixed_lines), ...understood, ...(s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? [q.words] : []))].flatMap(tokens));
+  const own = tokens(said).filter((w) => !given.has(w) && !business.has(w)).join(' ');
+  if (manipulationPattern(undefined).test(own) || DRIFT_CUES.test(own)) return true;
+  // Named as a person: a name after "this is", "I'm", "my name is" that is not the business's.
+  for (const m of said.matchAll(/\b(?:[Tt]his is|I'm|I am|[Mm]y name is)\s+(\p{Lu}[\p{L}']*)/gu)) {
+    if (!business.has(m[1]!.toLowerCase())) return true;
+  }
+  // Availability or a confirmation no system showed.
+  const seen = Array.isArray(a?.seen) ? a!.seen.length : 0;
+  return seen === 0 && /\b(available|free|booked|reserved|confirmed|works)\b/.test(own);
+}
+
 const DRIFT_CUES = /\b(instructions?|system|prompt|mode|override|transfer(ring)?|refund|credit|guarantee|promise|password|admin|developer|assistant)\b/;
 
 function has(text: string, re: RegExp): boolean {
@@ -261,6 +288,7 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'renderSpanDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubSpanDrift)
     case 'renderAnswerDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAnswerDrift)
     case 'renderDocumentsDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDocumentsDrift)
+    case 'renderAgentDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentDrift)
     default: return quietAnswer(id, q, 0.9, app);
   }
 }
@@ -295,6 +323,8 @@ export class HeuristicStubClient implements JevClient {
     if (Object.hasOwn(req.questions, 'renderAnswerDrift')) answers.renderAnswerDrift = noulAnswer(stubAnswerDrift(req.state) ? 0.9 : 0.04);
     // An answer from documents' wording: held to its sections.
     if (Object.hasOwn(req.questions, 'renderDocumentsDrift')) answers.renderDocumentsDrift = noulAnswer(stubDocumentsDrift(req.state) ? 0.9 : 0.04);
+    // An agent line (an app in agent mode): the agent model's reply, held to the business's facts.
+    if (Object.hasOwn(req.questions, 'renderAgentDrift')) answers.renderAgentDrift = noulAnswer(stubAgentDrift(req.state) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

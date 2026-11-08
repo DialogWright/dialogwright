@@ -535,7 +535,7 @@ function scrubVars(d: TraceRecord['decision'], scrub: Scrub | null): TraceRecord
  * What an agent turn records (TraceRecord.agent), masked where it carries a redacted slot's value: each
  * accepted value's `shown` as its slot masks it, and what it was sent (its fields' values masked when sent
  * already) scrubbed of the turn's redacted values (`scrub`): the conversation, the caller's latest words
- * among it, which held a value the turn then understood.
+ * among it, which held a value the turn then understood; and its reply as held to the facts (`line`), as said lines are.
  */
 function redactAgent(app: Slots, agent: TraceRecord['agent'], scrub: Scrub | null, mode: StatementMode): TraceRecord['agent'] {
   if (!isObject(agent)) return agent;
@@ -549,7 +549,11 @@ function redactAgent(app: Slots, agent: TraceRecord['agent'], scrub: Scrub | nul
   const sent = isObject(agent.sent) && scrub !== null && Array.isArray(agent.sent.conversation)
     ? { ...agent.sent, conversation: agent.sent.conversation.map((u) => (isObject(u) && typeof u.text === 'string' ? { ...u, text: scrub(u.text) } : u)) }
     : agent.sent;
-  return { ...agent, values, ...(reply !== undefined ? { reply } : {}), ...(sent !== undefined ? { sent } : {}) } as TraceRecord['agent'];
+  // The reply held to the facts (render/agentLine.ts): its fixed line, the reply said or refused, our lines too.
+  const line = isObject(agent.line) && scrub !== null
+    ? { ...agent.line, fixed: scrub(agent.line.fixed), ...(agent.line.said !== undefined ? { said: scrub(agent.line.said) } : {}), ...(agent.line.refused !== undefined ? { refused: scrub(agent.line.refused) } : {}) }
+    : agent.line;
+  return { ...agent, values, ...(reply !== undefined ? { reply } : {}), ...(sent !== undefined ? { sent } : {}), ...(line !== undefined ? { line } : {}) } as TraceRecord['agent'];
 }
 
 /** A say action's text parts, scrubbed. */

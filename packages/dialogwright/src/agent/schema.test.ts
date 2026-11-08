@@ -24,6 +24,19 @@ describe('agentAnswerSchema', () => {
     expect(schema.safeParse({ ...valid, values: [{ field: 'day', value: '2026-11-12', words: ' ' }] }).success).toBe(false);
   });
 
+  it('where the turn offers fixed lines, the answer names one or none in fixedLine, strictly; with none offered, it has no fixedLine', () => {
+    const schema = agentAnswerSchema(['none'], undefined, ['price']);
+    expect(schema.safeParse({ ...valid, fixedLine: 'price' }).success).toBe(true);
+    expect(schema.safeParse({ ...valid, fixedLine: 'none' }).success).toBe(true);
+    expect(schema.safeParse({ ...valid, fixedLine: 'handoff' }).success).toBe(false);
+    expect(schema.safeParse(valid).success).toBe(false);
+    expect(agentAnswerSchema(['none']).safeParse({ ...valid, fixedLine: 'price' }).success).toBe(false);
+    const json = agentJsonSchema(['none'], undefined, ['price']) as { required: string[]; properties: Record<string, { enum?: string[] }> };
+    expect(json.required).toContain('fixedLine');
+    expect(json.properties.fixedLine!.enum).toEqual(['price', 'none']);
+    expect((agentJsonSchema(['none']) as { required: string[] }).required).not.toContain('fixedLine');
+  });
+
   it('a field the form does not have is refused where the fields are given', () => {
     expect(agentAnswerSchema(['none'], ['name']).safeParse(valid).success).toBe(false);
     expect(agentAnswerSchema(['none'], ['day']).safeParse(valid).success).toBe(true);

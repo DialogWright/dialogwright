@@ -755,7 +755,27 @@
   /** A line's delivery notes (view.js DELIVERY_NOTES), one muted row each under it; spans, as a script line is a paragraph. */
   function notesHtml(l) {
     return (l.notes ?? []).map((n) => `<span class="dnote k-${esc(n.kind)}"><span class="lbl-d">on the line</span>${esc(n.text)}</span>`).join('')
-      + wordingHtml(l);
+      + wordingHtml(l) + agentHtml(l);
+  }
+
+  /**
+   * An agent turn under its line (view.js agentOf): each value the agent understood, with the caller's
+   * words it cited and its check's outcome; the action it proposed and whether it was taken; its reply,
+   * said (with the judge's reading) or not and why, the words refused shown as not said; and where the
+   * turn did not read the answer, why.
+   */
+  function agentHtml(l) {
+    const a = l.agent;
+    if (!a) return '';
+    const judged = (r) => (r.judge !== undefined ? `<span class="jscore">· ${esc(r.judge)}</span>` : '');
+    const values = a.values.map((v) => `<span class="dnote k-${v.accepted ? 'generated' : 'fixed'}"><span class="lbl-d">understood · ${esc(v.field)}</span>${esc(v.value)}${v.shown !== undefined ? ` (said ${esc(v.shown)})` : ''}, from <q>${esc(v.words)}</q> · ${esc(v.outcome)}</span>`).join('');
+    const action = a.action !== 'none' ? `<span class="dnote k-agent"><span class="lbl-d">proposed</span>${esc(a.action)}${a.actionOutcome !== undefined ? ` · ${esc(a.actionOutcome)}` : ''}</span>` : '';
+    const reply = a.reply === undefined ? ''
+      : a.reply.said
+        ? `<span class="dnote k-generated"><span class="lbl-d">agent reply · said</span>${esc(a.reply.text)}${judged(a.reply)}</span>`
+        : `<span class="dnote k-fixed"><span class="lbl-d">agent reply · not said</span>${esc(a.reply.why ?? '')}${judged(a.reply)}</span><span class="dnote k-refused"><span class="lbl-d">not said</span><q>${esc(a.reply.text)}</q></span>`;
+    const why = a.why !== undefined && l.kind !== 'marker' ? `<span class="dnote k-fixed"><span class="lbl-d">agent</span>${esc(a.why)}</span>` : '';
+    return why + values + action + reply;
   }
 
   /** Generated wording under an agent line: each line the app generates, said generated with its fixed line beside it, or fixed and why (and the wording refused, not said), with the drift judge's score where it was asked. */
@@ -783,7 +803,7 @@
       return `<div class="who">Caller · keypad${turnTag}</div><div class="marker key">${esc(l.text.slice('keypad '.length))}</div>`
         + '<div class="keynote">keypad: digits never reach speech recognition, the transcript, or Jev</div>';
     }
-    return `<div class="marker">${esc(l.text)}</div>`;
+    return `<div class="marker">${esc(l.text)}</div>${agentHtml(l)}`;
   }
 
   /**
@@ -835,7 +855,7 @@
       if (l.who === 'agent') return `<p class="sline"><span class="swho">${esc(APP.brand.name)}</span><span class="said sys${l.unsaid ? ' unsaid' : ''}">${esc(l.text)}</span>${notesHtml(l)}</p>`;
       if (l.who === 'keypad') return `<p class="sline"><span class="swho">Caller · keypad</span><span class="marker key">${esc(l.text)}</span></p>`;
       if (l.who === 'handoff') return `<p class="sline hand"><span class="swho">Handoff</span><span class="said">${esc(l.text)}</span></p>`;
-      return `<p class="sline"><span class="swho"></span><span class="marker">${esc(l.text)}</span></p>`;
+      return `<p class="sline"><span class="swho"></span><span class="marker">${esc(l.text)}</span>${agentHtml(l)}</p>`;
     }).join('');
   }
 
@@ -2105,6 +2125,13 @@
       + tableHtml('Each generated line', withApp(['Line', 'Tried#', 'Said generated#', 'Fell back#', 'Added time#']), w.prompts.map((r) => [...(MANY() ? [esc(r.app ?? '')] : []), `<code>${esc(r.cells[0])}</code>`, ...r.cells.slice(1).map(esc)]), 'No line was tried.')
       + '<p class="figs-note">Fell back is the share said fixed because a check failed, the model was slow or erred; added time is how long the line\'s wording and checks took on average, which the caller waited on top of the turn.</p>') : '';
 
+    // The agent model (an app in agent mode): its turns, the answers that never came, and its replies held to the facts.
+    const ag = i.agent;
+    const agent = ag ? card('Agent model', `<dl class="kv2"><dt>Turns it answered</dt><dd>${n(ag.turns)}</dd><dt>No answer in time or in shape</dt><dd>${n(ag.failed)}</dd>`
+      + `<dt>Replies held to the facts</dt><dd>${n(ag.replies)}</dd><dt>Replaced by their fixed line</dt><dd>${n(ag.fellBack)} (${esc(percentText(ag.replies ? ag.fellBack / ag.replies : null))})</dd></dl>`
+      + tableHtml('Fallbacks, by why', ['Why', 'Turns#'], ag.reasons.map((r) => [esc(r.label), n(r.n)]), 'No fallback.')
+      + '<p class="figs-note">Each reply the agent model gave was checked (a figure or web address the facts do not hold, its shape, its length) and read by the drift judge; one that failed was replaced by the line\'s fixed question. A turn with no answer said its fixed question too.</p>') : '';
+
     const kb = d.knowledge ? card('Knowledge base', `<p class="figs-note"><b>${n(t.gaps)}</b> ${t.gaps === 1 ? 'question' : 'questions'} the knowledge base did not answer. Their topics are on the <a class="follow" href="#/knowledge">Knowledge</a> page; the callers' words, ranked with the fix for each, are <code>${esc(d.knowledge.command)}</code> at the terminal.</p>`) : '';
 
     const notes = [
@@ -2112,7 +2139,7 @@
       ...(i.unreadable?.length ? [`Left out, their figures could not be read: ${i.unreadable.map(esc).join(', ')}.`] : []),
       ...(i.expired?.length ? [`Not shown, older than the figures are kept (FIGURES_RETENTION_DAYS): ${i.expired.length} ${i.expired.length === 1 ? 'day' : 'days'}, ${esc(i.expired[0])} to ${esc(i.expired.at(-1))}.`] : []),
     ];
-    el('insights-body').innerHTML = `${notes.map((x) => `<p class="figs-note warnt" role="note">${x}</p>`).join('')}${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${wording}${kb}</div>`
+    el('insights-body').innerHTML = `${notes.map((x) => `<p class="figs-note warnt" role="note">${x}</p>`).join('')}${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${wording}${agent}${kb}</div>`
       + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end, and a day is final once its traces can no longer change. Hours are counted as the server counts them (UTC), shown in your time. The most at once is to the minute (the most calls in progress in any one minute), of the calls that started in the range: one already going when it began is not counted.</p>';
   }
 

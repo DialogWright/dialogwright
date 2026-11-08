@@ -26,6 +26,7 @@ const ctx: AgentContext = {
     { name: 'window', type: 'choice', options: ['morning', 'afternoon'], value: null, required: false },
   ],
   actions: [{ name: 'submit', about: 'Read back what is collected so the caller can confirm it.' }],
+  lines: ['price'],
   conversation: [
     { who: 'line', text: 'Thanks for calling Example Service Desk. How can I help?' },
     { who: 'caller', text: 'Hi, this is Dana, I need something looked at.' },

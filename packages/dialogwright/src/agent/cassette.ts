@@ -90,7 +90,7 @@ function replayed(line: AgentCassetteLine, ctx: AgentContext, timeoutMs: number)
   const paid = { ...(line.usage !== undefined ? { usage: { ...line.usage } } : {}), ...(line.costUsd !== undefined ? { costUsd: line.costUsd } : {}) };
   if (line.raw === undefined) return { ok: false, reason: line.failed?.reason ?? 'timeout', detail: line.failed?.detail ?? 'timeout (recorded)', ms: line.ms, ...paid };
   if (line.ms > timeoutMs) return { ok: false, reason: 'timeout', detail: `no answer within ${timeoutMs} ms (recorded at ${line.ms} ms)`, ms: timeoutMs, ...paid };
-  const parsed = parseAgentAnswer(line.raw, ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name));
+  const parsed = parseAgentAnswer(line.raw, ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name), ctx.lines);
   return parsed.ok ? { ok: true, answer: parsed.answer, ms: line.ms, raw: line.raw, ...paid } : { ok: false, reason: 'invalid', detail: parsed.detail, ms: line.ms, raw: line.raw, ...paid };
 }
 

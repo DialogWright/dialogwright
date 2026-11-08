@@ -18,6 +18,7 @@ import { setForm, type PendingConfirmation, type Session } from './session';
 import type { SlotContext } from './slots/types';
 import { resolve, type TurnContext, type TurnError, type TurnIO, type TurnResult } from './turn';
 import type { ScreenResult } from './screen';
+import type { RenderLine } from '../render/types';
 
 /**
  * The agent turn: a turn of an app in agent mode (App.mode `agent`; docs/designs/2026-11-08-agent-mode.md,
@@ -97,6 +98,14 @@ export interface AgentTurnRecord {
   fromFacts?: boolean;
   /** Whether the reply was said, as an agent line in place of its fallback or before it. */
   replySaid: boolean;
+  /** The fixed line the answer named in place of its reply (AgentAnswer.fixedLine: the price line), said whole before the turn's line; the reply was not said. */
+  fixedLine?: string;
+  /**
+   * The reply held to the facts (render/agentLine.ts): the agent line as said (`mode: generated`, with the
+   * judge's reading) or replaced by its fixed line (`mode: fixed`, with why, the reply refused, and the
+   * judge's reading where it was asked). Absent where no reply was said.
+   */
+  line?: RenderLine;
   /** The agent model's tokens and their cost, US dollars (the provider's own, else at the model's price); set by the runner. */
   usage?: { inputTokens: number; outputTokens: number };
   costUsd?: number;
@@ -231,12 +240,15 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
   const earlier = maskedConversation(app, session.slots, allSlots, session.agent?.conversation ?? []);
   const p = session.principal;
   const form = session.form !== null && agent.forms[session.form] !== undefined ? { name: session.form, about: agent.forms[session.form]!.about } : null;
+  // The fixed lines the answer may name in place of its reply (the price line): those the facts have.
+  const lines = Object.keys(agent.lines).filter((l) => Object.hasOwn(agent.facts.fixed, l));
   return {
     facts: agent.facts,
     examples: [...agent.examples],
     form,
     fields: sent,
     actions: actionsFor(app, session),
+    ...(lines.length > 0 ? { lines } : {}),
     conversation: [...earlier.map((u) => ({ who: u.who, text: oneLine(u.text) })), { who: 'caller', text: oneLine(words) }],
     caller: { account: isAnonymous(p) ? null : p.first },
     channel: session.caps.speech ? 'voice' : 'chat',
@@ -456,7 +468,27 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
 }
 
 /** Whether an answer understood nothing: no value, no action, nothing from the facts (a miss, which speech over a line sets aside). */
-const understoodNothing = (a: AgentAnswer): boolean => a.values.length === 0 && a.action === NO_ACTION && !a.fromFacts;
+const understoodNothing = (a: AgentAnswer): boolean => a.values.length === 0 && a.action === NO_ACTION && !a.fromFacts && (a.fixedLine === undefined || a.fixedLine === NO_ACTION);
+
+/** The fixed line an answer names in place of its reply (AgentAnswer.fixedLine), with the prompt it is said through, where the app has it; else null. */
+function fixedLineOf(app: App, answer: AgentAnswer | null): { name: string; promptId: string } | null {
+  const name = answer?.fixedLine;
+  if (name === undefined || name === NO_ACTION) return null;
+  const promptId = app.agent?.lines[name];
+  return promptId !== undefined && Object.hasOwn(app.prompts.manifest, promptId) ? { name, promptId } : null;
+}
+
+/**
+ * A turn whose answer named a fixed line (the price line): that line said whole, first, and the reply
+ * never, so a price is never worded; the turn's own line (a field's question, the read-back) after it.
+ */
+function withFixedLine(h: Handled, fixed: { name: string; promptId: string } | null, record: AgentTurnRecord): Handled {
+  if (fixed === null || h.decision.kind !== 'prompt') return h;
+  const { agent: _reply, ...decision } = h.decision;
+  record.replySaid = false;
+  record.fixedLine = fixed.name;
+  return { ...h, decision: { ...decision, acks: [{ promptId: fixed.promptId, vars: {} }, ...decision.acks] } };
+}
 
 /**
  * The words turn of an app in agent mode, once the gates have read the turn (core/turn.ts): see the top.
@@ -497,8 +529,21 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
     if (action !== NO_ACTION) record.actionOutcome = outcome;
   };
 
+  // An answer that names a fixed line (the price line): that line said whole before the turn's own, never the reply.
+  const fixed = fixedLineOf(app, answer);
+  return withFixedLine(answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null }), fixed, record);
+}
+
+/** The words turn once the answer is recorded (agentWords): the read-back's, or the form's (steps 1 to 6 at the top). */
+function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, record: AgentTurnRecord, actionDone: (o: 'taken' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
+  const app = io.app;
+  const pc = s.pendingConfirmation;
+  const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
+  const { failedTwice } = failed;
+  const action = record.action;
+
   // 1. At a read-back.
-  if (pc !== null && pc.target === 'form') return atReadBack(s, verdict, answers, ctx, io, steps, said, pc, record, actionDone, { none, failedTwice });
+  if (pc !== null && pc.target === 'form') return atReadBack(s, verdict, answers, ctx, io, steps, said, pc, record, actionDone, failed);
 
   // A callback asked for: the person form, as a person asked for is (App.personForm).
   if (action === CALLBACK_ACTION) {
@@ -554,7 +599,7 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
 }
 
 /** The read-back's turn (step 1 at the top). */
-function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean }): Handled {
+function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
   const app = io.app;
   const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
   if (answer === null && !failed.none) {
@@ -594,9 +639,9 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     // A no with nothing more: what to change; a second asks the read-back again, on its ladder.
     return { decision: pc.askedChange === true ? steps.reaskConfirmation(s, io) : steps.askChange(pc, []), events: applied.events };
   }
-  // A question at the read-back ("do you open on Saturdays?"), an answer from the facts: answered as an
-  // aside, and the read-back said again as it stands (its attempts and its "What should I change?" kept), uncounted.
-  if (answer !== null && answer.values.length === 0 && answer.fromFacts) {
+  // A question at the read-back ("do you open on Saturdays?", "how much is it?"), an answer from the facts
+  // or a fixed line named in its place: answered as an aside, and the read-back said again as it stands (its attempts and its "What should I change?" kept), uncounted.
+  if (answer !== null && answer.values.length === 0 && (answer.fromFacts || failed.fixed)) {
     return { decision: withAside(steps.summaryPrompt(s, pc.form, []), answer.reply, record), events: applied.events };
   }
   // Anything else, neither a yes nor a no ("um", "the day" after "What should I change?"): the read-back

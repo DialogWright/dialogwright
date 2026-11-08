@@ -213,7 +213,9 @@ export type RenderFallback =
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
   | 'content-flagged'
   /** A span copies four words running of its line's own fixed words (its sentence's) that its content does not have: the frame written into the span. */
-  | 'frame';
+  | 'frame'
+  /** An agent line (an app in agent mode) runs a key of the agent's answer's own shape into its words: the structure leaking into what is said. */
+  | 'shape';
 
 /** Why a line the app generates was not tried on this turn (its fixed line said, no fallback). */
 export type RenderSkip =
@@ -294,7 +296,8 @@ export interface RenderLine {
   /** How long the line's generation and checks took, ms. */
   ms?: number;
   usage?: RenderUsage;
-  source?: Generation['source'];
+  /** Where the wording came from: a model, a recording or a fake; `agent`, an agent line (an app in agent mode), the agent model's reply, held with no model asked to word it (render/agentLine.ts). */
+  source?: Generation['source'] | 'agent';
   /**
    * A knowledge base's answer (a span `from: answer`): the passage it is worded from, by id and topic.
    * `fixed` is then the approved passage, and `said` its wording, when one was said. Absent on every other line.
