@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { describeConfig, loadConfig } from './config';
-import { BARGE_IN_SUPPORT, bargeInOfCarrier, bargeInRefusal } from '../channel/voiceProviders';
+import { BARGE_IN_SUPPORT, DEFAULT_SPEECH_OVER_LINE, bargeInOfCarrier, bargeInRefusal } from '../channel/voiceProviders';
 
 const base = { PUBLIC_HOST: 'demo.example.app', TWILIO_AUTH_TOKEN: 'tok', HANDOFF_NUMBER: '+15551234567' };
 
@@ -82,5 +82,30 @@ describe('a carrier that does not take a barge-in value', () => {
     expect(bargeInRefusal('dtmf', ['telnyx'], support, 'BARGE_IN_TELNYX')).toBe(
       'BARGE_IN_TELNYX=dtmf is not supported by the voice provider telnyx (it takes any, none); use one of those, or take telnyx out of VOICE_PROVIDERS',
     );
+  });
+});
+
+describe('SPEECH_OVER_LINE', () => {
+  it('is unless-miss unless it says otherwise, and takes take and ignore in any case', () => {
+    expect(loadConfig(base).speechOverLine).toBe('unless-miss');
+    expect(loadConfig({ ...base, SPEECH_OVER_LINE: '' }).speechOverLine).toBe('unless-miss');
+    for (const mode of ['take', 'unless-miss', 'ignore'] as const) {
+      expect(loadConfig({ ...base, SPEECH_OVER_LINE: mode }).speechOverLine).toBe(mode);
+    }
+    expect(loadConfig({ ...base, SPEECH_OVER_LINE: ' Take ' }).speechOverLine).toBe('take');
+    expect(DEFAULT_SPEECH_OVER_LINE).toBe('unless-miss');
+  });
+
+  it('refuses any other value, naming the ones it takes', () => {
+    for (const bad of ['off', 'unless_miss', 'on']) {
+      expect(() => loadConfig({ ...base, SPEECH_OVER_LINE: bad })).toThrow(`SPEECH_OVER_LINE must be take, unless-miss or ignore, got "${bad}"`);
+    }
+  });
+
+  it('is said at startup, the same for every carrier', () => {
+    expect(describeConfig(loadConfig(base))).toContain('speech over a line unless-miss');
+    expect(describeConfig(loadConfig({ ...base, SPEECH_OVER_LINE: 'take' }))).toContain('speech over a line take');
+    const both = { ...base, VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: Buffer.alloc(32, 7).toString('base64'), BARGE_IN_TELNYX: 'none' };
+    expect(describeConfig(loadConfig({ ...both, SPEECH_OVER_LINE: 'ignore' }))).toContain('speech over a line ignore');
   });
 });

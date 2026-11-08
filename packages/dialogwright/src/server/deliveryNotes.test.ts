@@ -89,7 +89,8 @@ function liveCall(provider: string, bargeIn: BargeIn = 'any', more: Partial<Adap
 
 describe('delivery notes, as the adapter publishes them', () => {
   it('a caller who came back in: the join on the joined words, with their pause, live and on reload', async () => {
-    const call = liveCall('telnyx', 'none');
+    // The fragment said over the re-ask is a miss said (SPEECH_OVER_LINE=take): the join is what is noted here.
+    const call = liveCall('telnyx', 'none', { speechOverLine: 'take' });
     await call.start();
     await call.speak(900);
     await vi.advanceTimersByTimeAsync(800);

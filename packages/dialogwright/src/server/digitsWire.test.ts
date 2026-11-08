@@ -128,7 +128,10 @@ function liveCall(app: App, provider = 'twilio', bargeIn: BargeIn = 'any', more:
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`)),
   }), 60_000, () => 0);
   const tokens = new CallTokens(60_000, () => 0);
-  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, ...more };
+  // Speech over a line taken as an answer (SPEECH_OVER_LINE=take): the misses these calls begin with are
+  // answers said at once after each question, which the test's clock puts before its estimated end. Words
+  // held with speech over a line are speechOverLine.test.ts's.
+  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, speechOverLine: 'take', ...more };
   const sent: Record<string, unknown>[] = [];
   const sock: SocketLike = { send: (d, cb) => { sent.push(JSON.parse(d) as Record<string, unknown>); cb?.(); }, close: () => {} };
   const ctx = newConnectionContext(tokens.mint(CALL, provider), sock, provider);
@@ -526,5 +529,34 @@ describe('a number said with a pause (waitForRestMs): the words held, before any
     vi.useRealTimers();
     const replayed = await call.replay();
     expect(replayed.records.map(shape)).toEqual(live.map(shape));
+  });
+});
+
+describe('words held over a line the caller could not interrupt (SPEECH_OVER_LINE=unless-miss)', () => {
+  it('the start of the number said over the question is held, the rest joined, and the number taken', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none', { speechOverLine: 'unless-miss' });
+    // The request, said at once over the greeting, is acted on.
+    await toAccount(call);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say(REST);
+    await held;
+    expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
+    expect(call.session().slots.account).toMatchObject({ value: '55520417', attempts: 0 });
+    expect(call.records().at(-1)!.event).toMatchObject({ text: `${FIRST} ${REST}`, overLine: true });
+    await sameOnReplay(call);
+  });
+
+  it('the start alone, and nothing more: once the wait is over, a miss over the question, set aside', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none', { speechOverLine: 'unless-miss' });
+    await toAccount(call);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(1_500);
+    await held;
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 1_500, fragments: 1, end: 'timeout' }]);
+    expect(call.wire().at(-1)).toBe(ASK);
+    expect(call.session().slots.account?.attempts).toBe(0);
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    await sameOnReplay(call);
   });
 });

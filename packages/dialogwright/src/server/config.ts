@@ -8,7 +8,7 @@ import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
   BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
-  TWILIO_DEFAULT_RECOGNIZER, VOICE_PROVIDER_IDS, type BargeIn, type EndAfterPlayback, type VoiceProviderId,
+  TWILIO_DEFAULT_RECOGNIZER, VOICE_PROVIDER_IDS, DEFAULT_SPEECH_OVER_LINE, SPEECH_OVER_LINE_MODES, type BargeIn, type EndAfterPlayback, type SpeechOverLine, type VoiceProviderId,
 } from '../channel/voiceProviders';
 import type { Recognition, RecordsConfig } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
@@ -166,6 +166,18 @@ export interface ServerConfig {
    * A mode its carrier does not take is refused at startup.
    */
   bargeInByCarrier?: Readonly<Partial<Record<VoiceProviderId, BargeIn>>>;
+  /**
+   * SPEECH_OVER_LINE=take|unless-miss|ignore, default unless-miss (DEFAULT_SPEECH_OVER_LINE, the maintainer's
+   * decision, 2026-11-08): a final prompt whose speech started while a line the caller could not interrupt by
+   * speech was still playing (BARGE_IN none or dtmf, or a line sent interruptible: false), before the lines'
+   * estimated end. `take` is an answer like any other, as before; `unless-miss` runs the turn and sets aside one
+   * that would be a miss, as side speech is, nothing said and nothing counted; `ignore` runs no turn for it
+   * (server/adapter.ts, speech over a line). Seen on a live Telnyx call with the barge-in off: three turns on
+   * background speech over the greeting and the re-asks put the caller through to a person before they had
+   * heard a question to its end. Every carrier alike; a key and a chat are never affected. Optional in the type
+   * only, for a config made by hand before it existed (absent reads as unless-miss).
+   */
+  speechOverLine?: SpeechOverLine;
   /**
    * END_AFTER_PLAYBACK=auto|on|off, default auto: whether a turn that ends the call (a goodbye before the
    * hang-up, a line before a transfer) holds its `end` frame until the lines before it have played. A
@@ -469,6 +481,16 @@ function bargeInOf(env: Env, voiceProviders: readonly string[]): { bargeIn: Barg
   return { bargeIn: mode, ...(Object.keys(byCarrier).length > 0 ? { bargeInByCarrier: byCarrier } : {}) };
 }
 
+/** SPEECH_OVER_LINE, DEFAULT_SPEECH_OVER_LINE unless set; any other value is refused, as a BARGE_IN is. */
+function speechOverLineOf(env: Env): SpeechOverLine {
+  const raw = env.SPEECH_OVER_LINE?.trim().toLowerCase() || '';
+  if (raw === '') return DEFAULT_SPEECH_OVER_LINE;
+  if (!(SPEECH_OVER_LINE_MODES as readonly string[]).includes(raw)) {
+    throw new Error(`SPEECH_OVER_LINE must be ${SPEECH_OVER_LINE_MODES.slice(0, -1).join(', ')} or ${SPEECH_OVER_LINE_MODES.at(-1)}, got "${env.SPEECH_OVER_LINE}"`);
+  }
+  return raw as SpeechOverLine;
+}
+
 /** END_AFTER_PLAYBACK, END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR and END_PLAYBACK_MARGIN_MS, checked. */
 function endAfterPlaybackOf(env: Env): { endAfterPlayback: EndAfterPlayback; endPlaybackMaxMs: number; endPlaybackFactor: number; endPlaybackMarginMs: number } {
   const mode = env.END_AFTER_PLAYBACK?.trim().toLowerCase() || 'auto';
@@ -747,6 +769,7 @@ export function loadConfig(env: Env): ServerConfig {
     telnyxEvents,
     ...resayOf(env),
     ...bargeInOf(env, voiceProviders),
+    speechOverLine: speechOverLineOf(env),
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     callerWaitMs: integer(env, 'CALLER_WAIT_MS', 30_000),
@@ -1124,6 +1147,7 @@ export function describeConfig(c: ServerConfig): string {
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
     describeBargeIn(c),
+    `speech over a line ${c.speechOverLine ?? DEFAULT_SPEECH_OVER_LINE}`,
     describeEndAfterPlayback(c),
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,

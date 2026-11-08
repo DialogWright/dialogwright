@@ -263,6 +263,20 @@ function spuriousAt(lines: readonly ReadFrameLogLine[], index: number): boolean 
   return false;
 }
 
+/**
+ * A `{ speechOverLine: { mode } }` log line (server/adapter.ts, speech over a line): the final prompt after it
+ * began over a line the caller could not interrupt, and was marked so (`unless-miss`: a turn on it that
+ * would be a miss is set aside) or ran no turn (`ignore`). Null for any other line. Read as the log says,
+ * whatever SPEECH_OVER_LINE is now, so a replayed call sets aside, or skips, where the call did.
+ */
+function overLineNoted(line: ReadFrameLogLine): 'unless-miss' | 'ignore' | null {
+  if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return null;
+  const o = (line.msg as { speechOverLine?: unknown }).speechOverLine;
+  if (typeof o !== 'object' || o === null) return null;
+  const mode = (o as { mode?: unknown }).mode;
+  return mode === 'unless-miss' || mode === 'ignore' ? mode : null;
+}
+
 /** The adapter gave up on a downstream service's answer (server/adapter.ts queueService). */
 function isServiceWaitAbandoned(line: ReadFrameLogLine): boolean {
   if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return false;
@@ -359,7 +373,9 @@ function wordsNeverRun(lines: readonly ReadFrameLogLine[]): Set<number> {
  * through one Continuation with the window the log names (loggedContinueWithinMs), as the adapter ran
  * the live call's, so the final prompts of a caller who had not finished are joined where they were,
  * a reply held for one who went on included (heldAndJoined). An interrupt the adapter found spurious
- * (spuriousAt) runs no turn, as it ran none live. A call whose session kept the caller's number
+ * (spuriousAt) runs no turn, as it ran none live, and so does a final prompt the adapter found was speech over
+ * a line under SPEECH_OVER_LINE=ignore; under unless-miss its turn runs marked over the line, so a miss is set
+ * aside where it was (overLineNoted). A call whose session kept the caller's number
  * (a slot's `callerNumber`, or app.yaml's) logged its last four only, so its setup carries a made-up
  * number ending in them (loggedCallerLastFour, standInCallerNumber) and the replay makes the offer and
  * the call-start lookup the call made. The number called is not logged, so a replayed call has none.
@@ -428,6 +444,8 @@ export async function replayFrameLines(
   const joining = new Set([...wordsGroups.values()].flatMap((g) => g.rest));
   const neverRun = wordsNeverRun(lines);
   let open: { group: WordsGroup; pending: Pending; texts: string[]; after: (() => Promise<void>)[] } | null = null;
+  // Speech over a line noted for the final prompt that comes next (overLineNoted).
+  let overLine: 'unless-miss' | 'ignore' | null = null;
   const flushDeferred = async (): Promise<void> => {
     for (const d of deferred.splice(0)) {
       if (ended) skipped.push(`line ${d.lineNumber}: ${d.type} after the call ended`);
@@ -471,8 +489,16 @@ export async function replayFrameLines(
       if (session && !ended) continuation.resumed();
       continue;
     }
+    const noted = overLineNoted(line);
+    if (noted !== null) {
+      overLine = noted;
+      continue;
+    }
     if (line.dir !== 'in') continue;
     if (isCarrierEvent(line.msg)) continue;
+    // The note is the next caller frame's, which is the prompt it was written for.
+    const over = overLine;
+    overLine = null;
     // An interrupt the adapter found was not the caller's ran no turn (server/adapter.ts settleInterrupt).
     if (rawType(line.msg) === 'interrupt' && spuriousAt(lines, index)) continue;
     const lineNumber = line.line;
@@ -570,6 +596,12 @@ export async function replayFrameLines(
     if (event.type === 'user.speech' && !event.final) {
       skipped.push(`line ${lineNumber}: non-final prompt`);
       continue;
+    }
+    // Speech over a line the caller could not interrupt (server/adapter.ts): no turn ran for it under
+    // `ignore`, and under `unless-miss` its turn ran marked so, as here.
+    if (over !== null && event.type === 'user.speech') {
+      if (over === 'ignore') continue;
+      event = { ...event, overLine: true };
     }
     // Otherwise runTurn decides the arrival from the replayed session, as the adapter did live.
     const flags = arrivalFlags(lines[index + 1]);

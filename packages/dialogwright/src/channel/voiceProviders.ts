@@ -19,6 +19,22 @@ export const BARGE_IN_MODES = ['any', 'speech', 'dtmf', 'none'] as const;
 export type BargeIn = (typeof BARGE_IN_MODES)[number];
 
 /**
+ * What a final prompt whose speech started while a line the caller could not interrupt by speech was
+ * still playing is taken as (SPEECH_OVER_LINE, server/adapter.ts): `take`, an answer like any other, as
+ * before it existed; `unless-miss`, the turn runs, and one that would be a miss is set aside as side
+ * speech is (core/turn.ts); `ignore`, no turn runs for it. A key is never affected, nor a chat.
+ */
+export const SPEECH_OVER_LINE_MODES = ['take', 'unless-miss', 'ignore'] as const;
+
+export type SpeechOverLine = (typeof SPEECH_OVER_LINE_MODES)[number];
+
+/**
+ * SPEECH_OVER_LINE's default (the maintainer's decision, 2026-11-08): someone who has not heard the
+ * whole question cannot have got it wrong yet, only right early. `take` restores the old behaviour.
+ */
+export const DEFAULT_SPEECH_OVER_LINE: SpeechOverLine = 'unless-miss';
+
+/**
  * The barge-in values each carrier's relay element takes. Twilio's ConversationRelay `interruptible`
  * takes none, dtmf, speech and any (true and false are older aliases of any and none); Telnyx's
  * `<ConversationRelay>` takes the same four (its reference lists none, any, speech, dtmf, with true

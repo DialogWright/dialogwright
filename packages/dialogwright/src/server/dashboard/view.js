@@ -187,6 +187,9 @@ export const DELIVERY_NOTES = {
     timeout: `call end held ${secs(f.endHeldMs)} until the time limit`,
     closed: `caller hung up ${secs(f.endHeldMs)} into it`,
   })[f.value] ?? `call end held ${secs(f.endHeldMs)}` },
+  // Speech that began over a line the caller could not interrupt (SPEECH_OVER_LINE): under unless-miss a
+  // turn on it that would be a miss is set aside (its gate row says so); under ignore no turn runs.
+  speechOverLine: { on: 'agent', text: (f) => `speech heard ${secs(f.afterMs)} into this, which it could not interrupt: ${f.mode === 'ignore' ? 'no turn run' : 'a miss is set aside'}` },
   // The caller came back in over the reply to their last answer: `joined` reads its pause.
   callerResumed: { on: null },
   // The caller's words held for the rest of a value (a digits slot's waitForRestMs): `joined` reads it.

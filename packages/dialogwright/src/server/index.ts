@@ -10,7 +10,7 @@ import { calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNu
 import type { NumberLocale } from '../core/numberLocales';
 import { defaultLocaleOf } from '../core/locale';
 import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
-import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
+import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPEECH_OVER_LINE, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
 import { createRequestHandler, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
@@ -987,6 +987,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
       ...(config.bargeInByCarrier ? { bargeInByCarrier: config.bargeInByCarrier } : {}),
+      // SPEECH_OVER_LINE: absent from a config made by hand before it existed reads as unless-miss, as loadConfig's default.
+      speechOverLine: config.speechOverLine ?? DEFAULT_SPEECH_OVER_LINE,
       // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.
       endAfterPlayback: config.endAfterPlayback ?? 'auto',
       ...(config.endPlaybackMaxMs !== undefined ? { endPlaybackMaxMs: config.endPlaybackMaxMs } : {}),

@@ -51,7 +51,11 @@ function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps>
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`)),
   }), 60_000, () => 0);
   const tokens = new CallTokens(60_000, () => 0);
-  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, ...more };
+  // Speech over a line taken as an answer (SPEECH_OVER_LINE=take): these calls are about a caller who had
+  // not finished, their timings live calls' whose replies the test's estimate makes longer than they played,
+  // so the fragment said over the re-ask is a miss to be said, not set aside. A caller who came back in with
+  // speech over a line is speechOverLine.test.ts's.
+  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, speechOverLine: 'take', ...more };
   const sent: Record<string, unknown>[] = [];
   const sock: SocketLike = { send: (d, cb) => { sent.push(JSON.parse(d) as Record<string, unknown>); cb?.(); }, close: () => {} };
   const ctx = newConnectionContext(tokens.mint(CALL, provider), sock, provider);
