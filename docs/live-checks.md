@@ -303,12 +303,14 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Do and look for.** On each carrier:
 
-1. **Noise over the greeting.** Call, and have the other person (or the radio) talk while the greeting plays, saying nothing the app does. The greeting plays to its end, nothing is said over it, and the question is asked again after the no-input wait from the greeting's end. The frame log has `{ "speechOverLine": { "mode": "unless-miss", "afterMs": ..., "expectedMs": ..., "start": ... } }` before each such prompt (`start: "speaking"` on Telnyx where it reported the speech, `arrival` on Twilio), the turn's record a `speechOverLine` gate row `set_aside`, and the console the note under the greeting. Note `expectedMs` against how long the greeting really played.
+1. **Noise over the greeting.** Call, and have the other person (or the radio) talk while the greeting plays, saying nothing the app does. The greeting plays to its end, nothing is said over it, and the question is asked again after the no-input wait from the greeting's end. The frame log has `{ "speechOverLine": { "mode": "unless-miss", "afterMs": ..., "expectedMs": ..., "start": ... } }` before each such prompt (`start: "speaking"` on Telnyx where it reported the speech, `partial` on Twilio where partial transcripts came first, else `arrival`), the turn's record a `speechOverLine` gate row `set_aside`, and the console the note under the greeting. Note `expectedMs` against how long the greeting really played.
 2. **A request over the greeting.** Say what you want (the app's own words for a request) over the greeting: it is acted on at once, as before.
 3. **After the line.** Wait for a question to finish, then say something the app does not do: the no-match line, as before, with no `speechOverLine` line.
 4. **Three in a row.** Keep the noise going over the greeting and each line after it: the call is never put through to a person for `max-attempts` on noise alone.
 5. **Just before the end.** Answer a yes-or-no question with a "yes" a moment before it finishes: note whether it was taken (it should be, a yes is no miss) and, for a miss said just before the end, how long until the question came again.
-6. **`take` and `ignore`.** With `SPEECH_OVER_LINE=take`, step 1 is the old behaviour (each miss said over the line, counted); with `ignore`, step 2's request over the greeting is not taken, and the question comes after the no-input wait.
+6. **Noise near a line's end.** Have the noise stop just before a question ends and answer just after it: the answer is a turn of its own (a miss is said), with no `speechOverLine` line.
+7. **A line said again.** With a line Telnyx reports cut short and says again (check 15), answer just after the second playing's end: a turn, and the no-input wait from that end.
+8. **`take` and `ignore`.** With `SPEECH_OVER_LINE=take`, step 1 is the old behaviour (each miss said over the line, counted); with `ignore`, step 2's request over the greeting is not taken, and the question comes after the no-input wait.
 
 **Record.** One row per carrier and step in the results log; any gap between `expectedMs` and the playback heard, and anything that differed, in the design's As built ([2026-11-08](designs/2026-11-08-speech-over-a-line.md)).
 
