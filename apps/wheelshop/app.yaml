@@ -17,6 +17,15 @@ brand:
 voice:
   hints: [curb rash, diamond cut, rim, wheel, wheels, refinishing, lathe, two-tone, BMW, trade-ins, Rivergate, Commerce Drive]
 
+# The chat page (a browser tab at /wheelshop), public, so the demo can be tried without a phone line. A chat
+# carries no number calling, so a dealership's booking (recognized by caller ID) is a phone call's only:
+# on the chat every caller sends a request.
+chat:
+  page:
+    serve: public
+    intro: |
+      Example Wheel Works is an invented one-person wheel repair shop, answered by DialogWright's agent mode: a model words the conversation from the shop's facts, every value is checked, and nothing is sent until you confirm the read-back. Try describing some curb rash, ask whether your wheel is diamond cut, or push for a price. The shop's hours, windows and turnaround are demo assumptions.
+
 fixtures:
   dir: fixtures
 
