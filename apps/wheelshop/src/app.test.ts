@@ -34,8 +34,8 @@ describe('the app folder', () => {
 
   it('keeps the price line fixed, promising no link before the request is confirmed', () => {
     const price = app.agent?.facts.fixed.price ?? '';
-    expect(price).toMatch(/^Sam quotes every job from a photo/);
-    expect(price).toMatch(/Once I've sent him your request/);
+    expect(price).toMatch(/^We quote every job from a photo/);
+    expect(price).toMatch(/Once your request is in/);
     expect(price).not.toMatch(/\d/);
   });
 });
@@ -114,7 +114,7 @@ describe('the stand-in calendar', () => {
     expect(sys.bookings).toHaveLength(1);
   });
 
-  it('takes no room for a request: Sam confirms its window with the quote', () => {
+  it('takes no room for a request: the shop confirms its window with the quote', () => {
     const sys = new Systems();
     run(sys, 'request', { ...REQUEST, day: '2026-11-11' }, 'k-1');
     expect(free(sys, '2026-11-11')).toEqual({ day: '2026-11-11', windows: ['morning', 'afternoon'] });
@@ -136,19 +136,19 @@ describe('the writes and the texts', () => {
       const a = run(sys, tool, params, `once-${tool}`);
       const b = run(sys, tool, params, `once-${tool}`);
       expect(b.ref, tool).toBe(a.ref);
-      // Each kept once: a callback note is kept, and Sam is texted the number to call.
+      // Each kept once: a callback note is kept, and the shop is texted the number to call.
       expect(sys.texts.length + sys.requests.length + sys.callbacks.length, tool).toBe(before + (tool === 'callback' ? 2 : 1));
       expect(TOOLS[tool]!.check!(a.value), tool).toBe(true);
     }
   });
 
-  it('texts the caller a link to send Sam a photo (printed, not sent), at example.com', () => {
+  it('texts the caller a link to send the shop a photo (printed, not sent), at example.com', () => {
     const sys = new Systems();
     run(sys, 'send_photo_link', REQUEST, 'k-1');
-    expect(sys.texts).toEqual([{ ref: 'P101', to: '5555550177', text: 'Example Wheel Works: send Sam a photo of the damage at https://example.com/photo/P101' }]);
+    expect(sys.texts).toEqual([{ ref: 'P101', to: '5555550177', text: 'Example Wheel Works: send us a photo of the damage at https://example.com/photo/P101' }]);
   });
 
-  it('texts Sam the summary in business.yaml\'s fixed words, the caller\'s number whole in the text and by its last four in the record', () => {
+  it('texts the shop the summary in business.yaml\'s fixed words, the caller\'s number whole in the text and by its last four in the record', () => {
     const sys = new Systems();
     const reply = run(sys, 'notify_owner_request', REQUEST, 'k-1');
     expect(sys.texts.at(-1)).toEqual({ ref: 'N101', to: '+15555550100', text: 'New request from Jordan Lee (5555550177): 2020 BMW 3 Series, curb rash, one wheel, diamond cut. Drop-off: Thursday, November 12, morning.' });
@@ -163,7 +163,7 @@ describe('the writes and the texts', () => {
       .toBe('New request from Casey Morgan (5555550123): Civic, curb rash. Drop-off: Friday, November 13, afternoon.');
   });
 
-  it('keeps a callback note, and tells Sam the number to call', () => {
+  it('keeps a callback note, and tells the shop the number to call', () => {
     const sys = new Systems();
     const reply = run(sys, 'callback', { callbackNumber: '5555550177' }, 'k-1');
     expect(sys.callbacks).toEqual([{ callbackNumber: '5555550177', ref: 'C101' }]);

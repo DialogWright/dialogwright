@@ -169,7 +169,7 @@
       {
         "say": "Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?",
         "agent": {
-          "reply": "Oh, that's no fun. Most curb rash can be fixed, and Sam sees it every day, so you're in the right place. What car is it?",
+          "reply": "Oh, that's no fun. Most curb rash can be fixed, and we see it every day, so you're in the right place. What car is it?",
           "values": [
             {
               "field": "damage",
@@ -217,7 +217,7 @@
         {
           "say": "How much is that going to cost me? Just ballpark it.",
           "agent": {
-            "reply": "Sam quotes from a photo.",
+            "reply": "We quote from a photo.",
             "fromFacts": true,
             "fixedLine": "price"
           }
@@ -275,7 +275,7 @@
       "request_damage": {
         "say": "Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?",
         "agent": {
-          "reply": "Oh, that's no fun. Most curb rash can be fixed, and Sam sees it every day, so you're in the right place. What car is it?",
+          "reply": "Oh, that's no fun. Most curb rash can be fixed, and we see it every day, so you're in the right place. What car is it?",
           "values": [
             {
               "field": "damage",

@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
-# Example Wheel Works: a fictional one-man wheel repair shop's line, in agent mode. A model leads the
+# Example Wheel Works: a fictional wheel repair shop's line, in agent mode. A model leads the
 # conversation from the shop's facts (business.yaml): it greets, reassures from the approved claims and
 # asks for what a request or a booking needs in whatever order fits. The engine checks every value it
 # understands by its slot type, says every read-back in the shop's fixed words, and gates every action.

@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, type AppCode, type BusinessYaml, type ToolDef } from 'dialogwright';
 
 /**
- * Example Wheel Works, in agent mode: a fictional one-man wheel repair shop's line. Everything about the
+ * Example Wheel Works, in agent mode: a fictional wheel repair shop's line, speaking as the shop. Everything about the
  * shop is in business.yaml, beside this src/ folder: who it is and how it sounds, what it does and
  * doesn't do, its claims, its days and drop-off windows, its dealership accounts, what a request, a
  * booking and a callback note collect, and every line said in fixed words. The engine builds the app
@@ -80,7 +80,7 @@ export function printTexts(on: boolean): void {
  * The app's systems for one call (App.systems builds a fresh one per call): the stand-in calendar (the
  * cars booked into each window, beside the standing drop-off), the requests, bookings and callback notes
  * kept, the texts the line would send, and each write's key, so a write repeated is done once. Replace
- * these with clients for the shop's real calendar and a texting service once the owner says what he uses.
+ * these with clients for the shop's real calendar and a texting service once the owner says what the shop uses.
  */
 export class Systems {
   readonly requests: Kept[] = [];
@@ -193,7 +193,7 @@ export const TOOLS: Record<string, ToolDef> = {
       const s = sys as Systems;
       const to = call.params.callbackNumber ?? '';
       return once(s, idempotencyKey, 'P', s.texts.length, (ref) => {
-        const body = `${BUSINESS.business.says ?? BUSINESS.business.name}: send ${BUSINESS.business.owner ?? 'us'} a photo of the damage at https://example.com/photo/${ref}`;
+        const body = `${BUSINESS.business.says ?? BUSINESS.business.name}: send us a photo of the damage at https://example.com/photo/${ref}`;
         return text(s, ref, to, body, body);
       });
     },
@@ -220,7 +220,7 @@ export const TOOLS: Record<string, ToolDef> = {
       const s = sys as Systems;
       const p = call.params;
       // The calendar refuses a window without room for the cars, as a real one would (the gate does not
-      // know the calendar): nothing is booked, and its reply is no reference, so the call goes to Sam.
+      // know the calendar): nothing is booked, and its reply is no reference, so the call is handed off.
       const repeat = idempotencyKey !== undefined && s.written.has(`B ${idempotencyKey}`);
       if (!repeat && s.roomIn(p.day ?? '', p.window ?? '') < (COUNTS[p.cars ?? ''] ?? 1)) {
         return { value: { full: true }, summary: `${p.day ?? ''} ${p.window ?? ''}: no room for ${p.cars ?? ''} cars, not booked` };

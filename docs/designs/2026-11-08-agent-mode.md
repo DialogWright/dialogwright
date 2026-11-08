@@ -322,6 +322,10 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
     - **Amended (2026-11-08, after an automated security review): a reply written beside the price line is never said on its own.** As first written, the price line named and read under the bar left the reply to the checks and the judge alone (above): the model wrote it as a price answer, and before call 43 a reply whose answer named the price line was never said. The deterministic fail-safe is kept: named and read under the bar, neither the line nor the reply is said, and the turn says its own fixed step (the next field's question, or the read-back again on its ladder), as a line named where `prices.forms` does not allow it already did (`withoutAgentReply`); the values the answer gave stand. With no reading (`asksPrice` missing from the decision model's answers, or not a yes or no), the safe outcome: a line named is said, never the reply; none named, nothing about price is said, as before. The trace keeps no `priceAsked` there, only the line said. Tests (core/agentTurn.test.ts): named with no price asked, mid-form and at the read-back, neither the line nor the reply and the fixed question or the read-back; named with no reading (missing, or of the wrong type), the line; not named with no reading, the turn as before. The recorded wheelshop regression is unchanged (corpus 24/26, the two known gaps; scenarios 8/8 matching; adversarial 26/26; nothing to triage, no cassette miss, nothing recorded again): its one turn on this path, `price-pushed`'s third push ("just give me a number", read 0.02, the line named), heard the name question alone before, its reply having fallen back on the word budget, and hears it now with the reply never put to the checks.
     - **What the recording showed.** Jev read the price questions at 0.96 to 0.99, and "Seriously, just give me a number." (the third push in `price-pushed`, its words alone) at 0.02: the line is not said there, the reply (the model's own copy of the price line and the name question) fell back on the word budget, and the caller heard the name question alone, having heard the price line twice. The corpus's two price questions (`rq-05`, `rq-10`) now say the price line, though the corpus runs with an agent that understands nothing: they give the stubs the reading with an answers override. No other recorded turn had the model name the line where the decision model read no price asked.
 
+44. **(2026-11-08) Decided by the maintainer: the demo speaks as the business.** The wheelshop's line named its owner throughout ("send Sam a request", "I'll have Sam call you back as soon as he's free."), which sounds like one person's phone, not a professional operation. It now speaks as the business: "we", "the shop", "Example Wheel Works". An app change only, no engine change: `business.yaml` drops `business.owner`, `oneOwner` and the `background` line that the owner works alone (each pushed the model toward talking about him); `voice` describes a friendly, professional front desk that speaks for the shop as "we"; the claims ("We see this kind of damage every day.", "Diamond cut wheels are what our lathe is for."), the price line ("We quote every job from a photo, because the price depends on the damage. Once your request is in, you'll get a text with a link to send one, and we'll get back to you with a price and confirm your drop-off.": still no link promised before the read-back's yes, decision 25), the read-backs ("Here's your request: ..."), the done lines, the handoff and the callback note ("Someone from the shop will call you back as soon as they can."), the labels, the tool descriptions and the sample replies say "we" or "the shop". The owner's summary is for the shop and is unchanged; so are the assumptions' labels. The policy matrix is unchanged; the policy card and the app map change in wording only (and "0 lines of background"). The appendix is updated to match.
+    - **Recorded fresh** (both cassettes emptied, then `--client record`; the persona changes every request): corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage. No reply named a person; every one spoke as "we". The stub baseline is unchanged.
+    - **The bake-off** (below, "after call 44") missed the bar on values right at 85% (0 wrong, 11 missed) over 3 repeats. Measured again into a scratch folder at 8 repeats, the old voice and the new alike read 91% (0 wrong, 17 and 18 missed), so the 85% is the sample, not the voice; the misses are the same values left out as before (`correction-in-one-turn`'s 2021 Camry, `claimed-account`'s day and window), each asked for by its field's question.
+
 ## Left to the builder
 
 - each slot type's `check`, within the rule above;
@@ -352,16 +356,16 @@ The demo is a real, working example, so it needs answers only the owner can give
 
 The file is invented: no real business, place, person or number. It is shown as text because the format is not built yet.
 
+(2026-11-08, call 44) The maintainer chose the business voice: the line speaks as the business ("we", "the shop", "Example Wheel Works"), never as a named owner. The appendix's wording is updated to match: `owner`, `oneOwner` and the `background` line about the owner working alone are gone, `voice` describes a professional front desk, and the claims, the read-back, the done line, the handoff and the comments say "we" or "the shop" where they said "Sam". The price line is the app's, which promises no link before the request is confirmed (decision 25; the first wording, "I'll text you a link to send one", did). Its shape is otherwise as first written; `apps/wheelshop/DESIGN.md` lists what the build changed.
+
 ```text
 business:
   name: Example Wheel Works
   says: "Example Wheel Works"
   kind: wheel repair and refinishing
   voice: >
-    Friendly, plain and confident, like the owner at the counter. Short sentences. Glad to help,
-    never pushy. Talks about wheels and nothing else.
-  owner: Sam
-  oneOwner: true            # the line never says "our team" or "our technicians"
+    Friendly, professional and confident, like the front desk of a well-run shop. Speaks for the
+    shop as "we". Short sentences. Glad to help, never pushy. Talks about wheels and nothing else.
 
 services:
   - name: curb rash repair
@@ -380,22 +384,21 @@ notOffered:                   # assumption: the owner corrects these
 
 claims:                       # the only reassurance the line may give (the judge holds it here)
   - Most curb rash and scratches can be fixed.
-  - Sam sees this kind of damage every day.
-  - Diamond cut wheels are what the shop's lathe is for.
+  - We see this kind of damage every day.
+  - Diamond cut wheels are what our lathe is for.
   - Curb rash on a diamond cut wheel is usually a same-day fix.     # assumption
   - Dealerships on Commerce Drive send their trade-ins here.
-background:                   # context for the model, never said as a claim
-  - Sam works alone, so he often can't answer the phone while he's working on a wheel.
 
 prices:
   quote: from a photo         # no figures: the line never says a price
   say: >                      # fixed: said in these words when a caller asks about price
-    Sam quotes every job from a photo, because it depends on the damage. I'll text you a link to
-    send one, and he'll get back to you with a price and confirm your drop-off.
+    We quote every job from a photo, because the price depends on the damage. Once your request is
+    in, you'll get a text with a link to send one, and we'll get back to you with a price and confirm
+    your drop-off.
 
 where:
   shop: inside the detailing shop at 400 Commerce Drive, Rivergate
-  mobile: false               # assumption: Sam works at the shop
+  mobile: false               # assumption: the work is done at the shop
 days: [monday, tuesday, wednesday, thursday, friday]               # assumption
 windows:                      # assumption: drop-off windows, each with room for some cars
   - name: morning
@@ -413,7 +416,7 @@ accounts:                     # regulars, booked straight in
   - name: Lakeview Imports
     numbers: ["+15555550161"]
 
-request:                      # what a retail caller's request collects; Sam confirms the window with the quote
+request:                      # what a retail caller's request collects; the shop confirms the window with the quote
   fields:
     - name: callerName
       type: name
@@ -448,13 +451,13 @@ request:                      # what a retail caller's request collects; Sam con
       type: digits
       length: 10
       offer: callerNumber
-      question: What's the best number for Sam to text you the quote?
+      question: What's the best number to text you the quote?
   readBack: >
-    Here's what I'll send Sam: {callerName}, a {vehicle}, {wheels} wheels, {damage}, hoping to drop
-    it off {day} in the {window}, and he'll text you at {callbackNumber}. Is that right?
+    Here's your request: {callerName}, a {vehicle}, {wheels} wheels, {damage}, hoping to drop
+    it off {day} in the {window}, and we'll text you at {callbackNumber}. Is that right?
   then: [send_photo_link, notify_owner]
   done: >
-    Thanks, {callerName}. Sam will text you a price and confirm your drop-off once he's seen the
+    Thanks, {callerName}. We'll text you a price and confirm your drop-off once we've seen the
     photo.
 
 booking:                      # what a regular account's booking collects
@@ -483,7 +486,7 @@ booking:                      # what a regular account's booking collects
   done: You're booked for {day}, {window}. Thanks.
 
 handoff: >                    # a callback note to the owner, not a transfer
-  I'll have Sam call you back as soon as he's free. What's the best number to reach you?
+  Someone from the shop will call you back as soon as they can. What's the best number to reach you?
 closing: Thanks for calling Example Wheel Works.
 owner:
   notify: text                # assumption; printed until texting is registered
@@ -537,4 +540,11 @@ What the measurement showed, for the tasks that follow:
   | with the owner's sample replies | 100% | 92% (0 wrong, 6 missed) | 98% | 0 | 522 / 786 | 672 / 936 | met |
 
   The one action missed was a `callback` proposed at the dealer's second turn (call 35's rule leaves it untaken where the decision model reads no person asked for); the misses are values left out, each asked for by its field's question. Measured under a load average of about 10.
+- **The bake-off after call 44** (2026-11-08, the business voice; `instant`, realtime, the owner's sample replies, 3 repeats, the judge's 150 ms added, recorded fresh; load average about 2.4):
+
+  | Mercury 3 on Inception's API, `instant`, realtime | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | with judge | bar |
+  |---|---|---|---|---|---|---|---|
+  | with the owner's sample replies | 98% | 85% (0 wrong, 11 missed) | 98% | 1 | 531 / 799 | 681 / 949 | not met (values right) |
+
+  The one answer not in the shape named an action not offered; the figure is the caller's own "$20" and "7am" repeated in a refusal ("I can't confirm a booking for 7am or quote a price of $20."), which the figure check refuses, so the field's question is said. Values right is the sample: at 8 repeats into a scratch folder (not committed) the old voice read 91% (0 wrong, 17 missed; 2 figures not in the facts) and the new 91% (0 wrong, 18 missed; none), p50 468 and 517 ms, p95 723 and 844 ms.
 - **Variance.** The same words read otherwise from one recording to the next on the opening turns: the dealer's day given or not, "on my Audi" taken once in three, the claimed account's day and window lost once live and once recorded. A scripted call's pass rests on one sample of each turn; the regression now replays one answer per request (call 35), so it is at least the same sample every time.

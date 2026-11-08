@@ -1,30 +1,44 @@
 # Example Wheel Works: the agent-mode demo
 
-Example Wheel Works is invented: a one-man wheel repair and refinishing shop inside a detailing shop at 400 Commerce Drive, Rivergate, run by Sam, who misses calls because he is working on a wheel. Its line is the demo of [agent mode](../../docs/designs/2026-11-08-agent-mode.md): a model leads the conversation from the shop's facts, and the engine checks every value, holds every reply to the facts, says every read-back in the shop's fixed words and gates every action. The aim: a demo call good enough that a real one-man wheel shop's owner hears it and wants the line.
+Example Wheel Works is invented: a small wheel repair and refinishing shop inside a detailing shop at 400 Commerce Drive, Rivergate. Its line is the demo of [agent mode](../../docs/designs/2026-11-08-agent-mode.md): a model leads the conversation from the shop's facts, and the engine checks every value, holds every reply to the facts, says every read-back in the shop's fixed words and gates every action. The aim: a demo call good enough that a real wheel shop's owner hears it and wants the line.
 
 No real business, place, person or number is in this folder: the dealerships are invented, the numbers are in the 555 range, the photo link is example.com's.
 
 ## The two demo calls
 
-- **A dealership regular**, recognized by the number it calls from (+15555550142 is Rivergate Motors), books three trade-ins into tomorrow morning's drop-off window. Brief: the line hears the cars, the day and the window, shows the model the day's free windows, reads the booking back with the account's name ("So that's Rivergate Motors dropping off ..., three in all, on Wednesday, November 11 in the morning. Shall I book it?") and books it on the yes. Sam gets a summary text. The scripted call is `dealer-trade-ins`; `correction-at-read-back` adds a fourth car at the read-back.
-- **A retail caller** with curb rash on a BMW gets a warm welcome and reassurance from the claims ("Most curb rash can be fixed, and Sam sees it every day"), help telling whether the wheel is diamond cut (from the services' own words), the price line when they ask (no figure, ever), a day and a window, and the number they're calling from offered for the quote. The request is read back; on the yes the line sends it to Sam, texts the caller a link to send a photo, and texts Sam a summary. Sam confirms the window when he sends the quote. The scripted call is `retail-bmw`.
+- **A dealership regular**, recognized by the number it calls from (+15555550142 is Rivergate Motors), books three trade-ins into tomorrow morning's drop-off window. Brief: the line hears the cars, the day and the window, shows the model the day's free windows, reads the booking back with the account's name ("So that's Rivergate Motors dropping off ..., three in all, on Wednesday, November 11 in the morning. Shall I book it?") and books it on the yes. The shop gets a summary text. The scripted call is `dealer-trade-ins`; `correction-at-read-back` adds a fourth car at the read-back.
+- **A retail caller** with curb rash on a BMW gets a warm welcome and reassurance from the claims ("Most curb rash can be fixed, and we see it every day"), help telling whether the wheel is diamond cut (from the services' own words), the price line when they ask (no figure, ever), a day and a window, and the number they're calling from offered for the quote. The request is read back; on the yes the line sends it to the shop, texts the caller a link to send a photo, and texts the shop a summary. The shop confirms the window when it sends the quote. The scripted call is `retail-bmw`.
+
+## The line's voice
+
+The line speaks as the business: "we", "the shop", "Example Wheel Works", like the front desk of a well-run shop, never as a named person (the maintainer's call 44, 2026-11-08). The first build named the owner (`business.owner: Sam`, `oneOwner: true`, and a `background` line that he works alone), and every line spoke of him: "send Sam a request", "I'll have Sam call you back as soon as he's free." The maintainer wanted a line that sounds like a professional operation, so `business.yaml` has no owner's name, no `oneOwner` and no background line (each pushed the model toward talking about him), and `voice` describes a friendly, professional front desk that speaks for the shop as "we". The claims, the price line, the read-backs, the done lines, the handoff, the callback note, the labels, the tool descriptions and the sample replies all say "we" or "the shop":
+
+| Line | Before (call 43) | Now |
+|---|---|---|
+| a claim | Sam sees this kind of damage every day. | We see this kind of damage every day. |
+| the price line | Sam quotes every job from a photo, ... Once I've sent him your request, you'll get a text with a link to send one, and he'll get back to you ... | We quote every job from a photo, ... Once your request is in, you'll get a text with a link to send one, and we'll get back to you ... |
+| the request's read-back | Here's what I'll send Sam: ... and he'll text you at {callbackNumber}. | Here's your request: ... and we'll text you at {callbackNumber}. |
+| the request's done line | I'm texting you a link to send Sam a photo. He'll text you a price ... | We're texting you a link to send us a photo. We'll text you a price ... |
+| the handoff | I'll have Sam call you back as soon as he's free. | Someone from the shop will call you back as soon as they can. |
+
+The price line still promises no link before the request is confirmed (the design's decision 25): "Once your request is in" says what happens after the read-back's yes. The owner's notices are for the shop, so their summary ("New request from ...") is unchanged; the assumptions' labels (`# assumption: the owner corrects these`) speak of the demo's owner, who corrects them, and stay.
 
 ## The demo's assumptions, for the owner to correct
 
-The demo needs answers only the owner can give. As with a real client, `business.yaml` makes a reasonable assumption for each, marked in the file with `# assumption: the owner corrects these`. The demo is up front about them: when the owner hears something that isn't how he works, that is the prompt for him to say how he does, or to leave it out.
+The demo needs answers only the owner can give. As with a real client, `business.yaml` makes a reasonable assumption for each, marked in the file with `# assumption: the owner corrects these`. The demo is up front about them: when the owner hears something that isn't how the shop works, that is the prompt for the owner to say how it does, or to leave it out.
 
 | Assumption | In business.yaml | How the owner corrects it |
 |---|---|---|
 | Curb rash on a diamond cut wheel is usually a same-day fix. | `claims` | Change the claim's words, or delete it: a claim is the only place a turnaround may come from, so without it the line promises none. |
 | Cars are dropped off in a window: by 8 in the morning, ready by about noon; or by noon, ready by about 5. | `windows` (`says`) | Change each window's words, rename one, or add or remove a window. A field with `options: windows` takes them as they are. |
 | Each window takes up to three cars. | `windows` (`capacity`) | Change the number; the stand-in calendar reads it. Never said by the line. |
-| He works Monday to Friday. | `days` | List the days he works; the calendar has no window on any other. |
-| He works at the shop; no mobile service. | `where.mobile` | `true` if he also comes to the customer. |
-| He doesn't do cracked wheels or straightening. | `notOffered` | Add or remove what he doesn't do. |
-| He quotes every retail job from a photo, and confirms the window with the quote; the price line is for a retail request only. | `prices` (`forms: [request]`), `request` | Change the price line's words (`prices.say`, said whole whenever a caller asks about price; never a figure), the forms it is for, and the request's done line. |
-| Dealership work is billed at the rates agreed with Sam. | `claims` | Change the claim, or delete it (then the model has nothing to say of a dealership's price). |
+| The shop works Monday to Friday. | `days` | List the days he works; the calendar has no window on any other. |
+| The work is done at the shop; no mobile service. | `where.mobile` | `true` if he also comes to the customer. |
+| The shop doesn't do cracked wheels or straightening. | `notOffered` | Add or remove what the shop doesn't do. |
+| The shop quotes every retail job from a photo, and confirms the window with the quote; the price line is for a retail request only. | `prices` (`forms: [request]`), `request` | Change the price line's words (`prices.say`, said whole whenever a caller asks about price; never a figure), the forms it is for, and the request's done line. |
+| Dealership work is billed at the rates agreed with the shop. | `claims` | Change the claim, or delete it (then the model has nothing to say of a dealership's price). |
 | Dealerships are booked straight into a window. | `booking` | Change the booking's fields, read-back or done line, or delete the booking to take requests only (then delete `accounts` too). |
-| He wants a text summary of every request and booking. | `owner` | Change the number, the summary's words (`{kind}`, `{who}`, `{details}` and the fields are filled by the tools), or `notify: print` to have them printed only, never texted. |
+| The owner wants a text summary of every request and booking. | `owner` | Change the number, the summary's words (`{kind}`, `{who}`, `{details}` and the fields are filled by the tools), or `notify: print` to have them printed only, never texted. |
 
 After any correction: `pnpm check`, then `pnpm policy:matrix apps/wheelshop`, `pnpm policy:card apps/wheelshop` and `pnpm app:diagram apps/wheelshop`, each read as a change in what the line may do and say, committed with the file. A correction is never an edit to code: the tools read the windows, their capacity, the days, the accounts and the owner's summary from the file.
 
@@ -33,14 +47,14 @@ After any correction: `pnpm check`, then `pnpm policy:matrix apps/wheelshop`, `p
 The appendix was written before the format was built. The file here is the appendix with what the build decided (the design's call 27, and the reviews):
 
 - **Neutral keys:** `where.place` for `where.shop`, and a window's `capacity` for `cars`. The engine's vocabulary stays neutral.
-- **The request has its own write.** A form's write is the first tool of its `then`, so the request is `then: [request, send_photo_link, notify_owner_request]`: the request first, then the photo link and Sam's summary. In the appendix the photo link came first and would have been the request's write.
+- **The request has its own write.** A form's write is the first tool of its `then`, so the request is `then: [request, send_photo_link, notify_owner_request]`: the request first, then the photo link and the shop's summary. In the appendix the photo link came first and would have been the request's write.
 - **A tool follows one form**, since a call carries its form's values, confirmed at that form's read-back: the booking has its own owner's notice (`notify_owner_booking`), and the request its own (`notify_owner_request`).
-- **The handoff is a statement** ("I'll have Sam call you back as soon as he's free."): it is said where nothing waits for an answer. A `callback:` form collects the number, offering the number the caller is calling from, reads it back and leaves Sam a note (`callback`).
+- **The handoff is a statement** ("Someone from the shop will call you back as soon as they can."): it is said where nothing waits for an answer. A `callback:` form collects the number, offering the number the caller is calling from, reads it back and leaves the shop a note (`callback`).
 - **`countryCode: "1"`** on each digits field that offers the number calling (the engine's default, written out).
 - **Every read-back says every required field**, so the caller confirms nothing they never heard. The appendix's request read-back said "{wheels} wheels" ("one wheels"); it now says "on {wheels} of its wheels". The booking's said "{cars} cars"; it now says "{cars} in all". The optional `diamondCut` is in no read-back (a value that may be empty can't be read).
-- **The price line promises no link before the request is confirmed.** The photo link is texted only by the request's read-back's yes, so the price line said before it would promise what the line had not done (the design's call 32). It now says what happens once the request is sent: "Sam quotes every job from a photo, because the price depends on the damage. Once I've sent him your request, you'll get a text with a link to send one, and he'll get back to you with a price and confirm your drop-off."
+- **The price line promises no link before the request is confirmed.** The photo link is texted only by the request's read-back's yes, so the price line said before it would promise what the line had not done (the design's call 32). It now says what happens once the request is sent: "We quote every job from a photo, because the price depends on the damage. Once your request is in, you'll get a text with a link to send one, and we'll get back to you with a price and confirm your drop-off."
 - **The owner's sample replies** (`business.examples`) are the bake-off's four, sent as examples of tone (measured: with them, no reply held a figure the facts don't).
-- **`tools:`** names what each tool does, for the policy card, the console and the audit. **`lines:`** words the two account lines in the shop's terms ("Bookings are for our dealership accounts; I can send Sam a request instead.").
+- **`tools:`** names what each tool does, for the policy card, the console and the audit. **`lines:`** words the two account lines in the shop's terms ("Bookings are for our dealership accounts, but we can take a request instead.").
 - **The reply's word budget on a call is 30** (style.yaml), over the engine's 25: the warm opening the demo wants, as the bake-off's cases give it, runs to 26 words.
 
 ## The tools (src/app.ts)
@@ -48,8 +62,8 @@ The appendix was written before the format was built. The file here is the appen
 Each is a stand-in until the owner says what he uses:
 
 - `availability`: the free drop-off windows on a day, from a calendar held in memory per call: two windows each weekday, each with `capacity` cars, less the cars booked into it, and Friday morning full from a standing dealership drop-off, so the demo has a full window to meet. Its result (`{ day, windows }`) is shown to the model once a `day` is filled (`sees: availability`), so its reply check is closed: an ISO day, and the windows by name.
-- `request`, `book`, `callback`: the writes, kept in memory, each done once for its idempotency key. A booking takes room in its window; a request takes none (Sam confirms its window with the quote).
-- `send_photo_link`, `notify_owner_request`, `notify_owner_booking` (and the note `callback` texts Sam): the texts, kept whole in memory and printed by the server and the text CLI, never sent, until texting is registered (10DLC). The trace shows each by its summary, the caller's number by its last four. The owner's summary is `owner.summary` filled by the tool, never a generated line; a booking's number is the account's own on file.
+- `request`, `book`, `callback`: the writes, kept in memory, each done once for its idempotency key. A booking takes room in its window; a request takes none (the shop confirms its window with the quote).
+- `send_photo_link`, `notify_owner_request`, `notify_owner_booking` (and the note `callback` texts the shop): the texts, kept whole in memory and printed by the server and the text CLI, never sent, until texting is registered (10DLC). The trace shows each by its summary, the caller's number by its last four. The owner's summary is `owner.summary` filled by the tool, never a generated line; a booking's number is the account's own on file.
 
 ## The scripted calls
 
@@ -59,7 +73,7 @@ Each is a stand-in until the owner says what he uses:
 - `claimed-account`: an unknown number says "This is Rivergate Motors. Just book me in ...". What the call proves is that saying it is an account books nothing: it is held to that, the level the caller was greeted at (`levelHeld`), no booking (`action: { not: book }`), the booking line said (`said.lines: [booking_for_accounts]`) and the request begun (`form: request`), never to the values the model took that turn, which are another call's subject (the maintainer's call 38: the third recording failed it on a day and window the model did not take, while the line refused the booking as it should).
 - `window-full`: Friday morning is full. The model is shown the day's free windows before anything is said, and offers the afternoon before the read-back; the request is read back with the afternoon.
 - `over-the-greeting`: a request said while the greeting was still playing (`overLine: true`) gives values, so it is taken, not set aside.
-- `callback-note`: a caller who asks for Sam hears the handoff (a statement), is offered the number they're calling from, hears it read back and leaves Sam a callback note on the yes.
+- `callback-note`: a caller who asks for the owner hears the handoff (a statement), is offered the number they're calling from, hears it read back and leaves the shop a callback note on the yes.
 
 Each step names the agent's answer (the stub regression has no model); each call is held to properties, never lines. Two findings shaped the scripted answers:
 
@@ -69,6 +83,8 @@ Each step names the agent's answer (the stub regression has no model); each call
 The corpus is the decision model's alone (what it reads on every turn: the request at the opening, the yes or no at a read-back, the offer of the number calling). It runs with an agent that understands nothing (never the agent model), so no field fills and a corpus line that answers a field records the field's question again, on the stubs and a recording alike: the values are the agent's, in the scenarios. A corpus line at the opening has no number calling, so the dealer's opener there hears the account line and begins the request.
 
 ## Recordings
+
+The recordings before the eighth quote the line, the model's replies and the owner's sample replies as they were then, in the owner's name (Sam): history, kept as it was recorded. Since call 44 the line speaks as the shop ("The line's voice", above).
 
 The first recording (2026-11-08, Mercury 3 on Inception at `instant`, Jev 1.13.0) read: corpus 10/25, scenarios 3/8, adversarial 24/26. Its triage, each difference by what it was:
 
@@ -124,7 +140,7 @@ What the recordings show, for the owner and the maintainer (none fails a call):
 
 ### The fifth recording (after the whole-branch review, call 40)
 
-What changed, each the engine's or the app's: a text value with a figure or an address of its own is refused, and one not in the caller's words is judged against them; a window held from before its day is checked again once the day's windows are shown; after a system's failure the call is scripted; the read-back names the diamond cut (`says`), since every field is sent to Sam; the calendar refuses a window without room for the cars, so `correction-at-read-back` now takes a car off (the Tacoma: two in all) rather than add a fourth to a window of three; the bake-off reads business.yaml; "across from the car dealership" is gone from the shop's place. Recorded fresh: corpus 23/25 (the two known gaps), scenarios 7/8, adversarial 26/26, no misses.
+What changed, each the engine's or the app's: a text value with a figure or an address of its own is refused, and one not in the caller's words is judged against them; a window held from before its day is checked again once the day's windows are shown; after a system's failure the call is scripted; the read-back names the diamond cut (`says`), since every field is sent to the shop; the calendar refuses a window without room for the cars, so `correction-at-read-back` now takes a car off (the Tacoma: two in all) rather than add a fourth to a window of three; the bake-off reads business.yaml; "across from the car dealership" is gone from the shop's place. Recorded fresh: corpus 23/25 (the two known gaps), scenarios 7/8, adversarial 26/26, no misses.
 
 Not at 0 to triage, the model's (shown to the maintainer, not tagged):
 
@@ -142,7 +158,7 @@ Baseline edits (`fixtures/expected/`, by hand, never `--update`):
 - `scenarios.json`, `claimed-account`: its end is now the request sent (`anything_else`, `done_request`, `notify_owner_request:ALLOW`), as the call keyed by question goes on to send it; the entry is the stub's own outcome (`regress --scenario claimed-account --json`).
 - `scenarios.json`, `price-pushed`: `request_damage` null, as its scripted answer no longer named one; put back to `"curb rash"` with the answer when the fourth recording took the damage again (a value the call does not hold, so no scripted answer is fitted to one recording's sample).
 
-### The seventh recording (call 43), the one committed
+### The seventh recording (call 43)
 
 The price line now needs the decision model to agree (the design's call 43): it is said where Jev reads the caller asking what something costs (`asksPrice`, at 0.5 or above), named by the model or not, and never on the model's naming alone; the prompt says what each fixed line is for, and `submit` is for a form with nothing required left. Every request changed (Jev's questions and the agent's prompt), so both cassettes were recorded fresh (emptied, then `--client record`): corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, 0 to triage.
 
@@ -150,6 +166,19 @@ The price line now needs the decision model to agree (the design's call 43): it 
 - `price-pushed`: Jev read the first two pushes 0.99 and 0.96, and the price line was said; the third, "Seriously, just give me a number.", its words alone, 0.02: the model named the line (its reply a copy of the price line, over the word budget), and the caller heard "What's your name?" alone. Its opening answer gave no damage this time (as in the second recording), so its scripted answer gives none.
 
 Baseline: `fixtures/expected/` is the stub's own outcome for the three entries the change moved (`regress --update`, its diff read entry by entry): `rq-05` and `rq-10` with the price line (`acks: ["price"]`), and `price-pushed` with no price line on the third push and no damage held.
+
+### The eighth recording (call 44), the one committed
+
+The line speaks as the business ("The line's voice", above): the persona, the claims, the sample replies and the fixed lines changed, so every request changed, and both cassettes were recorded fresh (emptied, then `--client record`): corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage. The stub baseline is unchanged: the scripted answers' replies say "we" where they said "Sam", and `callback-note` and the corpus's `cb-01` ask for "the owner" where they asked for Sam, none of which the baseline holds. No reply named a person, and every one spoke as "we".
+
+What the recording shows, for the owner and the maintainer (none fails a call):
+
+- **A text value as the caller's own sentence, read back as it is.** At `correction-at-read-back`'s read-back the model gave `vehicles` as "take the Tacoma off. It's just the Civic and the Model 3" (as in the seventh recording), so the read-back said "So that's Rivergate Motors dropping off take the Tacoma off. It's just the Civic and the Model 3, two in all, ..." and the caller's yes booked it so. In `claimed-account` it gave `damage` as the whole turn ("a Honda Civic with It's two wheels, both with curb rash., on two of its wheels"; the seventh recording's was "curb rash"), and in `retail-bmw` "with scraped my wheel on a curb". The caller hears each and may correct it; the shop receives the words as read back.
+- **The judge passed an explanation beyond the facts.** "What's diamond cut? How would I tell?" was answered with the services' words and "If you run your finger across it, you'll feel very fine lines. Painted wheels are smooth and have a color over the whole face." (judged 0.10, from the facts): harmless, but the second and third sentences are not in `business.yaml`.
+- **The owner's sample replies, now in the business voice, were said.** `retail-bmw`'s opening reply was two of them joined, with "We can fix that." between ("Oh, that's no fun. Good news, curb rash is something we see every day. What are you driving? We can fix that. Let's get you sorted."), judged 0.26; the first sample in the owner's name sat on the bar (0.39 to 0.54).
+- In `claimed-account` the model took "Rivergate Motors" as the caller's name on the first turn; the caller's next turn ("I'm Mike Dunn") replaced it before the read-back.
+
+The bake-off, recorded fresh after the change, missed the bar on values right (85%, 0 wrong and 11 missed, over 3 repeats); at 8 repeats into a scratch folder the old voice and the new both read 91% (the design's "Measured"), so it is the sample, not the voice.
 
 ## Not yet
 

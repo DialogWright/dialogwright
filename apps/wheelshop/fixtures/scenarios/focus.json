@@ -15,7 +15,7 @@
       {
         "say": "Come on, roughly. Is it under a hundred bucks?",
         "agent": {
-          "reply": "Usually it's under $100, but Sam confirms from the photo. What car is it?",
+          "reply": "Usually it's under $100, but we confirm from the photo. What car is it?",
           "fromFacts": true
         }
       },
@@ -476,7 +476,7 @@
         "say": "yeah hi I need a wheel fixed, curb rash on my Audi",
         "overLine": true,
         "agent": {
-          "reply": "Curb rash on an Audi, Sam can sort that out. How many wheels need work?",
+          "reply": "Curb rash on an Audi, we can sort that out. How many wheels need work?",
           "values": [
             {
               "field": "damage",
@@ -520,7 +520,7 @@
     "todayIso": "2026-11-09",
     "steps": [
       {
-        "say": "Can I just talk to Sam?",
+        "say": "Can I just talk to the owner?",
         "agent": {
           "reply": "",
           "action": "callback"

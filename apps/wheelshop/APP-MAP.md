@@ -8,9 +8,9 @@
 
 | Intent | Kind | Said as | What happens |
 | --- | --- | --- | --- |
-| `request` | form | send Sam a request | opens the form, which asks for caller name, vehicle, wheels, damage, diamond cut, day, window, callback number |
+| `request` | form | send a request | opens the form, which asks for caller name, vehicle, wheels, damage, diamond cut, day, window, callback number |
 | `booking` | form | book cars in | opens the form, which asks for cars, vehicles, day, window |
-| `callback` | form | leave Sam a callback note | opens the form, which asks for callback number |
+| `callback` | form | leave a callback note | opens the form, which asks for callback number |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
 | `done` | control | finish up | handled by the engine |
@@ -23,13 +23,13 @@
 flowchart LR
 ```
 
-## Send Sam a request
+## Send a request
 
 Intent `request` to its slots, the summary, the action and its rules.
 
 ```mermaid
 flowchart LR
-  intent("Intent<br/>request<br/>send Sam a request")
+  intent("Intent<br/>request<br/>send a request")
   subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
     s_request_callerName["request_callerName<br/>type: name"]
     s_request_vehicle["request_vehicle<br/>type: text"]
@@ -45,15 +45,15 @@ flowchart LR
   intent --> slots
   summary[/"Summary read back for a yes<br/>readback_request"/]
   slots --> summary
-  a_request["Send Sam the request<br/>level 0: anonymous"]
+  a_request["Send the shop the request<br/>level 0: anonymous"]
   summary -->|"calls"| a_request
   r_request(["Rules, in order<br/>1. identity<br/>2. confirmed"])
   a_request --> r_request
-  a_send_photo_link["Text the caller a link to send Sam a photo of the damage<br/>level 0: anonymous"]
+  a_send_photo_link["Text the caller a link to send a photo of the damage<br/>level 0: anonymous"]
   summary -->|"calls"| a_send_photo_link
   r_send_photo_link(["Rules, in order<br/>1. identity<br/>2. confirmed"])
   a_send_photo_link --> r_send_photo_link
-  a_notify_owner_request["Text Sam a summary of the request<br/>level 0: anonymous"]
+  a_notify_owner_request["Text the shop a summary of the request<br/>level 0: anonymous"]
   summary -->|"calls"| a_notify_owner_request
   r_notify_owner_request(["Rules, in order<br/>1. identity<br/>2. confirmed"])
   a_notify_owner_request --> r_notify_owner_request
@@ -83,7 +83,7 @@ flowchart LR
   summary -->|"calls"| a_book
   r_book(["Rules, in order<br/>1. identity<br/>2. scope<br/>3. confirmed"])
   a_book --> r_book
-  a_notify_owner_booking["Text Sam a summary of the booking<br/>level 1: recognized by the number calling"]
+  a_notify_owner_booking["Text the shop a summary of the booking<br/>level 1: recognized by the number calling"]
   summary -->|"calls"| a_notify_owner_booking
   r_notify_owner_booking(["Rules, in order<br/>1. identity<br/>2. scope<br/>3. confirmed"])
   a_notify_owner_booking --> r_notify_owner_booking
@@ -93,20 +93,20 @@ flowchart LR
   a_availability --> r_availability
 ```
 
-## Leave Sam a callback note
+## Leave a callback note
 
 Intent `callback` to its slots, the summary, the action and its rules.
 
 ```mermaid
 flowchart LR
-  intent("Intent<br/>callback<br/>leave Sam a callback note")
+  intent("Intent<br/>callback<br/>leave a callback note")
   subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
     s_callback_callbackNumber["callback_callbackNumber<br/>type: digits"]
   end
   intent --> slots
   summary[/"Summary read back for a yes<br/>readback_callback"/]
   slots --> summary
-  a_callback["Leave Sam a callback note<br/>level 0: anonymous"]
+  a_callback["Leave the shop a callback note<br/>level 0: anonymous"]
   summary -->|"calls"| a_callback
   r_callback(["Rules, in order<br/>1. identity<br/>2. confirmed"])
   a_callback --> r_callback

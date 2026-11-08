@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Example Wheel Works: a fictional one-man wheel repair shop's line, the DialogWright demo of agent mode (a model leads the conversation from business.yaml; the engine checks, reads back and gates).",
+  "description": "Example Wheel Works: a fictional wheel repair shop's line, the DialogWright demo of agent mode (a model leads the conversation from business.yaml; the engine checks, reads back and gates).",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=22.19"
