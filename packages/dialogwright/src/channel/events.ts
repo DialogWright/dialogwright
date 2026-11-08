@@ -22,8 +22,13 @@ export const DEFAULT_LANG = 'en-US';
  * only the keys whose source sent a value.
  */
 export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; callerPrivacy?: 'withheld'; callerAttestation?: string; calledNumber?: string; callData?: Readonly<Record<string, string>> }
-/** Recognized speech. Only a final transcript is a turn; a partial one holds. */
-export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string }
+/**
+ * Recognized speech. Only a final transcript is a turn; a partial one holds. `overLine`: the voice server
+ * found the speech started while a line the caller could not interrupt by speech was still playing, under
+ * SPEECH_OVER_LINE=unless-miss (server/adapter.ts): a turn on it that would be a miss is set aside, as side
+ * speech is (core/turn.ts). Absent on every other speech event, and never on a chat's.
+ */
+export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string; overLine?: true }
 /** Typed text: always final. */
 export interface UserText { type: 'user.text'; text: string }
 /** One key pressed. */

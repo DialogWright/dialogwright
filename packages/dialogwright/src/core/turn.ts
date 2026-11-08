@@ -213,6 +213,14 @@ interface TurnIO {
   caught?: true;
   /** The question a frustration-only turn was caught at on this turn (caughtFrustration), kept as Session.frustrationOnly after it. */
   caughtAt?: string;
+  /**
+   * The turn took a miss's path at the question the caller was on: a retry or no-match line, the keypad
+   * rung, the question asked again because nothing answers it, a confirmation left unanswered, a topic
+   * slot's not-found reply, a frustration-only turn caught, or the end of the ladder (a person, a slot's
+   * onMaxAttempts). Set by the miss handlers themselves (failAttempt, reaskConfirmation counted, codeReask,
+   * notFoundReply, caughtFrustration); read only for speech over a line (overLineMiss).
+   */
+  missed?: true;
 }
 
 export interface Plan {
@@ -271,6 +279,12 @@ export interface TurnResult {
   screen: ScreenResult | null;
   /** the screen fired: perception's answers were discarded and nothing was filled, gated or called */
   quarantined: boolean;
+  /**
+   * The turn was set aside, decision `ignore` and the session as it was: speech over a line the caller
+   * could not interrupt (UserSpeech.overLine) that would have been a miss (overLineMiss). Its gate rows say
+   * so (`speechOverLine`). Absent on every other turn.
+   */
+  setAside?: 'speech-over-line';
   /** what this turn tells the audit log, in order; the runner appends them to the chain (core/audit.ts) */
   audit: AuditDraft[];
 }
@@ -760,6 +774,7 @@ function rungFor(s: Session, attempts: number, t: Thresholds, max: number = t.MA
  * walks the code prompt's own ladder (the code is never re-asked forever), and a person at the end.
  */
 function codeReask(s: Session, io: TurnIO, acks: Ack[], promptId: 'ask_otp' | 'ask_otp_spoken' | 'otp_spoken_reissued'): Decision {
+  io.missed = true;
   if (retryStep(++s.codeReasks, io.tc.thresholds) === 'agent') return handoff(s, 'max-attempts', acks);
   if (promptId === 'otp_spoken_reissued') return sendCodeAndAsk(s, io.tc, io.out, acks, true);
   return promptId === 'ask_otp' ? askCode(s, acks) : prompt(promptId, 'otp', {}, acks);
@@ -773,6 +788,7 @@ function codeReask(s: Session, io: TurnIO, acks: Ack[], promptId: 'ask_otp' | 'a
  * the caller was asked instead (`anything_else`, App.anythingElseSilence).
  */
 function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, io: TurnIO, acks: Ack[] = [], plain: boolean | 'frustration' | 'reask' = false, retryPromptId: string | null = null, intentQuestion = 'ask_intent'): Decision {
+  io.missed = true;
   // Back from the moment they asked for ("okay, I'm ready"): the question they were on again, uncounted.
   if (io.tookTime === true && target !== 'otp') return { kind: 'replay', text: s.lastPromptText };
   const t = io.tc.thresholds;
@@ -846,6 +862,7 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
  * refusal drops it (endByCheck).
  */
 function notFoundReply(s: Session, slot: SlotId, io: TurnIO, said: Ack[], retryPromptId: string | null): Decision {
+  io.missed = true;
   const app = io.app;
   const acks = s.form === null ? said : said.filter((a) => !enteringLine(a, new Set([formLabel(app, s.form!, s.locale)])));
   const notFound = slotSpecOf(app, slot).notFound ?? { counts: false, remind: 2 };
@@ -943,6 +960,8 @@ function reaskCurrent(s: Session, acks: Ack[], intentQuestion = 'ask_intent'): D
  */
 function caughtFrustration(s: Session, io: TurnIO, slot?: SlotId): Decision | null {
   if (io.caught !== true) return null;
+  // No miss counted, but a miss's path all the same: nothing in the words answered the question.
+  io.missed = true;
   // Waiting on the portal sign-in, the question the caller is on is the sign-in (reaskCurrent), whatever slot comes next.
   const own = slot !== undefined && s.pendingConfirmation === null && s.promptedFor !== slot && !awaitingSignIn(s) ? slot : undefined;
   const at = questionOf(s, own);
@@ -1112,6 +1131,8 @@ function declineTransfer(s: Session, io: TurnIO, pc: TransferConfirmation, acks:
  * question, which is not a failed answer and must not walk the caller toward the keypad.
  */
 function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = true): Decision {
+  // Counted, the confirmation went unanswered: a miss's path. Not counted, the turn added a request.
+  if (count) io.missed = true;
   const t = io.tc.thresholds;
   const pc = s.pendingConfirmation!;
   if (pc.target === 'slot' && pc.at === 'greeting') {
@@ -3104,6 +3125,37 @@ function greeting(s: Session): PromptDecision {
 }
 
 /**
+ * The verdicts a miss is reached on: words not made out (`nomatch`), no request heard (`intent_failed`),
+ * words that give the question asked nothing it takes (`proceed`), a confirmation answered neither way
+ * (`confirm_unanswered`). Every other verdict is an answer: a request, a yes or a no, a correction, a
+ * repeat, a person, a moment, side speech.
+ */
+const MISS_VERDICTS: ReadonlySet<Verdict['kind']> = new Set(['nomatch', 'intent_failed', 'proceed', 'confirm_unanswered']);
+
+/** The gate row of a turn set aside as speech over a line (TurnResult.setAside): the one row that decided it. */
+const OVER_LINE_ROW: GateRow = { gate: 'speechOverLine', value: null, threshold: null, passed: false, outcome: 'set_aside', decided: true };
+
+/**
+ * Whether a turn on speech over a line the caller could not interrupt (UserSpeech.overLine,
+ * SPEECH_OVER_LINE=unless-miss, server/adapter.ts) would be a miss, and so is set aside: a turn that
+ * understood nothing it acts on at the question it was on. Read where the turn's outcome is known, once
+ * the verdict is handled: the turn took a miss's path (TurnIO.missed, set by the miss handlers
+ * themselves: a retry or no-match line, the keypad rung, the question again because nothing answers it,
+ * a confirmation unanswered, a not-found reply, a frustration-only turn caught, the end of the ladder
+ * with its person) on a verdict a miss is reached on (MISS_VERDICTS), and did nothing else: no slot
+ * filled, narrowed, disambiguated or helped, no language switched, no knowledge answer, and nothing
+ * through the gate or handed to a service (a tool that ran cannot be taken back, so such a turn runs as
+ * it is). A request, a yes or a no, a correction, a repeat, a person, a moment and a priority switch are
+ * never misses. The count before the turn is not read: a third such miss after two real ones is set aside
+ * too, and no one is put through.
+ */
+function overLineMiss(before: Session, after: Session, event: SessionEvent, verdict: Verdict, events: readonly FillEvent[], io: TurnIO): boolean {
+  if (event.type !== 'user.speech' || event.overLine !== true || io.missed !== true || !MISS_VERDICTS.has(verdict.kind)) return false;
+  if (io.out.gateEvents.length > 0 || io.out.effects.length > 0 || io.out.kb !== null || io.prefix.length > 0 || after.locale !== before.locale) return false;
+  return events.every((e) => e.outcome.kind === 'invalid' || e.outcome.kind === 'absent');
+}
+
+/**
  * `screen` is the injection screen's reading of a speech or text event's words, asked beside perception;
  * null (or absent) when it was not asked. It is only read on a words turn, and only after the
  * post-filing wait, when a caller's words are ignored anyway.
@@ -3318,6 +3370,15 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // Acknowledged, the frustration was caught: where the turn would be a miss it is not (caughtFrustration).
       if ((rung === 'ack' || rung === 'ack_only') && frustrationMissOf(io.app) === 'ignore') io.caught = true;
       const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
+      // Speech over a line the caller could not interrupt that would be a miss is set aside, as side speech
+      // is: nothing said, nothing counted, the session as it was (overLineMiss). The rows say what was read.
+      if (overLineMiss(session, s, event, verdict, events, io)) {
+        const read = [...rows, ...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined)];
+        return {
+          session: cloneSession(session), turnState, rows: [...screened, ...read.map((r) => (r.decided ? { ...r, decided: false } : r)), OVER_LINE_ROW],
+          verdict: { kind: 'ignore' }, fillEvents: [], ...newTurnOut(), decision: { kind: 'ignore' }, actions: [], screen, quarantined: false, setAside: 'speech-over-line',
+        };
+      }
       // A frustration-only turn caught is kept for the next (Session.frustrationOnly); any other turn the
       // caller meant for us (not side speech or a held partial) ends the run.
       if (io.caughtAt !== undefined) {

@@ -1,4 +1,4 @@
-import type { SessionEvent } from '../channel/events';
+import type { SessionEvent, UserSpeech } from '../channel/events';
 import type { App } from '../core/app/types';
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
@@ -30,7 +30,12 @@ import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
  * re-ask, after the caller was heard back in): an interrupt is no other event, so it ends no join, and a
  * prompt told `resumed` continues the one before it whichever came first. A further interrupt of a reply
  * already cut off is the same caller still talking. At most CONTINUE_MAX_FRAGMENTS prompts are joined,
- * and never past the wire's text limit.
+ * and never past the wire's text limit. A turn set aside as speech over a line the caller could not
+ * interrupt (SPEECH_OVER_LINE=unless-miss, TurnResult.setAside) said nothing, and may be continued as one
+ * that only spoke may: a caller who began over the line and comes back in at once is joined, and the
+ * joined turn is read as speech over the line, as its first fragment was (a miss is set aside again, an
+ * answer acted on). A prompt that continues a turn that was not over a line is not over one either: the
+ * speech it is the rest of began before the line.
  *
  * The engine's, not a carrier's: it reads the core's events, and the voice server and the frame-log
  * replay (harness-text/replay.ts) run every turn of a call through one Continuation, in the order the
@@ -81,18 +86,38 @@ export interface HeldWords {
 /** A turn as a Continuation ran it: `joined` is the prompts its words joined, in order, or null for a turn of its own. */
 export type ContinuedRun = TurnRun & { joined: readonly string[] | null };
 
+/**
+ * The fragments so far: `base`, the session before the first fragment's turn, and `overLine`, that the
+ * first fragment's speech started over a line the caller could not interrupt (UserSpeech.overLine): the
+ * speech the fragments are of began there, so the turn on them joined is read so too.
+ */
+interface Fragments { base: Session; fragments: readonly string[]; overLine?: true }
+
 type State =
   | { kind: 'idle' }
-  /** A final prompt's turn spoke, and only spoke: `base` is the session before the first fragment's turn. */
-  | { kind: 'replied'; base: Session; fragments: readonly string[] }
+  /**
+   * A final prompt's turn spoke, and only spoke; or it was set aside as speech over a line that would have
+   * been a miss (TurnResult.setAside), and said nothing.
+   */
+  | ({ kind: 'replied' } & Fragments)
   /** ... and the caller talked over the reply within the window: the next final prompt continues. */
-  | { kind: 'cut'; base: Session; fragments: readonly string[] }
+  | ({ kind: 'cut' } & Fragments)
   /**
    * ... and the carrier cut the reply off after the window: an ordinary barge-in, so the next final prompt
    * is its own, unless the caller is found to have come back in at once (resumed), whose speech the
    * interrupt then was.
    */
-  | { kind: 'barged'; base: Session; fragments: readonly string[] };
+  | ({ kind: 'barged' } & Fragments);
+
+/** The fragments of a state, in a state of another kind. */
+const fragmentsOf = (state: Fragments): Fragments => ({ base: state.base, fragments: state.fragments, ...(state.overLine ? { overLine: true as const } : {}) });
+
+/**
+ * Whether a turn's words may be continued by the next final prompt: a turn that only spoke (undoable), or
+ * one set aside as speech over a line (TurnResult.setAside), which said nothing at all: a caller who comes
+ * back in at once (resumed) goes on with what they began over the line, and the words are joined.
+ */
+const continuable = (result: TurnResult): boolean => undoable(result) || result.setAside === 'speech-over-line';
 
 const IDLE: State = { kind: 'idle' };
 
@@ -116,7 +141,7 @@ export class Continuation {
   resumed(): void {
     const state = this.state;
     if (state.kind !== 'idle') {
-      this.state = { kind: 'cut', base: state.base, fragments: state.fragments };
+      this.state = { kind: 'cut', ...fragmentsOf(state) };
     }
   }
 
@@ -140,8 +165,11 @@ export class Continuation {
           // The session before the first fragment, with the turn count as it is now: a turn number is
           // never given twice (the trace, a service request's idempotency key).
           const base: Session = { ...state.base, turnIndex: session.turnIndex };
-          const run = await runTurn(base, { ...event, text }, opts, arrival, fragments);
-          if (undoable(run.result)) this.state = { kind: 'replied', base: state.base, fragments };
+          // Over a line as the first fragment was: the speech they are of began where it did.
+          const { overLine: _, ...words } = event;
+          const joined: UserSpeech = state.overLine ? { ...words, text, overLine: true } : { ...words, text };
+          const run = await runTurn(base, joined, opts, arrival, fragments);
+          if (continuable(run.result)) this.state = { kind: 'replied', base: state.base, fragments, ...(state.overLine ? { overLine: true } : {}) };
           return { ...run, joined: fragments };
         }
       }
@@ -149,7 +177,7 @@ export class Continuation {
       // prompts it joined, when it joined more than one.
       const words = held !== undefined && held.fragments.length > 1 ? held : undefined;
       const run = await runTurn(session, event, opts, arrival, words?.fragments, words?.slot);
-      if (this.withinMs > 0 && undoable(run.result)) this.state = { kind: 'replied', base: session, fragments: [event.text] };
+      if (this.withinMs > 0 && continuable(run.result)) this.state = { kind: 'replied', base: session, fragments: [event.text], ...(event.overLine ? { overLine: true } : {}) };
       return { ...run, joined: words?.fragments ?? null };
     }
     const run = await runTurn(session, event, opts, arrival);
@@ -157,7 +185,7 @@ export class Continuation {
       // Within the window, or over a reply already cut off: the caller had not finished. After it, a
       // barge-in, which a caller found to have come back in at once (resumed) still continues.
       const cut = state.kind === 'cut' || event.afterMs <= this.withinMs;
-      this.state = { kind: cut ? 'cut' : 'barged', base: state.base, fragments: state.fragments };
+      this.state = { kind: cut ? 'cut' : 'barged', ...fragmentsOf(state) };
     } else if (event.type === 'user.speech') {
       // A partial (only a harness hands one to a turn) holds: the final prompt is still to come.
       this.state = state;
