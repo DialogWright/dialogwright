@@ -17,6 +17,9 @@ import { readKbFolder, type KbEntry, type KbFolderIo } from '../kb/folder';
 import { kbContentProblems } from '../kb/rules';
 import { KB_KINDS, type KbKind } from '../kb/schema';
 import { hostSchema, type HostYaml } from './schema/host';
+import { businessSchema, type BusinessYaml } from './schema/business';
+import { BUSINESS_FILE, businessContentProblems } from './business';
+import { businessFiles } from './businessFiles';
 
 /** The host file's name (define/host.ts HOST_FILE_NAME), which an app folder may hold beside its own files. */
 const HOST_FILE = 'host.yaml';
@@ -88,6 +91,12 @@ export interface LoadedConfig {
    */
   knowledge?: KnowledgeBase;
   /**
+   * business.yaml, for an app in agent mode (app.yaml's `mode: agent`): the facts the app is built
+   * from. Its intents, forms, slots, prompts, policy and identity above are built from it
+   * (./businessFiles.ts), and the folder has none of those files. Absent for a scripted app.
+   */
+  business?: BusinessYaml;
+  /**
    * The content hash of every file read (app.yaml, ..., identity.yaml and slots.yaml when there are, and each
    * locale/<tag>/prompts.yaml and locale/<tag>/slots.yaml, and every file of kb/ the knowledge base is read from: not
    * its drafts in kb/pending, which are never read, nor its hidden kb/.index), by its path in the folder, and the combined hash (App.configHashes;
@@ -152,10 +161,11 @@ const STARTS_WITH: Record<Kind, string> = {
   localeIntents: 'the "intents:" map, each intent with its label in this locale, for example "intents: { renew_loan: { label: renovar un libro } }"',
   localeForms: 'the "forms:" map, each internal form with its label in this locale, for example "forms: { book_inspection: { label: reservar su inspección } }"',
   host: '"apps:", the apps the server runs, for example "apps: [apps/clinic, apps/utility]"',
+  business: '"business:" (its name and voice), "services:", the forms ("request:" or "booking:"), "handoff:" and "closing:"',
 };
 
 /** A kind of file the loader checks: the six, the optional slots.yaml, a locale's optional slots.yaml, and the knowledge base's. */
-type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | KbKind;
+type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | 'business' | KbKind;
 const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   ...SCHEMAS,
   slots: slotsSchema,
@@ -163,11 +173,12 @@ const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   localeIntents: localeIntentsSchema,
   localeForms: localeFormsSchema,
   host: hostSchema,
+  business: businessSchema,
   ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.schema])) as unknown as Record<KbKind, z.ZodType>),
 };
 const isKbKind = (kind: Kind): kind is KbKind => Object.hasOwn(KB_KINDS, kind);
 /** A kind that is not one of the folder's own kinds (FILE_KINDS): its JSON Schema is its zod schema's, and no other file shares its keys. */
-const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || isKbKind(kind);
+const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || kind === 'business' || isKbKind(kind);
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -218,11 +229,20 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     return null;
   }
 
-  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; routes: RoutesYaml; slots: SlotsYaml; style: StyleYaml }> = {};
+  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; routes: RoutesYaml; slots: SlotsYaml; style: StyleYaml; business: BusinessYaml }> = {};
   const top = listTopLevel(root.real);
+  // An app in agent mode (app.yaml's mode: agent) is built from business.yaml, and has none of the
+  // files it stands for. Where app.yaml cannot be read, a business.yaml beside it says which it is.
+  let agent = false;
   for (const kind of [...(Object.keys(FILE_NAMES) as FileKind[]), 'slots' as const]) {
     const file = kind === 'slots' ? SLOTS_FILE : FILE_NAMES[kind];
     const read = readFile(root.real, file);
+    if (kind !== 'app' && AGENT_BUILT.includes(kind)) {
+      if (agent) {
+        if (read.kind !== 'missing') problems.push(agentBuilt(file, kind));
+        continue;
+      }
+    }
     if (read.kind === 'missing') {
       if (kind !== 'slots' && REQUIRED_KINDS.includes(kind)) problems.push(missingFile(file, kind, top));
       continue;
@@ -233,8 +253,82 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     }
     const checked = checkFile(file, kind, read.text, problems, documents, contents);
     if (checked !== undefined) (valid as Record<string, unknown>)[kind] = checked;
+    if (kind === 'app') agent = checked !== undefined ? (checked as AppYaml).mode === 'agent' : top.includes(BUSINESS_FILE);
   }
-  strayYamlFiles(top, problems);
+  strayYamlFiles(top, problems, agent);
+
+  // business.yaml: read in agent mode, and only there.
+  const businessRead = readFile(root.real, BUSINESS_FILE);
+  /** A problem at a path of a file already read (app.yaml, style.yaml), at its line. */
+  const inFile = (file: string, path: DataPath, message: string, fix: string): Problem => {
+    const read = documents.get(file);
+    const at = read ? positionOf(read.doc, read.lines, path) : { line: 1, column: 1 };
+    return { file, line: at.line, column: at.column, path: formatPath(path), message, fix };
+  };
+  if (agent) {
+    if (businessRead.kind === 'missing') problems.push(missingFile(BUSINESS_FILE, 'business', top));
+    else if (businessRead.kind === 'problem') problems.push(businessRead.problem);
+    else {
+      const checked = checkFile(BUSINESS_FILE, 'business', businessRead.text, problems, documents, contents) as BusinessYaml | undefined;
+      if (checked !== undefined) {
+        const before = problems.length;
+        const read = documents.get(BUSINESS_FILE)!;
+        businessContentProblems(checked, (path, message, fix) => {
+          const at = positionOf(read.doc, read.lines, path);
+          problems.push({ file: BUSINESS_FILE, line: at.line, column: at.column, path: formatPath(path), message, fix });
+        });
+        if (problems.length === before) valid.business = checked;
+      }
+    }
+    for (const folder of ['locale', 'kb']) {
+      if (existsNoFollow(join(root.real, folder))) problems.push(problemAt(folder, WHOLE_FILE, `an app in agent mode has no ${folder}/ yet: ${folder === 'locale' ? 'it speaks its default locale only' : 'its facts are business.yaml, and answers from a knowledge base in agent mode are a later step'}`, `delete ${folder}/, or set app.yaml's mode to scripted`));
+    }
+    if (valid.app?.callerNumber?.lookup !== undefined) {
+      problems.push(inFile('app.yaml', ['callerNumber', 'lookup'], 'an app in agent mode looks the number calling up in its accounts itself (business.yaml\'s accounts), so app.yaml names no call-start lookup', 'delete "lookup" from callerNumber, and list the accounts in business.yaml'));
+    }
+    if (valid.app?.onStart !== undefined) {
+      problems.push(inFile('app.yaml', ['onStart'], 'an app in agent mode has no start hook: its code is its tools', 'delete "onStart"'));
+    }
+  } else {
+    if (businessRead.kind !== 'missing') {
+      problems.push(problemAt(BUSINESS_FILE, WHOLE_FILE, `${BUSINESS_FILE} is read only by an app in agent mode, and app.yaml does not say "mode: agent"`, `add "mode: agent" to app.yaml (and take out the files the business stands for), or delete ${BUSINESS_FILE}`));
+    }
+    if (valid.style?.agent !== undefined) {
+      problems.push(inFile('style.yaml', ['agent'], 'style.yaml names an agent model, which only an app in agent mode has (app.yaml\'s mode: agent)', 'delete "agent", or add "mode: agent" to app.yaml'));
+    }
+  }
+  if (agent) {
+    if (!valid.app || !valid.business || problems.length > 0) return null;
+    let built;
+    try {
+      built = businessFiles(valid.business, valid.app);
+    } catch (error) {
+      problems.push(problemAt(BUSINESS_FILE, WHOLE_FILE, `the app could not be built from ${BUSINESS_FILE} (${error instanceof Error ? error.message : String(error)})`, 'this is the engine\'s error: report it with the file'));
+      return null;
+    }
+    if (built.problems.length > 0) {
+      const read = documents.get(BUSINESS_FILE)!;
+      for (const p of built.problems) problems.push({ file: BUSINESS_FILE, ...positionOf(read.doc, read.lines, p.path), path: formatPath(p.path), message: p.message, fix: p.fix });
+      return null;
+    }
+    return {
+      app: built.app,
+      intents: built.intents,
+      forms: built.forms,
+      policy: built.policy,
+      identity: built.identity,
+      routes: null,
+      slots: built.slots,
+      style: valid.style ?? null,
+      defaultLocale: valid.app.locale ?? DEFAULT_LOCALE,
+      prompts: { [valid.app.locale ?? DEFAULT_LOCALE]: built.prompts.prompts },
+      localeSlots: {},
+      localeIntents: {},
+      localeForms: {},
+      business: valid.business,
+      hashes: configHashesOf(contents),
+    };
+  }
 
   const defaultLocale = valid.app?.locale ?? DEFAULT_LOCALE;
   const prompts: Record<string, Record<string, PromptYaml>> = {};
@@ -469,6 +563,17 @@ function missingFile(file: string, kind: Kind, top: readonly string[]): Problem 
   return problemAt(file, WHOLE_FILE, `${file} is missing`, `create ${file}; it starts with ${STARTS_WITH[kind]}.${hint}`);
 }
 
+/** The files an app in agent mode does not have: the engine builds what they say from business.yaml (./businessFiles.ts). */
+const AGENT_BUILT: readonly (FileKind | 'slots')[] = ['intents', 'forms', 'prompts', 'policy', 'identity', 'routes', 'slots'];
+
+/** The problem a file an agent-mode app does not have is: what it is, and that business.yaml stands for it. */
+function agentBuilt(file: string, kind: FileKind | 'slots'): Problem {
+  const why = kind === 'identity'
+    ? 'an app in agent mode sends its agent model the conversation, so it takes no identity factor a caller says: its accounts are recognized by the number calling (business.yaml\'s accounts)'
+    : `the engine builds what ${file} says from ${BUSINESS_FILE}`;
+  return problemAt(file, WHOLE_FILE, `${file} is not read in agent mode: ${why}`, kind === 'identity' ? `delete ${file}, or set app.yaml's mode to scripted` : `delete ${file} and say it in ${BUSINESS_FILE}, or set app.yaml's mode to scripted`);
+}
+
 /**
  * YAML files a project's tools write at its root, which in a project of its own is its app's folder: a
  * package manager's lockfile and workspace, a compose file. Never read as part of the app.
@@ -476,19 +581,21 @@ function missingFile(file: string, kind: Kind, top: readonly string[]): Problem 
 const TOOLING_YAML: ReadonlySet<string> = new Set(['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']);
 
 /** YAML files in the folder that DialogWright does not read: almost always a misspelled name. */
-function strayYamlFiles(top: readonly string[], problems: Problem[]): void {
+function strayYamlFiles(top: readonly string[], problems: Problem[], agent: boolean): void {
   const known = new Set<string>(FOLDER_FILES);
+  // The files named to the author: an agent-mode app's own, or a scripted app's (business.yaml is agent mode's alone).
+  const listed = agent ? ['app.yaml', BUSINESS_FILE, 'style.yaml'] : FOLDER_FILES.filter((f) => f !== BUSINESS_FILE);
   for (const name of top) {
     // A host file (several apps on one server) sits beside the apps: in a project of its own, whose folder
     // is its app's, that is in the app's folder. It is the server's, never read as part of the app. A
     // hidden file and a tool's file (TOOLING_YAML) are not the app's either.
     if (!/\.ya?ml$/.test(name) || known.has(name) || name === HOST_FILE || name.startsWith('.') || TOOLING_YAML.has(name)) continue;
-    const near = closest(name.replace(/\.ya?ml$/, '.yaml'), [...known]);
+    const near = closest(name.replace(/\.ya?ml$/, '.yaml'), listed);
     problems.push(
       problemAt(
         name,
         WHOLE_FILE,
-        `${name} is not a file DialogWright reads; the YAML files are ${[...known].join(', ')}`,
+        `${name} is not a file DialogWright reads; the YAML files are ${listed.join(', ')}`,
         near ? `rename ${name} to ${near}` : `delete ${name}, or move it out of the app folder`,
       ),
     );
@@ -918,4 +1025,34 @@ export function loadConfigFile(source: string | Record<string, unknown>, kind: '
   const parsed = documents.get(file)!;
   const value = problems.length === 0 ? (kind === 'identity' ? normalizeIdentity(checked as IdentityFile) : (checked as PolicyYaml)) : null;
   return { value, file, doc: parsed.doc, lines: parsed.lines, located: true, problems };
+}
+
+/** What readBusinessFile found: the file as its schema reads it (null when there is a problem), its problems, and where a path is in it. */
+export interface BusinessYamlFile {
+  business: BusinessYaml | null;
+  /** Every problem with reading and parsing the file, positioned in it; empty when it is valid. */
+  problems: Problem[];
+  /** Where a data path is in the file, once it was read; null before. */
+  locate(path: DataPath): { line: number; column: number } | null;
+}
+
+/**
+ * Reads an app folder's business.yaml with the same safe reading and parsing as the folder's other
+ * files (no tags, aliases capped, a file inside the folder, size bounded), then its schema. The rules
+ * the schema cannot hold are ./business.ts's (loadBusiness reads the file through this, then them).
+ */
+export function readBusinessFile(dir: string): BusinessYamlFile {
+  const problems: Problem[] = [];
+  const documents = new Map<string, { doc: Document; lines: LineCounter }>();
+  const locate: BusinessYamlFile['locate'] = (path) => {
+    const read = documents.get(BUSINESS_FILE);
+    return read ? positionOf(read.doc, read.lines, path) : null;
+  };
+  const root = resolveRoot(dir);
+  if ('problem' in root) return { business: null, problems: [root.problem], locate };
+  const read = readFile(root.real, BUSINESS_FILE);
+  if (read.kind === 'missing') return { business: null, problems: [missingFile(BUSINESS_FILE, 'business', listTopLevel(root.real))], locate };
+  if (read.kind === 'problem') return { business: null, problems: [read.problem], locate };
+  const checked = checkFile(BUSINESS_FILE, 'business', read.text, problems, documents, {});
+  return { business: problems.length === 0 ? (checked as BusinessYaml) : null, problems, locate };
 }

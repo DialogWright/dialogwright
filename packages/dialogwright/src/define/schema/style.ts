@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, text, unique } from './common';
 import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from '../../render/checks';
 import { INCEPTION_TEMPERATURE, RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
+import { INCEPTION_EFFORTS } from '../../agent/provider';
 
 /**
  * style.yaml (optional): how a generated line sounds (generated wording, design section 5). Read only
@@ -10,6 +11,13 @@ import { INCEPTION_TEMPERATURE, RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKIN
  * line's style, and the word budget and the phrases to avoid are also checked on every generated line
  * before anyone hears it.
  */
+
+/** Where an agent model is reached (style.yaml's `agent.provider`). */
+export const AGENT_PROVIDERS = ['inception', 'openrouter'] as const;
+export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
+
+/** The agent model when style.yaml does not name one: Mercury 3 on Inception at instant, measured on 2026-11-09 (the agent-mode design, "Measured"). */
+export const DEFAULT_AGENT_MODEL = { provider: 'inception', model: 'mercury-3', effort: 'instant' } as const;
 
 /** The most words a generated line may use on each channel when style.yaml does not say. */
 export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;
@@ -130,7 +138,23 @@ export const styleSchema = z
       .describe(
         'The model that words the app\'s generated lines, the author\'s choice (measured with render:bakeoff): what the server words with and the regression\'s recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic\'s claude-haiku-5-5).',
       ),
+    agent: z
+      .strictObject({
+        provider: z
+          .enum(AGENT_PROVIDERS)
+          .default(DEFAULT_AGENT_MODEL.provider)
+          .describe(`Where the agent model is reached: inception (Inception's own API, INCEPTION_API_KEY; the way to Mercury Voice) or openrouter (any model OpenRouter serves, OPENROUTER_API_KEY). Default ${DEFAULT_AGENT_MODEL.provider}.`),
+        model: text()
+          .default(DEFAULT_AGENT_MODEL.model)
+          .describe(`The model id, as the provider names it ("mercury-3" on Inception). Default ${DEFAULT_AGENT_MODEL.model}.`),
+        effort: z
+          .enum(INCEPTION_EFFORTS)
+          .default(DEFAULT_AGENT_MODEL.effort)
+          .describe(`How hard the model reasons before it answers (reasoning_effort on Inception): instant, low, medium or high. Measured on 2026-11-09 (pnpm agent:bakeoff): Mercury 3 at instant met the bar for a call (p50 under 1.0 s and p95 under 1.8 s with the judge), at low it did not. On openrouter, instant asks for no reasoning. Default ${DEFAULT_AGENT_MODEL.effort}.`),
+      })
+      .optional()
+      .describe('The model that leads the conversation of an app in agent mode (app.yaml\'s `mode: agent`): it understands the caller and words the replies, and the engine checks every value and every reply. The key is read from the environment only, never from here. Read only in agent mode. Default: Mercury 3 on Inception at instant.'),
   })
-  .describe('style.yaml: how a generated line sounds. Only read when the app generates a line.');
+  .describe('style.yaml: how a generated line sounds, and in agent mode the model that leads the conversation. Only read when the app generates a line, or is in agent mode.');
 
 export type StyleYaml = z.infer<typeof styleSchema>;

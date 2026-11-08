@@ -1,0 +1,185 @@
+import { z } from 'zod';
+import { checkAlways, identifier, matching, text, unique } from './common';
+import { E164 } from '../../core/numberLocales';
+
+/**
+ * business.yaml: the facts of an app in agent mode (app.yaml's `mode: agent`;
+ * docs/designs/2026-11-08-agent-mode.md). One file says everything about the business the line may
+ * use: who it is and how it sounds, what it does and does not do, what it may claim, where it is, its
+ * days and windows, its regular accounts, what a request and a booking collect, and the lines said in
+ * fixed words. The engine builds the app from it (../businessApp.ts): its intents, forms, slots,
+ * prompts, policy and identity, so the gate, the audit, the console and the records see an ordinary
+ * app. The file is the business's own word, as prompts.yaml is: not the knowledge base, whose
+ * approvals do not apply to it.
+ *
+ *   business: { name: Example Library, voice: "Warm, quiet and brief." }
+ *   services: [{ name: holds, about: A book kept at the desk for a week. }]
+ *   claims: [Holds are kept at the front desk for a week.]
+ *   request:
+ *     fields:
+ *       - { name: patronName, type: name, question: "What's your name?" }
+ *       - { name: title, type: text, about: The book's title., question: Which book is it? }
+ *     readBack: "Here's the hold: {patronName}, {title}. Is that right?"
+ *     then: [placeHold]
+ *     done: Thanks, {patronName}. The desk will call when it's in.
+ *   handoff: I'll have someone from the desk call you back.
+ *   closing: Thanks for calling Example Library.
+ */
+
+/** The days of the week a business may name in `days`. */
+export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
+/** A field's options that are the business's windows (`windows`), by their names. */
+export const WINDOWS_OPTIONS = 'windows';
+
+/** The forms a business.yaml may define, in the order the engine builds them. */
+export const BUSINESS_FORMS = ['request', 'booking', 'callback'] as const;
+export type BusinessFormName = (typeof BUSINESS_FORMS)[number];
+
+/** A phone number as a carrier sends it (E.164: +, then up to 15 digits). */
+const phone = () =>
+  matching(E164, 'is not a phone number in E.164 form ("+15555550142")', 'write the number as + and its country code and digits, with no spaces or dashes, for example "+15555550142"');
+
+const field = z
+  .strictObject({
+    name: identifier().describe('The field\'s name: the read-back\'s and the done line\'s {placeholder}, the param of the same name in every call the form makes, and the name the agent model gives its value by (for example callerName, day).'),
+    type: identifier().describe('The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name, text or birthdate. A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it.'),
+    question: text().describe('The field\'s question, said word for word when the line asks for it in fixed words (the agent\'s reply was not said, or the field is next and nothing else is): its ask_<form>_<field> line.'),
+    about: text().optional().describe('What the value is, for the agent model ("The make and model, and the year if they know it."). Default: none, the field\'s name alone.'),
+    options: z
+      .union([z.literal(WINDOWS_OPTIONS), unique(text(), 'option').min(2, { error: 'must list at least two options' })])
+      .optional()
+      .describe(`A choice field's options: a list of the words each option is said by ("one", "not sure"), or "${WINDOWS_OPTIONS}", the names of the business's windows. Only on a choice field, which needs it.`),
+    optional: z.boolean().optional().describe('true: the form may be read back without it. Default false: the read-back waits for it.'),
+    length: z.int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(40, { error: 'must be at most 40' }).optional().describe('A digits field\'s number of digits (10 for a phone number with its area code). Only on a digits field, which needs it.'),
+    offer: z
+      .literal('callerNumber')
+      .optional()
+      .describe('A digits field that may be the number the caller is calling from: "callerNumber" offers it (the slot\'s callerNumber). Only on a digits field.'),
+    sees: identifier()
+      .optional()
+      .describe('A tool whose result the agent model may see once the field is filled (the maintainer\'s decision 2): the tool, in the app\'s code, is called through the gate with the field\'s value, and its result, checked by the tool\'s reply check in a closed form, reaches the model. For example availability, for a day.'),
+    redact: z
+      .enum(['none', 'last4', 'length', 'length-summarized'])
+      .optional()
+      .describe('How the value is masked wherever it leaves the turn, as its slot type takes it: a digits field last4 (its default), length or none; a text field none only (its default), since its value is read back as the line understood it; no other type takes one. length-summarized is refused: in agent mode the conversation is sent to the agent model, so a value kept only by its length would be sent whole. Default: the slot type\'s own.'),
+  })
+  .describe('One field a form collects: its name, its slot type and its fixed question.');
+
+const formShape = {
+  about: text().optional().describe('What the form is for, as the agent model is told ("a retail caller\'s request for a quote"). Default: the form\'s name.'),
+  label: text().optional().describe('The form in a few words, as the line names it ("send a request"). Default: the engine\'s words for the form.'),
+  fields: z.array(field).min(1, { error: 'must list at least one field' }).describe('What the form collects, in the order its fixed questions are asked.'),
+  readBack: text().describe('The read-back: the line, in fixed words, that says what the line understood, with each field\'s value as its slot type displays it ({name}), and asks the caller to confirm it. A yes sends the form\'s `then` to the gate.'),
+  then: unique(identifier(), 'tool')
+    .min(1, { error: 'must name at least one tool' })
+    .describe('The tools a yes at the read-back calls, in order, each through the gate: the first is the form\'s write. Each is called with the form\'s values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only.'),
+  done: text().describe('The line said, in fixed words, once the form\'s tools have run, with the values as {placeholders}.'),
+};
+
+const form = z.strictObject(formShape).describe('A form: what it collects, its read-back, the tools a yes calls and its done line.');
+
+const booking = z
+  .strictObject({
+    for: z.literal('accounts').describe('Who may book: "accounts", a caller the number they call from matches to one of `accounts` (identity level 1 by a caller-ID match). Any other caller may not.'),
+    ...formShape,
+  })
+  .describe('The booking a regular account makes: a form open only to an account, recognized by the number it calls from.');
+
+const service = z
+  .strictObject({
+    name: text().describe('The service as the line names it ("curb rash repair").'),
+    about: text().optional().describe('What it is, in the business\'s words: something the line may say.'),
+  })
+  .describe('One service the business offers.');
+
+const window = z
+  .strictObject({
+    name: identifier().describe('The window\'s name, as a choice field with options: windows takes it and the read-back says it ("morning").'),
+    says: text().describe('What the window is, in the business\'s words, which the line may say ("drop off by 8 in the morning, ready by about noon").'),
+    capacity: z.int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('How many requests or bookings the window takes, for the app\'s own calendar. Never said by the line.'),
+  })
+  .describe('One window of the day something is dropped off or collected in.');
+
+const account = z
+  .strictObject({
+    name: text().describe('The account\'s name, as the line and the read-back say it ({account}).'),
+    numbers: unique(phone(), 'number').min(1, { error: 'must list at least one number' }).describe('The numbers the account calls from (E.164): a call from one of them is recognized as the account, by caller ID. Caller ID can be forged: the policy card says what a forged number could do.'),
+  })
+  .describe('One regular account, booked straight in.');
+
+export const businessSchema = z
+  .strictObject({
+    business: z
+      .strictObject({
+        name: text().describe('The business\'s name ("Example Library").'),
+        says: text().optional().describe('The name as the line says it, where it differs. Default: name.'),
+        kind: text().optional().describe('What kind of business it is, for the agent model ("a public library").'),
+        voice: text().describe('How the line sounds, in the business\'s own words, for the agent model: the persona.'),
+        owner: text().optional().describe('The owner\'s name, where the line refers to the owner ("Sam").'),
+        oneOwner: z.boolean().optional().describe('true: the business is one person, and the line never speaks of a team. For the agent model.'),
+        examples: z
+          .array(text())
+          .optional()
+          .describe('Replies the owner wrote, to show the agent model the tone: examples, never rules and never facts. Measured on 2026-11-09: with them, no reply held a figure the facts do not. Default: none.'),
+      })
+      .describe('Who the business is and how it sounds.'),
+    services: z.array(service).min(1, { error: 'must list at least one service' }).describe('What the business does: the only services the line speaks of.'),
+    notOffered: z.array(text()).optional().describe('What it does not do, which the line may say it does not ("cracked wheels"). Default: none.'),
+    claims: z.array(text()).optional().describe('The reassurance the line may give, in the business\'s words: the only claims, and the only place a turnaround or a promise may come from. Default: none.'),
+    background: z.array(text()).optional().describe('Context for the agent model only, never said as a claim. Default: none.'),
+    prices: z
+      .strictObject({
+        quote: text().optional().describe('How a price is given, for the agent model ("from a photo"). Never a figure.'),
+        say: text().describe('The price line, said word for word when a caller asks about price: the line never says a figure.'),
+      })
+      .optional()
+      .describe('How prices are given. Without it, the line has no price line to say.'),
+    where: z
+      .strictObject({
+        place: text().describe('Where the business is, in its words: something the line may say.'),
+        mobile: z.boolean().optional().describe('true: the business also comes to the caller. Default false, which the line may say.'),
+      })
+      .optional()
+      .describe('Where the business is.'),
+    days: unique(z.enum(WEEKDAYS), 'day').min(1, { error: 'must list at least one day' }).optional().describe('The days of the week it works, which the line may say. Default: none said.'),
+    windows: z
+      .array(window)
+      .min(1, { error: 'must list at least one window' })
+      .optional()
+      .describe('The windows of the day, which a choice field takes with options: windows. Default: none.'),
+    accounts: z.array(account).optional().describe('The regular accounts, each with the numbers it calls from. Needed by a booking. Default: none.'),
+    request: form.optional().describe('What any caller\'s request collects, its read-back, the tools a yes calls and its done line.'),
+    booking: booking.optional(),
+    callback: form.optional().describe('A callback note a caller who wants a person leaves (there is no live transfer): what it collects (a number to call back on), its read-back, its tools and its done line. Without it, a caller who wants a person hears the handoff line.'),
+    greeting: text().optional().describe('The line a call opens on, in fixed words. Default: "Thanks for calling <says>. How can I help?"'),
+    handoff: text().describe('The line said when a caller asks for a person, in fixed words: a callback, not a transfer.'),
+    closing: text().describe('The line a call ends on, in fixed words.'),
+    owner: z
+      .strictObject({
+        notify: z.enum(['text', 'print']).describe('How the owner hears of each request and booking: "text", a text message (printed until texting is registered), or "print", printed only.'),
+        number: phone().describe('The owner\'s number (E.164).'),
+        summary: text().describe('The owner\'s summary of each request and booking, a fixed template with the values as {placeholders}: never a generated line.'),
+      })
+      .optional()
+      .describe('Where requests and bookings go: the owner\'s number and the summary sent. For the app\'s own tools.'),
+    tools: z
+      .record(identifier(), text())
+      .optional()
+      .describe('What each tool a form calls does, in a few words, by its name ("send_photo_link: text the caller a link to send a photo"): the action\'s description on the policy card, the console and the audit. Default: the tool\'s name in words.'),
+    lines: z
+      .record(identifier(), text())
+      .optional()
+      .describe('The engine\'s own lines in the business\'s words, by id (nomatch_open, no_input, anything_else, goodbye_chat, ...), in place of their defaults. Default: the engine\'s words.'),
+  })
+  .check(checkAlways((value, ctx) => {
+    const b = value as { request?: unknown; booking?: unknown };
+    if (typeof b !== 'object' || b === null) return;
+    if (b.request === undefined && b.booking === undefined) ctx.addIssue({ code: 'custom', path: [], message: 'has neither a request nor a booking, so a caller can ask for nothing', params: { fix: 'add "request:" (what any caller\'s request collects), "booking:" (an account\'s booking), or both' } });
+  }))
+  .describe('business.yaml: the facts of an app in agent mode, from which the engine builds the app.');
+
+export type BusinessYaml = z.infer<typeof businessSchema>;
+export type BusinessFieldYaml = z.infer<typeof field>;
+export type BusinessFormYaml = z.infer<typeof form> & { for?: 'accounts' };

@@ -11,6 +11,10 @@ import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
 
+/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, or agent (business.yaml). */
+export const APP_MODES = ['scripted', 'agent'] as const;
+export type AppMode = (typeof APP_MODES)[number];
+
 /** A key of voice.numbers: a number written out (E.164) or env.<NAME>. */
 const NUMBER_LOCALE_KEY = new RegExp(`(?:${E164.source})|(?:${ENV_REFERENCE.source})`);
 
@@ -553,6 +557,10 @@ export const appSchema = z
   .strictObject({
     id: matching(/^[a-z][a-z0-9_-]*$/, 'is not a valid app id: it must be lowercase, starting with a letter, with only letters, digits, hyphens and underscores', 'rename it, for example "my-app" or "parcels"')
       .describe('The app\'s id (for example "clinic"): lowercase letters, digits, hyphens and underscores. It names the app in the registry and, by default, its browser storage.'),
+    mode: z
+      .enum(APP_MODES)
+      .optional()
+      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": a model leads the conversation from the business\'s facts (business.yaml, from which the engine builds the intents, forms, slots, prompts, policy and identity), every value it understands is checked by its slot type and confirmed by the caller at the read-back, and every action still goes through the gate. An agent-mode folder holds app.yaml, business.yaml, style.yaml and its code, and none of intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, routes.yaml or slots.yaml.'),
     locale: localeTag()
       .optional()
       .describe('The default locale of prompts.yaml, as a language tag ("en-US"). Other locales\' prompts go in locale/<tag>/prompts.yaml. Default "en-US".'),

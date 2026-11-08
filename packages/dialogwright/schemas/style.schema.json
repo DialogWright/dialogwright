@@ -176,9 +176,42 @@
         "provider"
       ],
       "additionalProperties": false
+    },
+    "agent": {
+      "description": "The model that leads the conversation of an app in agent mode (app.yaml's `mode: agent`): it understands the caller and words the replies, and the engine checks every value and every reply. The key is read from the environment only, never from here. Read only in agent mode. Default: Mercury 3 on Inception at instant.",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "default": "inception",
+          "description": "Where the agent model is reached: inception (Inception's own API, INCEPTION_API_KEY; the way to Mercury Voice) or openrouter (any model OpenRouter serves, OPENROUTER_API_KEY). Default inception.",
+          "type": "string",
+          "enum": [
+            "inception",
+            "openrouter"
+          ]
+        },
+        "model": {
+          "default": "mercury-3",
+          "description": "The model id, as the provider names it (\"mercury-3\" on Inception). Default mercury-3.",
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "default": "instant",
+          "description": "How hard the model reasons before it answers (reasoning_effort on Inception): instant, low, medium or high. Measured on 2026-11-09 (pnpm agent:bakeoff): Mercury 3 at instant met the bar for a call (p50 under 1.0 s and p95 under 1.8 s with the judge), at low it did not. On openrouter, instant asks for no reasoning. Default instant.",
+          "type": "string",
+          "enum": [
+            "instant",
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
-  "description": "style.yaml: how a generated line sounds. Only read when the app generates a line.",
+  "description": "style.yaml: how a generated line sounds, and in agent mode the model that leads the conversation. Only read when the app generates a line, or is in agent mode.",
   "title": "DialogWright style.yaml"
 }

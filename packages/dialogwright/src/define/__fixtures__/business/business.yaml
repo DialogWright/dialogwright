@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=../../../../schemas/business.schema.json
+# An invented library's facts, for the engine's tests of an app in agent mode: holds any caller may
+# place, the study room a member club books (recognized by the number it calls from), and a callback
+# note for a caller who wants a person. No real place, person or number.
+business:
+  name: Example Library
+  kind: a small public library
+  voice: Warm, quiet and brief, like the person at the front desk. Talks about the library and nothing else.
+  owner: Dana
+  examples:
+    - Happy to help with that. Which book is it?
+    - That one's popular. Let's get a hold on it for you.
+
+services:
+  - name: holds
+    about: A book kept at the front desk for a week, collected in a pick-up window.
+  - name: the study room
+    about: A quiet room for up to six people, booked by member clubs.
+notOffered:
+  - book sales
+  - printing
+claims:
+  - Holds are kept at the front desk for a week.
+  - Member clubs book the study room straight in.
+background:
+  - The desk has one person on most afternoons.
+
+prices:
+  quote: at the desk
+  say: Fees are explained at the desk, by the person who looks at your account.
+where:
+  place: 12 Example Street, Rivergate
+days: [monday, tuesday, wednesday, thursday, friday, saturday]
+windows:
+  - name: morning
+    says: from 9 to noon
+    capacity: 4
+  - name: afternoon
+    says: from noon to 5
+    capacity: 4
+
+accounts:
+  - name: Rivergate Book Club
+    numbers: ["+15555550142", "+15555550143"]
+  - name: Northside Readers
+    numbers: ["+15555550150"]
+
+tools:
+  placeHold: place the hold
+  notifyDesk: tell the desk of the hold
+  bookRoom: book the study room
+  noteCallback: leave the desk a callback note
+  roomAvailability: read the study room's free windows near a day
+
+request:
+  about: a hold on a book, collected in a pick-up window
+  label: place a hold
+  fields:
+    - name: patronName
+      type: name
+      question: What's your name?
+    - name: title
+      type: text
+      about: The book's title, as the caller gave it.
+      question: Which book is it?
+    - name: copies
+      type: choice
+      options: [one, two, three]
+      question: How many copies?
+    - name: format
+      type: choice
+      options: [print, large print, not sure]
+      about: Whether they want the large print edition.
+      question: Would you like regular print or large print?
+      optional: true
+    - name: day
+      type: date
+      question: What day would you like to collect it?
+    - name: window
+      type: choice
+      options: windows
+      question: Morning or afternoon?
+    - name: callbackNumber
+      type: digits
+      length: 10
+      offer: callerNumber
+      question: What's the best number to reach you when it's ready?
+  readBack: "Here's the hold: {patronName}, {copies} of {title}, collected {day} in the {window}, and we'll call you at {callbackNumber}. Is that right?"
+  then: [placeHold, notifyDesk]
+  done: Thanks, {patronName}. The desk will call you when it's ready.
+
+booking:
+  for: accounts
+  about: a member club's study room booking
+  label: book the study room
+  fields:
+    - name: people
+      type: choice
+      options: [one, two, three, four, five, six]
+      question: How many people?
+    - name: day
+      type: date
+      question: What day would you like the room?
+      sees: roomAvailability
+    - name: window
+      type: choice
+      options: windows
+      question: Morning or afternoon?
+  readBack: So that's the study room for {account}, {people} people, {day} in the {window}. Shall I book it?
+  then: [bookRoom]
+  done: You're booked for {day}, {window}. Thanks.
+
+callback:
+  about: a callback note for the desk, from a caller who wants a person
+  fields:
+    - name: callbackNumber
+      type: digits
+      length: 10
+      offer: callerNumber
+      question: What's the best number to reach you?
+  readBack: I'll have Dana call you back at {callbackNumber}. Is that right?
+  then: [noteCallback]
+  done: Thanks. Dana will call you back as soon as she can.
+
+handoff: I'll have someone from the desk call you back. What's the best number to reach you?
+closing: Thanks for calling Example Library.
+owner:
+  notify: print
+  number: "+15555550100"
+  summary: "New {kind} from {who} ({callbackNumber}): {details}."

@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../../../schemas/app.schema.json
+# Example Library's line, in agent mode: a model leads the conversation from the library's facts
+# (business.yaml), and the engine checks every value, says every read-back and gates every action.
+# The engine's fixture for an app in agent mode (define/business.test.ts, define/businessApp.test.ts).
+id: business-fixture
+mode: agent
+brand:
+  name: Example Library
+  mark: EL
