@@ -98,9 +98,11 @@ import type { RenderLine } from '../render/types';
  *    no agent client (no key) runs as a scripted app from that turn for the rest of the call
  *    (scriptedFromNow): one begun so, and one resumed on a server without the key.
  *
- * Speech heard over a line the caller could not interrupt whose answer understood nothing (no value
- * accepted or refused, no action, nothing from the facts) is a miss, and is set aside as in a scripted app
- * (core/turn.ts overLineMiss).
+ * Speech heard over a line the caller could not interrupt whose answer understood nothing (no action,
+ * nothing from the facts, no value refused, and no value accepted but one that only restates what its field
+ * holds) is a miss, and is set aside as in a scripted app (core/turn.ts overLineMiss): the line plays on, and
+ * nothing is said or counted. A restated value changes nothing, so an echo of the line's own words, given
+ * back as the value it already holds, is no turn (the agent-mode design, call 54); a value new or changed is.
  */
 
 /** The agent's answer as a turn used it (TurnResult.agent, TraceRecord.agent). */
@@ -690,8 +692,15 @@ function freeOptions(app: App, s: Session, field: AgentAppField, tc: TurnContext
   return Array.isArray(list) && list.every((x) => typeof x === 'string') ? (list as string[]) : null;
 }
 
-/** Whether an answer understood nothing: no value, no action, nothing from the facts, no fixed line said (a miss, which speech over a line sets aside). */
-const understoodNothing = (a: AgentAnswer, fixed: boolean): boolean => a.values.length === 0 && a.action === NO_ACTION && !a.fromFacts && !fixed;
+/**
+ * Whether an answer understood nothing: no action, nothing from the facts, no fixed line said, and no value
+ * but those that only restate what the field holds (`restated`: the value held, as it holds it, shows it or
+ * was sent it), none refused: a miss, which speech over a line sets aside. A restated value changes nothing
+ * (the agent-mode design, call 54: the line's own "road rash" echoed back over it, the damage given again as
+ * held, and the line said again from the start); a value new or changed, or one refused, is a turn.
+ */
+const understoodNothing = (a: AgentAnswer, fixed: boolean, record: Pick<AgentTurnRecord, 'values'>): boolean =>
+  a.action === NO_ACTION && !a.fromFacts && !fixed && record.values.every((v) => v.outcome === 'accepted' && v.restated === true);
 
 /** Whether a fixed line may be named with `form` open (AgentApp.lineForms: business.yaml's `prices.forms`): with no form open, or a line no form list limits, always. */
 function lineAllowed(app: App, line: string, form: FormId | null): boolean {
@@ -949,7 +958,7 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const looked = applied.refused === null && applied.judged === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
   if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
-  if (answer !== null && understoodNothing(answer, failed.fixed) && !opened && read === null) io.missed = true;
+  if (answer !== null && understoodNothing(answer, failed.fixed, record) && !opened && read === null) io.missed = true;
 
   if (failedTwice) {
     // 7. A second failure in a row where the turn needed the answer: the handoff line.

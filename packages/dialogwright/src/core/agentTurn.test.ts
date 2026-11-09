@@ -497,6 +497,34 @@ describe('the agent turn: speech over a line', () => {
     expect(c.last.result.setAside).toBeUndefined();
     expect(value(c.last, 'request_patronName')).toBe('avery lane');
   });
+
+  it('over a line, an answer whose values only restate what is held changes nothing, and is set aside as a miss (call 54)', async () => {
+    // The line's own words echoed back ("The Quiet Harbor" while a line naming it plays): the model gives the
+    // title again, as held, no action, and its reply again.
+    const ECHO = 'The Quiet Harbor';
+    const echo = said('The Quiet Harbor, lovely. What name is it under?', [['title', 'The Quiet Harbor', 'The Quiet Harbor']]);
+    const c = await call({ [HOLD]: HOLD_ANSWER, [ECHO]: echo }, [HOLD, { text: ECHO, overLine: true }]);
+    const [, opened, over] = c.runs;
+    expect(over!.result.setAside).toBe('speech-over-line');
+    expect(over!.result.decision).toEqual({ kind: 'ignore' });
+    expect(over!.result.session).toEqual({ ...opened!.result.session, spokeAt: expect.any(String) });
+    expect(over!.record.agent).toMatchObject({ dropped: 'speech-over-line' });
+    // Not over a line, the same answer is a turn as ever: the reply said in place of the next question.
+    const plain = await call({ [HOLD]: HOLD_ANSWER, [ECHO]: echo }, [HOLD, ECHO]);
+    expect(plain.last.result.setAside).toBeUndefined();
+    expect(heard(plain.last)).toBe('The Quiet Harbor, lovely. What name is it under?');
+  });
+
+  it('over a line, a restated value with a new one beside it is a turn; and so is a changed value', async () => {
+    const BOTH = 'The Quiet Harbor, two copies';
+    const both = await call({ [HOLD]: HOLD_ANSWER, [BOTH]: said('Two copies. What name is it under?', [['title', 'The Quiet Harbor', 'The Quiet Harbor'], ['copies', 'two', 'two copies']]) }, [HOLD, { text: BOTH, overLine: true }]);
+    expect(both.last.result.setAside).toBeUndefined();
+    expect(value(both.last, 'request_copies')).toBe('two');
+    const OTHER = 'The Silent Harbor';
+    const changed = await call({ [HOLD]: HOLD_ANSWER, [OTHER]: said('The Silent Harbor. What name is it under?', [['title', 'The Silent Harbor', 'The Silent Harbor']]) }, [HOLD, { text: OTHER, overLine: true }]);
+    expect(changed.last.result.setAside).toBeUndefined();
+    expect(value(changed.last, 'request_title')).toBe('The Silent Harbor');
+  });
 });
 
 describe('the agent turn: a slow or failed model', () => {

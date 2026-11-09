@@ -130,7 +130,7 @@ An agent turn is the agent's call (or two, with a visible tool), then the drift 
 
 ### Speech over a line, in agent mode
 
-`SPEECH_OVER_LINE` (2026-11-08) marks speech that started while a line the caller couldn't interrupt was still playing. Detection is unchanged. In agent mode, a miss is a turn whose answer proposes no value, no action, and answers nothing from the facts. Under `unless-miss` such a turn is set aside as in scripted mode: nothing said, nothing counted. The model is also told the words were heard over its own line, so its reading has the context.
+`SPEECH_OVER_LINE` (2026-11-08) marks speech that started while a line the caller couldn't interrupt was still playing. Detection is unchanged. In agent mode, a miss is a turn whose answer proposes no action, answers nothing from the facts, and gives no value that changes anything: none refused, and none accepted but one that only restates what its field already holds (call 54: the line's own "road rash" echoed back over it was given again as the damage held, and the line was said again from the start). Under `unless-miss` such a turn is set aside as in scripted mode: nothing said, nothing counted, the line plays on. A turn that gives a value new or changed is taken. No word of the line is matched against what was heard. The model is also told the words were heard over its own line, so its reading has the context.
 
 ### When the model is slow or fails
 
