@@ -312,7 +312,14 @@ What the recording shows (none fails a call):
 - **The read-back's yes when the agent fails.** In `live-call-sorento` the model's answer to "yes, that's right" left out `action` (not in its shape): the turn was decided from the read-back's own questions in the same request, and the request was sent. Three answers in the run left out `action` (two in the tenth); a missing `action` is still refused (call 35 lets only `values` be left out).
 - **A reply asking a field the line did not reach.** "Friday works. We have an afternoon window that day. ... What's a good number to reach you at?" said where the window's question stood (`--client jev`): the reply stands in for the next field's question though it asks another, as before this call.
 
-Baseline edits (`fixtures/expected/`, entries added by hand from `regress --json`, none changed): corpus `rq-30` to `rq-38`, `dn-01`, `dn-02`, and the scripted calls `live-call-road-rash` and `no-at-anything-else`. The seed gains `anythingElse` (after a callback note), the context `dn-01` and `dn-02` need.
+Baseline edits (`fixtures/expected/`, entries added by hand from `regress --json`, none changed): corpus `rq-30` to `rq-38`, `dn-01` to `dn-04`, and the scripted calls `live-call-road-rash` and `no-at-anything-else`. The seed gains `anythingElse` (after a callback note), the context `dn-01` and `dn-02` need.
+
+After the review of call 54 (a full option the second asking leaves out is said to be full; a day changed to one already looked up asks the model again; `dn-03` "Nope." at the greeting and `dn-04` "Nah." at "do you want to speak with someone?", in the new `check_agent` context) both cassettes were recorded fresh again: corpus 49/51 (the two known gaps), scenarios 12/12, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage. What it shows:
+
+- "Nope." at the greeting read none 0.75 (done 0.25), the open question asked again; "Nah." at the check read a no (0.97), none 0.92; "no" at "anything else?" done 0.95.
+- `window-full`: the model kept `window: morning` on turn 1 and it was refused: the caller heard "Friday, November 13 in the morning is full, but we have room in the afternoon." after the booking line, and took the afternoon.
+- `live-call-road-rash`: the echo was again taken (its reply marked from the facts), its reply replaced by "What's your name?". Shown Friday's windows, the second asking still asked "morning or afternoon?", and the judge passed it (0.41): the full line came when the caller asked for the morning.
+- No answer in the run failed its shape.
 
 ## Not yet
 
