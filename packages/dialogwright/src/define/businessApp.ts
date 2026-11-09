@@ -68,6 +68,10 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
         required: f.optional !== true,
         ...(f.sees !== undefined ? { sees: f.sees } : {}),
         ...(f.freeFrom !== undefined ? { freeFrom: { tool: f.freeFrom.split('.')[0]!, list: f.freeFrom.split('.')[1]! } } : {}),
+        // Each option as the read-back says it, where `says` words it (call 54: a full line says an option so too).
+        ...(f.type === 'choice' && f.says !== undefined && Object.keys(f.says).some((k) => k !== 'unset')
+          ? { says: Object.fromEntries(Object.entries(f.says).filter(([k]) => k !== 'unset').map(([k, v]) => [optionKey(k), saysFor(v, 'readBack')])) }
+          : {}),
       };
     });
     const when = Object.fromEntries(form.then.flatMap((step) => {

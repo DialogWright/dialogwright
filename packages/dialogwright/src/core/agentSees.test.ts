@@ -130,16 +130,32 @@ describe('the tools the model sees', () => {
     }, [SATURDAY, 'the morning then']);
     const [, offered, readBack] = c.runs;
     expect(c.contexts[1]!.seen).toEqual([{ tool: 'roomAvailability', result: { day: '2026-11-14', windows: ['morning'] } }]);
-    // Not the read-back with a full window: the reply, held to the facts and the result it was shown, in the window's question's place.
+    // Not the read-back with a full window: the window's full line, in fixed words, and its question; the second
+    // answer's reply is not said, so the news never rests on a reply a check or the judge may refuse (call 54).
     expect(promptOf(offered!)).toBe('ask_booking_window');
-    expect(heard(offered!)).toBe(FULL);
-    expect(offered!.record.agent).toMatchObject({ replySaid: true, line: { mode: 'generated' } });
+    expect(heard(offered!)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. Morning or afternoon?");
+    expect(offered!.record.agent).toMatchObject({ replySaid: false });
     expect(offered!.result.session.slots.booking_window!.value).toBeNull();
     expect(offered!.result.session.slots.booking_day!.value).toBe('2026-11-14');
     // The caller takes the morning: the read-back, with nothing run again for the same day.
     expect(promptOf(readBack!)).toBe('readback_booking');
     expect(heard(readBack!)).toBe("So that's the study room for Rivergate Book Club, four people, Saturday, November 14 in the morning. Shall I book it?");
     expect(seenCalls(readBack!)).toEqual([]);
+  });
+
+  it('the full option the second answer leaves out is said to be full even where its reply would be refused (call 54)', async () => {
+    // Shown the afternoon full, the model leaves the window out and words a reply with a figure the facts do not hold.
+    const c = await call({
+      [SATURDAY]: {
+        blind: said('Lovely.', [['people', 'four', 'four people'], ['day', '2026-11-14', 'Saturday'], ['window', 'afternoon', 'afternoon']]),
+        shown: said('The afternoon is gone, but we open at 7 in the morning.', [['people', 'four', 'four people'], ['day', '2026-11-14', 'Saturday']]),
+      },
+    }, [SATURDAY]);
+    expect(promptOf(c.last)).toBe('ask_booking_window');
+    expect(heard(c.last)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. Morning or afternoon?");
+    expect(c.last.result.session.slots.booking_window!.value).toBeNull();
+    // Left out, never refused: no attempt counted (call 39).
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(0);
   });
 
   it('a correction of the day at the read-back runs it again, and the second answer\'s reply is said before the read-back', async () => {
@@ -155,7 +171,9 @@ describe('the tools the model sees', () => {
     // Both days' results kept on the call, the latest last.
     expect(c.contexts.at(-1)!.seen).toEqual([{ tool: 'roomAvailability', result: { day: '2026-11-12', windows: ['morning', 'afternoon'] } }, { tool: 'roomAvailability', result: { day: '2026-11-14', windows: ['morning'] } }]);
     expect(promptOf(t)).toBe('readback_booking');
-    expect(heard(t)).toBe("Saturday afternoon is full, but the morning is free. So that's the study room for Rivergate Book Club, four people, Saturday, November 14 in the morning. Shall I book it?");
+    // The afternoon asked for is full: the window's full line in place of the second answer's reply, then the read-back
+    // again with the morning the booking holds (call 54).
+    expect(heard(t)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. So that's the study room for Rivergate Book Club, four people, Saturday, November 14 in the morning. Shall I book it?");
   });
 
   it('the second call counts in the turn\'s budget: given what is left of it, and with none left the turn says what it first decided, its reply not said', async () => {
@@ -224,7 +242,9 @@ describe('the tools the model sees', () => {
       expect(t.record.agent!.again).toMatchObject({ tools: ['roomAvailability'] });
       expect(t.record.agent!.again!.fallback).toBeUndefined();
       expect(promptOf(t)).toBe('readback_booking');
-      expect(heard(t)).toContain(shown.reply);
+      // The afternoon asked for is full: its full line stands in for the second answer's reply (call 54).
+      expect(heard(t)).toContain("We're full for the afternoon on Saturday, November 14. We have the morning.");
+      expect(heard(t)).not.toContain(shown.reply);
       expect(run).not.toHaveBeenCalled();
       expect(t.result.gateEvents.map((e) => e.decision.call.tool)).not.toContain('bookRoom');
       vi.restoreAllMocks();

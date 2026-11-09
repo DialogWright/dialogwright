@@ -203,6 +203,9 @@ describe('business.yaml', () => {
       expect.objectContaining({ path: 'booking.fields[2].full.some', message: expect.stringContaining('{windw}'), fix: expect.stringContaining('{window}') }),
       expect.objectContaining({ path: 'booking.fields[2].full.none', message: expect.stringContaining('{free}') }),
     ]);
+    // Another field of the form may still be empty when the line is said: only the field and its day are sure.
+    const other = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: "{people} people in the {window}: taken."`) });
+    expect(problemsOf(other)).toEqual([expect.objectContaining({ path: 'booking.fields[2].full', message: expect.stringContaining('may still be empty'), fix: expect.stringContaining('{window}, {day}, {free}') })]);
     // On a field with no freeFrom it is never said.
     const nowhere = copy({ 'business.yaml': replacing("      options: [one, two, three]\n      question: How many copies?", "      options: [one, two, three]\n      full: The {copies} is taken.\n      question: How many copies?") });
     expect(problemsOf(nowhere)).toEqual([expect.objectContaining({ path: 'request.fields[2].full', message: expect.stringContaining('has no "freeFrom"') })]);

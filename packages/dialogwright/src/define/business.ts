@@ -21,8 +21,6 @@ export const BUSINESS_FILE = 'business.yaml';
 /** The slot the account a caller-ID match recognizes is held in, and the param a form for accounts sends it as: `{account}` in its lines. */
 export const ACCOUNT_SLOT = 'account';
 
-/** Placeholders an owner's summary may name beside the fields: what the app's own tools fill (the kind of request, who it is from, its details). */
-
 /**
  * The lines a `freeFrom` field says when the option asked for is full (business.yaml's `full`), each in the
  * business's words or the engine's: `some`, where another option is free ({free} the options free); `none`,
@@ -42,6 +40,7 @@ export function fullLinesOf(form: Pick<BusinessFormYaml, 'fields'>, f: BusinessF
   };
 }
 
+/** Placeholders an owner's summary may name beside the fields: what the app's own tools fill (the kind of request, who it is from, its details). */
 export const OWNER_SUMMARY_VARS: readonly string[] = [ACCOUNT_SLOT, 'kind', 'who', 'details'];
 
 /** The slot a form's field is held in: the form's name and the field's, so two forms may ask a field of one name in their own words. */
@@ -209,13 +208,19 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
         report(at(['fields', i, 'full']), `the field "${f.name}" has no "freeFrom", so nothing it is given is ever refused as full and the line is never said`, 'delete "full", or give the field "freeFrom"');
         return;
       }
+      // Said when the option asked for is full, the line is sure of two fields only: the field itself (the option
+      // asked for) and the field that sees the tool (the day it was looked up for); any other may be empty then.
+      const seer = fullLinesOf(form, f)?.seer;
+      const sure = [f.name, ...(seer !== undefined ? [seer] : [])];
       for (const [which, line] of Object.entries(typeof f.full === 'string' ? { some: f.full } : f.full)) {
         if (line === undefined) continue;
-        const allowed = which === 'some' ? [...names, FREE_VAR] : [...names];
+        const allowed = which === 'some' ? [...sure, FREE_VAR] : sure;
         for (const v of placeholdersOf(line)) {
           if (allowed.includes(v)) continue;
           const near = closest(v, allowed);
-          report(at(typeof f.full === 'string' ? ['fields', i, 'full'] : ['fields', i, 'full', which]), `the line names {${v}}, which is not a field of the ${name}${which === 'some' ? ` nor {${FREE_VAR}}` : ''}`, near ? `rename it to {${near}} if it is that` : `name only ${allowed.map((k) => `{${k}}`).join(', ')}`);
+          const path = at(typeof f.full === 'string' ? ['fields', i, 'full'] : ['fields', i, 'full', which]);
+          if (names.has(v)) report(path, `the line names {${v}}, a field of the ${name} that may still be empty when the line is said`, `name only ${allowed.map((k) => `{${k}}`).join(', ')}`);
+          else report(path, `the line names {${v}}, which is not a field of the ${name}${which === 'some' ? ` nor {${FREE_VAR}}` : ''}`, near ? `rename it to {${near}} if it is that` : `name only ${allowed.map((k) => `{${k}}`).join(', ')}`);
         }
       }
     });

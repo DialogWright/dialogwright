@@ -66,6 +66,8 @@ describe('the app built from business.yaml', () => {
     expect(app.agent!.forms.booking).toMatchObject({ for: 'accounts', then: ['bookRoom'] });
     expect(app.agent!.forms.request!.fields.find((f) => f.name === 'format')).toEqual({
       name: 'format', slot: 'request_format', type: 'choice', about: 'Whether they want the large print edition.', options: ['print', 'large print', 'not sure'], required: false,
+      // As the read-back says each option (`says`), for a line that names one (call 54).
+      says: { print: 'in print', large_print: 'in large print', not_sure: 'in either print' },
     });
   });
 

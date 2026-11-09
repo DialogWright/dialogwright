@@ -210,6 +210,11 @@ export interface AgentAppField {
    * value of the seeing field, a value not in its list is refused (`range`).
    */
   freeFrom?: { tool: string; list: string };
+  /**
+   * A choice field's options as its read-back says them, where business.yaml's `says` words them (by option key:
+   * the read-back's words), so a line that names an option says it as the read-back does. Absent where none is.
+   */
+  says?: Record<string, string>;
 }
 
 /** A form of an app in agent mode (App.agent), as the agent model is told of it and the core runs it. */

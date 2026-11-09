@@ -136,8 +136,11 @@ export interface TurnContext {
    * gate, and the runner asked the model again with its checked result (TurnResult.agentAgain) before
    * anything was said. Set only on that second resolution of the turn; the turn then asks no more.
    * `changed`: the first resolution, at a read-back, changed a value, so this one never completes on a yes.
+   * `full`: the first answer's values for `freeFrom` fields the result shows full, which the second answer left
+   * out (core/agentTurn.ts fullLeftOut): each field's full line is said in place of the second answer's reply
+   * (the agent-mode design, call 54).
    */
-  agentSeen?: { seen: readonly SeenResult[]; changed?: true };
+  agentSeen?: { seen: readonly SeenResult[]; changed?: true; full?: readonly { field: string; value: string }[] };
   /**
    * The text values (by field) the drift judge refused against the caller's words this turn, or did not read
    * in time (run/turn.ts, call 45): set only on the turn's resolution after the judge read them. Each is not

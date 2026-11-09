@@ -32,7 +32,7 @@ import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { resolveWaiting } from './waiting';
-import { agentAsks, agentContextOf, agentSentRecord, narrowedFields, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
+import { agentAsks, agentContextOf, agentSentRecord, fullLeftOut, narrowedFields, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
 import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
 
 export interface TurnObserver {
@@ -381,8 +381,10 @@ async function scriptedReading(
   channel: Parameters<typeof resolveWaiting>[6], toolTimeout: number,
 ): Promise<{ result: TurnResult; waited: Awaited<ReturnType<typeof resolveWaiting>>['waited'] | undefined } | null> {
   const pc = session.pendingConfirmation;
-  if (pc === null || pc.target !== 'form' || first.agent === undefined || first.quarantined || screen?.fired === true) return null;
+  if (pc === null || pc.target !== 'form' || first.agent === undefined) return null;
   const marked = (scripted: 'read' | 'none' | 'unused') => ({ result: { ...first, agent: { ...first.agent!, scripted } }, waited: undefined });
+  // A turn quarantined, or one the screen fired on, is decided without the words: the reading, asked, is not used.
+  if (first.quarantined || screen?.fired === true) return reading !== null ? marked('unused') : null;
   if (first.agent.use !== 'failed') return reading !== null && answers !== null ? marked('unused') : null;
   if (reading === null || answers === null) return marked('none');
   // The second failure in a row hands off, as on any turn: the reading is not used.
@@ -625,13 +627,14 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // The decision model and the agent at once: the turn waits for the slower, never the two in turn.
   const [, agentResult] = await Promise.all([askJev(), agentAsked]);
   const t2 = performance.now();
+  // The turn reads only its own questions' answers: the read-back reading's are the scripted reading's alone
+  // (scriptedReading), so neither a follow-up nor the agent turn sees them.
+  const ownAnswers = (a: AnswerMap | null): AnswerMap | null => (a === null || reading === null || own.questions === null ? a : answersTo(a, own.questions));
   // A second request on the same words, when the answers turn out to need one (askFollowUp).
   const second = response !== null && words !== null && p.turnState !== null
-    ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts, t1)
+    ? await askFollowUp(session, event, words, p.turnState, ownAnswers(response.answers)!, tc, screen, opts, t1)
     : null;
   const turnTc: TurnContext = { ...(second?.tc ?? tc), ...(agentResult !== null ? { agent: agentResult } : {}) };
-  // The agent turn reads only its own questions' answers: the reading's are the scripted reading's (scriptedReading).
-  const ownAnswers = (a: AnswerMap | null): AnswerMap | null => (a === null || reading === null || own.questions === null ? a : answersTo(a, own.questions));
   const t2f = performance.now();
   // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
   // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
@@ -660,17 +663,19 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     if (asked.result.ok) {
       // The first answer's accepted values the second leaves out are kept (call 39), a free-from field's only while the result lists it.
       const carried: AgentResult = resolved.agent !== undefined ? { ...asked.result, answer: withFirstValues(appOf(session), resolved.agent, resolved.session.form, asked.result.answer, seen) } : asked.result;
-      used = { ...turnTc, agent: carried, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}) } };
+      // An option the first answer gave that the result shows full, left out by the second: its full line is said (call 54).
+      const full = resolved.agent !== undefined ? fullLeftOut(appOf(session), opts.todayIso, resolved.agent, resolved.session.form, asked.result.answer, seen) : [];
+      used = { ...turnTc, agent: carried, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}), ...(full.length > 0 ? { full } : {}) } };
       const next = await resolveWaiting(session, event, turnAnswers, used, error, screen, channel, toolTimeout, first.memo);
       resolved = next.result;
       waited = next.waited ?? waited;
       agentShown = asked.ctx;
     }
   }
-  // An app in agent mode whose agent answer failed at a form's read-back: the turn read again the scripted
-  // way, the decision model asked the form's own questions within what is left of the turn's budget, and
-  // decided from them (a yes completes, "yes, but make it three" corrects and reads it back); with none in
-  // time, the read-back said again, as the turn first stood (the agent-mode design, call 38).
+  // An app in agent mode at a form's read-back: where the agent answer failed, the turn decided the scripted way
+  // from the form's own questions, asked in the turn's own request beside the agent (a yes completes, "yes, but
+  // make it three" corrects and reads it back); the record says what became of the reading (the agent-mode
+  // design, calls 38 and 54).
   const reread = agentResult !== null && opts.agent != null && words !== null
     ? await scriptedReading(session, event, resolved, tc, screen, reading, response?.answers ?? null, channel, toolTimeout)
     : null;
@@ -693,7 +698,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       const refusedText = [...new Set(judged.filter((j) => j.held === 'before').map((j) => j.field))];
       if (refusedText.length > 0) {
         const next = await resolveWaiting(session, event, turnAnswers, { ...used, agentTextRefused: refusedText }, error, screen, channel, toolTimeout, first.memo);
-        resolved = next.result;
+        // What became of the read-back reading stays on the record of the turn resolved again.
+        const scripted = resolved.agent?.scripted;
+        resolved = scripted !== undefined && next.result.agent !== undefined ? { ...next.result, agent: { ...next.result.agent, scripted } } : next.result;
         waited = next.waited ?? waited;
       }
       if (resolved.agent !== undefined) resolved = { ...resolved, agent: { ...resolved.agent, textJudged: judged } };
