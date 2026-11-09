@@ -37,9 +37,11 @@ import type { RenderLine } from '../render/types';
  * Otherwise, in this order:
  *
  * 1. **At a read-back**: a failed answer reads the read-back again, uncounted, and does not complete here (a
- *    yes may carry a correction no one read): the runner reads the turn again the scripted way, the decision
- *    model asked the form's own questions, and decides it from them (run/turn.ts scriptedReading, call 38);
- *    this is what is said where that reading does not come in time. The second failure in a row hands off. Otherwise the answer's
+ *    yes may carry a correction no one read): the runner decides the turn the scripted way, from the form's
+ *    own questions the decision model was asked in the turn's request beside the agent (run/turn.ts
+ *    readBackReading and scriptedReading, calls 38 and 54), so the reading is there however late the agent
+ *    fails; this is what is said where there is none (the decision model's request failed). The second
+ *    failure in a row hands off, the reading not used. Otherwise the answer's
  *    values are corrections, checked and stored: a value that changes reads the read-back again, a refused
  *    one walks its slot's ladder. With none, the decision model's yes completes the form (its
  *    engine-written `complete` hook calls its `then` through the gate), whatever the answer proposed; a
@@ -92,8 +94,8 @@ import type { RenderLine } from '../render/types';
  *    is said (lineDue; the agent-mode design, call 43 and its amendment).
  *    At a read-back it is an aside, under the same bound as any other.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
- *    says why (`fallback`); at a read-back the turn is read again the scripted way (run/turn.ts
- *    scriptedReading). The second such turn in a row hands off: the handoff line, then the person form,
+ *    says why (`fallback`); at a read-back the turn is decided the scripted way, from the reading asked beside
+ *    the agent (run/turn.ts scriptedReading). The second such turn in a row hands off: the handoff line, then the person form,
  *    the rest of the call run as a scripted app (core/turn.ts handoffToPersonForm). A call with
  *    no agent client (no key) runs as a scripted app from that turn for the rest of the call
  *    (scriptedFromNow): one begun so, and one resumed on a server without the key.
@@ -176,12 +178,15 @@ export interface AgentTurnRecord {
    */
   again?: { tools: string[]; ms: number; fallback?: AgentFailure; detail?: string };
   /**
-   * The answer failed at a form's read-back, and the turn was read again the scripted way (run/turn.ts
-   * scriptedReading, the agent-mode design's call 38): `read`, the decision model asked the form's own
-   * questions and the turn decided from them (a yes completes, a correction is read back); `none`, no
-   * reading came in the turn's budget, and the read-back was said again. Absent on every other turn.
+   * At a form's read-back, the scripted reading: the decision model asked the form's own questions in the
+   * turn's own request, beside the agent's ask (run/turn.ts readBackReading; the agent-mode design's calls 38
+   * and 54). `read`: the agent's answer failed, and the turn was decided from the reading (a yes completes, a
+   * correction is read back); `unused`: asked and not needed (the agent answered, or the second failure in a
+   * row handed off); `none`: the agent's answer failed and there was no reading (the turn's request failed),
+   * so the read-back was said again. Absent on every other turn. (Before call 54 the reading was a second
+   * request after the agent failed, and `none` was a reading not in time.)
    */
-  scripted?: 'read' | 'none';
+  scripted?: 'read' | 'none' | 'unused';
   /**
    * The text values accepted that are not the caller's words as cited, each as the drift judge read it
    * against them (run/turn.ts, render/agentLine.ts judgeTextValues; calls 40 and 45): held as given
@@ -1132,8 +1137,8 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   if (answer === null && !failed.none) {
     // A failed answer: the words may hold a correction no one read ("yes, but make it three"), so nothing
     // completes here. The read-back is said again, uncounted; the second failure in a row hands off. The
-    // runner then reads the turn the scripted way (run/turn.ts scriptedReading), and this stands only where
-    // that reading does not come in time.
+    // runner then decides the turn the scripted way, from the reading asked beside the agent (run/turn.ts
+    // scriptedReading), and this stands only where there is none.
     if (failed.failedTwice) return { decision: handoff(s, 'system-failure'), events: [] };
     return { decision: steps.askSummary(s, pc.form, [], io), events: [] };
   }

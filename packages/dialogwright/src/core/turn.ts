@@ -3574,9 +3574,10 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
  */
 export interface FollowUp {
   /**
-   * `aside-topic` (above); `agent-failed`, an app in agent mode whose agent answer failed at a form's
-   * read-back: the turn read again the scripted way, the decision model asked the form's own questions
-   * (run/turn.ts scriptedReading; the agent-mode design, call 38).
+   * `aside-topic` (above); `agent-failed`, in a trace written before the agent-mode design's call 54 only: an
+   * app in agent mode whose agent answer failed at a form's read-back, read again in a second request. Since
+   * call 54 the form's own questions ride in the turn's request beside the agent (run/turn.ts readBackReading),
+   * so no second request is made.
    */
   readonly reason: 'aside-topic' | 'agent-failed';
   /** The slot whose question it asks: the aside's topic slot; for `agent-failed`, the form at its read-back. */

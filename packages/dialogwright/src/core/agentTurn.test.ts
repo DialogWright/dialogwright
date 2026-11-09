@@ -82,17 +82,28 @@ interface Call {
 }
 
 /** A call: its start (from `number`), then each step's words, the agent answering each by its script (the caller's words to the answer). */
-async function call(script: Record<string, Scripted>, steps: (string | Step)[], opts: { number?: string; chat?: boolean; jev?: JevClient; delayMs?: number; noAgent?: boolean } = {}): Promise<Call> {
+async function call(script: Record<string, Scripted>, steps: (string | Step)[], opts: { number?: string; chat?: boolean; jev?: JevClient; delayMs?: number; noAgent?: boolean; budgetMs?: number; lateOn?: string } = {}): Promise<Call> {
   const tools = { ...app.systems(), codes: mockCodeVerifier };
   const contexts: AgentContext[] = [];
-  const agent = fakeAgent((ctx) => {
+  const scripted = fakeAgent((ctx) => {
     contexts.push(ctx);
     const words = ctx.conversation.at(-1)!.text;
     const out = script[words];
     if (out === undefined) throw new Error(`no answer scripted for "${words}"`);
     return out;
   }, opts.delayMs !== undefined ? { delayMs: opts.delayMs } : {});
-  const runOpts = { client: opts.jev ?? jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, ...(opts.noAgent ? {} : { agent: { client: agent } }) };
+  // `lateOn`: on those words the model answers nothing within its whole budget (a timeout at the budget's end).
+  const agent: typeof scripted = opts.lateOn === undefined ? scripted : {
+    ...scripted,
+    async answer(ctx, timeoutMs) {
+      if (ctx.conversation.at(-1)!.text !== opts.lateOn) return scripted.answer(ctx, timeoutMs);
+      contexts.push(ctx);
+      await new Promise((r) => setTimeout(r, timeoutMs));
+      return { ok: false, reason: 'timeout', detail: `no answer within ${timeoutMs} ms`, ms: timeoutMs };
+    },
+  };
+  const budget = opts.budgetMs !== undefined ? { timeoutMs: { voice: opts.budgetMs, chat: opts.budgetMs } } : {};
+  const runOpts = { client: opts.jev ?? jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, ...(opts.noAgent ? {} : { agent: { client: agent, ...budget } }) };
   let session: Session = newSession('S-agent', 0, opts.chat ? WEB_CHAT : VOICE_RELAY, ANONYMOUS, app.id);
   const runs: TurnRun[] = [];
   const run = async (event: SessionEvent): Promise<void> => {
@@ -526,13 +537,17 @@ describe('the agent turn: what the decision model decides alone', () => {
     expect(c.last.record.agent).toMatchObject({ use: 'dropped', dropped: 'handoff' });
   });
 
-  it('the decision model asks no field\'s question in agent mode: the turn-level ones, and the yes or no at a read-back', async () => {
+  it('the decision model asks no field\'s question in agent mode: the turn-level ones, and the yes or no at a read-back, where the form\'s own ride beside them for the scripted reading (call 54)', async () => {
     const j = jev();
     await call({ [HOLD]: HOLD_ANSWER, [DETAILS]: DETAILS_ANSWER, "yes that's right": said('Great!') }, [HOLD, DETAILS, "yes that's right"], { jev: j });
     const asked = j.asked.map((r) => Object.keys(r.questions).filter((q) => !q.startsWith('screen')).sort());
-    for (const q of asked) expect(q.every((id) => !id.startsWith('request_') && id !== 'intentChange' && id !== 'changeSlot')).toBe(true);
+    // Before the read-back: no field's question.
+    for (const q of asked.slice(0, -1)) expect(q.every((id) => !id.startsWith('request_') && id !== 'intentChange' && id !== 'changeSlot')).toBe(true);
     expect(asked.at(-1)).toContain('confirmsYes');
     expect(asked[0]).not.toContain('confirmsYes');
+    // At the read-back, in the same request: the form's own questions, as an app with no key asks them, for the scripted reading.
+    expect(asked.at(-1)).toEqual(expect.arrayContaining(['request_copies', 'asksPrice']));
+    expect(j.asked).toHaveLength(4);
   });
 });
 
@@ -667,7 +682,9 @@ describe('the review of Task 6', () => {
     const yes = await call({ ...toReadBack, 'yes, place the hold': { fail: 'invalid' } }, [HOLD, DETAILS, 'yes, place the hold']);
     expect(yes.sys.holds).toHaveLength(1);
     expect(yes.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid', scripted: 'read' });
-    expect(yes.last.record.followUp).toMatchObject({ reason: 'agent-failed', slot: 'request' });
+    // Read from the turn's own request, which carried the form's questions beside the agent's ask: no second request (call 54).
+    expect(yes.last.record.followUp).toBeUndefined();
+    expect(Object.keys(yes.last.record.questions ?? {})).toContain('request_copies');
     // The call goes on in agent mode, the failure counted.
     expect(yes.last.result.session.agent?.scripted).toBeUndefined();
     expect(yes.last.result.session.agent?.failures).toBe(1);
@@ -691,21 +708,44 @@ describe('the review of Task 6', () => {
     expect(toolCalls(changed, 'placeHold').filter((e) => e.decision.verdict === 'ALLOW')).toEqual([]);
   });
 
-  it('a failed answer at a read-back with no scripted reading in time says the read-back again, nothing filed', async () => {
-    // The decision model answers the turn, then fails the scripted reading.
+  it('the scripted reading is in hand however late the agent fails: a timeout at the end of its budget still completes on the yes, from the one request (call 54)', async () => {
+    // A live call: the agent timed out at the read-back's yes after its whole budget, no time was left to ask the
+    // decision model again, and the read-back was said again. Now the reading rode in the turn's request.
+    const j = jev();
+    const YES = 'yes, place the hold';
+    const c = await call(toReadBack, [HOLD, DETAILS, YES], { jev: j, budgetMs: 60, lateOn: YES });
+    expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'timeout', scripted: 'read' });
+    expect(c.sys.holds).toHaveLength(1);
+    expect(promptOf(c.last)).toBe('anything_else');
+    // One request on that turn: the turn's own, with the reading's questions in it.
+    expect(j.asked).toHaveLength(4);
+    expect(c.last.record.followUp).toBeUndefined();
+  });
+
+  it('where the agent answers at the read-back, the reading was asked and is not used (`unused`): the agent\'s turn reads only its own questions', async () => {
+    // The decision model reads three copies in the reading's question; the agent answered a plain yes, and its turn stands.
     const stub = jev();
-    let asked = 0;
-    const once: JevClient = {
+    const reads: JevClient = {
       async ask(req) {
-        const text = ((req.state as { asr?: { text?: string } }).asr?.text ?? '');
-        if (text === 'yes, place the hold' && (asked += 1) > 1) throw new JevClientError('timeout', 'timed out');
-        return stub.ask(req);
+        const r = await stub.ask(req);
+        const copies = req.questions.request_copies;
+        if (copies === undefined || copies.type !== 'choice') return r;
+        return { ...r, answers: { ...r.answers, request_copies: choiceAnswer(sharp(Object.keys(copies.criteria), 'three', 0.9)) } };
       },
     };
-    const c = await call({ ...toReadBack, 'yes, place the hold': { fail: 'invalid' } }, [HOLD, DETAILS, 'yes, place the hold'], { jev: once });
-    expect(promptOf(c.last)).toBe('readback_request');
-    expect(c.sys.holds).toEqual([]);
-    expect(c.last.record.agent).toMatchObject({ scripted: 'none' });
+    const c = await call({ ...toReadBack, 'yes, place the hold': said('Done.') }, [HOLD, DETAILS, 'yes, place the hold'], { jev: reads });
+    expect(c.last.record.agent).toMatchObject({ use: 'used', scripted: 'unused' });
+    expect(c.sys.holds).toEqual([expect.objectContaining({ copies: 'two' })]);
+  });
+
+  it('the second failure in a row, at the read-back, hands off: the reading is not used', async () => {
+    // The first failure at the read-back is read the scripted way ("umm": the read-back again); the second hands off.
+    const twice = await call({ ...toReadBack, 'umm': { fail: 'error' }, 'yes, place the hold': { fail: 'timeout' } }, [HOLD, DETAILS, 'umm', 'yes, place the hold']);
+    expect(promptOf(twice.runs[3]!)).toBe('readback_request');
+    expect(twice.runs[3]!.record.agent).toMatchObject({ use: 'failed', scripted: 'read' });
+    expect(twice.last.record.agent).toMatchObject({ use: 'failed', scripted: 'unused' });
+    expect(handedToPerson(twice.last)).toBe('handoff_system_failure');
+    expect(twice.sys.holds).toEqual([]);
   });
 
   it('a refused value counts an attempt on its slot and walks its ladder to the slot\'s escape', async () => {

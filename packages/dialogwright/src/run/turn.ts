@@ -332,54 +332,69 @@ function agentBudget(runner: AgentRunner, speech: boolean): number {
   return (runner.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)[speech ? 'voice' : 'chat'];
 }
 
-/** The detail of a scripted reading not asked, the turn's budget spent before it (scriptedReading). */
-export const SCRIPTED_READING_NO_TIME = "no time left of the agent's budget for a scripted reading";
-
 /**
- * The turn of an app in agent mode whose agent answer failed (a timeout, an answer not in its shape, an
- * error) at a form's read-back, read again the scripted way (the agent-mode design, call 38): the session
- * as a scripted app's for this turn alone (Session.agent.scripted), so the decision model is asked the
- * questions an app with no key asks there (each slot's, and those correctingFill reads), and the turn is
- * resolved from them: a plain yes completes the form, a yes or a no with a correction corrects it and says
- * the read-back again. Asked within what is left of the agent's budget, counted from its asking (and at
- * most JEV_TIMEOUT_MS); with no time left, no answer, or an error, null comes back with the run, and the
- * turn stands as it first did (the read-back again, nothing done). The session goes on in agent mode, its
- * failure counted. Null for every other turn.
+ * The scripted reading of a form's read-back in agent mode (the agent-mode design, calls 38 and 54): the
+ * questions the decision model asks there as an app with no key asks them (each slot's, and those
+ * correctingFill reads), asked in the turn's own request beside the agent's ask, so the reading is in hand
+ * whenever the agent's answer fails, however late it fails. `session` is the session as a scripted app's for
+ * this turn alone (Session.agent.scripted), an optional field left empty held as declined (as in agent mode,
+ * where the read-back comes once every required field is filled), so it is not asked on the way back. Null
+ * where the turn is not at a form's read-back the agent is asked at.
  */
-async function scriptedReading(
-  session: Session, event: SessionEvent, first: TurnResult, tc: TurnContext, screen: ScreenResult | null, opts: RunOptions, askedAt: number,
-  channel: Parameters<typeof resolveWaiting>[6], toolTimeout: number,
-): Promise<{ result: TurnResult; waited: Awaited<ReturnType<typeof resolveWaiting>>['waited'] | undefined; run: FollowUpRun; ms: number } | null> {
+interface ReadBackReading {
+  session: Session;
+  questions: QuestionMap;
+  /** The optional fields held as declined for this turn alone. */
+  skipped: string[];
+}
+
+function readBackReading(session: Session, event: SessionEvent, tc: TurnContext): ReadBackReading | null {
   const pc = session.pendingConfirmation;
-  if (pc === null || pc.target !== 'form' || first.agent?.use !== 'failed' || first.quarantined || screen?.fired === true) return null;
+  if (pc === null || pc.target !== 'form') return null;
   const scripted = cloneSession(session);
   scripted.agent = { conversation: scripted.agent?.conversation ?? [], failures: scripted.agent?.failures ?? 0, ...scripted.agent, scripted: true };
-  // An optional field left empty is not asked on the way back to the read-back, as in agent mode (where the
-  // read-back comes once every required field is filled): held as declined for this turn alone.
   const skipped = (appOf(session).agent?.forms[pc.form]?.fields ?? []).filter((f) => !f.required && scripted.slots[f.slot]?.value === null && scripted.slots[f.slot]?.declined !== true).map((f) => f.slot);
   for (const slot of skipped) scripted.slots[slot]!.declined = true;
   const p = plan(scripted, event, tc);
-  const followUp: FollowUp = { reason: 'agent-failed', slot: pc.form };
-  if (!p.needsModel || p.questions === null || p.turnState === null) return null;
-  const questions = p.questions;
-  const unread = (error: TurnError, ms: number) => {
-    const result = { ...first, agent: { ...first.agent!, scripted: 'none' as const } };
-    return { result, waited: undefined, run: { followUp, questions, response: null, error }, ms };
-  };
-  const left = Math.floor(Math.min(opts.thresholds.JEV_TIMEOUT_MS, agentBudget(opts.agent!, session.caps.speech) - (performance.now() - askedAt)));
-  if (left <= 0) return unread({ name: 'JevClientError', message: SCRIPTED_READING_NO_TIME }, 0);
-  const t0 = performance.now();
-  const asked = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions, timeoutMs: left }));
-  const ms = performance.now() - t0;
-  if (asked.status === 'rejected') return unread(clientFailure(asked.reason), ms);
-  const next = await resolveWaiting(scripted, event, asked.value.answers, { ...tc }, null, screen, channel, toolTimeout);
+  if (!p.needsModel || p.questions === null) return null;
+  return { session: scripted, questions: p.questions, skipped };
+}
+
+/** The answers of `answers` to the questions of `questions` alone. */
+function answersTo(answers: AnswerMap, questions: QuestionMap): AnswerMap {
+  return Object.fromEntries(Object.entries(answers).filter(([id]) => Object.hasOwn(questions, id)));
+}
+
+/**
+ * The turn of an app in agent mode whose agent answer failed (a timeout, an answer not in its shape, an
+ * error) at a form's read-back, decided the scripted way from the reading asked beside the agent
+ * (readBackReading; the agent-mode design, calls 38 and 54): a plain yes completes the form, a yes or a no
+ * with a correction corrects it and says the read-back again. The reading's answers came in the turn's own
+ * request, so they are there however late the agent failed: no second request is made, and none is charged.
+ * Where the turn's request failed, or carried no reading, the turn stands as it first did (the read-back again,
+ * nothing done; `scripted: 'none'`). The second failure in a row hands off as ever: the reading is not used
+ * (`scripted: 'unused'`). Where the agent answered, the reading was asked and not needed (`unused`). The session
+ * goes on in agent mode, its failure counted. Null for every other turn.
+ */
+async function scriptedReading(
+  session: Session, event: SessionEvent, first: TurnResult, tc: TurnContext, screen: ScreenResult | null, reading: ReadBackReading | null, answers: AnswerMap | null,
+  channel: Parameters<typeof resolveWaiting>[6], toolTimeout: number,
+): Promise<{ result: TurnResult; waited: Awaited<ReturnType<typeof resolveWaiting>>['waited'] | undefined } | null> {
+  const pc = session.pendingConfirmation;
+  if (pc === null || pc.target !== 'form' || first.agent === undefined || first.quarantined || screen?.fired === true) return null;
+  const marked = (scripted: 'read' | 'none' | 'unused') => ({ result: { ...first, agent: { ...first.agent!, scripted } }, waited: undefined });
+  if (first.agent.use !== 'failed') return reading !== null && answers !== null ? marked('unused') : null;
+  if (reading === null || answers === null) return marked('none');
+  // The second failure in a row hands off, as on any turn: the reading is not used.
+  if ((first.session.agent?.failures ?? 0) >= 2) return marked('unused');
+  const scripted = cloneSession(reading.session);
+  const next = await resolveWaiting(scripted, event, answersTo(answers, reading.questions), { ...tc }, null, screen, channel, toolTimeout);
   // The call goes on in agent mode: only this turn was the scripted one; the failure is counted as the first reading counted it.
   const s = next.result.session;
-  for (const slot of skipped) delete s.slots[slot]?.declined;
+  for (const slot of reading.skipped) delete s.slots[slot]?.declined;
   const { scripted: _scripted, ...agent } = s.agent ?? { conversation: [], failures: 0 };
   s.agent = { ...agent, failures: first.session.agent?.failures ?? agent.failures };
-  const result: TurnResult = { ...next.result, session: s, agent: { ...first.agent!, scripted: 'read' } };
-  return { result, waited: next.waited, run: { followUp, questions, response: asked.value, error: null }, ms };
+  return { result: { ...next.result, session: s, agent: { ...first.agent, scripted: 'read' } }, waited: next.waited };
 }
 
 /** The detail of a second answer not asked, the turn's budget spent before it (askAgain). */
@@ -544,7 +559,11 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     : null;
   const tc: TurnContext = retrieved ? { ...base, knowledge: knowledgeOf(retrieved) } : base;
   const t0 = performance.now();
-  const p = plan(session, event, tc);
+  const own = plan(session, event, tc);
+  // At a form's read-back the agent is asked at, the form's own questions ride in the turn's request beside the
+  // agent's ask (readBackReading), so the scripted reading is in hand if the agent fails (call 54).
+  const reading = agentAsks(session, event, base) && opts.agent != null && own.needsModel && own.questions !== null ? readBackReading(session, event, tc) : null;
+  const p = reading !== null ? { ...own, questions: { ...reading.questions, ...own.questions } } : own;
   const t1 = performance.now();
   // Typed by cast, not narrowed: askJev, below, sets them.
   let response = null as JevResponse | null;
@@ -611,10 +630,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts, t1)
     : null;
   const turnTc: TurnContext = { ...(second?.tc ?? tc), ...(agentResult !== null ? { agent: agentResult } : {}) };
+  // The agent turn reads only its own questions' answers: the reading's are the scripted reading's (scriptedReading).
+  const ownAnswers = (a: AnswerMap | null): AnswerMap | null => (a === null || reading === null || own.questions === null ? a : answersTo(a, own.questions));
   const t2f = performance.now();
   // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
   // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
-  const turnAnswers = second?.answers ?? response?.answers ?? null;
+  const turnAnswers = ownAnswers(second?.answers ?? response?.answers ?? null);
   const channel = {
     ...(opts.early !== undefined ? { early: opts.early } : {}),
     ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}),
@@ -650,19 +671,20 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // way, the decision model asked the form's own questions within what is left of the turn's budget, and
   // decided from them (a yes completes, "yes, but make it three" corrects and reads it back); with none in
   // time, the read-back said again, as the turn first stood (the agent-mode design, call 38).
-  const reread = agentResult !== null && opts.agent != null && words !== null && response !== null
-    ? await scriptedReading(session, event, resolved, tc, screen, opts, agentAskedAt, channel, toolTimeout)
+  const reread = agentResult !== null && opts.agent != null && words !== null
+    ? await scriptedReading(session, event, resolved, tc, screen, reading, response?.answers ?? null, channel, toolTimeout)
     : null;
   if (reread !== null) {
     resolved = reread.result;
     waited = reread.waited ?? waited;
   }
+  const rereadUsed = reread !== null && reread.result.agent?.scripted === 'read';
   // The text values the agent gave that are not the caller's words as cited, each held to them by the drift
   // judge a framed summary is (call 40): one it refuses, or does not read in time, is not held (call 45: never
   // as its cited words either), and the turn is resolved again without it, its field's question asked again
   // (the tools already called kept, none called twice).
   let textUsage: JevUsage | null = null;
-  if (reread === null && used !== null && used.agent?.ok === true && resolved.agent?.use === 'used' && resolved.agent.values.length > 0) {
+  if (!rereadUsed && used !== null && used.agent?.ok === true && resolved.agent?.use === 'used' && resolved.agent.values.length > 0) {
     const app = appOf(session);
     const budget = (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[session.caps.speech ? 'voice' : 'chat'];
     const { judged, usage } = await judgeTextValues(app, resolved.agent.values, opts.renderer?.drift ?? opts.client, budget, app.agent?.style.refuseAt ?? DRIFT_FIRE, localeOf(session));
@@ -730,7 +752,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
         ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - tr }
         : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - t0 }),
       ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
-      ...(second?.ms != null ? { followUpMs: second.ms } : reread !== null ? { followUpMs: reread.ms } : {}),
+      ...(second?.ms != null ? { followUpMs: second.ms } : {}),
       ...(agentResult !== null ? { agentMs: agentResult.ms + (again?.result.ms ?? 0) } : {}),
       // A turn that rendered a generated line, or held an agent line, counts its rendering too.
       ...(rendered?.record.ms !== undefined || held !== null ? { renderMs: (rendered?.record.ms ?? 0) + (held?.ms ?? 0), totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
@@ -739,7 +761,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     ...(result.agent !== undefined ? { agent: agentRecord(result.agent, agentResult, again, opts.agent, agentShown !== null ? agentSentRecord(agentShown) : agentSent) } : {}),
     driftUsage,
     retrieval: retrievedAny?.record ?? null,
-    followUp: second?.run ? followUpRecord(second.run) : reread !== null ? followUpRecord(reread.run) : null,
+    followUp: second?.run ? followUpRecord(second.run) : null,
     waited,
     joined: fragments ?? null,
     ...(fragments && waitedFor !== undefined ? { joinedWaitedFor: waitedFor } : {}),
@@ -760,5 +782,5 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       /* observers are best effort */
     }
   }
-  return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? reread?.run ?? null, record, audit: audited, ...(rendered !== null && rendered.early > 0 ? { early: rendered.early } : {}) };
+  return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? null, record, audit: audited, ...(rendered !== null && rendered.early > 0 ? { early: rendered.early } : {}) };
 }
