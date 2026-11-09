@@ -42,8 +42,16 @@ const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 const tag = (name: string, body: string): string => `<${name}>\n${body.trim()}\n</${name}>`;
 const bullets = (lines: readonly string[]): string => lines.map((l) => `- ${l.trim()}`).join('\n');
 
+/** A choice's options as the model is told them: those it may give, and those full on the day held (AgentField.full). */
+function optionsOf(f: Pick<AgentField, 'options' | 'full'>): string[] {
+  return [
+    ...(f.options !== undefined && f.options.length > 0 ? [`one of: ${f.options.join(', ')}`] : []),
+    ...(f.full !== undefined && f.full.length > 0 ? [`full that day: ${f.full.join(', ')}`] : []),
+  ];
+}
+
 function fieldLine(f: AgentField): string {
-  const kind = [f.type, f.required ? 'required' : 'optional', ...(f.options !== undefined && f.options.length > 0 ? [`one of: ${f.options.join(', ')}`] : [])].join('; ');
+  const kind = [f.type, f.required ? 'required' : 'optional', ...optionsOf(f)].join('; ');
   return `${f.name} (${kind})${f.about !== undefined && f.about.trim() !== '' ? `: ${f.about.trim()}` : ''}`;
 }
 
@@ -111,7 +119,7 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
   const actions = [...ctx.actions.filter((a) => a.name !== NO_ACTION).map((a) => `${a.name}: ${a.about}`), `${NO_ACTION}: nothing to propose this turn`];
   const state = tag('current_state', [
     ctx.form !== null ? `form: ${ctx.form.name}${ctx.form.about !== undefined ? ` (${ctx.form.about.trim()})` : ''}` : 'form: none chosen yet',
-    tag('collected_so_far', collected.length > 0 ? bullets(collected.map((x) => `${x.name}: ${shownValue(x)} (${[x.type, ...(x.options !== undefined && x.options.length > 0 ? [`one of: ${x.options.join(', ')}`] : [])].join('; ')})`)) : '(nothing yet)'),
+    tag('collected_so_far', collected.length > 0 ? bullets(collected.map((x) => `${x.name}: ${shownValue(x)} (${[x.type, ...optionsOf(x)].join('; ')})`)) : '(nothing yet)'),
     tag('still_needed', needed.length > 0 ? bullets(needed.map(fieldLine)) : '(nothing: every field is filled)'),
     ...(forms.length > 0 ? [tag('value_forms', bullets(forms))] : []),
     tag('actions', bullets(actions)),

@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { checkApp, DEFAULT_THRESHOLDS, FixtureStubClient, formatProblem, HeuristicStubClient, loadCorpus, loadScenarios, mockCodeVerifier, type IncomingText, type TextContext, type Texts, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
+import { checkApp, DEFAULT_THRESHOLDS, spokenText, FixtureStubClient, formatProblem, HeuristicStubClient, loadCorpus, loadScenarios, mockCodeVerifier, type IncomingText, type TextContext, type Texts, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
 import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, fakeTextProvider, policyInvariants, runRuleExamples, runScenario, TextKeys, type FakeSent } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
 import { APP_DIR, FORWARD_MAX, ON_FILE_MS, Systems, TOOLS, app, code, onText, ownerSummary } from './app';
@@ -240,6 +240,34 @@ describe('a declined consent, end to end (call 46)', () => {
     // Nothing was sent: not to the caller (no consent), and not to the shop (SHOP_PHONE unset, so its summary is printed).
     expect(provider.sent).toEqual([]);
     expect(r.runs.flatMap((x) => x.record.texts ?? [])).toEqual([]);
+  });
+});
+
+describe('the live call of call 54, on the stubs', () => {
+  // live-call-road-rash holds what any model must reach (the request, the afternoon); what the engine does with the
+  // stub's scripted answers is held here, since a real model may tell the caller itself (shown only the afternoon,
+  // the recording's did) or mark an echo's reply as from the facts (then it is a turn).
+  const run = async (id: string, extra: Record<string, unknown>) => {
+    registerThisApp();
+    const found = loadScenarios(join(APP_DIR, 'fixtures/scenarios')).find((x) => x.id === id)!;
+    const scenario = { ...found, expect: { ...found.expect, ...extra } };
+    const corpus = loadCorpus(join(APP_DIR, 'fixtures/corpus.jsonl'), app);
+    const client = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: scenario.todayIso ?? '2026-11-09' }) });
+    return runScenario(scenario, { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: scenario.todayIso ?? '2026-11-09', now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier }, agentSteps: true });
+  };
+
+  it('the line\'s own "road rash" echoed over it, given back as the damage held, is set aside; "in the morning" on a full Friday morning hears the window\'s full line, then the question', async () => {
+    const r = await run('live-call-road-rash', { overLineSetAside: 1, said: { notFigure: true, lines: ['full_request_window'] } });
+    expect(r.pass, r.mismatches.join('; ')).toBe(true);
+    const said = r.runs.map((x) => spokenText(app, x.result.decision));
+    expect(said).toContain('Friday, November 13 in the morning is full, but we have room in the afternoon. Morning or afternoon?');
+    expect(r.runs.find((x) => x.result.setAside === 'speech-over-line')?.record.agent).toMatchObject({ dropped: 'speech-over-line' });
+  });
+
+  it('a bare "no" at "Is there anything else I can help with?" ends the call with the closing', async () => {
+    const r = await run('no-at-anything-else', {});
+    expect(r.pass, r.mismatches.join('; ')).toBe(true);
+    expect(r.runs.at(-1)!.result.decision).toMatchObject({ kind: 'complete', promptId: 'goodbye' });
   });
 });
 

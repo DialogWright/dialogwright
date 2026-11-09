@@ -1008,14 +1008,10 @@
       },
       "action": "send_photo_link",
       "said": {
-        "notFigure": true,
-        "lines": [
-          "full_request_window"
-        ]
+        "notFigure": true
       },
       "readBackSaid": true,
-      "nothingDoneBefore": "confirm",
-      "overLineSetAside": 1
+      "nothingDoneBefore": "confirm"
     },
     "answers": {
       "request_callerName": [
@@ -1056,6 +1052,32 @@
               "field": "vehicle",
               "value": "Honda Civic",
               "words": "Honda Civic"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "Just the one.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "Just the one"
+            }
+          ]
+        }
+      },
+      "request_damage": {
+        "say": "Hi, I've got some road rash on one of my wheels.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "damage",
+              "value": "road rash",
+              "words": "road rash"
             }
           ]
         }

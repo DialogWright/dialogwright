@@ -92,6 +92,13 @@ export interface AgentField {
   about?: string;
   /** A choice's options, by the words the value takes. */
   options?: string[];
+  /**
+   * A choice held to a seen result (`freeFrom`), once the model has been shown it for the form's day: the
+   * options that result does not list free (full that day), told apart from `options`, which then lists the
+   * free ones only, so the model neither offers a full option nor takes a full one asked for as a free one (the
+   * agent-mode design, call 54). Absent otherwise.
+   */
+  full?: string[];
   /** Its value as the line understood it so far, or null while empty. */
   value: string | null;
   required: boolean;

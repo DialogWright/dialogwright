@@ -327,11 +327,13 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
     // A field held to a seen result (`freeFrom`), once the model has been shown it for the form's day: its free options only (call 54).
     const free = freeShownOf(app, session, f, []);
     const options = f.options !== undefined ? f.options.filter((o) => free === null || free.includes(o)) : undefined;
+    const full = free !== null && f.options !== undefined ? f.options.filter((o) => !free.includes(o)) : [];
     return {
       name: f.name,
       type: f.type,
       ...(f.about !== undefined ? { about: f.about } : {}),
       ...(options !== undefined ? { options } : {}),
+      ...(full.length > 0 ? { full } : {}),
       value: heldValue(app, session, f),
       required: f.required,
       ...(redact !== undefined ? { redact } : {}),
@@ -364,8 +366,9 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
 /**
  * The fields the model is sent on a second asking (run/turn.ts askAgain), shown a seen tool's result: a choice
  * held to it (`freeFrom`) with only the options the result lists free for the day the turn now holds (`session`,
- * as the first resolution left it), so the model is not offered a full one (the agent-mode design, call 54).
- * Every other field as it was sent.
+ * as the first resolution left it) as its options, and the others as full that day (AgentField.full), so the
+ * model neither offers a full one nor takes a full one the caller asked for as a free one (the agent-mode
+ * design, call 54). Every other field as it was sent.
  */
 export function narrowedFields(app: App, session: Session, fields: readonly AgentField[], seen: readonly SeenResult[]): AgentField[] {
   const own = session.form !== null ? (app.agent?.forms[session.form]?.fields ?? []) : [];
@@ -373,7 +376,10 @@ export function narrowedFields(app: App, session: Session, fields: readonly Agen
     const f = own.find((x) => x.name === sent.name);
     if (f === undefined || f.freeFrom === undefined || sent.options === undefined) return sent;
     const free = freeShownOf(app, session, f, seen);
-    return free === null ? sent : { ...sent, options: sent.options.filter((o) => free.includes(o)) };
+    if (free === null) return sent;
+    const all = f.options ?? sent.options;
+    const full = all.filter((o) => !free.includes(o));
+    return { ...sent, options: all.filter((o) => free.includes(o)), ...(full.length > 0 ? { full } : {}) };
   });
 }
 

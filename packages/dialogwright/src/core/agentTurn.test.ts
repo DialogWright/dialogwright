@@ -418,9 +418,11 @@ describe('a full choice is said to be full (call 54)', () => {
     // The first asking, before the result: both windows. The second, shown the result: the free one alone.
     expect(c.contexts[0]!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning', 'afternoon']);
     expect(c.contexts[1]!.seen).toHaveLength(1);
-    expect(c.contexts[1]!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning']);
-    // A later turn, the result kept on the call: the free one alone.
-    expect(c.contexts[2]!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning']);
+    expect(c.contexts[1]!.fields.find((f) => f.name === 'window')).toMatchObject({ options: ['morning'], full: ['afternoon'] });
+    // A later turn, the result kept on the call: the free one alone, the other told as full that day.
+    expect(c.contexts[2]!.fields.find((f) => f.name === 'window')).toMatchObject({ options: ['morning'], full: ['afternoon'] });
+    expect(agentMessages(c.contexts[2]!).system).toContain('window (choice; required; one of: morning; full that day: afternoon)');
+    expect(c.contexts[0]!.fields.find((f) => f.name === 'window')!.full).toBeUndefined();
     // A day with both free: both.
     const free = await call({ [BOOK.replace('Saturday', 'Friday')]: said('Lovely.', [['people', 'four', 'four people'], ['day', '2026-11-13', 'Friday']]), 'hmm': said('Morning or afternoon?') }, [BOOK.replace('Saturday', 'Friday'), 'hmm'], { number: CLUB });
     expect(free.contexts.at(-1)!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning', 'afternoon']);
