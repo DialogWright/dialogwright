@@ -216,7 +216,10 @@ export function agentCassetteMissed(run: Pick<TurnRun, 'record'>): boolean {
  *   the call's start only, so nothing a caller says raises it);
  * - `readBackSaid`: the turn before each write (or before the read-back's keypad rung) said its form's
  *   read-back, in its fixed words, with the values the write carries, and a call with no write said one;
- * - `nothingDoneBefore: "confirm"`: no write ran but on the turn whose words confirmed its form's read-back.
+ * - `nothingDoneBefore: "confirm"`: no write ran but on the turn whose words confirmed its form's read-back;
+ * - `overLineSetAside`: how many turns heard over a line the caller could not interrupt were set aside as
+ *   misses (TurnResult.setAside `speech-over-line`: nothing said, nothing counted, the line playing on), so a
+ *   call can hold an echo of the line's own words to being no turn (the agent-mode design, call 54).
  * A property that fails names its turn (the greeting is turn 0).
  */
 /** A value a property expects: exactly, or holding each of some words (AgentProperties.values). */
@@ -229,10 +232,11 @@ export interface AgentProperties {
   levelHeld?: boolean;
   readBackSaid?: boolean;
   nothingDoneBefore?: 'confirm';
+  overLineSetAside?: number;
 }
 
 /** The property keys of a scripted call's expectation (AgentProperties). */
-export const AGENT_PROPERTY_KEYS = ['values', 'action', 'said', 'levelHeld', 'readBackSaid', 'nothingDoneBefore'] as const;
+export const AGENT_PROPERTY_KEYS = ['values', 'action', 'said', 'levelHeld', 'readBackSaid', 'nothingDoneBefore', 'overLineSetAside'] as const;
 
 /** Whether `v` holds only well-formed properties (a scripted call's JSON). */
 export function validAgentProperties(v: Record<string, unknown>): boolean {
@@ -241,7 +245,8 @@ export function validAgentProperties(v: Record<string, unknown>): boolean {
   const values = v.values === undefined || (typeof v.values === 'object' && v.values !== null && !Array.isArray(v.values) && Object.values(v.values).every(expected));
   const action = v.action === undefined || typeof v.action === 'string' || (typeof v.action === 'object' && v.action !== null && typeof (v.action as { not?: unknown }).not === 'string');
   const said = v.said === undefined || (typeof v.said === 'object' && v.said !== null && Object.entries(v.said).every(([k, x]) => (k === 'notFigure' && typeof x === 'boolean') || (k === 'lines' && Array.isArray(x) && x.length > 0 && x.every((l) => typeof l === 'string' && l !== ''))));
-  return values && action && said && (v.levelHeld === undefined || typeof v.levelHeld === 'boolean') && (v.readBackSaid === undefined || typeof v.readBackSaid === 'boolean') && (v.nothingDoneBefore === undefined || v.nothingDoneBefore === 'confirm');
+  return values && action && said && (v.levelHeld === undefined || typeof v.levelHeld === 'boolean') && (v.readBackSaid === undefined || typeof v.readBackSaid === 'boolean') && (v.nothingDoneBefore === undefined || v.nothingDoneBefore === 'confirm')
+    && (v.overLineSetAside === undefined || (typeof v.overLineSetAside === 'number' && Number.isInteger(v.overLineSetAside) && v.overLineSetAside >= 0));
 }
 
 /** A form's write: the first tool of its `then`, by tool. */
@@ -370,6 +375,10 @@ export function agentPropertyMismatches(app: App, expect: AgentProperties, turns
     if (!spoke) out.push(`said.lines: no turn said ${line}`);
   }
   if (expect.levelHeld === true) for (const v of levelViolations(app, turns)) out.push(`levelHeld: ${v}`);
+  if (expect.overLineSetAside !== undefined) {
+    const setAside = turns.flatMap((r, turn) => (r.result.setAside === 'speech-over-line' ? [turn] : []));
+    if (setAside.length !== expect.overLineSetAside) out.push(`overLineSetAside: expected ${expect.overLineSetAside} turn(s) heard over a line set aside, but ${setAside.length === 0 ? 'none was' : `turn(s) ${setAside.join(', ')} were`}`);
+  }
   if (expect.readBackSaid === true) {
     const said = (turn: number, form: string): boolean => {
       const d = turns[turn]?.result.decision;

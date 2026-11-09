@@ -650,6 +650,8 @@ export const code: AppCode = {
         callback_callbackNumber: { value: '5555550177', display: '555 555 0177' },
       },
       callerNumber: '+15555550142',
+      // A corpus line said at "Is there anything else I can help with?" (`context: anything_else`): after a callback note.
+      anythingElse: () => ({ form: 'callback' }),
     },
     policyMatrix: () => ({
       principals: {

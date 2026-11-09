@@ -958,5 +958,235 @@
         }
       }
     }
+  },
+  {
+    "id": "live-call-road-rash",
+    "callerNumber": "+15555550181",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "Hi, I've got some road rash on one of my wheels.",
+        "agent": {
+          "reply": "Road rash, got it. That's curb rash, and we see it every day. What's your name?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "road rash",
+              "words": "road rash"
+            },
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "one of my wheels"
+            }
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": {
+        "callerName": "jordan ellis",
+        "vehicle": {
+          "has": [
+            "Civic"
+          ]
+        },
+        "wheels": "one",
+        "damage": {
+          "has": [
+            "road rash"
+          ]
+        },
+        "diamondCut": "no",
+        "day": "2026-11-13",
+        "window": "afternoon",
+        "callbackNumber": "...0181",
+        "textOk": "yes"
+      },
+      "action": "send_photo_link",
+      "said": {
+        "notFigure": true,
+        "lines": [
+          "full_request_window"
+        ]
+      },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm",
+      "overLineSetAside": 1
+    },
+    "answers": {
+      "request_callerName": [
+        {
+          "say": "road rash",
+          "overLine": true,
+          "agent": {
+            "reply": "Road rash, got it. That's curb rash, and we see it every day. What's your name?",
+            "values": [
+              {
+                "field": "damage",
+                "value": "road rash",
+                "words": "road rash"
+              }
+            ]
+          }
+        },
+        {
+          "say": "It's Jordan Ellis.",
+          "agent": {
+            "reply": "Thanks, Jordan.",
+            "values": [
+              {
+                "field": "callerName",
+                "value": "Jordan Ellis",
+                "words": "Jordan Ellis"
+              }
+            ]
+          }
+        }
+      ],
+      "request_vehicle": {
+        "say": "It's a Honda Civic.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Honda Civic",
+              "words": "Honda Civic"
+            }
+          ]
+        }
+      },
+      "request_diamondCut": {
+        "say": "It's painted all over, silver.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "no",
+              "words": "painted all over"
+            }
+          ]
+        }
+      },
+      "request_day": {
+        "say": "friday",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "friday"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "friday"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": [
+        {
+          "say": "in the morning",
+          "agent": {
+            "reply": "We have Friday morning available.",
+            "values": [
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "morning"
+              }
+            ]
+          }
+        },
+        {
+          "say": "Okay, the afternoon then.",
+          "agent": {
+            "reply": "",
+            "values": [
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "afternoon"
+              }
+            ]
+          }
+        }
+      ],
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ]
+        }
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      }
+    }
+  },
+  {
+    "id": "no-at-anything-else",
+    "callerNumber": "+15555550182",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "Can I just talk to the owner?",
+        "agent": {
+          "reply": "",
+          "action": "callback"
+        }
+      },
+      {
+        "say": "yes, call me on this one"
+      },
+      {
+        "say": "yes please",
+        "agent": {
+          "reply": ""
+        }
+      },
+      {
+        "say": "no",
+        "agent": {
+          "reply": ""
+        }
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye",
+      "values": {
+        "callbackNumber": "...0182"
+      },
+      "action": "callback",
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    }
   }
 ]

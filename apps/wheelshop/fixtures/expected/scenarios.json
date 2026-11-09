@@ -334,5 +334,71 @@
     "gate": "notify_owner_request:ALLOW",
     "pass": true,
     "mismatches": []
+  },
+  "live-call-road-rash": {
+    "id": "live-call-road-rash",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "done_request"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "request_callerName": null,
+      "request_vehicle": null,
+      "request_wheels": null,
+      "request_damage": null,
+      "request_diamondCut": null,
+      "request_day": null,
+      "request_window": null,
+      "request_callbackNumber": null,
+      "request_textOk": null,
+      "booking_cars": null,
+      "booking_vehicles": null,
+      "booking_day": null,
+      "booking_window": null,
+      "callback_callbackNumber": null,
+      "account": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "notify_owner_request:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "no-at-anything-else": {
+    "id": "no-at-anything-else",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "request_callerName": null,
+      "request_vehicle": null,
+      "request_wheels": null,
+      "request_damage": null,
+      "request_diamondCut": null,
+      "request_day": null,
+      "request_window": null,
+      "request_callbackNumber": null,
+      "request_textOk": null,
+      "booking_cars": null,
+      "booking_vehicles": null,
+      "booking_day": null,
+      "booking_window": null,
+      "callback_callbackNumber": null,
+      "account": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "callback:ALLOW",
+    "pass": true,
+    "mismatches": []
   }
 }

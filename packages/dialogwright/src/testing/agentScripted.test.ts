@@ -157,6 +157,21 @@ describe('a scripted call of an app in agent mode', () => {
     await expect(runScenario({ ...over({ say: HOLD, overLine: true }), as: 'web' }, opts())).rejects.toThrow(/overLine: true\) needs a channel with speech/);
   });
 
+  it('overLineSetAside holds how many turns heard over a line were set aside (call 54): an echo restating the held value is one', async () => {
+    const HOLD = 'I would like a hold on The Quiet Harbor';
+    const title = [{ field: 'title', value: 'The Quiet Harbor', words: 'The Quiet Harbor' }];
+    const echo = (n: number): Scenario => ({
+      id: 'echo',
+      steps: [{ say: HOLD, agent: { reply: '', values: title } }, { say: 'The Quiet Harbor', overLine: true, agent: { reply: 'The Quiet Harbor, lovely.', values: title } }],
+      // Set aside, the turn decides nothing: the line plays on.
+      expect: { decision: 'ignore', overLineSetAside: n },
+    });
+    expect((await runScenario(echo(1), opts())).mismatches).toEqual([]);
+    expect((await runScenario(echo(0), opts())).mismatches).toEqual(['overLineSetAside: expected 0 turn(s) heard over a line set aside, but turn(s) 2 were']);
+    expect(validAgentProperties({ overLineSetAside: 1 })).toBe(true);
+    expect(validAgentProperties({ overLineSetAside: -1 })).toBe(false);
+  });
+
   it('the steps\' agent answers and the properties are held to their shape when the calls are read', () => {
     expect(isScriptedAgentStep({ reply: 'Sure.', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'submit' })).toBe(true);
     expect(isScriptedAgentStep([{ reply: 'Sure.' }, { fail: 'timeout' }])).toBe(true);
