@@ -87,6 +87,16 @@ const field = z
     freeFrom: matching(/^[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*$/, 'is not a tool and a list of its result ("availability.windows")', 'write the tool a field of the same form sees, a dot, and the field of its result that lists the free options, for example "availability.windows"')
       .optional()
       .describe('A choice field whose value must be free: <tool>.<list>, a tool a field of the same form sees (`sees`) and the field of its checked result that lists the free options, by their keys (availability.windows). Once the model has been shown that result, a value not in its list is refused (range), and the model is asked again with what is free, so the line never takes, or promises, a full option. Only on a choice field. Default: none.'),
+    full: z
+      .union([
+        text(),
+        z.strictObject({
+          some: text().optional().describe('Said where another option is free: the default "We\'re full for the {<field>} on {<day>}. We have the {free}."'),
+          none: text().optional().describe('Said where nothing is free on that day, before the day\'s own question (the day is asked again): the default "We\'re full on {<day>}."'),
+        }).describe('The line where another option is free (`some`) and where none is (`none`), each optional, its default the engine\'s.'),
+      ])
+      .optional()
+      .describe('A `freeFrom` field: what is said, in fixed words, when the option the caller asked for is full, in place of the plain retry line. A string is said where another option is free, followed by the field\'s question; `{ some, none }` words each case. Its {placeholders}: the form\'s fields by name (this field\'s own is the option asked for, the field that sees the tool is what it was looked up for, the day), and in `some`, {free}, the options free, as the field says them, joined by or ("morning or afternoon"). Where nothing is free on that day, `none` is said (default "We\'re full on {<day>}."), and the day cleared and asked again; the attempt counts on this field as the retry did. Only on a field with `freeFrom`. Default: the engine\'s lines, "We\'re full for the {<field>} on {<day>}. We have the {free}." and "We\'re full on {<day>}."'),
     sees: identifier()
       .optional()
       .describe('A tool whose result the agent model may see once the field is filled (the maintainer\'s decision 2): the tool, in the app\'s code, is called through the gate with the field\'s value, and its result, checked by the tool\'s reply check in a closed form, reaches the model. For example availability, for a day.'),

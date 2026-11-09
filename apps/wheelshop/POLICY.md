@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `bfe1accc4ce398b06148f58d6f5d72d4b097bb2df097db4a099622df1e6bdda1` |
+| `business.yaml` | `1271083756bf3fc9d00cf380e9cf8bdde7fc0a1d6422057d5d55f433643cecfc` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -70,8 +70,12 @@ Said in fixed words, never worded by a model:
 | `booking_for_accounts` | Bookings are for our dealership accounts, but we can take a request instead. |
 | `identity_not_recognized` | That's for our dealership accounts, recognized by the number they call from. |
 | `price` | We quote every job from a photo, because the price depends on the damage. Once your request is in, we can text you, and you just reply to our text with a photo. Then we'll get back to you with a price and confirm your drop-off. |
+| `full_request_window` | {request_day} in the {request_window} is full, but we have room in the {free}. |
+| `full_request_window_none` | We're full on {request_day}. |
 | `readback_request` | Here's your request: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, {request_textOk} {request_callbackNumber}. Is that right? |
 | `done_request` | Thanks, {request_callerName}. {request_textOk} |
+| `full_booking_window` | {booking_day} in the {booking_window} is full, but we have room in the {free}. |
+| `full_booking_window_none` | We're full on {booking_day}. |
 | `readback_booking` | So that's {account} dropping off {booking_vehicles}, {booking_cars} in all, on {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, in the {booking_window}. Thanks. |
 | `readback_callback` | We'll call you back at {callback_callbackNumber}. Is that right? |

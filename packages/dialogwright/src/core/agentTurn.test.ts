@@ -370,6 +370,62 @@ describe('the agent turn: what the business limits (prices.forms, freeFrom)', ()
   });
 });
 
+describe('a full choice is said to be full (call 54)', () => {
+  const BOOK = 'I would like the study room for four people on Saturday';
+  const SATURDAY = '2026-11-14'; // its afternoon is taken
+  const FULL_DAY = '2026-11-21'; // nothing free
+  const booked = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday']]);
+
+  it('a window refused as taken (range) says, in fixed words, that it is full and what is free, then the question, and counts an attempt as the retry did', async () => {
+    const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]) }, [BOOK, 'the afternoon'], { number: CLUB });
+    expect(value(c.last, 'booking_window')).toBeNull();
+    expect(promptOf(c.last)).toBe('ask_booking_window_retry');
+    // The engine's line where business.yaml gives the field none.
+    expect(heard(c.last)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. Morning or afternoon?");
+    expect(c.last.result.decision).toMatchObject({ acks: [{ promptId: 'full_booking_window', vars: { booking_window: 'afternoon', booking_day: 'Saturday, November 14', free: 'morning' } }] });
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(1);
+    expect(c.last.record.agent!.values.find((v) => v.field === 'window')).toMatchObject({ value: 'afternoon', outcome: 'range' });
+    // The same on the turn the day is given with it, the model asked again with the result and giving it again.
+    const AFTERNOON = `${BOOK} afternoon`;
+    const values: [string, string, string][] = [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'afternoon', 'afternoon']];
+    const once = await call({ [AFTERNOON]: said('Saturday afternoon works.', values) }, [AFTERNOON], { number: CLUB });
+    expect(heard(once.last)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. Morning or afternoon?");
+  });
+
+  it('with nothing free on the day: that is said, the day cleared and asked again, an attempt counted on the window', async () => {
+    const full = said('Lovely.', [['people', 'four', 'four people'], ['day', FULL_DAY, 'Saturday']]);
+    const c = await call({ [BOOK]: full, 'the morning then': said('Morning it is.', [['window', 'morning', 'morning']]) }, [BOOK, 'the morning then'], { number: CLUB });
+    expect(value(c.last, 'booking_window')).toBeNull();
+    expect(value(c.last, 'booking_day')).toBeNull();
+    expect(promptOf(c.last)).toBe('ask_booking_day');
+    expect(heard(c.last)).toBe("We're full on Saturday, November 21. What day would you like the room?");
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(1);
+  });
+
+  it('once the day\'s result is kept, the model is sent only the free options of the field; before it, all of them', async () => {
+    const c = await call({ [BOOK]: booked, 'hmm let me think': said('Take your time. Morning or afternoon?') }, [BOOK, 'hmm let me think'], { number: CLUB });
+    // The first asking, before the result: both windows. The second, shown the result: the free one alone.
+    expect(c.contexts[0]!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning', 'afternoon']);
+    expect(c.contexts[1]!.seen).toHaveLength(1);
+    expect(c.contexts[1]!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning']);
+    // A later turn, the result kept on the call: the free one alone.
+    expect(c.contexts[2]!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning']);
+    // A day with both free: both.
+    const free = await call({ [BOOK.replace('Saturday', 'Friday')]: said('Lovely.', [['people', 'four', 'four people'], ['day', '2026-11-13', 'Friday']]), 'hmm': said('Morning or afternoon?') }, [BOOK.replace('Saturday', 'Friday'), 'hmm'], { number: CLUB });
+    expect(free.contexts.at(-1)!.fields.find((f) => f.name === 'window')!.options).toEqual(['morning', 'afternoon']);
+  });
+
+  it('a correction at the read-back to a full window sets the read-back aside and says the full line, then the question', async () => {
+    const toReadBack = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'morning', 'morning']]);
+    const MORNING = `${BOOK} morning`;
+    const c = await call({ [MORNING]: toReadBack, 'no, the afternoon': said('The afternoon, then.', [['window', 'afternoon', 'afternoon']]) }, [MORNING, 'no, the afternoon'], { number: CLUB });
+    expect(promptOf(c.runs[1]!)).toBe('readback_booking');
+    expect(c.last.result.session.pendingConfirmation).toBeNull();
+    expect(heard(c.last)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. Morning or afternoon?");
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(1);
+  });
+});
+
 describe('the agent turn: the second asking keeps the first answer\'s values (call 39)', () => {
   const BOOK = 'I would like the study room for four people on Saturday';
   const SATURDAY = '2026-11-14'; // its afternoon is taken

@@ -63,6 +63,8 @@ Said in fixed words, never worded by a model:
 | `booking_for_accounts` | Bookings are for our account holders; I can send a request instead. |
 | `readback_request` | Here's the hold: {request_patronName}, {request_copies} of {request_title} {request_format}, collected {request_day} in the {request_window}, and we'll call you at {request_callbackNumber}. Is that right? |
 | `done_request` | Thanks, {request_patronName}. The desk will call you when it's ready. |
+| `full_booking_window` | We're full for the {booking_window} on {booking_day}. We have the {free}. |
+| `full_booking_window_none` | We're full on {booking_day}. |
 | `readback_booking` | So that's the study room for {account}, {booking_people} people, {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, {booking_window}. Thanks. |
 | `readback_callback` | I'll have Dana call you back at {callback_callbackNumber}. Is that right? |

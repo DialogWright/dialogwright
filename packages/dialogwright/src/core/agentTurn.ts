@@ -1,7 +1,7 @@
 import type { SessionEvent } from '../channel/events';
 import { maskedConversation } from '../agent/history';
 import { fieldValueSent } from '../agent/prompt';
-import { NO_ACTION, PRICE_LINE, PRICE_QUESTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
+import { FREE_VAR, fullNonePromptOf, fullPromptOf, NO_ACTION, PRICE_LINE, PRICE_QUESTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
 import { isAnonymous } from '../gate/types';
 import { isChoice, isNoul, noulValue, type AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
@@ -319,11 +319,14 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
   const fields = fieldsFor(app, session);
   const sent: AgentField[] = fields.map((f) => {
     const redact = app.slots[f.slot]?.redact;
+    // A field held to a seen result (`freeFrom`), once the model has been shown it for the form's day: its free options only (call 54).
+    const free = freeShownOf(app, session, f, []);
+    const options = f.options !== undefined ? f.options.filter((o) => free === null || free.includes(o)) : undefined;
     return {
       name: f.name,
       type: f.type,
       ...(f.about !== undefined ? { about: f.about } : {}),
-      ...(f.options !== undefined ? { options: [...f.options] } : {}),
+      ...(options !== undefined ? { options } : {}),
       value: heldValue(app, session, f),
       required: f.required,
       ...(redact !== undefined ? { redact } : {}),
@@ -351,6 +354,22 @@ export function agentContextOf(session: Session, event: SessionEvent, tc: Pick<T
     locale: localeOf(session),
     today: tc.todayIso,
   };
+}
+
+/**
+ * The fields the model is sent on a second asking (run/turn.ts askAgain), shown a seen tool's result: a choice
+ * held to it (`freeFrom`) with only the options the result lists free for the day the turn now holds (`session`,
+ * as the first resolution left it), so the model is not offered a full one (the agent-mode design, call 54).
+ * Every other field as it was sent.
+ */
+export function narrowedFields(app: App, session: Session, fields: readonly AgentField[], seen: readonly SeenResult[]): AgentField[] {
+  const own = session.form !== null ? (app.agent?.forms[session.form]?.fields ?? []) : [];
+  return fields.map((sent) => {
+    const f = own.find((x) => x.name === sent.name);
+    if (f === undefined || f.freeFrom === undefined || sent.options === undefined) return sent;
+    const free = freeShownOf(app, session, f, seen);
+    return free === null ? sent : { ...sent, options: sent.options.filter((o) => free.includes(o)) };
+  });
 }
 
 /**
@@ -525,6 +544,19 @@ interface Applied {
   judged: SlotId | null;
   /** Whether a value was stored that differs from the one held. */
   changed: boolean;
+  /** The first value refused as full (`range`, a `freeFrom` field), whose full line is said with its question (call 54). */
+  full: Full | null;
+}
+
+/**
+ * An option the caller asked for that its day's result does not list free (a `freeFrom` field): the field, the
+ * option as held (its key) and as the field says it, and the options free that day, by their keys (none where
+ * nothing is free).
+ */
+interface Full {
+  field: AgentAppField;
+  shown: string;
+  free: string[];
 }
 
 /** The slot of a field of this name in any of the app's forms (for masking a value given for no field of the form open), or undefined. */
@@ -538,7 +570,7 @@ function slotNamed(app: App, field: string): SlotId | undefined {
 
 /** The answer's values checked by their fields' slot types and the accepted ones stored (see the top). */
 function applyValues(app: App, s: Session, values: readonly { field: string; value: string; words: string; by?: 'decision-model' }[], said: string, tc: TurnContext, record: AgentTurnRecord): Applied {
-  const out: Applied = { events: [], refused: null, judged: null, changed: false };
+  const out: Applied = { events: [], refused: null, judged: null, changed: false, full: null };
   const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string }; before: Session['slots'][string] }[] = [];
   const fields = s.form !== null ? (app.agent!.forms[s.form]?.fields ?? []) : [];
   const locale = slotLocaleOf(s);
@@ -592,8 +624,9 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
   // is refused (`range`), its slot as it was, so the line never takes, or promises, an option that is full.
   for (const { field, proposed, before } of held) {
     const slot = s.slots[field.slot]!;
-    const free = freeOptions(app, s, field, tc);
+    const free = freeOptions(app, s, field, tc.agentSeen?.seen ?? []);
     if (free === null || slot.value === null || free.includes(String(slot.value))) continue;
+    if (out.refused === null) out.full = { field, shown: slot.display ?? String(slot.value), free };
     Object.assign(slot, before);
     const at = record.values.findIndex((r) => r.slot === field.slot && r.outcome === 'accepted' && r.value === proposed.value);
     if (at !== -1) {
@@ -659,19 +692,67 @@ export function withFirstValues(app: App, first: Pick<AgentTurnRecord, 'values'>
  * Every value the open form holds for a `freeFrom` field that the latest result kept for its day no longer
  * lists, cleared (its attempts kept, none counted): the first such field's slot, or null where none is.
  */
-function clearUnfree(app: App, s: Session, tc: TurnContext): SlotId | null {
+function clearUnfree(app: App, s: Session, tc: TurnContext): Full | null {
   if (s.form === null) return null;
-  let first: SlotId | null = null;
+  let first: Full | null = null;
   for (const field of app.agent?.forms[s.form]?.fields ?? []) {
     if (field.freeFrom === undefined) continue;
     const slot = s.slots[field.slot];
     if (slot === undefined || slot.value === null) continue;
-    const free = freeOptions(app, s, field, tc);
+    const free = freeOptions(app, s, field, tc.agentSeen?.seen ?? []);
     if (free === null || free.includes(String(slot.value))) continue;
+    first ??= { field, shown: slot.display ?? String(slot.value), free };
     Object.assign(slot, emptySlot(), { attempts: slot.attempts });
-    first ??= field.slot as SlotId;
   }
   return first;
+}
+
+/** "a", "a or b", "a, b or c": options offered, as a line says them. */
+function saidOr(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`;
+}
+
+/**
+ * `decision` (the field's question, from its own ladder or asked again) with the full line before it, where the
+ * option asked for is full (business.yaml's `full`, the agent-mode design's call 54), in fixed words: where
+ * another option is free, that the one asked for is full and what is free ({free}), then the question; where
+ * nothing is free on the day, that the day is full, the day cleared (its attempts kept) and its own question
+ * asked instead. The attempt the refusal counted stands. A decision that does not ask the field (its ladder's
+ * end: a person, its onMaxAttempts) is said as it is.
+ */
+function withFull(app: App, s: Session, full: Full, decision: Decision): Decision {
+  if (decision.kind !== 'prompt' || decision.target !== full.field.slot || s.form === null) return decision;
+  const fields = app.agent?.forms[s.form]?.fields ?? [];
+  const seer = fields.find((f) => f.sees === full.field.freeFrom?.tool);
+  const some = fullPromptOf(full.field.slot);
+  const none = fullNonePromptOf(full.field.slot);
+  if (seer === undefined || !Object.hasOwn(app.prompts.manifest, some) || !Object.hasOwn(app.prompts.manifest, none)) return decision;
+  // Each field as the read-back says it, the field's own the option asked for.
+  const vars: Record<string, string> = Object.fromEntries(fields.map((f) => [f.slot, s.slots[f.slot]?.display ?? '']));
+  vars[full.field.slot] = full.shown;
+  if (full.free.length > 0) {
+    const free = saidOr(full.free.map((k) => shownOption(app, s, full.field, k)));
+    return { ...decision, acks: [...decision.acks, { promptId: some, vars: { ...vars, [FREE_VAR]: free } }] };
+  }
+  const day = s.slots[seer.slot];
+  if (day !== undefined) Object.assign(day, emptySlot(), { attempts: day.attempts });
+  return askSlot(s, seer.slot, null, [...decision.acks, { promptId: none, vars }]);
+}
+
+/** An option of a choice field as the field says it (its slot's display): "afternoon". */
+function shownOption(app: App, s: Session, field: AgentAppField, key: string): string {
+  const spec = app.slots[field.slot];
+  return spec !== undefined ? spec.display(key, slotLocaleOf(s)) : key;
+}
+
+/**
+ * The options free for a `freeFrom` field as the field says them (its options' words), where the model has been
+ * shown the result for the form's day (freeOptions); null where it has not.
+ */
+function freeShownOf(app: App, s: Session, field: AgentAppField, extra: readonly SeenResult[]): string[] | null {
+  if (field.freeFrom === undefined) return null;
+  const free = freeOptions(app, s, field, extra);
+  return free === null ? null : free.map((k) => shownOption(app, s, field, k));
 }
 
 /**
@@ -680,14 +761,14 @@ function clearUnfree(app: App, s: Session, tc: TurnContext): SlotId | null {
  * (the day); null where there is none yet (the model has not been shown it: its value stands, and the
  * model is asked again with the result, core/agentTurn.ts step 3a) or the list is not one of words.
  */
-function freeOptions(app: App, s: Session, field: AgentAppField, tc: TurnContext): string[] | null {
+function freeOptions(app: App, s: Session, field: AgentAppField, extra: readonly SeenResult[]): string[] | null {
   const from = field.freeFrom!;
   const form = s.form !== null ? app.agent!.forms[s.form] : undefined;
   const seer = form?.fields.find((f) => f.sees === from.tool);
   const day = seer !== undefined ? s.slots[seer.slot]?.value : null;
   if (day === null || day === undefined) return null;
   // The results kept on the call, and on a second resolution those the model was just asked again with.
-  const kept = [...(s.agent?.seen ?? []), ...(tc.agentSeen?.seen ?? [])].reverse().find((x) => x.tool === from.tool && x.value === String(day));
+  const kept = [...(s.agent?.seen ?? []), ...extra].reverse().find((x) => x.tool === from.tool && x.value === String(day));
   const list = kept !== undefined && typeof kept.result === 'object' && kept.result !== null ? (kept.result as Record<string, unknown>)[from.list] : undefined;
   return Array.isArray(list) && list.every((x) => typeof x === 'string') ? (list as string[]) : null;
 }
@@ -965,9 +1046,11 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     return { decision: handoff(s, 'system-failure', acks), events: applied.events };
   }
   if (applied.refused !== null) {
-    // A value its slot type refused: dropped, an attempt counted on its slot, and the slot's own ladder.
+    // A value its slot type refused: dropped, an attempt counted on its slot, and the slot's own ladder; one
+    // refused as full, with the full line before the question (call 54).
     actionDone('ignored');
-    return { decision: steps.failAttempt(s, applied.refused, io, acks), events: applied.events };
+    const failed = steps.failAttempt(s, applied.refused, io, acks);
+    return { decision: applied.full?.field.slot === applied.refused ? withFull(app, s, applied.full, failed) : failed, events: applied.events };
   }
   if (applied.judged !== null) {
     // A text value the drift judge refused: not held, and its field's question asked again (call 45).
@@ -979,7 +1062,7 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const cleared = clearUnfree(app, s, io.tc);
   if (cleared !== null) {
     actionDone('ignored');
-    return { decision: askSlot(s, cleared, null, acks), events: applied.events };
+    return { decision: withFull(app, s, cleared, askSlot(s, cleared.field.slot, null, acks)), events: applied.events };
   }
   if (action === CALLBACK_ACTION && personCheckable(app, s) && personSupported(app, answers, io.tc.thresholds)) {
     // 6. A callback the agent model proposed that the decision model read some sign of, not enough to
@@ -1056,11 +1139,13 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   }
   const applied = applyValues(app, s, answer?.values ?? [], said, io.tc, record);
   if (applied.refused !== null) {
-    // A correction its slot type refused: the read-back is set aside, an attempt counted on the slot, and its ladder.
+    // A correction its slot type refused: the read-back is set aside, an attempt counted on the slot, and its
+    // ladder; one refused as full, with the full line before the question (call 54).
     actionDone('ignored');
     s.pendingConfirmation = null;
     s.pendingHash = null;
-    return { decision: steps.failAttempt(s, applied.refused, io, []), events: applied.events };
+    const failed = steps.failAttempt(s, applied.refused, io, []);
+    return { decision: applied.full?.field.slot === applied.refused ? withFull(app, s, applied.full, failed) : failed, events: applied.events };
   }
   if (applied.judged !== null) {
     // A text correction the drift judge refused: not held (the value read back stays), the read-back set
@@ -1084,7 +1169,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     if (cleared !== null) {
       s.pendingConfirmation = null;
       s.pendingHash = null;
-      return { decision: askSlot(s, cleared, null, []), events: applied.events };
+      return { decision: withFull(app, s, cleared, askSlot(s, cleared.field.slot, null, [])), events: applied.events };
     }
     const again = steps.askSummary(s, pc.form, [], io);
     const informed = io.tc.agentSeen !== undefined && !looked.unseen && again.kind === 'prompt';
@@ -1096,7 +1181,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     actionDone('ignored');
     s.pendingConfirmation = null;
     s.pendingHash = null;
-    return { decision: askSlot(s, unfree, null, []), events: applied.events };
+    return { decision: withFull(app, s, unfree, askSlot(s, unfree.field.slot, null, [])), events: applied.events };
   }
   // The yes, with nothing changed: the form completes through its engine-written complete hook, whatever was proposed.
   if (verdict.kind === 'confirmed') {

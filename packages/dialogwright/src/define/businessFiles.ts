@@ -1,8 +1,9 @@
 import { buildSlot } from '../slots/defineSlot';
-import { ACCOUNT_SLOT, businessForms, closingsOf, greetingsOf, optionKey, readsThroughHook, slotIdOf, stepTool, thenTools, whenOf } from './business';
+import { ACCOUNT_SLOT, businessForms, fullLinesOf, closingsOf, greetingsOf, optionKey, readsThroughHook, slotIdOf, stepTool, thenTools, whenOf } from './business';
 export { optionKey };
 import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
+import { fullNonePromptOf, fullPromptOf } from '../agent/types';
 import { WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml } from './schema/business';
 import {
   SCHEMAS, normalizeIdentity, slotsSchema,
@@ -214,6 +215,12 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
       prompts[`ask_${id}`] = line(f.question);
       prompts[`ask_${id}_retry`] = line(f.question);
       if (f.offer === 'callerNumber') prompts[`offer_${id}`] = line(AGENT_OFFER_LINE);
+      // A field held to a seen result: what is said when the option asked for is full (call 54).
+      const full = fullLinesOf(form, f);
+      if (full !== null) {
+        prompts[fullPromptOf(id)] = line(withSlotVars(full.some, name, form));
+        prompts[fullNonePromptOf(id)] = line(withSlotVars(full.none, name, form));
+      }
     }
     prompts[readBackPromptOf(name)] = line(withSlotVars(form.readBack, name, form));
     prompts[donePromptOf(name)] = line(withSlotVars(form.done, name, form));

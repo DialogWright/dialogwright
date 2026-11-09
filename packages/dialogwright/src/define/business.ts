@@ -1,4 +1,4 @@
-import type { AgentFacts } from '../agent/types';
+import { FREE_VAR, type AgentFacts } from '../agent/types';
 import { BUILT_IN_SLOT_TYPES } from '../slots/registry';
 import { unsupportedCheck } from '../slots/parts/check';
 import type { SlotType, SlotTypes } from '../slots/types';
@@ -22,6 +22,26 @@ export const BUSINESS_FILE = 'business.yaml';
 export const ACCOUNT_SLOT = 'account';
 
 /** Placeholders an owner's summary may name beside the fields: what the app's own tools fill (the kind of request, who it is from, its details). */
+
+/**
+ * The lines a `freeFrom` field says when the option asked for is full (business.yaml's `full`), each in the
+ * business's words or the engine's: `some`, where another option is free ({free} the options free); `none`,
+ * where nothing is free on the day the field that sees the tool holds. Each names fields by name, as the
+ * read-back does. Null for a field with no `freeFrom` or no field of its form that sees the tool.
+ */
+export function fullLinesOf(form: Pick<BusinessFormYaml, 'fields'>, f: BusinessFieldYaml): { some: string; none: string; seer: string } | null {
+  if (f.freeFrom === undefined) return null;
+  const tool = f.freeFrom.split('.')[0];
+  const seer = form.fields.find((o) => o.sees === tool)?.name;
+  if (seer === undefined) return null;
+  const own = typeof f.full === 'string' ? { some: f.full } : (f.full ?? {});
+  return {
+    some: own.some ?? `We're full for the {${f.name}} on {${seer}}. We have the {${FREE_VAR}}.`,
+    none: own.none ?? `We're full on {${seer}}.`,
+    seer,
+  };
+}
+
 export const OWNER_SUMMARY_VARS: readonly string[] = [ACCOUNT_SLOT, 'kind', 'who', 'details'];
 
 /** The slot a form's field is held in: the form's name and the field's, so two forms may ask a field of one name in their own words. */
@@ -181,6 +201,30 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
         report(at(['fields', i, 'freeFrom']), `"${tool}" is no tool a field of the ${name} sees, so no result of it is ever shown for this form`, seen.length > 0 ? `name one of ${seen.map((t) => `"${t}"`).join(', ')}` : `give a field of the ${name} "sees: ${tool}", or delete "freeFrom"`);
       }
     });
+    // What is said when the option asked for is full (`full`): only on a field held to a seen result, naming
+    // only the form's fields and, where another option is free, {free}.
+    form.fields.forEach((f, i) => {
+      if (f.full === undefined) return;
+      if (f.freeFrom === undefined) {
+        report(at(['fields', i, 'full']), `the field "${f.name}" has no "freeFrom", so nothing it is given is ever refused as full and the line is never said`, 'delete "full", or give the field "freeFrom"');
+        return;
+      }
+      for (const [which, line] of Object.entries(typeof f.full === 'string' ? { some: f.full } : f.full)) {
+        if (line === undefined) continue;
+        const allowed = which === 'some' ? [...names, FREE_VAR] : [...names];
+        for (const v of placeholdersOf(line)) {
+          if (allowed.includes(v)) continue;
+          const near = closest(v, allowed);
+          report(at(typeof f.full === 'string' ? ['fields', i, 'full'] : ['fields', i, 'full', which]), `the line names {${v}}, which is not a field of the ${name}${which === 'some' ? ` nor {${FREE_VAR}}` : ''}`, near ? `rename it to {${near}} if it is that` : `name only ${allowed.map((k) => `{${k}}`).join(', ')}`);
+        }
+      }
+    });
+    // {free} in a full line is the options free: a field of that name would be said in its place.
+    if (form.fields.some((f) => f.freeFrom !== undefined)) {
+      form.fields.forEach((f, i) => {
+        if (f.name === FREE_VAR) report(at(['fields', i, 'name']), `a field named "${FREE_VAR}" in a form with a "freeFrom" field: {${FREE_VAR}} in its full line is the options free`, 'give the field another name');
+      });
+    }
     // A tool held to a condition (`when`): a choice field of the form and one of its options, never the form's write.
     form.then.forEach((step, i) => {
       const when = whenOf(step);

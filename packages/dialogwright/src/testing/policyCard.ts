@@ -326,7 +326,8 @@ function agentSection(app: App, source: PolicySource): string[] {
     for (const { form, tool, w, slot } of held) out.push(`| ${cell(actionLabel(source, tool))} (${code(tool)}), after the ${form}'s read-back | ${slot !== undefined ? `${slotNoun(app, slot)} (${code(w.field)})` : code(w.field)} is ${code(w.is)} | ${code(w.reason)} |`);
     out.push('');
   }
-  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done)_/.test(id) || ['price', 'greeting', 'greeting_chat', 'goodbye', 'goodbye_chat', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
+  // The read-backs, the done lines, a full choice's lines (business.yaml's `full`, call 54) and the business's own fixed lines.
+  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done|full)_/.test(id) || ['price', 'greeting', 'greeting_chat', 'goodbye', 'goodbye_chat', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
   out.push('Said in fixed words, never worded by a model:', '', '| Line | Said |', '| --- | --- |');
   for (const id of fixedIds) out.push(`| ${code(id)} | ${cell(app.prompts.manifest[id]!.text)} |`);
   const identity = app.identity;

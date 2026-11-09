@@ -32,7 +32,7 @@ import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { resolveWaiting } from './waiting';
-import { agentAsks, agentContextOf, agentSentRecord, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
+import { agentAsks, agentContextOf, agentSentRecord, narrowedFields, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
 import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
 
 export interface TurnObserver {
@@ -632,7 +632,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   let used: TurnContext | null = agentResult !== null && agentResult.ok ? turnTc : null;
   if (resolved.agentAgain !== undefined && agentCtx !== null && opts.agent != null) {
     const seen = resolved.agentAgain.seen;
-    const asked = await askAgain(opts.agent, agentCtx, seen, session.caps.speech, agentAskedAt);
+    // A choice held to the result (`freeFrom`) is offered with its free options only, for the day the turn now holds (call 54).
+    const narrowed: AgentContext = { ...agentCtx, fields: narrowedFields(appOf(session), resolved.session, agentCtx.fields, seen) };
+    const asked = await askAgain(opts.agent, narrowed, seen, session.caps.speech, agentAskedAt);
     again = { result: asked.result, tools: [...new Set(seen.map((x) => x.tool))] };
     if (asked.result.ok) {
       // The first answer's accepted values the second leaves out are kept (call 39), a free-from field's only while the result lists it.

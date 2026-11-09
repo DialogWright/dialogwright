@@ -182,6 +182,32 @@ describe('business.yaml', () => {
     expect(problemsOf(missing)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'prices.forms[1]', message: 'the price line may be named in the booking, but the file has no booking' })]));
   });
 
+  it('a full line (call 54): the business\'s words for each case, or the engine\'s; only on a freeFrom field, naming only the form\'s fields and {free}', () => {
+    const FREE = 'freeFrom: roomAvailability.windows # a window the day\'s result lists as taken is refused';
+    // A string is said where another option is free; the none line is the engine's.
+    const own = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: "{day} in the {window} is taken, but the {free} is open."`) });
+    expect(problemsOf(own)).toEqual([]);
+    const ownApp = loadAppFolder(own).config!;
+    expect(ownApp.prompts['en-US']!.full_booking_window!.text).toBe('{booking_day} in the {booking_window} is taken, but the {free} is open.');
+    expect(ownApp.prompts['en-US']!.full_booking_window_none!.text).toBe("We're full on {booking_day}.");
+    // { some, none }: each case's own words.
+    const both = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: { some: "The {window} is taken.", none: "{day} is booked up." }`) });
+    expect(problemsOf(both)).toEqual([]);
+    expect(loadAppFolder(both).config!.prompts['en-US']!.full_booking_window_none!.text).toBe('{booking_day} is booked up.');
+    // None given: the engine's lines.
+    const fixture = loadAppFolder(FIXTURE).config!;
+    expect(fixture.prompts['en-US']!.full_booking_window!.text).toBe("We're full for the {booking_window} on {booking_day}. We have the {free}.");
+    // A placeholder that is no field of the form, or {free} where nothing is free, is refused.
+    const unknown = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: { some: "The {windw} is taken.", none: "The {free} is taken." }`) });
+    expect(problemsOf(unknown)).toEqual([
+      expect.objectContaining({ path: 'booking.fields[2].full.some', message: expect.stringContaining('{windw}'), fix: expect.stringContaining('{window}') }),
+      expect.objectContaining({ path: 'booking.fields[2].full.none', message: expect.stringContaining('{free}') }),
+    ]);
+    // On a field with no freeFrom it is never said.
+    const nowhere = copy({ 'business.yaml': replacing("      options: [one, two, three]\n      question: How many copies?", "      options: [one, two, three]\n      full: The {copies} is taken.\n      question: How many copies?") });
+    expect(problemsOf(nowhere)).toEqual([expect.objectContaining({ path: 'request.fields[2].full', message: expect.stringContaining('has no "freeFrom"') })]);
+  });
+
   it('a field the records hide sees no tool: its value, and the result for it, would reach the model whole (the review of Task 8)', () => {
     const dir = copy({ 'business.yaml': replacing("      question: What's the best number to reach you when it's ready?\n", "      question: What's the best number to reach you when it's ready?\n      sees: roomAvailability\n") });
     expect(problemsOf(dir)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'request.fields[6].sees', message: expect.stringContaining('is recorded by its last four (redact last4, its type\'s default), but it sees "roomAvailability"') })]));

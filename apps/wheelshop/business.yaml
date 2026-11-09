@@ -145,6 +145,10 @@ request:
       # A window the day's free windows do not list is refused, and the model asked again with them, so the
       # line never takes, or promises, a window that is full.
       freeFrom: availability.windows
+      # Said, before the question, when the window asked for is full that day and the other has room (call 54: a
+      # live call asked for Friday morning three times and heard only "Morning or afternoon?"). Where neither has
+      # room, the engine's "We're full on {day}." and the day is asked again.
+      full: "{day} in the {window} is full, but we have room in the {free}."
       question: Morning or afternoon?
     - name: callbackNumber
       type: digits
@@ -201,6 +205,7 @@ booking:
       type: choice
       options: windows
       freeFrom: availability.windows # a full window is refused: the booking takes room in it
+      full: "{day} in the {window} is full, but we have room in the {free}."
       question: Morning or afternoon?
   readBack: >-
     So that's {account} dropping off {vehicles}, {cars} in all, on {day} in the {window}. Shall I

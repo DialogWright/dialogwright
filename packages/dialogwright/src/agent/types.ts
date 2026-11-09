@@ -34,6 +34,15 @@ export const NO_ACTION = 'none';
 export const PRICE_LINE = 'price';
 export const PRICE_QUESTION = 'asksPrice';
 
+/**
+ * The prompts a `freeFrom` field's full lines are said through (business.yaml's `full`; core/agentTurn.ts,
+ * the agent-mode design's call 54): where another option is free, and where nothing is free on the day.
+ */
+export const fullPromptOf = (slot: string): string => `full_${slot}`;
+export const fullNonePromptOf = (slot: string): string => `full_${slot}_none`;
+/** The variable of a full line that says the options free, as the field says them ("morning or afternoon"). */
+export const FREE_VAR = 'free';
+
 /** The agent model's answer to one turn, in the fixed shape it is asked for (agent/schema.ts). */
 export interface AgentAnswer {
   /** The reply to say: checked, judged, and replaced by a fixed line when it fails. */

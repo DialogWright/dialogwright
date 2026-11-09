@@ -24,9 +24,9 @@ export class LibrarySystems {
   readonly told: string[] = [];
 }
 
-/** The study room's windows, by day: a stand-in calendar where every day has both free but the 14th's afternoon. */
+/** The study room's windows, by day: a stand-in calendar where every day has both free but the 14th's afternoon and all of the 21st. */
 function freeWindows(day: string): string[] {
-  return day.endsWith('-14') ? ['morning'] : ['morning', 'afternoon'];
+  return day.endsWith('-14') ? ['morning'] : day.endsWith('-21') ? [] : ['morning', 'afternoon'];
 }
 
 const REQUEST = ['patronName', 'title', 'copies', 'format', 'day', 'window', 'callbackNumber'];
