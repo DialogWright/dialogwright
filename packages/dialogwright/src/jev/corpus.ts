@@ -23,9 +23,19 @@ export interface AnswerOverride {
  * - `confirm_<form>`: the summary of a form that has one (report_missing);
  * - `offer_transfer`: the transfer offered to a frustrated caller, seeded
  *   inside a track_parcel form so that a declined offer has a question to return to;
- * - `anything_else`: a form just completed, no form open, the last prompt "anything else?".
+ * - `anything_else`: a form just completed, no form open, the last prompt "anything else?";
+ * - `check_<intent>`: no form open, the line having just checked a request with the caller ("Just to check,
+ *   do you want to <the intent's label>?", `confirm_intent_explicit`): an agent-mode app's "do you want to speak
+ *   with someone?" is `check_agent` (the agent-mode design, call 54).
  */
-export type CorpusContext = 'no_form' | FormId | `confirm_${FormId}` | 'offer_transfer' | 'anything_else';
+export type CorpusContext = 'no_form' | FormId | `confirm_${FormId}` | 'offer_transfer' | 'anything_else' | `check_${string}`;
+
+/** check_ contexts only: the intent the line has just checked with the caller, where the app has it; else null. */
+export function checkIntent(context: CorpusContext, app: App = corpusApp()): string | null {
+  if (!context.startsWith('check_')) return null;
+  const intent = context.slice('check_'.length);
+  return Object.hasOwn(app.intents, intent) ? intent : null;
+}
 
 /**
  * The outcome fields a known gap may pin: every field of a regression outcome but its id
@@ -169,7 +179,7 @@ export function offerTransfer(context: CorpusContext): boolean {
 
 /** the form a context runs in: the form itself, the form behind a confirm_ context, or the offer's; null for no_form and anything_else */
 export function contextForm(context: CorpusContext, app: App = corpusApp()): FormId | null {
-  if (context === 'no_form' || context === 'anything_else') return null;
+  if (context === 'no_form' || context === 'anything_else' || checkIntent(context, app) !== null) return null;
   // The form the transfer offer is seeded inside, so a declined offer has a question to come back to.
   if (offerTransfer(context)) return app.testing?.offerTransferForm ?? null;
   const cf = confirmForm(context, app);
@@ -304,7 +314,7 @@ function checkLabels(entry: CorpusEntry, labels: unknown): void {
 }
 
 function isContext(context: string, app: App): context is CorpusContext {
-  return context === 'no_form' || context === 'anything_else' || contextForm(context as CorpusContext, app) !== null;
+  return context === 'no_form' || context === 'anything_else' || checkIntent(context as CorpusContext, app) !== null || contextForm(context as CorpusContext, app) !== null;
 }
 
 /**
@@ -379,7 +389,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app) && !atYesNoField(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber) or, in agent mode, is a choice of yes and no, or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent)`);
+      if (cf === null && !offering && checkIntent(entry.context, app) === null && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app) && !atYesNoField(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, a check_ context (a request the line checked), or a form context whose prompted slot offers the caller's number (callerNumber) or, in agent mode, is a choice of yes and no, or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent)`);
       if (atCallerMatch(entry, app) && entry.confirm === 'yes') throw new Error(`corpus ${entry.id}: the caller-ID question asks for a factor, not a yes: confirm no ("different account") or unanswered (the factor, or anything else)`);
     }
     if (entry.changeSlot !== undefined) {

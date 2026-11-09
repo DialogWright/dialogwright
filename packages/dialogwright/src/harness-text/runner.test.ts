@@ -272,6 +272,19 @@ describe('seedCorpusSession', () => {
     expect(s.facts).toEqual(newSession('fresh', 0, VOICE_RELAY).facts);
   });
 
+  it('seeds check_<intent>: no form open, the line having just checked the request with the caller (call 54)', () => {
+    const entry = parseCorpus('{"id":"ck-1","text":"no","intent":"none","context":"check_agent","confirm":"no"}')[0]!;
+    const s = seedCorpusSession(newSession('ck-1', 0, VOICE_RELAY), entry, seedOpts);
+    expect(s.form).toBeNull();
+    expect(s.pendingConfirmation).toEqual({ target: 'intent', intent: 'agent', answers: {}, text: '' });
+    expect(s.lastPromptId).toBe('confirm_intent_explicit');
+    expect(s.lastPromptText).toContain('speak with someone');
+    expect(s.lastPromptOptions).toEqual(['yes', 'no']);
+    // An intent the app has not is no context; a check_ context takes no prompted slot.
+    expect(() => parseCorpus('{"id":"ck-2","text":"no","intent":"none","context":"check_nothing","confirm":"no"}')).toThrow(/unknown context check_nothing/);
+    expect(() => parseCorpus('{"id":"ck-3","text":"no","intent":"none","context":"check_agent","prompted":"accountId"}')).toThrow(/prompted needs a form context/);
+  });
+
   it('leaves a no_form session untouched', () => {
     const untouched = newSession('c1', 0, VOICE_RELAY);
     expect(seedCorpusSession(untouched, entries[0]!, seedOpts)).toBe(untouched);

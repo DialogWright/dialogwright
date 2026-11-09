@@ -47,3 +47,5 @@
 {"id":"dn-01","text":"no","intent":"done","context":"anything_else"}
 {"id":"dn-02","text":"No, that's all, thanks.","intent":"done","context":"anything_else"}
 {"id":"rq-38","text":"Just the one.","intent":"none","context":"request","prompted":"request_wheels"}
+{"id":"dn-03","text":"Nope.","intent":"none","context":"no_form"}
+{"id":"dn-04","text":"Nah.","intent":"none","context":"check_agent","confirm":"no"}

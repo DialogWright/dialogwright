@@ -10,12 +10,13 @@ import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setF
 import { untilReplied, type ToolMemo } from '../core/toolWait';
 import { callerMatchWay, waysOf } from '../core/identityWays';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
+import { atCallerMatch, checkIntent, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
 import { prompt, type Decision } from '../core/decision';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
+import { intentLabel } from '../core/app/intents';
 import { askedOfCaller, formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, Refused, SlotId } from '../core/app/types';
@@ -161,6 +162,18 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   if (atTextConsent(entry, appOf(session))) return seedTextConsent(session, entry, opts);
   if (atCallerMatch(entry, appOf(session))) return seedCallerMatch(session, entry, opts);
   if (entry.context === 'no_form') return session;
+  const checked = checkIntent(entry.context, appOf(session));
+  if (checked !== null) {
+    // The line has just checked a request with the caller ("Just to check, do you want to ...?"), no form open.
+    const app = appOf(session);
+    const vars = { intentLabel: intentLabel(app, checked, session.locale) };
+    session.pendingConfirmation = { target: 'intent', intent: checked, answers: {}, text: '' };
+    session.promptedFor = 'intent';
+    session.lastPromptId = 'confirm_intent_explicit';
+    session.lastPromptText = promptText(app, 'confirm_intent_explicit', vars, session.locale, { shown: !session.caps.speech });
+    session.lastPromptOptions = ['yes', 'no'];
+    return session;
+  }
   const app = appOf(session);
   const seed = app.testing?.seed;
   if (!seed) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no ${entry.context} context (App.testing.seed)`);
