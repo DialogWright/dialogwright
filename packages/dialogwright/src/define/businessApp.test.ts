@@ -76,6 +76,11 @@ describe('the app built from business.yaml', () => {
     expect(app.menu).toEqual([]);
   });
 
+  it('a bare no, just asked whether there is anything else, is read as done (call 54)', () => {
+    // A live call: "no" at "Is there anything else I can help with?" read done 0.54 against none 0.46, so the line checked.
+    expect(app.intents.done!.criteria).toBe("Says they are finished and need nothing more, as in no thanks, that's all, or goodbye, including a bare no when just asked whether there is anything else");
+  });
+
   it('every field is a library slot of its type, with its check, held in <form>_<field>', () => {
     for (const [name, form] of Object.entries(app.agent!.forms)) {
       expect(app.forms[name]!.slots).toEqual(form.fields.map((f) => f.slot));

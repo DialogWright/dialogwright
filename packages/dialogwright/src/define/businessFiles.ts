@@ -169,7 +169,7 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   Object.assign(intents, {
     agent: { criteria: 'Asks to speak with a person, the owner, or someone who works there', label: 'speak with someone', kind: 'control' },
     repeat_prompt: { criteria: 'Asks the line to repeat what it just said', label: 'hear that again', kind: 'control' },
-    done: { criteria: "Says they are finished and need nothing more, as in no thanks, that's all, or goodbye", label: 'finish up', kind: 'control' },
+    done: { criteria: "Says they are finished and need nothing more, as in no thanks, that's all, or goodbye, including a bare no when just asked whether there is anything else", label: 'finish up', kind: 'control' },
     other: { criteria: 'A request this line does not handle', label: 'something else', kind: 'control' },
     none: { criteria: 'No request is expressed; the caller is only answering a question or saying something incidental', label: 'nothing', kind: 'control' },
   });
