@@ -160,3 +160,34 @@ describe('a choice of yes and no the line has just asked, in agent mode (call 49
     expect(promptOf(none.last)).toBe('ask_request_textOk');
   });
 });
+
+describe('the read-back\'s scripted reading never reads a yes to it as a yes to a consent (call 55\'s recording)', () => {
+  it('a no to texts, then the agent failing at the read-back\'s yes: the request is sent with the no, the photo text refused', async () => {
+    const tools = { ...app.systems(), codes: mockCodeVerifier };
+    const NO = 'No, please just call me.';
+    const YES = "yes, that's right";
+    const j = jev({ [NO]: [0.03, 0.93], [YES]: [0.97, 0.02] });
+    // The decision model, asked the consent field's own question, would read the yes as a yes to it.
+    const reads: JevClient & { asked: JevRequest[] } = {
+      asked: j.asked,
+      async ask(req) {
+        const r = await j.ask(req);
+        return req.questions.request_textOk !== undefined ? { ...r, answers: { ...r.answers, request_textOk: { type: 'choice', choice: 'yes', probabilities: { yes: 0.98, no: 0, none: 0.02 }, confidence: 0.97 } } } : r;
+      },
+    };
+    const script: Record<string, AgentAnswer | { fail: 'invalid' }> = { ...SCRIPT, [NO]: said(''), [YES]: { fail: 'invalid' } };
+    const agent = fakeAgent((ctx) => script[ctx.conversation.at(-1)!.text]!);
+    const opts = { client: reads, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: agent } };
+    let session: Session = newSession('S-consent', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    let last: TurnRun | null = null;
+    for (const event of [withCallerNumber(startEvent(), '+15555550199'), ...[HOLD, DETAILS, NO, YES].map((t) => speechEvent(t))]) {
+      last = await runTurn(session, event, opts);
+      session = last.result.session;
+    }
+    expect(last!.record.agent).toMatchObject({ use: 'failed', scripted: 'read' });
+    // The consent field's question was not asked with the read-back's reading.
+    expect(Object.keys(reads.asked.at(-1)!.questions)).not.toContain('request_textOk');
+    const verdicts = last!.result.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`);
+    expect(verdicts).toEqual(['placeHold:ALLOW', 'notifyDesk:BLOCK']);
+  });
+});

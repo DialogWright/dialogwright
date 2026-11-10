@@ -357,7 +357,19 @@ function readBackReading(session: Session, event: SessionEvent, tc: TurnContext)
   for (const slot of skipped) scripted.slots[slot]!.declined = true;
   const p = plan(scripted, event, tc);
   if (!p.needsModel || p.questions === null) return null;
-  return { session: scripted, questions: p.questions, skipped };
+  // A choice of yes and no (a consent: "Is it OK if we text you?") is not read here: the caller's yes to the
+  // read-back answers its question too, and was taken as the field's new value, a no to texts turned to a yes
+  // (the agent-mode design, call 55's recording). A correction of it waits for the agent, or for "What should
+  // I change?".
+  const yesNo = (appOf(session).agent?.forms[pc.form]?.fields ?? []).filter((f) => f.type === 'choice' && isYesNo(f.options)).map((f) => f.slot);
+  const questions = Object.fromEntries(Object.entries(p.questions).filter(([id]) => !yesNo.some((slot) => id === slot || (id.startsWith(slot) && /^[A-Z]/.test(id.slice(slot.length))))));
+  return { session: scripted, questions, skipped };
+}
+
+/** Whether a choice's options are exactly yes and no, in any case and order. */
+function isYesNo(options: readonly string[] | undefined): boolean {
+  const o = (options ?? []).map((x) => x.trim().toLowerCase()).sort();
+  return o.length === 2 && o[0] === 'no' && o[1] === 'yes';
 }
 
 /** The answers of `answers` to the questions of `questions` alone. */
