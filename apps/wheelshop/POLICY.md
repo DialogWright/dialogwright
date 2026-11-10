@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `1271083756bf3fc9d00cf380e9cf8bdde7fc0a1d6422057d5d55f433643cecfc` |
+| `business.yaml` | `9ab1810360f1d65872a4b9d3e87ba52b2f9863a7d43342dd905cde4c131595d4` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -69,17 +69,22 @@ Said in fixed words, never worded by a model:
 | `goodbye_chat` | Thanks for chatting with Example Wheel Works. Goodbye. |
 | `booking_for_accounts` | Bookings are for our dealership accounts, but we can take a request instead. |
 | `identity_not_recognized` | That's for our dealership accounts, recognized by the number they call from. |
-| `price` | We quote every job from a photo, because the price depends on the damage. Once your request is in, we can text you, and you just reply to our text with a photo. Then we'll get back to you with a price and confirm your drop-off. |
+| `price` | We quote every job from a photo, because the price depends on the damage. Once your request is in, we'll ask you for one. |
 | `full_request_window` | {request_day} in the {request_window} is full, but we have room in the {free}. |
 | `full_request_window_none` | We're full on {request_day}. |
+| `full_request_window_ask` | Does the {free} work for you? |
 | `readback_request` | Here's your request: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, {request_textOk} {request_callbackNumber}. Is that right? |
-| `done_request` | Thanks, {request_callerName}. {request_textOk} |
+| `done_request` | Thanks, we have your request. {request_textOk} |
+| `cancel_request` | Do you want to cancel this request? |
 | `full_booking_window` | {booking_day} in the {booking_window} is full, but we have room in the {free}. |
 | `full_booking_window_none` | We're full on {booking_day}. |
+| `full_booking_window_ask` | Does the {free} work for you? |
 | `readback_booking` | So that's {account} dropping off {booking_vehicles}, {booking_cars} in all, on {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, in the {booking_window}. Thanks. |
+| `cancel_booking` | Do you want to cancel this booking? |
 | `readback_callback` | We'll call you back at {callback_callbackNumber}. Is that right? |
 | `done_callback` | Thanks. Someone from the shop will call you back as soon as they can. |
+| `cancel_callback` | Do you want to cancel this callback note? |
 
 ### Recognized by the number calling
 

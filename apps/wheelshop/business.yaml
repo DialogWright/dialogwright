@@ -53,11 +53,11 @@ prices: # assumption: the owner corrects these (the shop quotes every retail job
   # Said in these words when a caller asks about price. It promises no text before the request is
   # confirmed: the text asking for a photo is sent by the request's read-back's yes (send_photo_link), and
   # only to a caller who said yes to being texted, so the line says what happens once the request is in,
-  # never that a text is on its way.
+  # never that a text is on its way, and never how (a live call heard the steps twice, here and in the done
+  # line said straight after, which says them by the caller's choice of a text or a call).
   say: >-
     We quote every job from a photo, because the price depends on the damage. Once your request is
-    in, we can text you, and you just reply to our text with a photo. Then we'll get back to you with
-    a price and confirm your drop-off.
+    in, we'll ask you for one.
   # The price line is for a retail caller's request only: a dealership's booking is billed at the rates
   # agreed with the shop (a claim), so in the booking the model may not name it (assumption: the owner corrects these).
   forms: [request]
@@ -148,7 +148,11 @@ request:
       # Said, before the question, when the window asked for is full that day and the other has room (call 54: a
       # live call asked for Friday morning three times and heard only "Morning or afternoon?"). Where neither has
       # room, the engine's "We're full on {day}." and the day is asked again.
-      full: "{day} in the {window} is full, but we have room in the {free}."
+      # Where only one window is left, the question after it asks for that one (call 55: "...we have room in the
+      # afternoon. Morning or afternoon?" sounded odd); a yes takes it.
+      full:
+        some: "{day} in the {window} is full, but we have room in the {free}."
+        ask: Does the {free} work for you?
       question: Morning or afternoon?
     - name: callbackNumber
       type: digits
@@ -178,7 +182,11 @@ request:
     - request
     - { tool: send_photo_link, when: { field: textOk, is: "yes", reason: no-consent } }
     - notify_owner_request
-  done: Thanks, {callerName}. {textOk}
+  # No name: the read-back has just said it, and "Thanks, <full name>" sounded stiff on a live call.
+  done: Thanks, we have your request. {textOk}
+  # Asked where the caller says at the read-back they don't want to go ahead ("never mind", call 55): a yes
+  # ends the call with nothing sent, a no reads the request back. The engine's words, kept here to be seen.
+  cancel: Do you want to cancel this request?
 
 # What a regular account's booking collects: dealerships are booked straight into a window (assumption:
 # the owner corrects these). Only a caller the number they call from recognizes as an account may book.
@@ -205,13 +213,16 @@ booking:
       type: choice
       options: windows
       freeFrom: availability.windows # a full window is refused: the booking takes room in it
-      full: "{day} in the {window} is full, but we have room in the {free}."
+      full:
+        some: "{day} in the {window} is full, but we have room in the {free}."
+        ask: Does the {free} work for you?
       question: Morning or afternoon?
   readBack: >-
     So that's {account} dropping off {vehicles}, {cars} in all, on {day} in the {window}. Shall I
     book it?
   then: [book, notify_owner_booking]
   done: You're booked for {day}, in the {window}. Thanks.
+  cancel: Do you want to cancel this booking?
 
 # A callback note for a caller who wants to speak with someone: there is no live transfer. The handoff
 # below says someone from the shop will call back; this form collects the number.
@@ -228,6 +239,7 @@ callback:
   readBack: We'll call you back at {callbackNumber}. Is that right?
   then: [callback]
   done: Thanks. Someone from the shop will call you back as soon as they can.
+  cancel: Do you want to cancel this callback note?
 
 # A statement: it is said where nothing waits for an answer, and the callback form asks for the number.
 handoff: Someone from the shop will call you back as soon as they can.

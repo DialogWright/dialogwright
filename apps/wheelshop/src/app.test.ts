@@ -40,9 +40,9 @@ describe('the app folder', () => {
   it('keeps the price line fixed, promising no text before the request is confirmed', () => {
     const price = app.agent?.facts.fixed.price ?? '';
     expect(price).toMatch(/^We quote every job from a photo/);
-    expect(price).toMatch(/Once your request is in, we can text you/);
-    expect(price).toMatch(/reply to our text with a photo/);
-    expect(price).not.toMatch(/link|\d/);
+    // What happens once the request is in, never that a text is on its way, and not the steps the done line says after it (a live call heard them twice).
+    expect(price).toMatch(/Once your request is in, we'll ask you for one\.$/);
+    expect(price).not.toMatch(/link|\d|text/);
   });
 });
 
@@ -260,8 +260,25 @@ describe('the live call of call 54, on the stubs', () => {
     const r = await run('live-call-road-rash', { overLineSetAside: 1, said: { notFigure: true, lines: ['full_request_window'] } });
     expect(r.pass, r.mismatches.join('; ')).toBe(true);
     const said = r.runs.map((x) => spokenText(app, x.result.decision));
-    expect(said).toContain('Friday, November 13 in the morning is full, but we have room in the afternoon. Morning or afternoon?');
+    // With only the afternoon left, the window's question after the full line asks for it (full.ask, call 55).
+    expect(said).toContain('Friday, November 13 in the morning is full, but we have room in the afternoon. Does the afternoon work for you?');
     expect(r.runs.find((x) => x.result.setAside === 'speech-over-line')?.record.agent).toMatchObject({ dropped: 'speech-over-line' });
+  });
+
+  it('call 55 on the stubs: the field a reply asks is the question a silence asks again; a free window given for "friday morning" is not held; "never mind" asks to cancel', async () => {
+    const r = await run('live-call-friday-morning', {});
+    expect(r.pass, r.mismatches.join('; ')).toBe(true);
+    const said = r.runs.map((x) => spokenText(app, x.result.decision));
+    expect(said).toContain("I didn't hear anything. How many wheels need work?");
+    expect(said).toContain('Friday, November 13 in the morning is full, but we have room in the afternoon. Does the afternoon work for you?');
+    expect(said).toContain('Do you want to cancel this request?');
+    expect(said.join(' ')).not.toContain('No problem, Riley');
+    const swapped = r.runs.flatMap((x) => x.record.agent?.values ?? []).find((v) => v.outcome === 'full');
+    expect(swapped).toMatchObject({ field: 'window', value: 'afternoon', words: 'friday morning' });
+    const cancelled = await run('never-mind-cancels', {});
+    expect(cancelled.pass, cancelled.mismatches.join('; ')).toBe(true);
+    expect(cancelled.runs.at(-1)!.result.audit.filter((d) => d.type === 'form_cancelled')).toEqual([{ type: 'form_cancelled', detail: { form: 'request', at: 'read-back' } }]);
+    expect(cancelled.runs.flatMap((x) => x.result.gateEvents).map((e) => e.decision.call.tool)).not.toContain('request');
   });
 
   it('a bare "no" at "Is there anything else I can help with?" ends the call with the closing', async () => {

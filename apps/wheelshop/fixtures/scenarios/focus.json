@@ -1210,5 +1210,427 @@
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"
     }
+  },
+  {
+    "id": "live-call-friday-morning",
+    "callerNumber": "+15555550190",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "yeah i need to get my wheels fixed they've got a curb rash",
+        "agent": {
+          "reply": "That's no fun. Good news, curb rash is something we see every day. What are you driving?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "a curb rash"
+            }
+          ],
+          "asks": "vehicle"
+        }
+      },
+      {
+        "say": "it's a GMC Sierra",
+        "agent": {
+          "reply": "Got it, a GMC Sierra. How many wheels need work?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "GMC Sierra",
+              "words": "GMC Sierra"
+            }
+          ],
+          "asks": "wheels"
+        }
+      },
+      {
+        "silence": true
+      },
+      {
+        "say": "two wheels",
+        "agent": {
+          "reply": "Got it. What's your name?",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            }
+          ],
+          "asks": "callerName"
+        }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": {
+        "callerName": "riley park",
+        "vehicle": {
+          "has": [
+            "Sierra"
+          ]
+        },
+        "wheels": "two",
+        "damage": {
+          "has": [
+            "curb rash"
+          ]
+        },
+        "diamondCut": "yes",
+        "day": "2026-11-13",
+        "window": "afternoon",
+        "callbackNumber": "...0190",
+        "textOk": "yes"
+      },
+      "action": "send_photo_link",
+      "said": {
+        "notFigure": true,
+        "lines": [
+          "full_request_window",
+          "full_request_window_ask",
+          "cancel_request"
+        ]
+      },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_callerName": {
+        "say": "My name is Riley Park.",
+        "agent": {
+          "reply": "Thanks, Riley. Is the face of the wheel shiny bare metal with fine lines, or painted all over?",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Riley Park",
+              "words": "Riley Park"
+            }
+          ],
+          "asks": "diamondCut"
+        }
+      },
+      "request_diamondCut": {
+        "say": "yes",
+        "agent": {
+          "reply": "Great. What day would you like to drop it off?",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "yes",
+              "words": "yes"
+            }
+          ],
+          "asks": "day"
+        }
+      },
+      "request_day": {
+        "say": "friday morning",
+        "agent": [
+          {
+            "reply": "Friday morning works.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "friday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "friday morning"
+              }
+            ]
+          },
+          {
+            "reply": "We have an afternoon window that day.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "friday"
+              },
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "friday morning"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "yes",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "afternoon",
+              "words": "yes"
+            }
+          ]
+        }
+      },
+      "request_vehicle": {
+        "say": "it's a GMC Sierra",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "GMC Sierra",
+              "words": "GMC Sierra"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "two wheels",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ]
+        }
+      },
+      "readback_request": [
+        {
+          "say": "never mind",
+          "agent": {
+            "reply": "No problem, Riley. Thanks for calling Example Wheel Works.",
+            "closes": true
+          }
+        },
+        {
+          "say": "yes, that's right",
+          "agent": {
+            "reply": ""
+          }
+        }
+      ],
+      "cancel_request": {
+        "say": "no, keep it",
+        "agent": {
+          "reply": ""
+        }
+      }
+    }
+  },
+  {
+    "id": "never-mind-cancels",
+    "callerNumber": "+15555550190",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "yeah i need to get my wheels fixed they've got a curb rash",
+        "agent": {
+          "reply": "That's no fun. Good news, curb rash is something we see every day. What are you driving?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "a curb rash"
+            }
+          ],
+          "asks": "vehicle"
+        }
+      },
+      {
+        "say": "it's a GMC Sierra",
+        "agent": {
+          "reply": "Got it, a GMC Sierra. How many wheels need work?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "GMC Sierra",
+              "words": "GMC Sierra"
+            }
+          ],
+          "asks": "wheels"
+        }
+      },
+      {
+        "say": "two wheels",
+        "agent": {
+          "reply": "Got it. What's your name?",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            }
+          ],
+          "asks": "callerName"
+        }
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye",
+      "principalLevel": 0,
+      "action": "none",
+      "said": {
+        "notFigure": true,
+        "lines": [
+          "cancel_request"
+        ]
+      }
+    },
+    "answers": {
+      "request_callerName": {
+        "say": "My name is Riley Park.",
+        "agent": {
+          "reply": "Thanks, Riley. Is the face of the wheel shiny bare metal with fine lines, or painted all over?",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Riley Park",
+              "words": "Riley Park"
+            }
+          ],
+          "asks": "diamondCut"
+        }
+      },
+      "request_diamondCut": {
+        "say": "yes",
+        "agent": {
+          "reply": "Great. What day would you like to drop it off?",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "yes",
+              "words": "yes"
+            }
+          ],
+          "asks": "day"
+        }
+      },
+      "request_day": {
+        "say": "friday morning",
+        "agent": [
+          {
+            "reply": "Friday morning works.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "friday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "friday morning"
+              }
+            ]
+          },
+          {
+            "reply": "We have an afternoon window that day.",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-13",
+                "words": "friday"
+              },
+              {
+                "field": "window",
+                "value": "afternoon",
+                "words": "friday morning"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "yes",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "afternoon",
+              "words": "yes"
+            }
+          ]
+        }
+      },
+      "request_vehicle": {
+        "say": "it's a GMC Sierra",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "GMC Sierra",
+              "words": "GMC Sierra"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "two wheels",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ]
+        }
+      },
+      "readback_request": {
+        "say": "never mind",
+        "agent": {
+          "reply": "No problem, Riley. Thanks for calling Example Wheel Works.",
+          "closes": true
+        }
+      },
+      "cancel_request": {
+        "say": "yes, cancel it",
+        "agent": {
+          "reply": "Okay, I've cancelled it."
+        }
+      }
+    }
   }
 ]
