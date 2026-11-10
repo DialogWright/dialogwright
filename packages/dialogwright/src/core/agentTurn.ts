@@ -47,7 +47,9 @@ import type { RenderLine } from '../render/types';
  *    engine-written `complete` hook calls its `then` through the gate), whatever the answer proposed; a
  *    `callback` opens the person form (checked with the caller first where the decision model read no
  *    person asked for, step 6); a no asks what to change (`ask_change`) and a second no reads it
- *    again on its ladder; a question answered from the facts is an aside, the reply and then the read-back
+ *    again on its ladder; words the decision model reads as the caller done ("never mind") ask whether to
+ *    cancel (`cancel_<form>`, core/turn.ts readBackCancel; call 55): a yes ends the call with nothing sent, a
+ *    no reads back again; a question answered from the facts is an aside, the reply and then the read-back
  *    again as it stands, uncounted; anything else (words neither a yes nor a no) asks the read-back again
  *    on its ladder, counted, the reply before it as an aside (after "What should I change?", that
  *    question with the reply in its place), so words that settle nothing reach the keypad and a person.
