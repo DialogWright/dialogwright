@@ -95,6 +95,9 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
     style: styleOf(style),
     // The accounts' numbers as written (a setting by its name, read at call time and as the server starts).
     ...(b.accounts !== undefined ? { accounts: Object.fromEntries(Object.entries(accountNumbersWritten(b)).map(([key, numbers]) => [key, { name: accountOptions(b)[key]!, numbers }])) } : {}),
+    // How the values are held to the caller's words (values.refusedUncounted, values.earlierWords), where the business sets it.
+    ...(b.values?.refusedUncounted !== undefined ? { refusalsUncounted: b.values.refusedUncounted } : {}),
+    ...(b.values?.earlierWords !== undefined ? { earlierWords: b.values.earlierWords } : {}),
   };
 }
 

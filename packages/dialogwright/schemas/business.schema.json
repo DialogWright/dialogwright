@@ -1134,6 +1134,23 @@
         "minLength": 1
       }
     },
+    "values": {
+      "description": "How the values the agent model gives are held to the caller's words, and what a refusal costs the caller. Default: { refusedUncounted: 2, earlierWords: true }.",
+      "type": "object",
+      "properties": {
+        "refusedUncounted": {
+          "description": "How many times a field's value the agent model gives may be refused by the field's check (not in its shape, or cited from words the caller never said) with no attempt counted: the field's question is asked again, since the model's value refused is not the caller's miss and the read-back is the guard. Past it, each refusal of the field counts an attempt on its ladder (its retry line, the keypad, a person), so a call never loops; the count is the field's, kept until it is filled or its form closes. A value out of the field's range (a day in the past, a full window) always counts. 0: each refusal counts, as before 2026-11-10. Default 2 (the maintainer's decision, 2026-11-10).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "earlierWords": {
+          "description": "Whether a value the agent model gives may cite the caller's words from an earlier turn of the call, where this turn's do not have them (the model gives a value a turn after it was said): only to fill a text, name or digits field still empty, whose check ties the value to its words; never a choice or a date, and never to change a value held. false: this turn's words only, as before 2026-11-10. Default true (the maintainer's decision, 2026-11-10).",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "lines": {
       "description": "The engine's own lines in the business's words, by id (nomatch_open, no_input, anything_else, goodbye_chat, ...), in place of their defaults. Default: the engine's words.",
       "type": "object",

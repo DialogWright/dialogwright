@@ -7,6 +7,7 @@ import { BUILT_IN_SLOT_TYPES, registerSlotType } from '../slots/registry';
 import type { SlotType } from '../slots/types';
 import { agentFieldTypes, factsOf, loadBusiness } from './business';
 import { fieldSlotConfig } from './businessFiles';
+import { agentAppOf } from './businessApp';
 import { loadAppFolder, type Problem } from './load';
 import { checkAppFully } from './check';
 import { businessSchema } from './schema/business';
@@ -355,6 +356,16 @@ describe('business.yaml', () => {
   it('a field\'s options only on a choice, a length only on digits', () => {
     const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: name\n      length: 4\n      question: What\'s your name?') });
     expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].length', message: expect.stringContaining('only a digits field has a length') }]);
+  });
+
+  it('values: refusedUncounted (default 2, 0 restores the old counting) and earlierWords (default true, false restores this turn\'s words only)', () => {
+    const style = { agent: { provider: 'inception', model: 'mercury-3', effort: 'instant' } } as unknown as Parameters<typeof agentAppOf>[1];
+    expect(agentAppOf(loadBusiness(FIXTURE).business!, style).refusalsUncounted).toBeUndefined();
+    const none = copy({ 'business.yaml': (t) => `${t}\nvalues:\n  refusedUncounted: 0\n  earlierWords: false\n` });
+    expect(problemsOf(none)).toEqual([]);
+    expect(agentAppOf(loadBusiness(none).business!, style)).toMatchObject({ refusalsUncounted: 0, earlierWords: false });
+    const bad = copy({ 'business.yaml': (t) => `${t}\nvalues:\n  refusedUncounted: -1\n` });
+    expect(problemsOf(bad)).toMatchObject([{ path: 'values.refusedUncounted' }]);
   });
 
   it('a field\'s figures only on a text field, and set on its slot (the maintainer\'s decision, 2026-11-10: free by default)', () => {

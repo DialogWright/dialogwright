@@ -298,6 +298,19 @@ export interface AgentApp {
    * `env.<NAME>`, a setting of the app's own (define/accountNumbers.ts). Absent for a business with no accounts.
    */
   accounts?: Readonly<Record<string, { readonly name: string; readonly numbers: readonly string[] }>>;
+  /**
+   * How many times a field's value the model gave may be refused by its slot type's check (its shape, words the
+   * caller never said) with no attempt counted, before each refusal counts on the field's ladder (business.yaml's
+   * `values.refusedUncounted`; core/agentTurn.ts refusedByCheck). Absent: AGENT_REFUSALS_UNCOUNTED (2). 0: each
+   * counts, as before 2026-11-10.
+   */
+  refusalsUncounted?: number;
+  /**
+   * Whether a value's cited words may be the caller's from an earlier turn, to fill a text, name or digits field
+   * still empty (business.yaml's `values.earlierWords`; core/agentTurn.ts wordsHeldTo). Absent: true. false: this
+   * turn's words only, as before 2026-11-10.
+   */
+  earlierWords?: boolean;
 }
 
 /**

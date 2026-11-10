@@ -294,6 +294,21 @@ export const businessSchema = z
       .record(identifier(), text())
       .optional()
       .describe('The texts the app\'s own code sends, in the business\'s fixed words, by a name its code reads them by (photoRequest: "Reply to this text with a photo of the damage."), with the {placeholders} its code fills: never a generated line, and never said on a call. Default: none.'),
+    values: z
+      .strictObject({
+        refusedUncounted: z
+          .int({ error: 'must be a whole number' })
+          .min(0, { error: 'must be at least 0' })
+          .max(10, { error: 'must be at most 10' })
+          .optional()
+          .describe('How many times a field\'s value the agent model gives may be refused by the field\'s check (not in its shape, or cited from words the caller never said) with no attempt counted: the field\'s question is asked again, since the model\'s value refused is not the caller\'s miss and the read-back is the guard. Past it, each refusal of the field counts an attempt on its ladder (its retry line, the keypad, a person), so a call never loops; the count is the field\'s, kept until it is filled or its form closes. A value out of the field\'s range (a day in the past, a full window) always counts. 0: each refusal counts, as before 2026-11-10. Default 2 (the maintainer\'s decision, 2026-11-10).'),
+        earlierWords: z
+          .boolean()
+          .optional()
+          .describe('Whether a value the agent model gives may cite the caller\'s words from an earlier turn of the call, where this turn\'s do not have them (the model gives a value a turn after it was said): only to fill a text, name or digits field still empty, whose check ties the value to its words; never a choice or a date, and never to change a value held. false: this turn\'s words only, as before 2026-11-10. Default true (the maintainer\'s decision, 2026-11-10).'),
+      })
+      .optional()
+      .describe('How the values the agent model gives are held to the caller\'s words, and what a refusal costs the caller. Default: { refusedUncounted: 2, earlierWords: true }.'),
     lines: z
       .record(identifier(), text())
       .optional()

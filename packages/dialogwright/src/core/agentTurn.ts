@@ -59,12 +59,13 @@ import type { RenderLine } from '../render/types';
  *    may open is never chosen for anyone else). A form only a recognized caller may open, asked for by
  *    anyone else, says its line and opens the form it offers instead (FormDef.recognizedOnly).
  * 3. **Values**: each checked by its field's slot type (BuiltSlotSpec.check), its words held to this
- *    turn's words, or where they are not in them, to an earlier line of the caller's on the call (`earlier`;
- *    a choice of yes and no, this turn's only). An accepted value is stored with its `shown` (`by: 'agent'`);
+ *    turn's words, or where they are not in them, to an earlier line of the caller's on the call (`earlier`),
+ *    only to fill a text, name or digits field still empty (a choice or a date, this turn's only; business.yaml's
+ *    `values.earlierWords: false`, this turn's only for every field). An accepted value is stored with its `shown` (`by: 'agent'`);
  *    a refused one is dropped and its field's question asked again, no attempt counted (`counted: false`: the
  *    model's value refused is not the caller's miss, the maintainer's decision of 2026-11-10, calls 57 to 59);
- *    from the third such refusal of the field in a row (AGENT_REFUSALS_UNCOUNTED), the field not filled nor
- *    another asked between, each counts an attempt on its slot and walks the slot's own ladder (its retry line,
+ *    past business.yaml's `values.refusedUncounted` refusals of the field (default 2, AGENT_REFUSALS_UNCOUNTED; kept
+ *    until it fills or its form closes), each counts an attempt on its slot and walks the slot's own ladder (its retry line,
  *    then its onMaxAttempts, the keypad or a person), as a scripted fill that misses does. A value out of its
  *    field's range (`range`) counts at once. A choice held to a seen
  *    result (`freeFrom`) is held to it: an option the result shows full is refused (`range`, call 54), and a
@@ -140,9 +141,9 @@ export interface AgentTurnRecord {
    * Each value the answer gave: the value proposed and the caller's words it cited, and what its check made
    * of it; an accepted one with its `shown`. Each masked in the trace as the records mask its field's slot.
    * `earlier`: its cited words are not in this turn's words but in an earlier line of the caller's on the call,
-   * which the check held them to (calls 57 to 59). `counted: false`: refused by its slot type's check (its
-   * shape, its words, unsupported), and no attempt counted on its field: the model's value, not the caller's
-   * miss; from the third such refusal of the field in a row each counts (AGENT_REFUSALS_UNCOUNTED).
+   * which the check held them to (a text, name or digits field still empty; calls 57 to 59). `counted: false`:
+   * refused by its slot type's check (its shape, its words, unsupported), and no attempt counted on its field:
+   * the model's value, not the caller's miss; past business.yaml's `values.refusedUncounted` refusals of the field each counts.
    */
   values: { field: string; slot?: SlotId; value: string; words: string; outcome: AgentValueOutcome; shown?: string; restated?: true; by?: 'decision-model'; earlier?: true; counted?: false }[];
   /**
@@ -722,10 +723,13 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     }
     const spec = app.slots[field.slot] as BuiltSlotSpec | undefined;
     const before = s.slots[field.slot]?.value;
-    // The words the value is held to: this turn's, or where its cited words are not in them, the caller's
-    // latest earlier line that has them (calls 57 to 59: "Porsche nine eleven" cited a turn after it was
-    // said). A choice of yes and no (a consent) and the decision model's own reading keep this turn's words.
-    const heldTo = v.by === undefined && !isYesNoField(field) ? wordsHeldTo(s, said, v.words) : { said, earlier: false };
+    // The words the value is held to: this turn's, or where its cited words are not in them and the field is
+    // still empty, the caller's latest earlier line that has them, for a type whose check ties the value to its
+    // words (EARLIER_TYPES; calls 57 to 59: a model number cited a turn after it was said). Never a choice or a
+    // date (any earlier line would do for them, a consent among them), never to change a value held, and never
+    // the decision model's own reading.
+    const earlierOk = app.agent!.earlierWords !== false && v.by === undefined && EARLIER_TYPES.has(field.type) && (before === null || before === undefined);
+    const heldTo = earlierOk ? wordsHeldTo(s, said, v.words) : { said, earlier: false };
     const check: ValueCheck = spec?.check !== undefined ? spec.check(v.value, v.words, heldTo.said, { today: tc.todayIso, ...(locale !== undefined ? { locale } : {}), ...(before !== null && before !== undefined ? { held: String(before) } : {}) }) : { ok: false, reason: 'unsupported' };
     const proposed = { field: field.name, slot: field.slot, value: v.value, words: v.words, ...(v.by !== undefined ? { by: v.by } : {}), ...(heldTo.earlier ? { earlier: true as const } : {}) };
     if (!check.ok) {
@@ -742,7 +746,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     delete slot.missed;
     // A value held: a later judge's refusal of this field is a first one again (judgedAgain), and so is a check's (refusedByCheck).
     if (s.agent?.judged?.includes(field.slot) === true) s.agent = { ...s.agent, judged: s.agent.judged.filter((x) => x !== field.slot) };
-    if (s.agent?.refused?.slot === field.slot) clearRefused(s);
+    if (s.agent?.refused?.[field.slot] !== undefined) clearRefused(s, field.slot);
     record.values.push({ ...proposed, outcome: 'accepted', shown: check.shown });
     out.events.push({ slot: field.slot, outcome: { kind: 'filled', value: check.value, display: check.shown, confidence: 1, confirm: 'none' } });
   }
@@ -783,10 +787,19 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
 }
 
 /**
+ * The field types whose value's cited words may be the caller's from an earlier turn (wordsHeldTo): those whose
+ * check ties the value to its words (text: its figures and web addresses, and the judge; name: one the name fill
+ * would take from them; digits: a number the words read to). A choice or a date is not tied to its words (a
+ * synonym, "Thursday"), so an earlier line would let any option or day through, a consent among them.
+ */
+const EARLIER_TYPES: ReadonlySet<string> = new Set(['text', 'name', 'digits']);
+
+/**
  * The caller's words a value's cited words are held to (its check's `said`): this turn's, where they are in
  * them; else the latest of the caller's earlier lines on the call (Session.agent.conversation) that has them,
  * `earlier`; else this turn's (the check refuses the words). A model may cite what the caller said a turn
- * before ("It's a Porsche nine eleven." cited when the caller then said "It's a Porsche.", call 59).
+ * before ("It's the Vega nine eleven." cited when the caller then said "It's the Vega.", call 59). Only for a
+ * field still empty, of a type in EARLIER_TYPES (applyValues).
  */
 function wordsHeldTo(s: Session, said: string, words: string): { said: string; earlier: boolean } {
   if (hasWords(said, words)) return { said, earlier: false };
@@ -795,27 +808,31 @@ function wordsHeldTo(s: Session, said: string, words: string): { said: string; e
 }
 
 /**
- * How many refusals in a row of a field's value by its slot type's check (shape, words, unsupported) count no
- * attempt (the maintainer's decision, 2026-11-10; the agent-mode design, calls 57 to 59): the model's value
- * refused is not the caller's miss, and the read-back is the guard. From the third in a row on the same field
- * each counts as before, so a call never loops on a value the check keeps refusing. The run is reset when the
- * field fills or the caller is asked another field (Session.agent.refused).
+ * How many refusals of a field's value by its slot type's check (shape, words, unsupported) count no attempt,
+ * unless business.yaml's `values.refusedUncounted` says otherwise (AgentApp.refusalsUncounted; the maintainer's
+ * decision, 2026-11-10; the agent-mode design, calls 57 to 59): the model's value refused is not the caller's
+ * miss, and the read-back is the guard. From the next refusal of the same field each counts as before, so a call
+ * never loops on a value the check keeps refusing, however the fields between are asked. The count is the
+ * field's (Session.agent.refused), kept until it fills or the form it is in is no longer open. 0: each counts.
  */
 export const AGENT_REFUSALS_UNCOUNTED = 2;
 
 /** The reasons a value's check refuses it for that count no attempt the first times (AGENT_REFUSALS_UNCOUNTED): not `range`, a value out of the field's range, which the caller asked for. */
 const UNCOUNTED_REASONS: ReadonlySet<AgentValueOutcome> = new Set(['shape', 'words', 'unsupported']);
 
-function clearRefused(s: Session): void {
-  if (s.agent?.refused === undefined) return;
-  const { refused: _gone, ...rest } = s.agent;
-  s.agent = rest;
+/** The count of refusals for `slot` cleared (Session.agent.refused), or with no slot, every count but those of `keep`'s slots. */
+function clearRefused(s: Session, slot: SlotId | null, keep: ReadonlySet<SlotId> = new Set()): void {
+  const counts = s.agent?.refused;
+  if (counts === undefined) return;
+  const left = Object.fromEntries(Object.entries(counts).filter(([id]) => (slot === null ? keep.has(id) : id !== slot)));
+  const { refused: _gone, ...rest } = s.agent!;
+  s.agent = Object.keys(left).length > 0 ? { ...rest, refused: left } : rest;
 }
 
 /**
  * The turn for a value refused by its slot type's check (`slot`, the first refused): where the refusal is one
- * that counts no attempt (UNCOUNTED_REASONS) and the run of such refusals of the field is within
- * AGENT_REFUSALS_UNCOUNTED, the field's question asked again, uncounted, its record marked `counted: false`;
+ * that counts no attempt (UNCOUNTED_REASONS) and the field's refusals so far are within the app's
+ * `refusalsUncounted` (AGENT_REFUSALS_UNCOUNTED by default), the field's question asked again, uncounted, its record marked `counted: false`;
  * otherwise an attempt counted and the slot's own ladder (its retry line, the keypad, a person), as a scripted
  * miss. A value refused as full (`range`, call 54) never reaches here.
  */
@@ -823,9 +840,9 @@ function refusedByCheck(s: Session, slot: SlotId, io: TurnIO, steps: ScriptedSte
   const at = record.values.findIndex((v) => v.slot === slot && v.outcome !== 'accepted');
   const reason = at >= 0 ? record.values[at]!.outcome : null;
   if (reason === null || !UNCOUNTED_REASONS.has(reason)) return steps.failAttempt(s, slot, io, acks);
-  const before = s.agent?.refused?.slot === slot ? s.agent.refused.n : 0;
-  s.agent = { ...(s.agent ?? { conversation: [], failures: 0 }), refused: { slot, n: before + 1 } };
-  if (before + 1 > AGENT_REFUSALS_UNCOUNTED) return steps.failAttempt(s, slot, io, acks);
+  const n = (s.agent?.refused?.[slot] ?? 0) + 1;
+  s.agent = { ...(s.agent ?? { conversation: [], failures: 0 }), refused: { ...(s.agent?.refused ?? {}), [slot]: n } };
+  if (n > (io.app.agent?.refusalsUncounted ?? AGENT_REFUSALS_UNCOUNTED)) return steps.failAttempt(s, slot, io, acks);
   record.values[at] = { ...record.values[at]!, counted: false };
   return askSlot(s, slot, null, acks);
 }
@@ -1297,10 +1314,10 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
     return steps.handleVerdict(s, verdict, answers, ctx, io);
   }
   const answer = agent.ok ? agent.answer : null;
-  // The question the line was waiting on as the turn began; a run of refusals of another field's value ends
-  // here, the caller having been asked another field (refusedByCheck).
+  // The question the line was waiting on as the turn began (a failed answer asks it again).
   const waitedOn = s.promptedFor;
-  if (s.agent?.refused !== undefined && s.agent.refused.slot !== waitedOn) clearRefused(s);
+  // The counts of refusals of fields of a form no longer open go (refusedByCheck): a form closed or switched.
+  clearRefused(s, null, new Set(s.form !== null ? (app.agent?.forms[s.form]?.fields ?? []).map((f) => f.slot) : []));
   // No client (no key): no failure; the turn runs on its fixed questions.
   const none = noAgentClient(agent);
   const record: AgentTurnRecord = {
