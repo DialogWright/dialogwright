@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { CASSETTE_MISS } from '../jev/cassette';
-import { stubAnswerDrift, stubDocumentsDrift, stubSpanDrift } from '../jev/heuristicStub';
+import { stubAgentValue, stubAnswerDrift, stubDocumentsDrift, stubSpanDrift } from '../jev/heuristicStub';
+import { ENGLISH } from '../core/extract/lexicon';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
-import { ADDED_FIRE, addedReading, compareQuestions, compareReading, compareState, DRIFT_ALONE_FIRE, figuresToCompare, type FigureComparison, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
+import { ADDED_FIRE, addedReading, compareQuestions, compareReading, compareState, DRIFT_ALONE_FIRE, figuresToCompare, type FigureComparison, AGENT_VALUE_QUESTION_ID, foreignAddress, foreignFigure, renderAgentValueQuestion, renderAgentValueState, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
 import { answerWordBudget, DEFAULT_DOCUMENTS_WORDS } from './config';
 import { spanSentence } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type SpanAct } from './types';
@@ -57,7 +58,15 @@ const caseSchema = z.strictObject({
    * worded from sections of approved documents (a span `from: sections`): `content` is then the sections,
    * each as `Heading: text`, apart by a blank line.
    */
-  speaks: z.enum(['as-caller', 'to-caller', 'answer', 'documents']),
+  speaks: z.enum(['as-caller', 'to-caller', 'answer', 'documents', 'value']),
+  /**
+   * A value case's field (`speaks: value`, an agent-mode text value the agent model gave: `content` is the
+   * caller's words it cites, `span` the value): its name, the form's other fields as the judge is told them, and
+   * its `figures` setting (the text slot's, default free), which the data checks follow.
+   */
+  field: z.string().regex(/^[a-z][A-Za-z0-9_]*$/).optional(),
+  others: z.array(z.string().min(1)).optional(),
+  figures: z.enum(['free', 'cited']).optional(),
   /** An answer case's question, in the caller's own words (required with `speaks: answer`). */
   question: z.string().min(1).optional(),
   /**
@@ -97,6 +106,7 @@ export function loadJudgeCases(path: string): JudgeCase[] {
     if (c.names !== undefined && c.speaks !== 'to-caller') throw new Error(`${path}:${i + 1}: ${c.id}: names are for a to-caller span only`);
     if ((c.question !== undefined) !== (c.speaks === 'answer' || c.speaks === 'documents')) throw new Error(`${path}:${i + 1}: ${c.id}: an answer case (speaks: answer or documents) has a question, and only an answer case does`);
     if (c.earlier !== undefined && c.speaks !== 'documents') throw new Error(`${path}:${i + 1}: ${c.id}: only a documents case (speaks: documents) has an earlier question`);
+    if ((c.field !== undefined) !== (c.speaks === 'value') || ((c.others !== undefined || c.figures !== undefined) && c.speaks !== 'value')) throw new Error(`${path}:${i + 1}: ${c.id}: a value case (speaks: value) names its field, and only a value case has a field, others or figures`);
     seen.add(c.id);
     cases.push(c);
   });
@@ -140,6 +150,7 @@ export function actOf(c: JudgeCase): SpanAct {
       answer: { question: c.question ?? '' },
     };
   }
+  if (c.speaks === 'value') throw new Error(`${c.id}: a value case (speaks: value) has no span act: its judge is asked as an agent value is (judgeRequest)`);
   const names = Object.entries(c.names ?? {}).map(([name, value]) => ({ name, value }));
   return {
     kind: 'span',
@@ -153,14 +164,19 @@ export function actOf(c: JudgeCase): SpanAct {
   };
 }
 
-/** The question a case's judge is asked, by its id: a knowledge answer's, or a span's. */
-const questionIdOf = (c: JudgeCase, documentsAsk: DocumentsAsk = 'drift'): string => (c.speaks === 'documents' ? (documentsAsk === 'added' ? DOCUMENTS_ADDED_QUESTION_ID : DOCUMENTS_DRIFT_QUESTION_ID) : c.speaks === 'answer' ? ANSWER_DRIFT_QUESTION_ID : SPAN_DRIFT_QUESTION_ID);
+/** The goal a value case is given when it names none (its field's `about`, as the agent's value judge is given it). */
+export const DEFAULT_VALUE_GOAL = 'What the caller said of this field, as the line understood it.';
+
+/** The question a case's judge is asked, by its id: an agent value's, a knowledge answer's, or a span's. */
+const questionIdOf = (c: JudgeCase, documentsAsk: DocumentsAsk = 'drift'): string => (c.speaks === 'value' ? AGENT_VALUE_QUESTION_ID : c.speaks === 'documents' ? (documentsAsk === 'added' ? DOCUMENTS_ADDED_QUESTION_ID : DOCUMENTS_DRIFT_QUESTION_ID) : c.speaks === 'answer' ? ANSWER_DRIFT_QUESTION_ID : SPAN_DRIFT_QUESTION_ID);
 
 /** What the documents judge asks (style.yaml judge.documentsAsk): the drift yes-or-no, how much of the wording is its own, or both. */
 export type DocumentsAsk = 'drift' | 'added' | 'both';
 
 /** The judge's request for a case: exactly what a call sends for this span (its state and its question). */
 export function judgeRequest(c: JudgeCase, documentsAsk: DocumentsAsk = 'drift'): { state: JsonValue; questions: ReturnType<typeof renderSpanDriftQuestion> } {
+  // An agent value: the state and question render/agentLine.ts judgeTextValues sends.
+  if (c.speaks === 'value') return { state: renderAgentValueState({ field: c.field ?? 'value', goal: c.goal ?? DEFAULT_VALUE_GOAL, others: c.others ?? [], said: c.span, words: c.content }) as unknown as JsonValue, questions: renderAgentValueQuestion() };
   const act = actOf(c);
   if (c.speaks === 'documents') {
     const earlier = c.earlier !== undefined;
@@ -190,6 +206,13 @@ export interface CaseResult {
 }
 
 function codeVerdict(c: JudgeCase): CodeVerdict {
+  if (c.speaks === 'value') {
+    // As a call does: a value that is its words is not judged; the text slot's check refuses a web address the
+    // words do not have, and with figures: cited a figure they do not have.
+    if (sameWords(c.span, c.content)) return 'unchanged';
+    if (foreignAddress(c.span, c.content)) return 'foreign';
+    return c.figures === 'cited' && foreignFigure(c.span, [c.content], { groups: ENGLISH }) ? 'foreign' : null;
+  }
   const act = actOf(c);
   // An answer from documents: no shortcut for the sections' own words, as a call has none.
   if (c.speaks === 'documents') return checkAnswer(cleanAnswer(c.span, act), act);
@@ -262,7 +285,7 @@ export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClien
         }
       }
     }
-    out.push({ case: c, checks: codeVerdict(c), stub: c.speaks === 'documents' ? stubDocumentsDrift(req.state) : c.speaks === 'answer' ? stubAnswerDrift(req.state) : stubSpanDrift(req.state), judge: verdict });
+    out.push({ case: c, checks: codeVerdict(c), stub: c.speaks === 'value' ? stubAgentValue(req.state, c.figures ?? 'free') : c.speaks === 'documents' ? stubDocumentsDrift(req.state) : c.speaks === 'answer' ? stubAnswerDrift(req.state) : stubSpanDrift(req.state), judge: verdict });
     if (opts.progress && (i + 1) % 20 === 0) opts.progress(`  ${i + 1} of ${cases.length} cases`);
   }
   return out;
@@ -398,6 +421,9 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
       : []),
     ...(all.some((r) => r.case.speaks === 'documents')
       ? ['Documents cases (speaks: documents): an answer worded for the caller\'s question from sections of approved documents (`content`, each section as `Heading: text`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, 60 unless the case sets one, avoid, a figure the sections do not have); stub: stubDocumentsDrift; judge: the decision model asked renderDocumentsDriftQuestion with the state a call sends (the goal, the wording heard in its line, the sections and the question).', '']
+      : []),
+    ...(all.some((r) => r.case.speaks === 'value')
+      ? ['Value cases (speaks: value): a text value the agent model gave (`span`) for the caller\'s words it cites (`content`); data checks: the text slot\'s agent-mode check (a web address the words do not have; with figures: cited, a figure too; a value that is its words is not judged); stub: stubAgentValue, following the case\'s figures; judge: the decision model asked renderAgentValueQuestion with the state judgeTextValues sends (the field, its goal, the other fields, the value and the words).', '']
       : []),
     ...(all.some((r) => r.case.speaks === 'answer')
       ? ['Answer cases (speaks: answer): a knowledge answer worded for the caller\'s question from its approved passage (`content`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, the passage\'s word count and a quarter more (ten more at least) unless the case sets one, avoid, a figure the passage does not have); stub: stubAnswerDrift; judge: the decision model asked renderAnswerDriftQuestion with the state a call sends (the goal, the wording heard in its line, the passage and the question).', '']

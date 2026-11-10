@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerHeuristically, HeuristicStubClient, stubAgentValue } from './heuristicStub';
+import { answerHeuristically, fieldFigures, HeuristicStubClient, stubAgentValue } from './heuristicStub';
 import { sharp } from './distributions';
 import { buildQuestions } from '../core/questions';
 import { newSession } from '../core/session';
@@ -185,10 +185,20 @@ describe('HeuristicStubClient', () => {
 });
 
 describe("the stub's agent text value judge", () => {
-  const judged = (said: string, words: string): boolean => stubAgentValue({ value: { said, goal: 'the car' }, quoted: [{ words }] });
-  it('reads figures as numbers: a year said in pairs is the words\' own, another year is not (call 47)', () => {
+  const judged = (said: string, words: string, figures: 'free' | 'cited' = 'cited'): boolean => stubAgentValue({ value: { said, goal: 'the item' }, quoted: [{ words }] }, figures);
+  it('reads figures as numbers with figures: cited: a year said in pairs is the words\' own, another year is not (call 47); a number said in groups too', () => {
     expect(judged('2023 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe(false);
     expect(judged('2024 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe(true);
     expect(judged('2 wheels', 'two wheels')).toBe(false);
+    expect(judged('Vega 911', 'the Vega nine eleven')).toBe(false);
+    expect(judged('Vega 920', 'the Vega nine eleven')).toBe(true);
+  });
+  it('compares no figure with figures: free, as the field\'s own check does not; its own words still count (calls 57 to 59)', () => {
+    expect(judged('Vega 920', 'the Vega nine eleven', 'free')).toBe(false);
+    // A note's figure with words of its own around it: refused all the same, for the words.
+    expect(judged('The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor', 'free')).toBe(true);
+  });
+  it('reads the field\'s setting from the app: free where the slot does not say cited', () => {
+    expect(fieldFigures(null, { value: { field: 'title' } })).toBe('free');
   });
 });

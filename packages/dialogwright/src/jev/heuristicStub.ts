@@ -4,6 +4,8 @@ import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
 import { defaultAppOrNull } from '../core/app/registry';
 import type { App } from '../core/app/types';
+import { ENGLISH } from '../core/extract/lexicon';
+import type { LibrarySlotSpec } from '../slots/types';
 
 /** The control intents' keywords: said the same way in any app. The app's own come first (App.testing.heuristics.intents). */
 const CONTROL_INTENT_KEYWORDS: Array<[string, RegExp]> = [
@@ -116,11 +118,14 @@ export function stubSpanDrift(state: unknown): boolean {
 /**
  * The stub's agent text value judge (render/checks.ts renderAgentValueQuestion): a test double, deterministic,
  * conservative and simple, that reads no grammar. It refuses a value that carries words of an injection or
- * an instruction, a figure (compared as a number) or a capitalized name its words do not have, or two words or more of its own (in
- * neither the words, its goal nor common filler). What its words say of other fields it may leave out; a
+ * an instruction, a capitalized name its words do not have, or two words or more of its own (in neither the
+ * words, its goal nor common filler); with its field's `figures: cited`, a figure (compared as a number) its
+ * words do not have too. With `figures: free` (the text slot's default) its figures are not compared, as the
+ * slot's own check does not compare them (calls 57 to 59): a figure counts as none of its own words, so the
+ * stub refuses no more than the field's setting does. What its words say of other fields it may leave out; a
  * negation dropped or turned around is a real judge's to read.
  */
-export function stubAgentValue(state: unknown): boolean {
+export function stubAgentValue(state: unknown, figures: 'free' | 'cited' = 'cited'): boolean {
   const s = state as { value?: { said?: unknown; goal?: unknown }; quoted?: { words?: unknown }[] } | null;
   const said = typeof s?.value?.said === 'string' ? s.value.said : '';
   const goal = new Set(tokens(typeof s?.value?.goal === 'string' ? s.value.goal : ''));
@@ -129,7 +134,7 @@ export function stubAgentValue(state: unknown): boolean {
   const given = (w: string): boolean => quoted.has(w) || quoted.has(bare(w));
   // Its figures compared as numbers, as the text check compares them (call 47): "2023" from "twenty twenty three" is the words' own.
   const quotedText = (s?.quoted ?? []).map((q) => (typeof q.words === 'string' ? q.words : '')).join(' ');
-  const figuresHeld = !foreignFigure(said, [quotedText]);
+  const figuresHeld = figures === 'free' || !foreignFigure(said, [quotedText], { groups: ENGLISH });
   const own = tokens(said).filter((w) => !given(w) && !(figuresHeld && isFigureWord(w)));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
   if (own.some(isFigureWord)) return true;
@@ -158,6 +163,23 @@ export function stubDocumentsDrift(state: unknown): boolean {
   const s = state as { answer?: { said?: unknown; goal?: unknown; sections?: unknown; question?: unknown } } | null;
   const sections = typeof s?.answer?.sections === 'string' ? s.answer.sections : '';
   return stubAnswerDrift({ answer: { ...s?.answer, passage: sections } }, false);
+}
+
+/**
+ * The `figures` setting of the text field an agent value judge's state names (state.value.field), by its slot's
+ * options in the app's agent forms: `cited` only where the slot says so; `free` (the text slot's default)
+ * otherwise, an unknown field or no app included.
+ */
+export function fieldFigures(app: App | null, state: unknown): 'free' | 'cited' {
+  const name = (state as { value?: { field?: unknown } } | null)?.value?.field;
+  if (app === null || typeof name !== 'string') return 'free';
+  for (const form of Object.values(app.agent?.forms ?? {})) {
+    const field = form.fields.find((f) => f.name === name);
+    if (field === undefined) continue;
+    const config = (app.slots[field.slot] as Partial<LibrarySlotSpec<{ figures?: string }>> | undefined)?.config;
+    if (config?.figures === 'cited') return 'cited';
+  }
+  return 'free';
 }
 
 export function stubAnswerDrift(state: unknown, keepAll = true): boolean {
@@ -357,7 +379,7 @@ export class HeuristicStubClient implements JevClient {
     // An agent line (an app in agent mode): the agent model's reply, held to the business's facts.
     if (Object.hasOwn(req.questions, 'renderAgentDrift')) answers.renderAgentDrift = noulAnswer(stubAgentDrift(req.state) ? 0.9 : 0.04);
     // A text value the agent model understood: held to the caller's words it was taken from.
-    if (Object.hasOwn(req.questions, 'renderAgentValue')) answers.renderAgentValue = noulAnswer(stubAgentValue(req.state) ? 0.9 : 0.04);
+    if (Object.hasOwn(req.questions, 'renderAgentValue')) answers.renderAgentValue = noulAnswer(stubAgentValue(req.state, fieldFigures(this.app === undefined ? defaultAppOrNull() : this.app, req.state)) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

@@ -100,6 +100,26 @@ describe('the case file', () => {
     expect(() => loadJudgeCases(bad(['']))).toThrow(/no cases/);
   });
 
+  it('a value case (speaks: value): the state and question judgeTextValues sends; its field required; the data checks and the stub follow its figures (calls 57 to 59)', async () => {
+    const dir = tempDir();
+    const file = (lines: string[]): string => {
+      const path = join(dir, `value-${Math.random().toString(36).slice(2)}.jsonl`);
+      writeFileSync(path, lines.join('\n'));
+      return path;
+    };
+    expect(() => loadJudgeCases(file([line({ id: 'v', speaks: 'value' })]))).toThrow(/names its field/);
+    expect(() => loadJudgeCases(file([line({ id: 'v', field: 'item' })]))).toThrow(/names its field/);
+    const [free, cited] = loadJudgeCases(file([
+      line({ id: 'v1', speaks: 'value', field: 'item', others: ['copies'], content: 'the Vega nine eleven', span: 'Vega 920' }),
+      line({ id: 'v2', speaks: 'value', field: 'item', figures: 'cited', content: 'the Vega nine eleven', span: 'Vega 920' }),
+    ]));
+    const req = judgeRequest(free!);
+    expect(Object.keys(req.questions)).toEqual(['renderAgentValue']);
+    expect(req.state).toMatchObject({ value: { field: 'item', others: ['copies'], said: 'Vega 920' } });
+    const results = await evaluateCases([free!, cited!], { ask: async () => { throw new Error('offline'); } });
+    expect(results.map((r) => [r.checks, r.stub])).toEqual([[null, false], ['foreign', true]]);
+  });
+
   it('sends the judge what a call sends: the span\'s state and its question, to-caller with its names', () => {
     const toCaller = cases.find((c) => c.id === 'role-01')!;
     const act = actOf(toCaller);
