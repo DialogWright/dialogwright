@@ -468,6 +468,74 @@ describe('a full choice is said to be full (call 54)', () => {
   });
 });
 
+describe('a free option given for a full one\'s words is the full one asked for (call 55)', () => {
+  const BOOK = 'I would like the study room for four people on Saturday';
+  const SATURDAY = '2026-11-14'; // its afternoon is taken
+  const booked = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday']]);
+  const FULL_LINE = "We're full for the afternoon on Saturday, November 14. We have the morning. Morning or afternoon?";
+
+  it('on the second asking: the morning given for "Saturday afternoon", shown the afternoon full, is not held; the full line and the question, no attempt counted', async () => {
+    const AFTERNOON = `${BOOK} afternoon`;
+    let n = 0;
+    const first = said('Saturday afternoon works.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'afternoon', 'Saturday afternoon']]);
+    // Shown the result, the model swaps the free window in for the caller's words (the live call's turn 10).
+    const second = said('We have the morning that day.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'morning', 'Saturday afternoon']]);
+    const tools = { ...app.systems(), codes: mockCodeVerifier };
+    const o = { client: jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: fakeAgent(() => ((n += 1) === 1 ? first : second)) } };
+    const s = (await runTurn(newSession('S-swap', 0, VOICE_RELAY, ANONYMOUS, app.id), withCallerNumber(startEvent(), CLUB), o)).result.session;
+    const r = await runTurn(s, speechEvent(AFTERNOON), o);
+    expect(r.record.agent!.again).toMatchObject({ tools: ['roomAvailability'] });
+    expect(value(r, 'booking_window')).toBeNull();
+    expect(value(r, 'booking_day')).toBe(SATURDAY);
+    expect(promptOf(r)).toBe('ask_booking_window');
+    expect(heard(r)).toBe(FULL_LINE);
+    expect(r.result.session.slots.booking_window!.attempts).toBe(0);
+    // The trace says what became of it: the value given, the words it cited, and why it was not held.
+    expect(r.record.agent!.values.find((v) => v.field === 'window')).toMatchObject({ value: 'morning', words: 'Saturday afternoon', outcome: 'full' });
+    expect(r.record.agent!.values.find((v) => v.field === 'window')!.shown).toBeUndefined();
+    expect(r.record.agent!.replySaid).toBe(false);
+  });
+
+  it('on a first asking, the day\'s result already kept on the call: the same', async () => {
+    const c = await call({ [BOOK]: booked, 'the afternoon please': said('The morning it is.', [['window', 'morning', 'the afternoon please']]) }, [BOOK, 'the afternoon please'], { number: CLUB });
+    expect(c.last.record.agent!.again).toBeUndefined();
+    expect(value(c.last, 'booking_window')).toBeNull();
+    expect(heard(c.last)).toBe(FULL_LINE);
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(0);
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'window', value: 'morning', outcome: 'full' }]);
+  });
+
+  it('words that name the free option too, or no option at all, hold the value given', async () => {
+    const both = await call({ [BOOK]: booked, 'not the afternoon, the morning': said('Morning it is.', [['window', 'morning', 'not the afternoon, the morning']]) }, [BOOK, 'not the afternoon, the morning'], { number: CLUB });
+    expect(value(both.last, 'booking_window')).toBe('morning');
+    expect(promptOf(both.last)).toBe('readback_booking');
+    const none = await call({ [BOOK]: booked, 'whatever is free': said('The morning it is.', [['window', 'morning', 'whatever is free']]) }, [BOOK, 'whatever is free'], { number: CLUB });
+    expect(value(none.last, 'booking_window')).toBe('morning');
+    // A word inside another is no word of it.
+    const inside = await call({ [BOOK]: booked, afternoonish: said('The morning it is.', [['window', 'morning', 'afternoonish']]) }, [BOOK, 'afternoonish'], { number: CLUB });
+    expect(value(inside.last, 'booking_window')).toBe('morning');
+  });
+
+  it('only a field held to a seen result: a choice with no `freeFrom` takes its option whatever its words', async () => {
+    const THREE = `${HOLD}, three copies`;
+    const c = await call({ [THREE]: said('Happy to help.', [['title', 'The Quiet Harbor', 'The Quiet Harbor'], ['copies', 'two', 'three copies']]) }, [THREE]);
+    expect(value(c.last, 'request_copies')).toBe('two');
+  });
+
+  it('at a read-back, the option held given back for a full one\'s words: the full line, then the read-back again as it stands', async () => {
+    const MORNING = `${BOOK} morning`;
+    const toReadBack = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'morning', 'morning']]);
+    const c = await call({ [MORNING]: toReadBack, 'no, the afternoon': said('The morning, then.', [['window', 'morning', 'no, the afternoon']]) }, [MORNING, 'no, the afternoon'], { number: CLUB });
+    expect(promptOf(c.runs[1]!)).toBe('readback_booking');
+    expect(value(c.last, 'booking_window')).toBe('morning');
+    expect(promptOf(c.last)).toBe('readback_booking');
+    expect(c.last.result.decision).toMatchObject({ acks: [{ promptId: 'full_booking_window', vars: { booking_window: 'afternoon', free: 'morning' } }] });
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'window', value: 'morning', outcome: 'full' }]);
+    expect(c.last.record.agent!.replySaid).toBe(false);
+    expect(c.sys.bookings).toEqual([]);
+  });
+});
+
 describe('the agent turn: the second asking keeps the first answer\'s values (call 39)', () => {
   const BOOK = 'I would like the study room for four people on Saturday';
   const SATURDAY = '2026-11-14'; // its afternoon is taken

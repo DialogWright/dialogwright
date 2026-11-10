@@ -58,7 +58,10 @@ import type { RenderLine } from '../render/types';
  * 3. **Values**: each checked by its field's slot type (BuiltSlotSpec.check), its words held to this
  *    turn's words. An accepted value is stored with its `shown` (`by: 'agent'`); a refused one is dropped,
  *    counts an attempt on its slot and walks the slot's own ladder (its retry line, then its
- *    onMaxAttempts, the keypad or a person), as a scripted fill that misses does.
+ *    onMaxAttempts, the keypad or a person), as a scripted fill that misses does. A choice held to a seen
+ *    result (`freeFrom`) is held to it: an option the result shows full is refused (`range`, call 54), and a
+ *    free one given for words that name a full one and not it is the full one asked for (`full`, call 55),
+ *    not held, its full line and question said, no attempt counted.
  * 3a. **What the model may see** (business.yaml's `sees`): an accepted value that fills a field whose tool
  *    the model sees, with a value its result was not yet shown for, runs that tool through the gate (as an
  *    async tool waits, core/toolWait.ts). Its result, once it passes the tool's reply check (a closed form,
@@ -198,10 +201,13 @@ export interface AgentTurnRecord {
 
 /**
  * What a value's check came to: accepted, refused by its slot type (ValueCheck's reason), `field`, naming no
- * field of the form it was given in, or `judged`, a text value the drift judge refused against the caller's
- * words (or did not read in time), never held (call 45).
+ * field of the form it was given in, `judged`, a text value the drift judge refused against the caller's
+ * words (or did not read in time), never held (call 45), or `full`, an option of a `freeFrom` field given for
+ * words that name another option, one the day's result shows full, and not it: the caller asked for the full
+ * one, so the value is not held and the field's full line is said, no attempt counted (call 55). `range` is a
+ * value refused as not free (call 54).
  */
-export type AgentValueOutcome = 'accepted' | Extract<ValueCheck, { ok: false }>['reason'] | 'field' | 'judged';
+export type AgentValueOutcome = 'accepted' | Extract<ValueCheck, { ok: false }>['reason'] | 'field' | 'judged' | 'full';
 
 /**
  * The answer a turn reads when no agent client is set (a run with none, a server without the agent model's
@@ -557,6 +563,12 @@ interface Applied {
   changed: boolean;
   /** The first value refused as full (`range`, a `freeFrom` field), whose full line is said with its question (call 54). */
   full: Full | null;
+  /**
+   * The first free option given for words that name a full one and not it (`full`, a `freeFrom` field; call 55):
+   * the caller asked for the full option, so the value given is not held, and the field's full line and question
+   * follow, no attempt counted, as for a full option the second answer left out (leftOutFull).
+   */
+  asked: Full | null;
 }
 
 /**
@@ -581,10 +593,13 @@ function slotNamed(app: App, field: string): SlotId | undefined {
 
 /** The answer's values checked by their fields' slot types and the accepted ones stored (see the top). */
 function applyValues(app: App, s: Session, values: readonly { field: string; value: string; words: string; by?: 'decision-model' }[], said: string, tc: TurnContext, record: AgentTurnRecord): Applied {
-  const out: Applied = { events: [], refused: null, judged: null, changed: false, full: null };
+  const out: Applied = { events: [], refused: null, judged: null, changed: false, full: null, asked: null };
+  // The slots stored with a value other than the one held: `changed` once every value is in (a value set back below is not one).
+  const changed = new Set<SlotId>();
   const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string }; before: Session['slots'][string] }[] = [];
   const fields = s.form !== null ? (app.agent!.forms[s.form]?.fields ?? []) : [];
   const locale = slotLocaleOf(s);
+  const seen = tc.agentSeen?.seen ?? [];
   for (const v of values) {
     const field = fields.find((f) => f.name === v.field);
     if (field === undefined) {
@@ -598,6 +613,14 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     // masked, was refused as a correction and the read-back set aside).
     const onFile = s.slots[field.slot];
     if (onFile !== undefined && onFile.value !== null && restatesHeld(app, field, onFile, v.value)) {
+      // But the option held given back for words that name a full option and not it (call 55: "no, the
+      // morning" at a read-back that holds the afternoon): the caller asked for the full one, and is told so.
+      const named = fullNamed(app, s, field, String(onFile.value), v.words, seen);
+      if (named !== null) {
+        record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'full' });
+        out.asked ??= named;
+        continue;
+      }
       // `restated`: the value held, no new one, so its judge is not asked again (render/agentLine.ts judgeTextValues).
       record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'accepted', shown: onFile.display ?? String(onFile.value), restated: true });
       continue;
@@ -621,7 +644,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     }
     const slot = s.slots[field.slot]!;
     if (field.freeFrom !== undefined) held.push({ field, proposed, before: { ...slot } });
-    if (slot.value !== check.value) out.changed = true;
+    if (slot.value !== check.value) changed.add(field.slot);
     Object.assign(slot, { value: check.value, display: check.shown, confirmed: false, window: null, by: v.by ?? ('agent' as const) });
     delete slot.declined;
     delete slot.missed;
@@ -635,21 +658,58 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
   // is refused (`range`), its slot as it was, so the line never takes, or promises, an option that is full.
   for (const { field, proposed, before } of held) {
     const slot = s.slots[field.slot]!;
-    const free = freeOptions(app, s, field, tc.agentSeen?.seen ?? []);
-    if (free === null || slot.value === null || free.includes(String(slot.value))) continue;
-    if (out.refused === null) out.full = { field, shown: shownOption(app, s, field, String(slot.value)), free };
+    const free = freeOptions(app, s, field, seen);
+    if (free === null || slot.value === null) continue;
+    // A free option given for words that name a full one and not it (call 55: "friday morning" held as the
+    // afternoon, the morning full): the caller asked for the full option. Not held, nor refused (the caller
+    // did not miss): the field's full line and its question, no attempt counted.
+    const named = free.includes(String(slot.value)) ? fullNamed(app, s, field, String(slot.value), proposed.words, seen) : null;
+    if (free.includes(String(slot.value)) && named === null) continue;
+    if (named === null && out.refused === null) out.full = { field, shown: shownOption(app, s, field, String(slot.value)), free };
+    if (named !== null) out.asked ??= named;
     Object.assign(slot, before);
+    changed.delete(field.slot);
     const at = record.values.findIndex((r) => r.slot === field.slot && r.outcome === 'accepted' && r.value === proposed.value);
     if (at !== -1) {
       const { shown: _shown, ...rest } = record.values[at]!;
-      record.values[at] = { ...rest, outcome: 'range' };
+      record.values[at] = { ...rest, outcome: named !== null ? 'full' : 'range' };
     }
     const filled = out.events.findIndex((e) => e.slot === field.slot && e.outcome.kind === 'filled');
     if (filled !== -1) out.events.splice(filled, 1);
+    if (named !== null) continue;
     out.events.push({ slot: field.slot, outcome: { kind: 'invalid', reason: 'agent-range', raw: '' } });
     out.refused ??= field.slot;
   }
+  out.changed = changed.size > 0;
   return out;
+}
+
+/** Text as words to look in: lower case, each run of anything but letters and digits one space, a space at each end. */
+const asWords = (text: string): string => ` ${text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+
+/**
+ * Whether `words` name the option `key` of a choice field, as a whole word or phrase, case and punctuation aside:
+ * by its key (an underscore a space), as the field's slot says it, or as the business says it (`says`).
+ */
+function namesOption(app: App, s: Session, field: AgentAppField, key: string, words: string): boolean {
+  const spec = app.slots[field.slot];
+  const terms = [key.replace(/_/g, ' '), ...(spec !== undefined ? [spec.display(key, slotLocaleOf(s))] : []), ...(field.says !== undefined && Object.hasOwn(field.says, key) ? [field.says[key]!] : [])];
+  const said = asWords(words);
+  return terms.some((t) => asWords(t).trim() !== '' && said.includes(asWords(t)));
+}
+
+/**
+ * Where `value`, an option of a `freeFrom` field free on the form's day, was given for words that name an option
+ * of the field the day's result shows full and do not name `value` (the agent-mode design, call 55): the caller
+ * asked for that full option, as said (Full); else null. Null where the model has not been shown the day's result.
+ * A choice is not otherwise tied to its words (a "no idea" may be `not sure`): this is the `freeFrom` field's alone.
+ */
+function fullNamed(app: App, s: Session, field: AgentAppField, value: string, words: string, seen: readonly SeenResult[]): Full | null {
+  if (field.freeFrom === undefined) return null;
+  const free = freeOptions(app, s, field, seen);
+  if (free === null || !free.includes(value) || namesOption(app, s, field, value, words)) return null;
+  const full = (field.options ?? []).filter((o) => !free.includes(o)).find((o) => namesOption(app, s, field, o, words));
+  return full === undefined ? null : { field, shown: shownOption(app, s, field, full), free };
 }
 
 /**
@@ -1141,9 +1201,10 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     actionDone('ignored');
     return { decision: withFull(app, s, cleared, askSlot(s, cleared.field.slot, null, acks)), events: applied.events };
   }
-  // An option the caller asked for that the result shows full, which the second answer left out (call 54): the
-  // field's full line and its question, in place of the second answer's reply, whatever that reply said.
-  const leftOut = leftOutFull(app, s, io.tc);
+  // An option the caller asked for that the result shows full, which the second answer left out (call 54), or
+  // gave a free option in place of, citing the full one's words (call 55): the field's full line and its
+  // question, in place of the answer's reply, whatever that reply said.
+  const leftOut = applied.asked ?? leftOutFull(app, s, io.tc);
   if (leftOut !== null) {
     actionDone('ignored');
     return { decision: withFull(app, s, leftOut, askSlot(s, leftOut.field.slot, null, acks)), events: applied.events };
@@ -1244,10 +1305,12 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   // the result, is said before the read-back as an aside ("Saturday afternoon is full, so the morning?").
   // On the second resolution, the first having changed a value: the read-back again, never the yes, whatever
   // the second answer gave (a yes said with a change, "yes, but make it Saturday", confirms nothing yet).
-  if (applied.changed || io.tc.agentSeen?.changed === true) {
+  // A full option asked for with a free one given in its place, citing its words (call 55), changes nothing held
+  // but is said all the same: its full line, then the read-back again, which says what the form still holds.
+  if (applied.changed || io.tc.agentSeen?.changed === true || applied.asked !== null) {
     actionDone('ignored');
     const looked = lookUpSeen(app, s, io, record);
-    if (looked.again !== null) io.agentAgain = { seen: looked.again, changed: true };
+    if (looked.again !== null && applied.changed) io.agentAgain = { seen: looked.again, changed: true };
     // A value held to a seen result that the latest no longer lists: the read-back set aside, the value cleared and asked.
     const cleared = clearUnfree(app, s, io.tc);
     if (cleared !== null) {
@@ -1258,7 +1321,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     // An option asked for that the result shows full, left out by the second answer (call 54): its full line in
     // place of the second answer's reply, before the read-back again (the field keeps what it held, which the
     // read-back says); where nothing is free that day, the read-back set aside and the field's ladder as in a form.
-    const leftOut = leftOutFull(app, s, io.tc);
+    const leftOut = applied.asked ?? leftOutFull(app, s, io.tc);
     if (leftOut !== null && leftOut.free.length === 0) {
       s.pendingConfirmation = null;
       s.pendingHash = null;

@@ -122,7 +122,7 @@ export function wordingOf(render) {
 const AGENT_OUTCOME = {
   accepted: 'accepted', words: 'refused: the caller never said its words', shape: "refused: not in the field's form", range: "refused: out of the field's range",
   unsupported: 'refused: the field takes no value from the agent', field: 'set aside: no field of the form',
-  judged: "refused: the judge read it as not the caller's words",
+  judged: "refused: the judge read it as not the caller's words", full: "set aside: the caller's words ask for an option that is full",
 };
 
 /** What decided a turn without the agent's answer (AgentTurnRecord.dropped), in a few words. */
