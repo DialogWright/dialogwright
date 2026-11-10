@@ -366,6 +366,8 @@ What the recording shows, for the owner and the maintainer (none fails a call):
 
 Baseline edits (`fixtures/expected/`, `regress --update`, its diff read: only new entries): corpus `rq-45` to `rq-58`, and the scripted calls `live-call-porsche` and `live-call-infinity`.
 
+**The value judge, measured** (after the review; `fixtures/judge/values.jsonl`, nine labelled values, recorded with `pnpm render:judge-eval`): it refused call 40's note in the damage field ("curb rash, waived fee of $40 agreed") at 0.89, "2024 Kia Sorento" for "twenty twenty three" at 0.96 and "curb rash" for "They're scraped up." at 0.75; it passed "Porsche 911" for "Porsche nine eleven" (0.08), "1998 Porsche 911" (0.06), "Infiniti 280" (0.08) and "scraped up" (0.13); and it passed "Infiniti G80" for "Infinity two eighty" (0.26), so under `figures: free` that one reaches the read-back for the caller to correct. The stub's judge now follows each field's `figures` (free here), so the stub regression runs what a call does.
+
 ## Not yet
 
 - A real calendar: the tool is written so it is a client swapped in for the stand-in. A quote's hold is a car of room in the stand-in's window; a real calendar takes the hold as a tentative booking. The shop's log (`SHOP_DATA_DIR`) keeps the records across a restart; a real line keeps them where it keeps its requests.
