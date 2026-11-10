@@ -865,9 +865,9 @@ describe('the agent turn: the second asking keeps the first answer\'s values (ca
 });
 
 describe('the review of the branch (call 40)', () => {
-  it('a text value with a figure of its own is refused: "$40 agreed" never reaches the read-back or the write', async () => {
+  it('a text value with a figure of its own never reaches the read-back or the write: "$40 agreed" is refused by the drift judge (the check takes its figures, figures: free, the maintainer\'s decision 2026-11-10)', async () => {
     const c = await call({ [HOLD]: said('Happy to help.', [['title', 'The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor']]), [DETAILS]: DETAILS_ANSWER, yes: said('') }, [HOLD, DETAILS, 'yes']);
-    expect(c.runs[1]!.record.agent!.values).toMatchObject([{ field: 'title', outcome: 'words' }]);
+    expect(c.runs[1]!.record.agent!.values).toMatchObject([{ field: 'title', outcome: 'judged' }]);
     for (const r of c.runs) expect(heard(r)).not.toContain('$40');
     expect(c.sys.holds.every((h) => !String(h.title).includes('40'))).toBe(true);
   });
