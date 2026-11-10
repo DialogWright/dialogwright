@@ -676,6 +676,30 @@ describe('Telnyx webhooks', () => {
     expect(r.text).not.toContain('astra');
   });
 
+  it('writes TELNYX_SPEECH_MODEL beside its provider on the relay element of an app that names no language, and changes nothing unset', async () => {
+    const telnyx = { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY, TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram' };
+    const before = await listen(deps(telnyx));
+    const plain = (await postTelnyx(before, '/voice/telnyx', 'CallSid=v2%3Aabc')).text.replace(/token=[0-9a-f]+/, '');
+    expect(plain).toContain(' transcriptionProvider="deepgram"/></Connect>');
+    expect(plain).not.toContain('speechModel=');
+    await new Promise<void>((r) => server!.close(() => r()));
+    const after = await listen(deps({ ...telnyx, TELNYX_SPEECH_MODEL: 'flux' }));
+    const flux = (await postTelnyx(after, '/voice/telnyx', 'CallSid=v2%3Aabc')).text.replace(/token=[0-9a-f]+/, '');
+    // The one difference: the model, after its provider.
+    expect(flux).toBe(plain.replace(' transcriptionProvider="deepgram"/>', ' transcriptionProvider="deepgram" speechModel="flux"/>'));
+  });
+
+  it('gives TELNYX_SPEECH_MODEL to the default locale\'s <Language> alone, never where a language with no recognizer of its own inherits it', async () => {
+    const app: App = { ...libraryApp, voice: { ...libraryApp.voice, numbers: { [SPANISH_NUMBER]: 'es' } } };
+    const base = await listen({ ...deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY, TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram', TELNYX_SPEECH_MODEL: 'flux' }), app });
+    const languages = '<Language code="en-US" transcriptionProvider="deepgram" speechModel="flux"/><Language code="es"/>';
+    const en = (await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc')).text;
+    expect(en).toContain(`hints="depot, parcel" language="en-US">${languages}<Parameter name="locale" value="en-US"/></ConversationRelay>`);
+    const es = (await postTelnyx(base, '/voice/telnyx', `CallSid=v2%3Adef&To=${encodeURIComponent(SPANISH_NUMBER)}`)).text;
+    expect(es).toContain(`language="es">${languages}<Parameter name="locale" value="es"/></ConversationRelay>`);
+    for (const doc of [en, es]) expect(doc).not.toMatch(/<ConversationRelay [^>]*(transcriptionProvider|speechModel)=/);
+  });
+
   it('sends Telnyx no voice when only the Twilio voice is set', async () => {
     const base = await listen(deps({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY, TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }));
     const r = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc');

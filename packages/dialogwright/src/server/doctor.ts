@@ -521,10 +521,11 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
  * is a warning, since neither is known. A language other than English heard by a recognizer that hears
  * English only fails on Twilio where its own element names that model (its own recognizer, or the
  * server's TWILIO_SPEECH_MODEL for the default locale), and warns where it names none and another
- * language's may be kept (one live call's reading), and on Telnyx. Otherwise one line names each locale's
+ * language's may be kept (one live call's reading), and on Telnyx (its own recognizer, or the server's
+ * TELNYX_SPEECH_MODEL for the default locale, not yet seen on a live call). Otherwise one line names each locale's
  * languages. (Provisional, the maintainer's to confirm: which of these fail.)
  */
-export function languageChecks(appDir: string, config: Pick<ServerConfig, 'voiceProviders' | 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider'>): CheckResult[] {
+export function languageChecks(appDir: string, config: Pick<ServerConfig, 'voiceProviders' | 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider' | 'telnyxSpeechModel'>): CheckResult[] {
   const loaded = loadAppFolder(appDir).config;
   if (loaded === null) return [];
   const speech = speechLocalesOfFolder(loaded);

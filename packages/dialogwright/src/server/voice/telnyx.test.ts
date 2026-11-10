@@ -18,7 +18,7 @@ describe('the Telnyx voice provider', () => {
         `<ConversationRelay url="wss://voice.example.com/conversation/telnyx?token=${'b'.repeat(32)}" dtmfDetection="true" interruptible="any" hints="one,two"/>` +
         '</Connect></Response>',
     );
-    expect(doc).not.toContain('speechModel='); // a Twilio-only attribute
+    expect(doc).not.toContain('speechModel='); // no model unless one is named (TELNYX_SPEECH_MODEL, a locale's own)
     expect(telnyxProvider.contentType).toBe('text/xml');
   });
 
@@ -38,11 +38,18 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.startDocument({ ...START, voice: 'a "q" & b' })).toContain('voice="a &quot;q&quot; &amp; b"');
   });
 
-  it('names the deployment\'s recognizer provider, and never a model, on the relay element', () => {
+  it('names the deployment\'s recognizer on the relay element: its provider, and its model where it names one', () => {
     expect(telnyxProvider.startDocument({ ...START, recognition: {} })).toBe(telnyxProvider.startDocument(START));
-    const doc = telnyxProvider.startDocument({ ...START, recognition: { provider: 'deepgram', model: 'nova-2' } });
-    expect(doc).toContain('hints="one,two" transcriptionProvider="deepgram"/>');
-    expect(doc).not.toContain('speechModel=');
+    // A provider alone (TELNYX_TRANSCRIPTION_PROVIDER, TELNYX_SPEECH_MODEL unset): the document it always had.
+    const provider = telnyxProvider.startDocument({ ...START, recognition: { provider: 'deepgram' } });
+    expect(provider).toBe(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Connect action="https://voice.example.com/cr-action/telnyx">' +
+        `<ConversationRelay url="wss://voice.example.com/conversation/telnyx?token=${'b'.repeat(32)}" dtmfDetection="true" interruptible="any" hints="one,two" transcriptionProvider="deepgram"/>` +
+        '</Connect></Response>',
+    );
+    // With a model (TELNYX_SPEECH_MODEL): the relay element's speechModel, as Telnyx's TeXML reference documents it, and nothing else changed.
+    const model = telnyxProvider.startDocument({ ...START, recognition: { provider: 'deepgram', model: 'flux' } });
+    expect(model).toBe(provider.replace('transcriptionProvider="deepgram"/>', 'transcriptionProvider="deepgram" speechModel="flux"/>'));
   });
 
   it('names a two-locale call\'s language (one for speech and recognition alike), the languages it may switch to with their own voices and recognizers, and the locale parameter', () => {
@@ -96,13 +103,29 @@ describe('the Telnyx voice provider', () => {
     expect(twilio).not.toMatch(/<ConversationRelay [^>]* voice=/);
   });
 
-  it('names what every language shares on the relay element, except a model, which only <Language> takes', () => {
+  it('names what every language shares on the relay element, a model included', () => {
     const same = { voice: 'Telnyx.Ultra.Callie', recognition: { provider: 'deepgram' } };
     const shared = telnyxProvider.startDocument({ ...START, language: { tts: 'en-US', transcription: 'en-US', ...same }, languages: [{ tts: 'en-US', transcription: 'en-US', ...same }] });
     expect(shared).toContain('hints="one,two" transcriptionProvider="deepgram" language="en-US" voice="Telnyx.Ultra.Callie"><Language code="en-US"/></ConversationRelay>');
     const model = { recognition: { provider: 'deepgram', model: 'nova-2' } };
     const withModel = telnyxProvider.startDocument({ ...START, language: { tts: 'en-US', transcription: 'en-US', ...model }, languages: [{ tts: 'en-US', transcription: 'en-US', ...model }] });
-    expect(withModel).toContain('hints="one,two" language="en-US"><Language code="en-US" transcriptionProvider="deepgram" speechModel="nova-2"/></ConversationRelay>');
+    expect(withModel).toContain('hints="one,two" transcriptionProvider="deepgram" speechModel="nova-2" language="en-US"><Language code="en-US"/></ConversationRelay>');
+  });
+
+  it('never puts one language\'s model where a <Language> with no recognizer of its own would inherit it (flux hears English only)', () => {
+    const flux = { provider: 'deepgram', model: 'flux' };
+    const languages = [{ tts: 'en-US', transcription: 'en-US', recognition: flux }, { tts: 'es-US', transcription: 'es-US' }];
+    for (const start of languages) {
+      const doc = telnyxProvider.startDocument({ ...START, language: start, languages, parameters: { locale: start.tts } });
+      // The relay element names no recognizer; English's is on its own <Language>, and Spanish has Telnyx's default.
+      expect(doc).toContain(`hints="one,two" language="${start.tts}"><Language code="en-US" transcriptionProvider="deepgram" speechModel="flux"/><Language code="es-US"/>`);
+      expect(doc).not.toMatch(/<ConversationRelay [^>]*speechModel=/);
+    }
+    // A Spanish language with a recognizer of its own keeps it, and the relay element still names neither.
+    const own = [languages[0]!, { tts: 'es-US', transcription: 'es-US', recognition: { provider: 'deepgram', model: 'flux-multi' } }];
+    expect(telnyxProvider.startDocument({ ...START, language: own[0]!, languages: own })).toContain(
+      'hints="one,two" language="en-US"><Language code="en-US" transcriptionProvider="deepgram" speechModel="flux"/><Language code="es-US" transcriptionProvider="deepgram" speechModel="flux-multi"/>',
+    );
   });
 
   it('reads a form-encoded TeXML callback and a JSON one alike', () => {

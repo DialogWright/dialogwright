@@ -36,7 +36,10 @@ export function attr(name: string, value: string): string {
 export interface LanguageShape {
   /** The carrier names a voice's TTS provider apart from the voice (Twilio's `ttsProvider`). */
   readonly ttsProvider: boolean;
-  /** The relay element itself takes a speech model (Twilio's `speechModel`); Telnyx's takes one only on `<Language>`. */
+  /**
+   * The relay element itself takes a speech model (`speechModel`), as both built-in carriers' do (Twilio's;
+   * Telnyx's in its TeXML reference). False keeps a model on the `<Language>` children only.
+   */
   readonly relayModel: boolean;
 }
 

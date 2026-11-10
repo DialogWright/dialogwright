@@ -879,6 +879,27 @@ describe('pnpm diagnose: the languages a carrier is sent (live findings, 2026-10
   const LIBRARY = fileURLToPath(new URL('../define/fixture', import.meta.url));
   const ROUTED = fileURLToPath(new URL('../testing/routed', import.meta.url));
   const server = (voiceProviders: string[], twilioSpeechModel: string | null = 'flux') => ({ voiceProviders, twilioTranscriptionProvider: 'Deepgram', twilioSpeechModel, telnyxTranscriptionProvider: null });
+  const telnyxServer = (telnyxSpeechModel: string | null) => ({ ...server(['telnyx']), telnyxTranscriptionProvider: 'deepgram', telnyxSpeechModel });
+
+  it('on Telnyx, warns of a language beside the server\'s English-only TELNYX_SPEECH_MODEL, and of a default locale heard with it', () => {
+    expect(languageChecks(LIBRARY, telnyxServer(null))).toHaveLength(1); // the bare tag alone, as before
+    const flux = languageChecks(LIBRARY, telnyxServer('flux'));
+    expect(flux[1]).toMatchObject({ id: 'languages', status: 'warn', message: expect.stringMatching(/^the locale es \(heard as es\) names no recognizer of its own on Telnyx, while en-US is heard with deepgram flux \(the server's\), which hears English only/) });
+    expect(languageChecks(LIBRARY, telnyxServer('flux-multi'))).toHaveLength(1);
+    const dir = mkdtempSync(join(tmpdir(), 'languages-doctor-telnyx-'));
+    try {
+      for (const f of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml']) writeFileSync(join(dir, f), readFileSync(join(LIBRARY, f), 'utf8'));
+      writeFileSync(join(dir, 'app.yaml'), readFileSync(join(LIBRARY, 'app.yaml'), 'utf8').replace('locale: en-US', 'locale: es-US'));
+      expect(languageChecks(dir, telnyxServer('flux'))).toEqual([{
+        id: 'languages', status: 'warn',
+        message: 'the default locale es-US is heard as es-US on Telnyx with deepgram flux (the server\'s), which hears English only',
+        fix: 'name a recognizer that hears es-US for the locale: voice.locales.es-US.recognition.telnyx: { provider: <one that hears it> }; or set the server\'s TELNYX_SPEECH_MODEL to a model that hears it',
+      }]);
+      expect(languageChecks(dir, telnyxServer(null))[0]).toMatchObject({ status: 'ok' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('refuses a bare tag on a server that answers on Twilio, and warns of it on Telnyx alone, where it is not known', () => {
     const twilio = languageChecks(LIBRARY, server(['twilio']));

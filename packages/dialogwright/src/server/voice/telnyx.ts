@@ -11,8 +11,8 @@ import { isWithheldWord } from '../../core/callerNumber';
  *
  * Documented by Telnyx (developers.telnyx.com, "Conversation Relay" and the TeXML
  * `<ConversationRelay>` reference): the `<Connect><ConversationRelay>` document and its attributes
- * (url, voice, language, transcriptionProvider, dtmfDetection, interruptible: none, any, speech or
- * dtmf, BARGE_IN); its two children,
+ * (url, voice, language, transcriptionProvider, speechModel, dtmfDetection, interruptible: none, any,
+ * speech or dtmf, BARGE_IN); its two children,
  * `<Language code>` with optional per-language `voice`, `ttsProvider`, `transcriptionProvider` and
  * `speechModel`, and `<Parameter name value>`, whose pairs come back in the setup frame's
  * `customParameters`; the socket frames, the `language` frame among them (`ttsLanguage`,
@@ -30,7 +30,8 @@ import { isWithheldWord } from '../../core/callerNumber';
  *   `callControlId` (setupCallId below). Its `from`, `to` and `direction` are null, and the numbers come
  *   in `customParameters` (`telnyx_call_from`, `telnyx_call_to`, and other `telnyx_*` keys).
  * - Telnyx's default recognizer ends a prompt at short pauses: "22 Alder Street" came as three
- *   final prompts. `TELNYX_TRANSCRIPTION_PROVIDER` chooses another (deepgram, google, telnyx).
+ *   final prompts. `TELNYX_TRANSCRIPTION_PROVIDER` chooses another (deepgram, google, telnyx), and
+ *   `TELNYX_SPEECH_MODEL` its model (unset, Telnyx picks the provider's default, which its pages do not name).
  * - The event streams the `events` attribute asks for (TELNYX_EVENTS: speaker-events, tokens-played) come
  *   on the socket as `{ "type": "info", "name": <event>, "value": <value> }`: `agentSpeaking` and
  *   `clientSpeaking` with `on` or `off`, and `tokensPlayed` with the line played, as it was sent
@@ -105,10 +106,15 @@ import { isWithheldWord } from '../../core/callerNumber';
  *    `language` attribute) as well as to a switch. Its voice does not, seen on live calls
  *    (2026-10-13): with the voice on the children alone Telnyx said nothing, so the start language's
  *    voice is written on the relay element as well (startDocument).
- * 5. The recognizer: the documented `transcriptionProvider` attribute (TELNYX_TRANSCRIPTION_PROVIDER,
- *    or a locale's own); a model only on `<Language>`, as its documented `speechModel` (the relay
- *    element documents none). That a child inherits what it leaves out from the relay element is
- *    not documented, and is assumed to work as Twilio documents it.
+ * 5. The recognizer: the documented `transcriptionProvider` and `speechModel` attributes
+ *    (TELNYX_TRANSCRIPTION_PROVIDER and TELNYX_SPEECH_MODEL, or a locale's own), on the relay element
+ *    and on `<Language>` alike. The relay element's `speechModel` ("The speech recognition model to
+ *    use (e.g., `flux`)") is in Telnyx's current TeXML reference, whose examples write
+ *    `transcriptionProvider="deepgram" speechModel="flux"`; it is not yet seen on a live call. That a
+ *    child inherits what it leaves out from the relay element is not documented, and is assumed to
+ *    work as Twilio documents it: so a model chosen for one language (flux hears English only) goes on
+ *    the relay element only when every language has it (xml.ts placeLanguages), never where a
+ *    `<Language>` naming no recognizer of its own would inherit it.
  * 6. The action callback's call status. Telnyx documents `callStatus: "active"` on the relay's setup
  *    frame and `in-progress` among TeXML's call statuses (ringing, in-progress, canceled, completed,
  *    failed, busy, no-answer), but not the callback's own fields. Both words read as a live call
@@ -230,14 +236,14 @@ function parse(req: WebhookRequest): CallbackParams | null {
  * (config.ts voiceFor), never Twilio's TTS_VOICE, whose names Telnyx does not know.
  */
 function startDocument(o: StartDocumentOptions): string {
-  const placed = placeLanguages(o, { ttsProvider: false, relayModel: false });
+  const placed = placeLanguages(o, { ttsProvider: false, relayModel: true });
   const attrs = [
     `url="wss://${escapeXml(o.publicHost)}/conversation/telnyx?token=${escapeXml(o.token)}"`,
     'dtmfDetection="true"',
     `interruptible="${o.bargeIn ?? 'any'}"`,
     `hints="${escapeXml(o.hints)}"`,
-    // The relay element takes a recognizer's provider, not its model (a model goes on <Language>).
-    ...recognitionAttrs(o.language ? placed.recognition : (o.recognition ?? {}), false),
+    // The recognizer: its provider and its model (Telnyx's TeXML reference documents both on the relay element).
+    ...recognitionAttrs(o.language ? placed.recognition : (o.recognition ?? {})),
     ...(o.events ? [attr('events', o.events)] : []),
   ];
   if (o.language) {

@@ -142,7 +142,8 @@ export function recognizerName(r: Recognition): string {
  * A language heard by a recognizer that hears English only, on one carrier: the locale, the language it
  * is heard in, the recognizer, and how it comes to it:
  * - `own`: the locale's own (voice.locales.<tag>.recognition.<carrier>);
- * - `deployment`: the default locale's, from the server's settings (TWILIO_SPEECH_MODEL, default flux);
+ * - `deployment`: the default locale's, from the server's settings (TWILIO_SPEECH_MODEL, default flux;
+ *   TELNYX_SPEECH_MODEL, default none);
  * - `another`: the locale names none of its own, and the document names this one for another of the
  *   app's languages. On a live Twilio call (2026-10-13) a Spanish language with no recognizer of its own
  *   was heard with the start language's Deepgram flux after a switch, which Twilio failed to connect
@@ -273,7 +274,7 @@ export function bareTagFinding(locale: string, bare: readonly BareTag[]): { mess
 export function englishOnlyFinding(h: EnglishOnlyHearing, known: boolean): { message: string; fix: string } {
   const carrier = CARRIER_NAMES[h.carrier];
   const name = recognizerName(h.recognizer);
-  const serverVar = h.carrier === 'twilio' ? 'TWILIO_SPEECH_MODEL' : 'TELNYX_TRANSCRIPTION_PROVIDER';
+  const serverVar = h.carrier === 'twilio' ? 'TWILIO_SPEECH_MODEL' : 'TELNYX_SPEECH_MODEL';
   // Whose recognizer it is, in brackets after its name, when it is the server's.
   const servers = known ? ' (the server\'s)' : ` (the server's, unless its ${serverVar} names another)`;
   const ownFix = recognitionFix(h.locale, h.carrier, h.transcription);

@@ -52,6 +52,18 @@ describe('the languages at start', () => {
     expect(telnyx).toEqual([expect.stringContaining('whether Telnyx takes one is not known; set voice.locales.es.tts')]);
   });
 
+  it('warns on Telnyx of a language beside the server\'s English-only TELNYX_SPEECH_MODEL, as on Twilio', async () => {
+    const telnyx = { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TEST_KEY, TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram' };
+    const flux = (await startLogs(libraryApp, { ...telnyx, TELNYX_SPEECH_MODEL: 'flux' })).filter((l) => l.startsWith('WARNING: the locale es'));
+    expect(flux).toEqual([
+      expect.stringContaining('whether Telnyx takes one is not known; set voice.locales.es.tts'),
+      expect.stringMatching(/^WARNING: the locale es \(heard as es\) names no recognizer of its own on Telnyx, while en-US is heard with deepgram flux \(the server's\), which hears English only: .*; name a recognizer that hears es for the locale: voice\.locales\.es\.recognition\.telnyx: /),
+    ]);
+    // A model that hears more than English, or none: the tag alone, as before.
+    expect((await startLogs(libraryApp, { ...telnyx, TELNYX_SPEECH_MODEL: 'flux-multi' })).filter((l) => l.startsWith('WARNING: the locale es'))).toHaveLength(1);
+    expect((await startLogs(libraryApp, telnyx)).filter((l) => l.startsWith('WARNING: the locale es'))).toHaveLength(1);
+  });
+
   it('says nothing of an app whose locales name their regions and a recognizer that hears them', async () => {
     const lines = { SPANISH_LINE: '+15555550142', MAIN_LINE: '+15555550100', VIP_DESK: '+15555550101', AFTER_HOURS_DESK: '+15555550102' };
     expect((await startLogs(routedApp, {}, lines)).filter((l) => l.includes('the locale es'))).toEqual([]);

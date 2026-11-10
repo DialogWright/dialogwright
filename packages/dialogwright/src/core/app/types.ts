@@ -1313,7 +1313,7 @@ export interface VoiceLocale {
   /**
    * The speech recognizer, by voice provider id (twilio, telnyx), each in the carrier's own names.
    * It wins over the deployment's recognizer for that carrier (TWILIO_TRANSCRIPTION_PROVIDER and
-   * TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER); a field it leaves out is the carrier's
+   * TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER and TELNYX_SPEECH_MODEL); a field it leaves out is the carrier's
    * default, never the deployment's. Without it, the default locale has the deployment's recognizer
    * and any other the carrier's default, since a deployment's model may hear one language only.
    */

@@ -91,7 +91,8 @@ export const TWILIO_TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
 /**
  * The recognizer the server writes for the app's default locale on each carrier when nothing sets one
  * (server/config.ts: TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL unset, TELNYX_TRANSCRIPTION_PROVIDER
- * unset): Deepgram flux on Twilio, as the start document always had; on Telnyx none, Telnyx's own default.
+ * and TELNYX_SPEECH_MODEL unset): Deepgram flux on Twilio, as the start document always had; on Telnyx none,
+ * Telnyx's own default.
  */
 export const TWILIO_DEFAULT_RECOGNIZER = { provider: 'Deepgram', model: 'flux' } as const;
 export const DEFAULT_RECOGNITION: Readonly<Record<VoiceProviderId, Readonly<{ provider?: string; model?: string }>>> = {
@@ -106,9 +107,11 @@ export const DEFAULT_RECOGNITION: Readonly<Record<VoiceProviderId, Readonly<{ pr
  * - `deepgram` `flux`: Twilio's ConversationRelay names Deepgram's Flux `flux` (its speechModel), the
  *   engine's default since before languages, and this repository has always called it a model for English
  *   (the guide's 13.1 and 13.3, server/http.ts). On a live Twilio call (2026-10-13) a Spanish language heard
- *   with it failed: "Error connecting to Deepgram Flux".
+ *   with it failed: "Error connecting to Deepgram Flux". Telnyx's list of its speech models
+ *   (developers.telnyx.com/docs/voice/stt/models, read 2026-11-10) names Deepgram's `flux` English only, and
+ *   `flux-multi` as hearing ten languages, Spanish among them.
  * TO CHECK (docs/live-checks.md check 16): this list has not been read against Deepgram's own table of
- * models and the languages each hears, nor Telnyx's; do that before relying on it, and add a model only
+ * models and the languages each hears (Telnyx's list confirms flux alone, above); do that before relying on it, and add a model only
  * from its provider's own documentation, saying where. A model missing here is never warned of.
  */
 export const ENGLISH_ONLY_MODELS: Readonly<Record<string, readonly string[]>> = {
@@ -117,7 +120,7 @@ export const ENGLISH_ONLY_MODELS: Readonly<Record<string, readonly string[]>> = 
 
 /**
  * A speech recognizer's provider or model name, as a carrier's start document takes it (Twilio's
- * `transcriptionProvider` and `speechModel`, Telnyx's `transcriptionProvider`): letters, digits,
+ * `transcriptionProvider` and `speechModel`, Telnyx's the same): letters, digits,
  * dots, hyphens and underscores, starting with a letter or digit ("Deepgram", "nova-3-general").
  */
 export const RECOGNIZER_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

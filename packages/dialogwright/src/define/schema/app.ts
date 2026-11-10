@@ -199,7 +199,7 @@ const recognizerName = () =>
 const recognition = z
   .strictObject({
     provider: recognizerName().optional().describe('The speech recognition provider, as the carrier names it (Twilio: Deepgram or Google; Telnyx: deepgram, google or telnyx). Twilio\'s transcriptionProvider, Telnyx\'s transcriptionProvider.'),
-    model: recognizerName().optional().describe('The provider\'s speech model (Twilio\'s speechModel: nova-3-general, telephony; Telnyx takes one on <Language> only). Left out, the provider\'s default.'),
+    model: recognizerName().optional().describe('The provider\'s speech model (the speechModel of both carriers: Twilio, nova-3-general or telephony; Telnyx, Deepgram\'s flux, flux-multi, nova-3 or nova-2). Left out, the provider\'s default.'),
   })
   .describe('The speech recognizer on one carrier. A field left out is the carrier\'s default, never the deployment\'s; {} asks for the carrier\'s default recognizer.');
 
@@ -241,7 +241,7 @@ const voiceLocale = z
       .record(identifier(), recognition)
       .optional()
       .describe(
-        'The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment\'s (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER). ' +
+        'The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment\'s (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER and TELNYX_SPEECH_MODEL). ' +
           'Default: the deployment\'s for the default locale, else the carrier\'s default, since a deployment\'s model may hear one language only (Twilio\'s default, Deepgram flux, is for English).',
       ),
   })

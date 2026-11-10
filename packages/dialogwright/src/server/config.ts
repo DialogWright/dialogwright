@@ -129,6 +129,14 @@ export interface ServerConfig {
   /** TELNYX_TRANSCRIPTION_PROVIDER, optional: Telnyx's recognizer for the default locale; unset, Telnyx's own default. */
   telnyxTranscriptionProvider: string | null;
   /**
+   * TELNYX_SPEECH_MODEL, optional: the model of TELNYX_TRANSCRIPTION_PROVIDER's recognizer for the default
+   * locale, written as the relay's `speechModel` (Deepgram's flux, flux-multi, nova-3 or nova-2 on Telnyx).
+   * Unset (absent or null), none is written and Telnyx picks its provider's default, as before. It needs
+   * TELNYX_TRANSCRIPTION_PROVIDER: a model alone is refused, since which provider Telnyx would take it for
+   * is not documented. An app's voice.locales.<tag>.recognition.telnyx wins, and another locale never gets it.
+   */
+  telnyxSpeechModel?: string | null;
+  /**
    * TELNYX_EVENTS, optional: the event streams Telnyx sends on the socket (its relay's `events` attribute:
    * speaker-events, tokens-played). The adapter writes each to the call's frame log. tokens-played also
    * lets the adapter notice a line Telnyx cut short and say it again (RESAY_CUT_LINES, below); without it
@@ -748,6 +756,11 @@ export function loadConfig(env: Env): ServerConfig {
   // flux is Deepgram's: another provider without a model of its own gets that provider's default.
   const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === TWILIO_DEFAULT_RECOGNIZER.provider ? TWILIO_DEFAULT_RECOGNIZER.model : null);
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
+  // A model is a provider's: Telnyx documents no provider a speechModel alone is taken for, so one with none is refused.
+  const telnyxSpeechModel = recognizerName(env, 'TELNYX_SPEECH_MODEL', 'flux');
+  if (telnyxSpeechModel !== null && telnyxTranscriptionProvider === null) {
+    throw new Error(`TELNYX_SPEECH_MODEL is a model of a provider, so it needs TELNYX_TRANSCRIPTION_PROVIDER too: set TELNYX_TRANSCRIPTION_PROVIDER=deepgram for Deepgram's ${telnyxSpeechModel}, or unset TELNYX_SPEECH_MODEL`);
+  }
   const telnyxEventsRaw = env.TELNYX_EVENTS?.trim() ?? '';
   const telnyxEventTokens = telnyxEventsRaw.split(/\s+/).filter(Boolean);
   for (const t of telnyxEventTokens) {
@@ -784,6 +797,7 @@ export function loadConfig(env: Env): ServerConfig {
     twilioTranscriptionProvider,
     twilioSpeechModel,
     telnyxTranscriptionProvider,
+    telnyxSpeechModel,
     telnyxEvents,
     ...resayOf(env),
     ...bargeInOf(env, voiceProviders),
@@ -1030,14 +1044,18 @@ export function voiceFor(c: ServerConfig, providerId: string): { ttsProvider?: s
 
 /**
  * The deployment's recognizer on one carrier: Twilio's from TWILIO_TRANSCRIPTION_PROVIDER and
- * TWILIO_SPEECH_MODEL (Deepgram flux unless set), Telnyx's from TELNYX_TRANSCRIPTION_PROVIDER (empty
- * unless set: Telnyx's own default). Like voiceFor, one carrier's never reaches another. It is the
+ * TWILIO_SPEECH_MODEL (Deepgram flux unless set), Telnyx's from TELNYX_TRANSCRIPTION_PROVIDER and
+ * TELNYX_SPEECH_MODEL (empty unless set: Telnyx's own default; a model only with a provider). Like voiceFor, one carrier's never reaches another. It is the
  * default locale's; an app's voice.locales.<tag>.recognition.<provider> wins over it, and another
  * locale does not get it (server/http.ts connectOptions).
  */
-export function recognitionFor(c: Pick<ServerConfig, 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider'>, providerId: string): Recognition {
+export function recognitionFor(c: Pick<ServerConfig, 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider' | 'telnyxSpeechModel'>, providerId: string): Recognition {
   if (providerId === 'twilio') return c.twilioSpeechModel === null ? { provider: c.twilioTranscriptionProvider } : { provider: c.twilioTranscriptionProvider, model: c.twilioSpeechModel };
-  if (providerId === 'telnyx') return c.telnyxTranscriptionProvider === null ? {} : { provider: c.telnyxTranscriptionProvider };
+  if (providerId === 'telnyx') {
+    if (c.telnyxTranscriptionProvider === null) return {};
+    const model = c.telnyxSpeechModel ?? null;
+    return model === null ? { provider: c.telnyxTranscriptionProvider } : { provider: c.telnyxTranscriptionProvider, model };
+  }
   return {};
 }
 
@@ -1190,7 +1208,7 @@ export function describeConfig(c: ServerConfig): string {
     c.ttsProvider && c.ttsVoice ? `tts ${c.ttsProvider} ${c.ttsVoice}` : 'tts default',
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
-    ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
+    ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}${c.telnyxSpeechModel ? ` ${c.telnyxSpeechModel}` : ''}`] : []),
     ...(c.voiceProviders.includes('telnyx') && c.telnyxEvents ? [`telnyx events ${c.telnyxEvents}`] : []),
     ...(c.voiceProviders.some(readsPlaybackEvents) ? [describeResay(c), describeSpurious(c), describeIncompleteWait(c)] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),

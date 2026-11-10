@@ -586,7 +586,7 @@
                 }
               },
               "recognition": {
-                "description": "The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment's (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER). Default: the deployment's for the default locale, else the carrier's default, since a deployment's model may hear one language only (Twilio's default, Deepgram flux, is for English).",
+                "description": "The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment's (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER and TELNYX_SPEECH_MODEL). Default: the deployment's for the default locale, else the carrier's default, since a deployment's model may hear one language only (Twilio's default, Deepgram flux, is for English).",
                 "type": "object",
                 "propertyNames": {
                   "type": "string",
@@ -601,7 +601,7 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                     },
                     "model": {
-                      "description": "The provider's speech model (Twilio's speechModel: nova-3-general, telephony; Telnyx takes one on <Language> only). Left out, the provider's default.",
+                      "description": "The provider's speech model (the speechModel of both carriers: Twilio, nova-3-general or telephony; Telnyx, Deepgram's flux, flux-multi, nova-3 or nova-2). Left out, the provider's default.",
                       "type": "string",
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                     }
