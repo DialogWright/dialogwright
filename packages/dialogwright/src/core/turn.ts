@@ -19,7 +19,7 @@ import { maskCallerValue, recordsOf } from '../channel/maskByName';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, unparkTask, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
-import { buildQuestions, callerMatchAsked } from './questions';
+import { buildQuestions, callerMatchAsked, isYesNoField } from './questions';
 import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, sensitiveAt, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
@@ -487,10 +487,10 @@ function summaryState(s: Session): string {
  * answering the question, and it must walk the ladder rather than reset it. `accepted`: the turn is a
  * yes to the summary, with the detail it names to change, if any (FillOptions.accepted).
  */
-function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: FormId, accepted?: FillOptions['accepted']): FillResult {
+function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: FormId, accepted?: FillOptions['accepted'], skip: readonly SlotId[] = []): FillResult {
   const app = appOf(s);
   const before = summaryState(s);
-  const fill = fillSlots(s, answers, ctx, formOf(app, form).slots.map((id) => slotSpecOf(app, id)), { correcting: true, ...(accepted !== undefined ? { accepted } : {}) });
+  const fill = fillSlots(s, answers, ctx, formOf(app, form).slots.filter((id) => !skip.includes(id)).map((id) => slotSpecOf(app, id)), { correcting: true, ...(accepted !== undefined ? { accepted } : {}) });
   // A disambiguation changes no slot yet and still has to be asked, so it is progress either way.
   if (!fill.progress || fill.disambiguate || summaryState(s) !== before) return fill;
   return { ...fill, progress: false };
@@ -2279,7 +2279,10 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // before, and only that one.
         const read = summaryState(s);
         const asRead = formValues(s, pc.form);
-        const fill = correctingFill(s, answers, ctx, pc.form, { except: changeSlotNamed(io.app, answers, pc.form, t) });
+        // An app in agent mode (its call run as a scripted app from here: no agent key, or resumed on a server without
+        // one): the yes to the read-back never fills a choice of yes and no, whose question it answers too (call 55's
+        // recording: a no to texts read as a yes, and the photo text sent).
+        const fill = correctingFill(s, answers, ctx, pc.form, { except: changeSlotNamed(io.app, answers, pc.form, t) }, yesNoSlotsOf(io.app, pc.form));
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         // A value the yes gave that a library slot reads back ("yes, but I rent", with `confirmValues:
         // [rent]`) is read back first, as it would be anywhere else; the form loop then reads the summary
@@ -3331,10 +3334,31 @@ function readBackCancel(s: Session, verdict: Verdict, answers: AnswerMap, io: Tu
     return summaryPrompt(s, pc.form, acks);
   }
   if ((verdict.kind !== 'rejected' && verdict.kind !== 'confirm_unanswered') || !doneRead(io.app, answers, io.tc.thresholds)) return null;
-  // Asking costs the caller no turn of the read-back's ladder: they answered, though not with a yes or a no.
+  // Asking the first time costs the caller no turn of the read-back's ladder: they answered, though not with a yes
+  // or a no. From the second time at this read-back each asking counts (call 55's review: "never mind", no, the
+  // read-back, "never mind", ... would loop with nothing counted), so the ladder's end, a person, still comes.
+  const asked = pc.cancelAsked ?? 0;
+  pc.cancelAsked = asked + 1;
+  if (asked >= 1) {
+    io.missed = true;
+    pc.attempts += 1;
+    if (rungFor(s, pc.attempts, io.tc.thresholds) === 'agent') {
+      s.pendingConfirmation = null;
+      return handoff(s, 'max-attempts', acks);
+    }
+  }
   pc.cancel = true;
+  // The read-back's hash is no longer armed: the yes now answers the cancel question, and a server that does not
+  // know it (resuming the call) must not take it as the read-back's yes. The no reads the read-back again, which
+  // takes the hash again (summaryPrompt).
+  s.pendingHash = null;
   io.out.cancel = { form: pc.form, step: 'asked' };
   return cancelQuestion(pc.form, acks);
+}
+
+/** The fields of a form of an app in agent mode that are a choice of yes and no (questions.ts isYesNoField); none for any other app. */
+function yesNoSlotsOf(app: App, form: FormId): SlotId[] {
+  return app.mode === 'agent' ? (app.agent?.forms[form]?.fields ?? []).filter(isYesNoField).map((f) => f.slot) : [];
 }
 
 /** "Do you want to cancel this request?": the form's cancel question, its answers a yes or a no (readBackCancel). */

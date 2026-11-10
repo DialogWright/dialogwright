@@ -508,6 +508,16 @@ describe('a free option given for a full one\'s words is the full one asked for 
     expect(c.last.record.agent!.values).toMatchObject([{ field: 'window', value: 'morning', outcome: 'full' }]);
   });
 
+  it('the second in a row for the field counts an attempt on its ladder, with the full line', async () => {
+    const SWAP = 'the afternoon please';
+    const again = 'I said the afternoon';
+    const c = await call({ [BOOK]: booked, [SWAP]: said('The morning it is.', [['window', 'morning', SWAP]]), [again]: said('The morning.', [['window', 'morning', again]]) }, [BOOK, SWAP, again], { number: CLUB });
+    expect(c.runs.at(-2)!.result.session.slots.booking_window!.attempts).toBe(0);
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(1);
+    expect(c.last.result.decision).toMatchObject({ acks: [{ promptId: 'full_booking_window' }] });
+    expect(c.last.record.agent!.values).toMatchObject([{ outcome: 'full' }]);
+  });
+
   it('words that name the free option too, or no option at all, hold the value given', async () => {
     const both = await call({ [BOOK]: booked, 'not the afternoon, the morning': said('Morning it is.', [['window', 'morning', 'not the afternoon, the morning']]) }, [BOOK, 'not the afternoon, the morning'], { number: CLUB });
     expect(value(both.last, 'booking_window')).toBe('morning');
@@ -553,6 +563,20 @@ describe('the field a reply asks for is the turn\'s question (call 55)', () => {
     expect(c.last.record.agent!.line).toMatchObject({ promptId: 'ask_request_copies', fixed: 'How many copies?' });
   });
 
+  it('the form\'s next question, not said, gives back the wording it took (its rotation through variants)', async () => {
+    const entry = app.prompts.manifest.ask_request_patronName!;
+    const before = entry.variants;
+    entry.variants = ['May I have your name?'];
+    try {
+      const c = await call({ [HOLD]: asksCopies() }, [HOLD]);
+      expect(promptOf(c.last)).toBe('ask_request_copies');
+      expect(c.last.result.session.linesSaid?.ask_request_patronName).toBeUndefined();
+    } finally {
+      if (before === undefined) delete entry.variants;
+      else entry.variants = before;
+    }
+  });
+
   it('a silence after it asks that field\'s fixed question again, not the form\'s next', async () => {
     const c = await call({ [HOLD]: asksCopies() }, [HOLD, { text: '', silence: true }]);
     expect(heard(c.last)).toBe("I didn't hear anything. How many copies?");
@@ -595,7 +619,7 @@ describe('the field a reply asks for is the turn\'s question (call 55)', () => {
     const c = await call({ [FEE]: { ...asksCopies('It depends. How many copies?'), fixedLine: 'price' } }, [FEE]);
     expect(c.last.record.agent).toMatchObject({ fixedLine: 'price', replySaid: false });
     expect(promptOf(c.last)).toBe('ask_request_patronName');
-    expect(c.last.record.agent!.asks).toBeUndefined();
+    expect(c.last.record.agent!.asks).toEqual({ field: 'copies', taken: false });
     // Named with no price asked (the line not said, nor the reply written beside it): the same.
     const unasked = await call({ [HOLD]: { ...asksCopies('It depends. How many copies?'), fixedLine: 'price' } }, [HOLD]);
     expect(unasked.last.record.agent).toMatchObject({ replySaid: false });
@@ -606,11 +630,24 @@ describe('the field a reply asks for is the turn\'s question (call 55)', () => {
     const c = await call({ [HOLD]: { ...asksCopies(), action: 'submit' } }, [HOLD]);
     expect(c.last.record.agent).toMatchObject({ replySaid: false, actionOutcome: 'ignored' });
     expect(promptOf(c.last)).toBe('ask_request_patronName');
-    expect(c.last.record.agent!.asks).toBeUndefined();
+    // Recorded as the answer gave it, not taken (call 55's review).
+    expect(c.last.record.agent!.asks).toEqual({ field: 'copies', taken: false });
+  });
+
+  it('a reply that asks nothing is said before the form\'s next question, whatever field it names: asks is for a reply that asks', async () => {
+    const c = await call({ [HOLD]: { ...HOLD_ANSWER, reply: 'Lovely book.', asks: 'copies' } }, [HOLD]);
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+    expect(heard(c.last)).toBe("Lovely book. What's your name?");
+    expect(c.last.record.agent!.asks).toEqual({ field: 'copies', taken: false });
   });
 });
 
 describe('a reply that takes leave of the caller is never said where the call goes on (call 55)', () => {
+  it('recorded whenever the answer says so, the reply ruled out on other grounds or not', async () => {
+    const c = await call({ [HOLD]: { ...HOLD_ANSWER, reply: 'Bye.', closes: true, action: 'submit' } }, [HOLD]);
+    expect(c.last.record.agent).toMatchObject({ closes: true, replySaid: false, actionOutcome: 'ignored' });
+  });
+
   it('mid-form: the next question alone', async () => {
     const c = await call({ [HOLD]: { ...HOLD_ANSWER, reply: 'Thanks for calling Example Library.', closes: true } }, [HOLD]);
     expect(heard(c.last)).toBe("What's your name?");
@@ -658,6 +695,23 @@ describe('"never mind" at the read-back asks whether to cancel (call 55, the mai
     expect(c.sys.holds).toHaveLength(1);
   });
 
+  it('the cancel question disarms the read-back\'s hash, so a yes is never taken for the read-back\'s; the no takes it again', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND, no: said('') }, [HOLD, DETAILS, 'never mind', 'no']);
+    expect(c.runs.at(-2)!.result.session.pendingHash).toBeNull();
+    expect(c.last.result.session.pendingHash).not.toBeNull();
+  });
+
+  it('asked again at the same read-back, each asking from the second counts on the read-back\'s ladder, to a person', async () => {
+    const loop = ['never mind', 'no', 'never mind', 'no', 'never mind', 'no', 'never mind'];
+    const c = await call({ ...toReadBack, ...NEVER_MIND, no: said('') }, [HOLD, DETAILS, ...loop]);
+    const asks = c.runs.filter((r) => promptOf(r) === 'cancel_request');
+    expect(asks[0]!.result.session.pendingConfirmation).toMatchObject({ attempts: 0, cancelAsked: 1 });
+    expect(asks[1]!.result.session.pendingConfirmation).toMatchObject({ attempts: 1, cancelAsked: 2 });
+    // The ladder's end: a person, never the cancel question for ever.
+    expect(c.runs.some((r) => r.result.decision.kind === 'handoff' || handedToPerson(r) !== null)).toBe(true);
+    expect(c.sys.holds).toEqual([]);
+  });
+
   it('anything else at it is read as at the read-back: a correction reads it back with the change', async () => {
     const c = await call({ ...toReadBack, ...NEVER_MIND, 'actually make it three copies': said('Three.', [['copies', 'three', 'three copies']]) }, [HOLD, DETAILS, 'never mind', 'actually make it three copies']);
     expect(promptOf(c.last)).toBe('readback_request');
@@ -680,7 +734,7 @@ describe('"never mind" at the read-back asks whether to cancel (call 55, the mai
 
   it('the agent failing at the cancel question: the scripted reading decides it, and a yes still cancels, nothing sent', async () => {
     const c = await call({ ...toReadBack, ...NEVER_MIND, yes: { fail: 'timeout' } }, [HOLD, DETAILS, 'never mind', 'yes']);
-    expect(c.last.record.agent).toMatchObject({ use: 'failed', scripted: 'read' });
+    expect(c.last.record.agent).toMatchObject({ use: 'failed', scripted: 'read', cancel: 'cancelled' });
     expect(c.last.result.decision).toMatchObject({ kind: 'complete', promptId: 'goodbye' });
     expect(c.sys.holds).toEqual([]);
     expect(formCancelled(c.last)).toHaveLength(1);
@@ -741,6 +795,13 @@ describe('the full line\'s question where one option is free (business.yaml\'s f
     const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]) }, [BOOK, 'the afternoon', { text: '', silence: true }], { number: CLUB });
     expect(promptOf(c.last)).toBe(ASK);
     expect(heard(c.last)).toBe("I didn't hear anything. Does the morning work for you?");
+  }));
+
+  it('the yes fills the free option whatever else its words say: the full-option word test is the agent\'s values\' alone', () => withAsk(async () => {
+    const YES = "yes, the afternoon's no good anyway";
+    const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]), [YES]: said('') }, [BOOK, 'the afternoon', YES], { number: CLUB });
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'window', value: 'morning', by: 'decision-model', outcome: 'accepted' }]);
+    expect(promptOf(c.last)).toBe('readback_booking');
   }));
 
   it('a no leaves the field to the agent\'s answer: nothing filled from the reading', () => withAsk(async () => {

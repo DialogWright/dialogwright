@@ -14,6 +14,7 @@ import { noulAnswer } from '../jev/distributions';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient, JevRequest, JevResponse } from '../jev/types';
 import { runTurn, type TurnRun } from '../run/turn';
+import { spokenText } from '../prompts/render';
 import type { App, ToolDef } from './app/types';
 import { registerApp, resetAppsForTest } from './app/registry';
 import { DEFAULT_THRESHOLDS } from './thresholds';
@@ -188,6 +189,68 @@ describe('the read-back\'s scripted reading never reads a yes to it as a yes to 
     // The consent field's question was not asked with the read-back's reading.
     expect(Object.keys(reads.asked.at(-1)!.questions)).not.toContain('request_textOk');
     const verdicts = last!.result.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`);
+    expect(verdicts).toEqual(['placeHold:ALLOW', 'notifyDesk:BLOCK']);
+  });
+});
+
+describe('an agent reply never stands in for a choice of yes and no (call 55\'s review)', () => {
+  const ask = async (answer: AgentAnswer): Promise<TurnRun> => {
+    const tools = { ...app.systems(), codes: mockCodeVerifier };
+    const script: Record<string, AgentAnswer> = { ...SCRIPT, [DETAILS]: answer };
+    const agent = fakeAgent((ctx) => script[ctx.conversation.at(-1)!.text]!);
+    const opts = { client: jev({}), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: agent } };
+    let session: Session = newSession('S-consent-ask', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    let last: TurnRun | null = null;
+    for (const event of [withCallerNumber(startEvent(), '+15555550199'), speechEvent(HOLD), speechEvent(DETAILS)]) {
+      last = await runTurn(session, event, opts);
+      session = last.result.session;
+    }
+    return last!;
+  };
+  const CONSENT = 'Is it OK if we text you at that number?';
+
+  it('a reply asking something else, naming the consent in asks: the consent\'s own question is said, the reply not', async () => {
+    const r = await ask({ ...SCRIPT[DETAILS]!, reply: 'Thanks, Avery. Is Thursday OK?', asks: 'textOk' });
+    expect(promptOf(r)).toBe('ask_request_textOk');
+    expect(spokenText(app, r.result.decision)).toBe(CONSENT);
+    expect(r.record.agent).toMatchObject({ replySaid: false, asks: { field: 'textOk', taken: false } });
+    expect(r.result.session.promptedFor).toBe('request_textOk');
+  });
+
+  it('a reply asking something else with the consent next in the form: the consent\'s own question, the reply not said', async () => {
+    const r = await ask({ ...SCRIPT[DETAILS]!, reply: 'Thanks, Avery. Is Thursday OK?' });
+    expect(spokenText(app, r.result.decision)).toBe(CONSENT);
+    expect(r.record.agent!.replySaid).toBe(false);
+  });
+
+  it('a reply that asks nothing is said before the consent\'s own question', async () => {
+    const r = await ask({ ...SCRIPT[DETAILS]!, reply: 'Thanks, Avery.' });
+    expect(spokenText(app, r.result.decision)).toBe(`Thanks, Avery. ${CONSENT}`);
+  });
+});
+
+describe('a call run scripted from the read-back never reads its yes as a yes to a consent (call 55\'s review)', () => {
+  it('the agent\'s key gone at the read-back (a server without it): the yes sends the request with the no, the text refused', async () => {
+    const tools = { ...app.systems(), codes: mockCodeVerifier };
+    const NO = 'No, please just call me.';
+    const YES = "yes, that's right";
+    const j = jev({ [NO]: [0.03, 0.93], [YES]: [0.97, 0.02] });
+    const reads: JevClient = {
+      async ask(req) {
+        const r = await j.ask(req);
+        return req.questions.request_textOk !== undefined ? { ...r, answers: { ...r.answers, request_textOk: { type: 'choice', choice: 'yes', probabilities: { yes: 0.98, no: 0, none: 0.02 }, confidence: 0.97 } } } : r;
+      },
+    };
+    const script: Record<string, AgentAnswer> = { ...SCRIPT, [NO]: said('') };
+    const agent = fakeAgent((ctx) => script[ctx.conversation.at(-1)!.text]!);
+    const withAgent = { client: reads, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: agent } };
+    let session: Session = newSession('S-consent-scripted', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    for (const event of [withCallerNumber(startEvent(), '+15555550199'), ...[HOLD, DETAILS, NO].map((t) => speechEvent(t))]) session = (await runTurn(session, event, withAgent)).result.session;
+    expect(session.pendingConfirmation).toMatchObject({ target: 'form', form: 'request' });
+    const { agent: _agent, ...noAgent } = withAgent;
+    const last = await runTurn(session, speechEvent(YES), noAgent);
+    expect(last.result.session.agent?.scripted).toBe(true);
+    const verdicts = last.result.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`);
     expect(verdicts).toEqual(['placeHold:ALLOW', 'notifyDesk:BLOCK']);
   });
 });

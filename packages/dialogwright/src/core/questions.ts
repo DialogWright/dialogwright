@@ -299,9 +299,19 @@ function agentModeQuestions(app: App, session: Session): QuestionMap {
 export function yesNoFieldAsked(app: App, session: Session): AgentAppField | null {
   if (session.form === null || session.pendingConfirmation !== null || session.promptedFor === null) return null;
   const field = app.agent?.forms[session.form]?.fields.find((f) => f.slot === session.promptedFor);
-  if (field === undefined || field.type !== 'choice') return null;
+  return field !== undefined && isYesNoField(field) ? field : null;
+}
+
+/**
+ * Whether a field of an app in agent mode is a choice whose options are exactly yes and no, in any case and order
+ * (a consent). Such a field is filled only by an answer to its own fixed question (an agent reply never stands in
+ * for it, core/agentTurn.ts), or by the agent's value from the caller's words; never by a yes to a read-back (the
+ * agent-mode design, call 55).
+ */
+export function isYesNoField(field: Pick<AgentAppField, 'type' | 'options'>): boolean {
+  if (field.type !== 'choice') return false;
   const options = (field.options ?? []).map((o) => o.trim().toLowerCase()).sort();
-  return options.length === 2 && options[0] === 'no' && options[1] === 'yes' ? field : null;
+  return options.length === 2 && options[0] === 'no' && options[1] === 'yes';
 }
 
 /**

@@ -167,6 +167,12 @@ export type PendingConfirmation =
        */
       aside?: true;
       /**
+       * An app in agent mode: how many times the cancel question (`cancel`, below) has been asked at this read-back
+       * (call 55's review): from the second, each asking counts an attempt on the read-back's ladder, so a caller
+       * who keeps saying "never mind" and then no still reaches a person. Absent before the first.
+       */
+      cancelAsked?: number;
+      /**
        * An app in agent mode: the caller said at this read-back that they don't want to go ahead (the `done`
        * intent), and the line asked whether to cancel the request (`cancel_<form>`; the agent-mode design, call
        * 55). A yes ends the call with nothing sent, a no reads the request back again, and anything else is
@@ -348,10 +354,12 @@ export interface Session {
    * checked results of the tools the app lets the model see (business.yaml's `sees`), the latest of each
    * tool, each with the field and value it was called with, and only the fields its check names
    * (core/replyShape.ts namedPart); absent until the first. `judged`: the slots whose text value the drift
-   * judge refused once with no value held since (call 45), so a second refusal counts an attempt. Absent
-   * for every other app, so every other session, and one saved before it, is as it was.
+   * judge refused once with no value held since (call 45), so a second refusal counts an attempt. `fullAsked`:
+   * the slots for which a free option was given for words naming a full one (the `full` outcome) once with no
+   * value held since (call 55), so a second counts an attempt. Absent for every other app, so every other
+   * session, and one saved before it, is as it was.
    */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[] };
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[]; fullAsked?: SlotId[] };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];

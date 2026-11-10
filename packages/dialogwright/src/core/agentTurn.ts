@@ -14,7 +14,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack, FillEvent } from './fia';
 import type { Verdict } from './gates';
 import { atLeast, type Thresholds } from './thresholds';
-import { freeAskAsked, yesNoFieldAsked } from './questions';
+import { freeAskAsked, isYesNoField, yesNoFieldAsked } from './questions';
 import { localeOf, slotLocaleOf } from './locale';
 import { emptySlot, setForm, type PendingConfirmation, type Session } from './session';
 import { callTool } from './lifecycle';
@@ -80,7 +80,8 @@ import type { RenderLine } from '../render/types';
  *    field's question, or with no form the open question; a reply that asks nothing is said before that
  *    question instead. Where the answer says its reply asks for another field of the form still empty
  *    (`asks`, call 55), that field's question is the turn's: the reply's fallback, what a silence or a miss
- *    asks again, and what the next turn reads the words for. A reply that takes leave of the caller
+ *    asks again, and what the next turn reads the words for. A choice of yes and no (a consent) is always asked
+ *    in its own fixed words: no reply stands in for it (one that asks nothing is said before it). A reply that takes leave of the caller
  *    (`closes`, call 55) is never said: the line closes a call in its own fixed words. Where the core's own next step is not a plain question (the offer of the caller's
  *    number, a slot's own read-back, the identity a form needs), that step is said. A reply that could
  *    contradict what the core did is never said: where a value was refused or named no field of the form,
@@ -156,13 +157,17 @@ export interface AgentTurnRecord {
   replySaid: boolean;
   /**
    * The field the answer said its reply's question asks for (AgentAnswer.asks; the agent-mode design, call 55),
-   * where it named one, and whether the turn took it as its question (`taken`: the reply said in place of that
-   * field's fixed question, which is its fallback, what a silence asks again and what the next turn reads the
-   * words for). Not taken where it names no field of the form open still empty, or the reply was not said in
-   * place of a field's plain question: the form's own next field, as before. Absent where it named none.
+   * recorded whenever the answer named one, and whether the turn took it as its question (`taken`: the reply,
+   * asking something, said in place of that field's fixed question, which is its fallback, what a silence asks
+   * again and what the next turn reads the words for). Not taken where the reply was not said, asks nothing (an
+   * aside, said before the form's next question), or names no field of the form open still empty, or a choice
+   * of yes and no (whose own fixed question is always said): the form's own next field, as before.
    */
   asks?: { field: string; taken: boolean };
-  /** The answer said its reply takes leave of the caller (AgentAnswer.closes, call 55): the reply was not said. Absent otherwise. */
+  /**
+   * The answer said its reply takes leave of the caller (AgentAnswer.closes, call 55), recorded whenever it did:
+   * such a reply is never said. Absent otherwise.
+   */
   closes?: true;
   /**
    * The cancel question at the read-back on this turn (TurnOut.cancel; call 55): `asked` (the caller said they don't
@@ -511,35 +516,45 @@ const replyOf = (reply: string | null | undefined): string | null => (reply === 
  * (AgentAnswer.closes; the agent-mode design, call 55), since the line closes a call in its own fixed words
  * and a goodbye said where the call goes on (before the read-back again, at call 55) is untrue.
  */
-function sayable(answer: AgentAnswer | null, record: AgentTurnRecord): string | null {
-  if (answer === null) return null;
-  if (answer.closes === true) {
-    record.closes = true;
-    return null;
-  }
+function sayable(answer: AgentAnswer | null): string | null {
+  if (answer === null || answer.closes === true) return null;
   return answer.reply;
 }
 
 /**
  * The question the turn asks in place of `next` (the form's next field's plain question), where the answer says
- * its reply asks for another field (AgentAnswer.asks; the agent-mode design, call 55): that field's own question,
- * so the reply stands in for it, falls back to it, and the next turn reads the caller's words as its answer. Only
- * a field of the form open still empty, asked by its plain question (not one that offers the number calling);
- * otherwise `next`. Recorded either way (AgentTurnRecord.asks).
+ * its reply, which asks something, asks for another field (AgentAnswer.asks; the agent-mode design, call 55): that
+ * field's own question, so the reply stands in for it, falls back to it, and the next turn reads the caller's words
+ * as its answer. Only a field of the form open still empty, asked by its plain question (not one that offers the
+ * number calling), and never a choice of yes and no (a consent is answered to its own fixed question only);
+ * otherwise `next`. Recorded on AgentTurnRecord.asks. `wordingsBefore` is the session's line counts before `next`
+ * was chosen: `next`, not said, gives back the wording it took (wordings.ts nextWording).
  */
-function askedByReply(app: App, s: Session, form: FormId, answer: AgentAnswer | null, next: PromptDecision, record: AgentTurnRecord): PromptDecision {
+function askedByReply(app: App, s: Session, form: FormId, answer: AgentAnswer | null, next: PromptDecision, record: AgentTurnRecord, wordingsBefore: Session['linesSaid']): PromptDecision {
   const named = answer?.asks;
   if (named === undefined || named === NO_ACTION) return next;
   const field = app.agent!.forms[form]?.fields.find((f) => f.name === named);
   const slot = field !== undefined ? s.slots[field.slot] : undefined;
-  const open = field !== undefined && slot !== undefined && slot.value === null && slot.declined !== true && slot.window === null && app.slots[field.slot]?.callerNumber === undefined;
+  const open = field !== undefined && slot !== undefined && slot.value === null && slot.declined !== true && slot.window === null && app.slots[field.slot]?.callerNumber === undefined && !isYesNoField(field);
   if (!open || field.slot === next.target) {
     record.asks = { field: named, taken: open };
     return next;
   }
+  const line = `ask_${String(next.target)}`;
+  const before = wordingsBefore?.[line];
+  if (s.linesSaid !== undefined) {
+    const { [line]: _taken, ...rest } = s.linesSaid;
+    s.linesSaid = before !== undefined ? { ...rest, [line]: before } : rest;
+  }
   const asked = askSlot(s, field.slot, null, next.acks);
   record.asks = { field: named, taken: true };
   return asked;
+}
+
+/** Whether a decision asks a choice of yes and no of the form open (a consent), which a reply never stands in for. */
+function asksYesNo(app: App, d: PromptDecision, form: FormId): boolean {
+  const field = app.agent!.forms[form]?.fields.find((f) => f.slot === d.target);
+  return field !== undefined && isYesNoField(field);
 }
 
 /** Whether a reply asks the caller anything: a question mark in it. */
@@ -655,7 +670,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
   const out: Applied = { events: [], refused: null, judged: null, changed: false, full: null, asked: null };
   // The slots stored with a value other than the one held: `changed` once every value is in (a value set back below is not one).
   const changed = new Set<SlotId>();
-  const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string }; before: Session['slots'][string] }[] = [];
+  const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string; by?: 'decision-model' }; before: Session['slots'][string] }[] = [];
   const fields = s.form !== null ? (app.agent!.forms[s.form]?.fields ?? []) : [];
   const locale = slotLocaleOf(s);
   const seen = tc.agentSeen?.seen ?? [];
@@ -674,7 +689,9 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     if (onFile !== undefined && onFile.value !== null && restatesHeld(app, field, onFile, v.value)) {
       // But the option held given back for words that name a full option and not it (call 55: "no, the
       // morning" at a read-back that holds the afternoon): the caller asked for the full one, and is told so.
-      const named = fullNamed(app, s, field, String(onFile.value), v.words, seen);
+      // Only the agent's value is held to its cited words: the decision model's yes answers the question it was
+      // asked, and its "words" are the whole turn (call 55's review).
+      const named = v.by === undefined ? fullNamed(app, s, field, String(onFile.value), v.words, seen) : null;
       if (named !== null) {
         record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'full' });
         out.asked ??= named;
@@ -722,7 +739,9 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     // A free option given for words that name a full one and not it (call 55: "friday morning" held as the
     // afternoon, the morning full): the caller asked for the full option. Not held, nor refused (the caller
     // did not miss): the field's full line and its question, no attempt counted.
-    const named = free.includes(String(slot.value)) ? fullNamed(app, s, field, String(slot.value), proposed.words, seen) : null;
+    // The decision model's yes to the full line's question fills the option it named, whatever else the words say
+    // ("Yes, the morning's no good anyway"): only an agent value is held to its cited words (call 55's review).
+    const named = free.includes(String(slot.value)) && proposed.by === undefined ? fullNamed(app, s, field, String(slot.value), proposed.words, seen) : null;
     if (free.includes(String(slot.value)) && named === null) continue;
     if (named === null && out.refused === null) out.full = { field, shown: shownOption(app, s, field, String(slot.value)), free };
     if (named !== null) out.asked ??= named;
@@ -740,6 +759,9 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     out.refused ??= field.slot;
   }
   out.changed = changed.size > 0;
+  // A value held: a later free option given for a full one's words is a first one again (fullAgain).
+  const heldNow = new Set(record.values.filter((r) => r.outcome === 'accepted' && r.restated !== true && r.slot !== undefined).map((r) => r.slot!));
+  if (s.agent?.fullAsked?.some((x) => heldNow.has(x)) === true) s.agent = { ...s.agent, fullAsked: s.agent.fullAsked.filter((x) => !heldNow.has(x)) };
   return out;
 }
 
@@ -784,6 +806,19 @@ function judgedAgain(s: Session, slot: SlotId, io: TurnIO, steps: ScriptedSteps,
   }
   s.agent = { ...(s.agent ?? { conversation: [], failures: 0 }), judged: [...before, slot] };
   return { decision: askSlot(s, slot, null, acks), events };
+}
+
+/**
+ * Whether a free option given for a full one's words (the `full` outcome, call 55) is the second in a row for its
+ * field, with no value held between: the first is uncounted (the model may have swapped the option, not the
+ * caller), and from the second each counts an attempt on the field's ladder (call 55's review), as judgedAgain does.
+ * Notes the first on the session.
+ */
+function fullAgain(s: Session, slot: SlotId): boolean {
+  const before = s.agent?.fullAsked ?? [];
+  if (before.includes(slot)) return true;
+  s.agent = { ...(s.agent ?? { conversation: [], failures: 0 }), fullAsked: [...before, slot] };
+  return false;
 }
 
 /** Whether `value` is the held value as the field holds it, shows it, or was sent it masked (agent/prompt.ts fieldValueSent). */
@@ -1192,6 +1227,9 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
     action: answer?.action ?? NO_ACTION,
     ...(answer !== null ? { fromFacts: answer.fromFacts, reply: answer.reply } : {}),
     replySaid: false,
+    // What the answer said of its reply (call 55), as it said it; askedByReply records whether the turn took `asks`.
+    ...(answer?.asks !== undefined && answer.asks !== NO_ACTION ? { asks: { field: answer.asks, taken: false } } : {}),
+    ...(answer?.closes === true ? { closes: true as const } : {}),
   };
   io.agent = record;
   // Two failures in a row on a call end it with the handoff line; an answer read resets the count. No client counts nothing.
@@ -1311,6 +1349,11 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   // An option the caller asked for that the result shows full, which the second answer left out (call 54), or
   // gave a free option in place of, citing the full one's words (call 55): the field's full line and its
   // question, in place of the answer's reply, whatever that reply said.
+  if (applied.asked !== null && fullAgain(s, applied.asked.field.slot)) {
+    // The second in a row for the field: counted, the field's ladder (its keypad, a person) with the full line.
+    actionDone('ignored');
+    return { decision: withFull(app, s, applied.asked, steps.failAttempt(s, applied.asked.field.slot, io, acks)), events: applied.events };
+  }
   const leftOut = applied.asked ?? leftOutFull(app, s, io.tc);
   if (leftOut !== null) {
     actionDone('ignored');
@@ -1335,13 +1378,18 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const forFormOpen = formBefore === form || (formBefore === null && form !== null && openable(app, s).includes(form));
   // Nor a reply written without a result the model sees: one it is to be asked again with, or a value's whose result it was not shown.
   const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen || looked.again !== null || looked.unseen || overruled;
-  const reply = contradicts ? null : sayable(answer, record);
+  const reply = contradicts ? null : sayable(answer);
   if (form !== null) {
     // The reply in place of the core's own next question; any other next step of the core's is said instead.
     // Where the reply asks for another field still empty (asks), that field's question is the turn's (call 55).
+    const wordingsBefore = s.linesSaid;
     const next = steps.continueForm(s, io, acks, null);
     if (!plainQuestion(app, next, form)) return { decision: next, events: applied.events };
-    const asked = replyOf(reply) !== null && !failed.replaced ? askedByReply(app, s, form, answer, next, record) : next;
+    const r = replyOf(reply);
+    const asked = r !== null && asks(r) && !failed.replaced ? askedByReply(app, s, form, answer, next, record, wordingsBefore) : next;
+    // A choice of yes and no (a consent) is asked in its own fixed words, so its answer is to its own question
+    // (call 55's review): a reply is said before it only where it asks nothing.
+    if (asksYesNo(app, asked, form)) return { decision: r !== null && !asks(r) ? withAside(asked, r, record) : asked, events: applied.events };
     return { decision: replyOrAside(asked, reply, record), events: applied.events };
   }
   return { decision: replyOrAside(prompt('ask_intent', 'intent', {}, acks), reply, record), events: applied.events };
@@ -1432,6 +1480,11 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     // place of the second answer's reply, before the read-back again (the field keeps what it held, which the
     // read-back says); where nothing is free that day, the read-back set aside and the field's ladder as in a form.
     const leftOut = applied.asked ?? leftOutFull(app, s, io.tc);
+    // The second in a row for the field at this read-back (call 55's review): the full line, then the read-back asked
+    // again on its ladder, counted.
+    if (applied.asked !== null && !applied.changed && leftOut !== null && leftOut.free.length > 0 && fullAgain(s, applied.asked.field.slot)) {
+      return { decision: steps.reaskConfirmation(s, io, fullAcks(app, s, leftOut)), events: applied.events };
+    }
     if (leftOut !== null && leftOut.free.length === 0) {
       s.pendingConfirmation = null;
       s.pendingHash = null;
@@ -1439,7 +1492,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     }
     const again = steps.askSummary(s, pc.form, leftOut !== null ? fullAcks(app, s, leftOut) : [], io);
     const informed = leftOut === null && io.tc.agentSeen !== undefined && !looked.unseen && again.kind === 'prompt';
-    return { decision: informed ? withAside(again as PromptDecision, sayable(answer, record), record) : again, events: applied.events };
+    return { decision: informed ? withAside(again as PromptDecision, sayable(answer), record) : again, events: applied.events };
   }
   // A value held to a seen result that the latest no longer lists: never confirmed as it stands.
   const unfree = clearUnfree(app, s, io.tc);
@@ -1484,7 +1537,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   // review of Task 7), so a caller who only asks still reaches the keypad and a person.
   // A callback not taken (the decision model read no sign of a person asked for): its reply, written as if
   // it were, is never said; the turn goes on as one with nothing to say.
-  const spoken = record.action === CALLBACK_ACTION ? null : sayable(answer, record);
+  const spoken = record.action === CALLBACK_ACTION ? null : sayable(answer);
   const isAside = answer !== null && answer.values.length === 0 && (answer.fromFacts || failed.fixed);
   const answeredSomething = failed.fixed || replyOf(spoken) !== null;
   if (isAside && answeredSomething && !asideBefore) {

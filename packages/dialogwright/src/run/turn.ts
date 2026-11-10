@@ -33,6 +33,7 @@ import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { resolveWaiting } from './waiting';
 import { agentAsks, agentContextOf, agentSentRecord, fullLeftOut, narrowedFields, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
+import { isYesNoField } from '../core/questions';
 import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
 
 export interface TurnObserver {
@@ -361,15 +362,12 @@ function readBackReading(session: Session, event: SessionEvent, tc: TurnContext)
   // read-back answers its question too, and was taken as the field's new value, a no to texts turned to a yes
   // (the agent-mode design, call 55's recording). A correction of it waits for the agent, or for "What should
   // I change?".
-  const yesNo = (appOf(session).agent?.forms[pc.form]?.fields ?? []).filter((f) => f.type === 'choice' && isYesNo(f.options)).map((f) => f.slot);
-  const questions = Object.fromEntries(Object.entries(p.questions).filter(([id]) => !yesNo.some((slot) => id === slot || (id.startsWith(slot) && /^[A-Z]/.test(id.slice(slot.length))))));
+  // The core fills none from the yes either (core/turn.ts yesNoSlotsOf), so the call run scripted on its own is held the same.
+  const app = appOf(session);
+  const yesNo = (app.agent?.forms[pc.form]?.fields ?? []).filter(isYesNoField).map((f) => f.slot);
+  const dropped = new Set(yesNo.flatMap((slot) => app.slots[slot]?.questionIds ?? [slot]));
+  const questions = Object.fromEntries(Object.entries(p.questions).filter(([id]) => !dropped.has(id)));
   return { session: scripted, questions, skipped };
-}
-
-/** Whether a choice's options are exactly yes and no, in any case and order. */
-function isYesNo(options: readonly string[] | undefined): boolean {
-  const o = (options ?? []).map((x) => x.trim().toLowerCase()).sort();
-  return o.length === 2 && o[0] === 'no' && o[1] === 'yes';
 }
 
 /** The answers of `answers` to the questions of `questions` alone. */
@@ -408,7 +406,9 @@ async function scriptedReading(
   for (const slot of reading.skipped) delete s.slots[slot]?.declined;
   const { scripted: _scripted, ...agent } = s.agent ?? { conversation: [], failures: 0 };
   s.agent = { ...agent, failures: first.session.agent?.failures ?? agent.failures };
-  return { result: { ...next.result, session: s, agent: { ...first.agent, scripted: 'read' } }, waited: next.waited };
+  // What the turn decided of the cancel question at the read-back (call 55), decided here from the reading.
+  const cancel = next.result.cancel?.step;
+  return { result: { ...next.result, session: s, agent: { ...first.agent, scripted: 'read', ...(cancel !== undefined ? { cancel } : {}) } }, waited: next.waited };
 }
 
 /** The detail of a second answer not asked, the turn's budget spent before it (askAgain). */
