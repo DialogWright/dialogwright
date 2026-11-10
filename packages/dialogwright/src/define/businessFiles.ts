@@ -3,7 +3,7 @@ import { ACCOUNT_SLOT, businessForms, fullLinesOf, closingsOf, greetingsOf, opti
 export { optionKey };
 import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
-import { AGENT_CANCEL_LINE, cancelPromptOf, fullNonePromptOf, fullPromptOf } from '../agent/types';
+import { AGENT_CANCEL_LINE, cancelPromptOf, fullAskPromptOf, fullNonePromptOf, fullPromptOf } from '../agent/types';
 import { WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml } from './schema/business';
 import {
   SCHEMAS, normalizeIdentity, slotsSchema,
@@ -220,6 +220,7 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
       if (full !== null) {
         prompts[fullPromptOf(id)] = line(withSlotVars(full.some, name, form));
         prompts[fullNonePromptOf(id)] = line(withSlotVars(full.none, name, form));
+        if (full.ask !== undefined) prompts[fullAskPromptOf(id)] = line(withSlotVars(full.ask, name, form));
       }
     }
     prompts[readBackPromptOf(name)] = line(withSlotVars(form.readBack, name, form));

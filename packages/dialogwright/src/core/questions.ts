@@ -1,4 +1,4 @@
-import { PRICE_LINE, PRICE_QUESTION, type AgentAppField } from '../agent/types';
+import { fullAskPromptOf, PRICE_LINE, PRICE_QUESTION, type AgentAppField } from '../agent/types';
 import type { QuestionMap } from '../jev/types';
 import type { SlotContext, SlotSpec } from './slots/types';
 import { formIntents, intentCriteria } from './app/intents';
@@ -286,7 +286,7 @@ function agentModeQuestions(app: App, session: Session): QuestionMap {
   return {
     ...alwaysOn(app),
     ...(app.agent?.lines[PRICE_LINE] !== undefined ? priceAsked() : {}),
-    ...(session.pendingConfirmation || yesNoFieldAsked(app, session) !== null ? confirmation(app) : {}),
+    ...(session.pendingConfirmation || yesNoFieldAsked(app, session) !== null || freeAskAsked(app, session) !== null ? confirmation(app) : {}),
   };
 }
 
@@ -302,6 +302,18 @@ export function yesNoFieldAsked(app: App, session: Session): AgentAppField | nul
   if (field === undefined || field.type !== 'choice') return null;
   const options = (field.options ?? []).map((o) => o.trim().toLowerCase()).sort();
   return options.length === 2 && options[0] === 'no' && options[1] === 'yes' ? field : null;
+}
+
+/**
+ * In agent mode, the `freeFrom` field whose full line's question the line has just asked (business.yaml's
+ * `full.ask`, "Does the afternoon work for you?", said where one option is free; the agent-mode design, call 55):
+ * the decision model is asked its yes or no that turn, and a clear yes fills the field with the one free option
+ * (core/agentTurn.ts yesNoRead). Null on every other turn.
+ */
+export function freeAskAsked(app: App, session: Session): AgentAppField | null {
+  if (session.form === null || session.pendingConfirmation !== null || session.promptedFor === null) return null;
+  const field = app.agent?.forms[session.form]?.fields.find((f) => f.slot === session.promptedFor);
+  return field !== undefined && field.freeFrom !== undefined && session.lastPromptId === fullAskPromptOf(field.slot) ? field : null;
 }
 
 /**

@@ -682,6 +682,64 @@ describe('"never mind" at the read-back asks whether to cancel (call 55, the mai
   });
 });
 
+describe('the full line\'s question where one option is free (business.yaml\'s full.ask, call 55)', () => {
+  const BOOK = 'I would like the study room for four people on Saturday';
+  const SATURDAY = '2026-11-14'; // its afternoon is taken, the morning free
+  const booked = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday']]);
+  const ASK = 'full_booking_window_ask';
+  /** The fixture with the business's question after the full line, for one test. */
+  const withAsk = async (fn: () => Promise<void>): Promise<void> => {
+    app.prompts.manifest[ASK] = { text: 'Does the {free} work for you?', interruptible: true };
+    try {
+      await fn();
+    } finally {
+      delete app.prompts.manifest[ASK];
+    }
+  };
+
+  it('said after the full line in place of the field\'s own question; the decision model\'s yes fills the free option', () => withAsk(async () => {
+    const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]), yes: said('') }, [BOOK, 'the afternoon', 'yes'], { number: CLUB });
+    const asked = c.runs.at(-2)!;
+    expect(promptOf(asked)).toBe(ASK);
+    expect(heard(asked)).toBe("We're full for the afternoon on Saturday, November 14. We have the morning. Does the morning work for you?");
+    expect(asked.result.session.promptedFor).toBe('booking_window');
+    expect(asked.result.session.slots.booking_window!.attempts).toBe(1);
+    // The yes: the decision model's, the one free option, and the read-back.
+    expect(value(c.last, 'booking_window')).toBe('morning');
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'window', value: 'morning', by: 'decision-model', outcome: 'accepted' }]);
+    expect(c.last.record.agent!.yesNo).toMatchObject({ field: 'window', option: 'morning' });
+    expect(promptOf(c.last)).toBe('readback_booking');
+  }));
+
+  it('a silence at it asks it again as it was', () => withAsk(async () => {
+    const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]) }, [BOOK, 'the afternoon', { text: '', silence: true }], { number: CLUB });
+    expect(promptOf(c.last)).toBe(ASK);
+    expect(heard(c.last)).toBe("I didn't hear anything. Does the morning work for you?");
+  }));
+
+  it('a no leaves the field to the agent\'s answer: nothing filled from the reading', () => withAsk(async () => {
+    const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]), 'no thanks': said('') }, [BOOK, 'the afternoon', 'no thanks'], { number: CLUB });
+    expect(value(c.last, 'booking_window')).toBeNull();
+    expect(c.last.record.agent!.yesNo).toBeUndefined();
+  }));
+
+  it('the same where a full option was asked for and not held (call 55\'s swap), no attempt counted', () => withAsk(async () => {
+    const c = await call({ [BOOK]: booked, 'the afternoon please': said('The morning it is.', [['window', 'morning', 'the afternoon please']]) }, [BOOK, 'the afternoon please'], { number: CLUB });
+    expect(promptOf(c.last)).toBe(ASK);
+    expect(c.last.result.session.slots.booking_window!.attempts).toBe(0);
+  }));
+
+  it('at a read-back, a full option asked for: the read-back set aside, the full line and its question; a yes then reads it back', () => withAsk(async () => {
+    const MORNING = `${BOOK} morning`;
+    const toReadBack = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'morning', 'morning']]);
+    const c = await call({ [MORNING]: toReadBack, 'no, the afternoon': said('The afternoon, then.', [['window', 'afternoon', 'afternoon']]), yes: said('') }, [MORNING, 'no, the afternoon', 'yes'], { number: CLUB });
+    expect(promptOf(c.runs.at(-2)!)).toBe(ASK);
+    expect(value(c.last, 'booking_window')).toBe('morning');
+    expect(promptOf(c.last)).toBe('readback_booking');
+    expect(c.sys.bookings).toEqual([]);
+  }));
+});
+
 describe('the agent turn: the second asking keeps the first answer\'s values (call 39)', () => {
   const BOOK = 'I would like the study room for four people on Saturday';
   const SATURDAY = '2026-11-14'; // its afternoon is taken

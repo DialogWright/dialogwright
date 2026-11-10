@@ -47,7 +47,7 @@ import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
 import { cancelPromptOf, type AgentResult, type SeenResult } from '../agent/types';
-import { agentDropped, agentLed, agentWords, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
+import { agentDropped, agentLed, agentWords, fullAskAgain, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
   /**
@@ -919,6 +919,9 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   if ((plain === 'frustration' || plain === 'reask') && !toDtmf) return askedAgain(s, target, acks);
   // The slot said why the answer could not be its value, and the generic retry would misstate it.
   if (step === 'open' && retryPromptId !== null) return prompt(retryPromptId, target, {}, acks);
+  // Agent mode: the full line's question for the one option free (call 55), asked again as it was, short of the keypad.
+  const freeAsk = toDtmf ? null : fullAskAgain(s, target, acks);
+  if (freeAsk !== null) return freeAsk;
   // A missed answer: the slot's retry line for this failure (outcome.ts retryLineOf).
   return prompt(toDtmf ? `ask_${target}_dtmf` : retryLineOf(io.app, target, attempts), target, {}, acks);
 }
@@ -3100,6 +3103,9 @@ const WAIT_PROMPT = 'wait_ack';
  */
 function askedAgain(s: Session, slot: SlotId, acks: Ack[]): PromptDecision {
   if (callerMatchAgain(s)) return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
+  // Agent mode: the full line's question for the one option free (call 55), asked again as it was.
+  const free = fullAskAgain(s, slot, acks);
+  if (free !== null) return free;
   return askSlot(s, slot, null, acks);
 }
 

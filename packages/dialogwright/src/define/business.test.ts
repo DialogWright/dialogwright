@@ -206,6 +206,13 @@ describe('business.yaml', () => {
     // Another field of the form may still be empty when the line is said: only the field and its day are sure.
     const other = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: "{people} people in the {window}: taken."`) });
     expect(problemsOf(other)).toEqual([expect.objectContaining({ path: 'booking.fields[2].full', message: expect.stringContaining('may still be empty'), fix: expect.stringContaining('{window}, {day}, {free}') })]);
+    // The question after it where one option is free (call 55): {free} and the day only, never the option asked for.
+    const ask = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: { some: "The {window} is taken.", ask: "Does the {free} on {day} work for you?" }`) });
+    expect(problemsOf(ask)).toEqual([]);
+    expect(loadAppFolder(ask).config!.prompts['en-US']!.full_booking_window_ask!.text).toBe('Does the {free} on {booking_day} work for you?');
+    expect(fixture.prompts['en-US']!.full_booking_window_ask).toBeUndefined();
+    const askOwn = copy({ 'business.yaml': replacing(FREE, `${FREE}\n      full: { ask: "Not the {window}, but the {free}?" }`) });
+    expect(problemsOf(askOwn)).toEqual([expect.objectContaining({ path: 'booking.fields[2].full.ask', message: expect.stringContaining('{window}') })]);
     // On a field with no freeFrom it is never said.
     const nowhere = copy({ 'business.yaml': replacing("      options: [one, two, three]\n      question: How many copies?", "      options: [one, two, three]\n      full: The {copies} is taken.\n      question: How many copies?") });
     expect(problemsOf(nowhere)).toEqual([expect.objectContaining({ path: 'request.fields[2].full', message: expect.stringContaining('has no "freeFrom"') })]);

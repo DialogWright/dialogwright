@@ -1,7 +1,7 @@
 import type { SessionEvent } from '../channel/events';
 import { maskedConversation } from '../agent/history';
 import { fieldValueSent } from '../agent/prompt';
-import { FREE_VAR, fullNonePromptOf, fullPromptOf, NO_ACTION, PRICE_LINE, PRICE_QUESTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
+import { FREE_VAR, fullAskPromptOf, fullNonePromptOf, fullPromptOf, NO_ACTION, PRICE_LINE, PRICE_QUESTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
 import { isAnonymous } from '../gate/types';
 import { isChoice, isNoul, noulValue, type AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
@@ -14,7 +14,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack, FillEvent } from './fia';
 import type { Verdict } from './gates';
 import { atLeast, type Thresholds } from './thresholds';
-import { yesNoFieldAsked } from './questions';
+import { freeAskAsked, yesNoFieldAsked } from './questions';
 import { localeOf, slotLocaleOf } from './locale';
 import { emptySlot, setForm, type PendingConfirmation, type Session } from './session';
 import { callTool } from './lifecycle';
@@ -891,11 +891,44 @@ function withFull(app: App, s: Session, full: Full, decision: Decision): Decisio
   const some = fullPromptOf(full.field.slot);
   const none = fullNonePromptOf(full.field.slot);
   if (seer === undefined || !Object.hasOwn(app.prompts.manifest, some) || !Object.hasOwn(app.prompts.manifest, none)) return decision;
-  if (full.free.length > 0) return { ...decision, acks: [...decision.acks, ...fullAcks(app, s, full)] };
+  if (full.free.length > 0) {
+    const acks = [...decision.acks, ...fullAcks(app, s, full)];
+    // One option free, and the business words the question for it (`full.ask`, call 55): that question, in place
+    // of the field's own ("Does the afternoon work for you?", not "Morning or afternoon?"); its keypad rung as it is.
+    const asked = fieldAsked(decision, full.field.slot) ? fullAskOf(app, s, full, acks) : null;
+    return asked ?? { ...decision, acks };
+  }
   const vars = fullVars(app, s, full);
   const day = s.slots[seer.slot];
   if (day !== undefined) Object.assign(day, emptySlot(), { attempts: day.attempts });
   return askSlot(s, seer.slot, null, [...decision.acks, { promptId: none, vars }]);
+}
+
+/** Whether `d` asks `slot` by its own question or its retry line (not its keypad rung). */
+const fieldAsked = (d: PromptDecision, slot: SlotId): boolean => d.promptId.startsWith(`ask_${slot}`) && !d.promptId.endsWith('_dtmf');
+
+/**
+ * The question said after a full line where exactly one option is free (business.yaml's `full.ask`, the agent-mode
+ * design's call 55), with {free} that option as the field says it; null where more than one is free or the app's
+ * field gives none (the field's own question is said).
+ */
+function fullAskOf(app: App, s: Session, full: Full, acks: Ack[]): PromptDecision | null {
+  const id = fullAskPromptOf(full.field.slot);
+  if (full.free.length !== 1 || !Object.hasOwn(app.prompts.manifest, id)) return null;
+  return prompt(id, full.field.slot, { ...fullVars(app, s, full), [FREE_VAR]: shownOption(app, s, full.field, full.free[0]!) }, acks);
+}
+
+/**
+ * The full line's question asked again as it stands (core/turn.ts askedAgain: a silence, a turn set aside), where it
+ * was the last line said for `slot` and one option is still free; null otherwise (the field's own question).
+ */
+export function fullAskAgain(s: Session, slot: SlotId, acks: Ack[]): PromptDecision | null {
+  const app = appOf(s);
+  const field = freeAskAsked(app, s);
+  if (field === null || field.slot !== slot) return null;
+  const free = freeOptions(app, s, field, []);
+  // The question names only {free} and the day (pnpm check), never the option asked for, which is not kept.
+  return free === null ? null : fullAskOf(app, s, { field, shown: '', free }, acks);
 }
 
 /**
@@ -1116,10 +1149,18 @@ function lookUpSeen(app: App, s: Session, io: TurnIO, record: AgentTurnRecord): 
  * no value, and the question asked again (the agent-mode design's call 49).
  */
 function yesNoRead(app: App, s: Session, answers: AnswerMap, t: Thresholds): { field: AgentAppField; option: string; yes: number; no: number; at: number } | null {
-  const field = yesNoFieldAsked(app, s);
-  if (field === null || !isNoul(answers.confirmsYes) || !isNoul(answers.confirmsNo)) return null;
+  if (!isNoul(answers.confirmsYes) || !isNoul(answers.confirmsNo)) return null;
   const yes = noulValue(answers, 'confirmsYes');
   const no = noulValue(answers, 'confirmsNo');
+  // The full line's question, one option free ("Does the afternoon work for you?", call 55): a yes fills that
+  // option; a no, or no clear reading, leaves the field to the agent's answer.
+  const offered = freeAskAsked(app, s);
+  if (offered !== null) {
+    const free = freeOptions(app, s, offered, []);
+    return free !== null && free.length === 1 && atLeast(yes, t.CONFIRM_YES) && yes >= no ? { field: offered, option: free[0]!, yes, no, at: t.CONFIRM_YES } : null;
+  }
+  const field = yesNoFieldAsked(app, s);
+  if (field === null) return null;
   const option = (said: 'yes' | 'no'): string => (field.options ?? []).find((o) => o.trim().toLowerCase() === said)!;
   if (atLeast(yes, t.CONFIRM_YES) && yes >= no) return { field, option: option('yes'), yes, no, at: t.CONFIRM_YES };
   if (atLeast(no, t.CONFIRM_NO)) return { field, option: option('no'), yes, no, at: t.CONFIRM_NO };

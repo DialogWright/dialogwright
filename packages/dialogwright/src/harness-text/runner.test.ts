@@ -31,6 +31,7 @@ import { ANONYMOUS } from '../gate/principal';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { framesOf } from '../testing/frames';
 import { businessFixtureApp } from '../define/__fixtures__/business/app';
+import { mockCodeVerifier } from '../core/tools';
 
 useTestkit();
 
@@ -290,7 +291,7 @@ describe('seedCorpusSession', () => {
     registerApp(businessFixtureApp);
     try {
       const entry = parseCorpus('{"id":"cn-1","text":"yes, cancel it","intent":"none","context":"cancel_request","confirm":"yes"}', businessFixtureApp)[0]!;
-      const s = seedCorpusSession(newSession('cn-1', 0, VOICE_RELAY, ANONYMOUS, businessFixtureApp.id), entry, { ...seedOpts, tools: { ...businessFixtureApp.systems() } });
+      const s = seedCorpusSession(newSession('cn-1', 0, VOICE_RELAY, ANONYMOUS, businessFixtureApp.id), entry, { ...seedOpts, tools: { ...businessFixtureApp.systems(), codes: mockCodeVerifier } });
       expect(s.form).toBe('request');
       expect(s.pendingConfirmation).toMatchObject({ target: 'form', form: 'request', cancel: true });
       expect(s.lastPromptId).toBe('cancel_request');
