@@ -114,11 +114,12 @@ request:
       question: How many wheels need work?
     - name: damage
       type: text
-      # A short noun phrase: the read-back says it after "a {vehicle} with" (a recording held "scraped my wheel on a
-      # curb pulling into a parking garage", read back as "a 2020 BMW 3 Series with scraped my wheel on a curb ...";
-      # a live call, "a ... Kia Sorento with curbed and scraped up", an adjective where a noun goes, call 51). No
-      # example phrase here: one the caller never said ("on the rim") was copied into a value, and refused.
-      about: What the damage is, as the line understood it, a short noun phrase in the caller's own terms (a name for the damage, not a clause or a sentence), since the read-back says it after "with".
+      # Short, in the caller's own terms: the read-back says it after "damage:", so any short phrase reads (a recording
+      # held "scraped my wheel on a curb pulling into a parking garage", too long to read back; calls 51 and 58 read
+      # "a ... Kia Sorento with curbed and scraped up" and "a Infinity with scraped up" through the old frame, "a
+      # {vehicle} with {damage}", which needed an article and a noun). No example phrase here: one the caller never
+      # said ("on the rim") was copied into a value, and refused.
+      about: What the damage is, as the line understood it, a few words in the caller's own terms (not a whole sentence), since the read-back says it after "damage:".
       question: What happened to the wheel?
     - name: diamondCut
       type: choice
@@ -171,9 +172,11 @@ request:
         "yes": { readBack: "and we'll text you at", done: "Reply to our text with a photo of the damage, and we'll text you a price and confirm your drop-off." }
         "no": { readBack: "and we'll call you at", done: "We'll call you about a price and to confirm your drop-off." }
   # Every field is said, the optional diamondCut by its own words (says), since every field is sent to the shop:
-  # the caller confirms nothing they never heard. The consent is said by its own words too.
+  # the caller confirms nothing they never heard. The consent is said by its own words too. Each text field is
+  # framed so any car name and any short damage phrase read naturally ("your Infinity", "damage: scraped up"):
+  # the old frame, "a {vehicle} with {damage}", read "a Infinity with scraped up" on call 58.
   readBack: >-
-    Here's your request: {callerName}, a {vehicle} with {damage}, on {wheels} of its wheels,
+    Here's your request: {callerName}, your {vehicle}, damage: {damage}, on {wheels} of its wheels,
     {diamondCut}, hoping to drop it off {day} in the {window}, {textOk} {callbackNumber}.
     Is that right?
   # The request first (the form's write), then the text asking for a photo (only with the caller's yes to
@@ -217,8 +220,10 @@ booking:
         some: "{day} in the {window} is full, but we have room in the {free}."
         ask: Does the {free} work for you?
       question: Morning or afternoon?
+  # The cars as the line understood them follow a colon, so any phrase reads (calls 57 to 59: "dropping off
+  # {vehicles}" needed a noun phrase, as the request's old frame did).
   readBack: >-
-    So that's {account} dropping off {vehicles}, {cars} in all, on {day} in the {window}. Shall I
+    So that's {account}, {cars} in all: {vehicles}, dropping off {day} in the {window}. Shall I
     book it?
   then: [book, notify_owner_booking]
   done: You're booked for {day}, in the {window}. Thanks.

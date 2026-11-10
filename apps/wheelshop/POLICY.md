@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `9ab1810360f1d65872a4b9d3e87ba52b2f9863a7d43342dd905cde4c131595d4` |
+| `business.yaml` | `e1ca3a24b6c32cde9c7cd5caafacb9e22dc6dceaea9b6eacc8ed3ed99130d2bc` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -73,13 +73,13 @@ Said in fixed words, never worded by a model:
 | `full_request_window` | {request_day} in the {request_window} is full, but we have room in the {free}. |
 | `full_request_window_none` | We're full on {request_day}. |
 | `full_request_window_ask` | Does the {free} work for you? |
-| `readback_request` | Here's your request: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, {request_textOk} {request_callbackNumber}. Is that right? |
+| `readback_request` | Here's your request: {request_callerName}, your {request_vehicle}, damage: {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, {request_textOk} {request_callbackNumber}. Is that right? |
 | `done_request` | Thanks, we have your request. {request_textOk} |
 | `cancel_request` | Do you want to cancel this request? |
 | `full_booking_window` | {booking_day} in the {booking_window} is full, but we have room in the {free}. |
 | `full_booking_window_none` | We're full on {booking_day}. |
 | `full_booking_window_ask` | Does the {free} work for you? |
-| `readback_booking` | So that's {account} dropping off {booking_vehicles}, {booking_cars} in all, on {booking_day} in the {booking_window}. Shall I book it? |
+| `readback_booking` | So that's {account}, {booking_cars} in all: {booking_vehicles}, dropping off {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, in the {booking_window}. Thanks. |
 | `cancel_booking` | Do you want to cancel this booking? |
 | `readback_callback` | We'll call you back at {callback_callbackNumber}. Is that right? |
