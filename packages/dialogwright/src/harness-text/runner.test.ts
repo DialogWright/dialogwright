@@ -30,6 +30,7 @@ import { registerApp } from '../core/app/registry';
 import { ANONYMOUS } from '../gate/principal';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { framesOf } from '../testing/frames';
+import { businessFixtureApp } from '../define/__fixtures__/business/app';
 
 useTestkit();
 
@@ -283,6 +284,23 @@ describe('seedCorpusSession', () => {
     // An intent the app has not is no context; a check_ context takes no prompted slot.
     expect(() => parseCorpus('{"id":"ck-2","text":"no","intent":"none","context":"check_nothing","confirm":"no"}')).toThrow(/unknown context check_nothing/);
     expect(() => parseCorpus('{"id":"ck-3","text":"no","intent":"none","context":"check_agent","prompted":"accountId"}')).toThrow(/prompted needs a form context/);
+  });
+
+  it('seeds cancel_<form> in an app in agent mode: the form at its read-back, the line having just asked whether to cancel it (call 55)', () => {
+    registerApp(businessFixtureApp);
+    try {
+      const entry = parseCorpus('{"id":"cn-1","text":"yes, cancel it","intent":"none","context":"cancel_request","confirm":"yes"}', businessFixtureApp)[0]!;
+      const s = seedCorpusSession(newSession('cn-1', 0, VOICE_RELAY, ANONYMOUS, businessFixtureApp.id), entry, { ...seedOpts, tools: { ...businessFixtureApp.systems() } });
+      expect(s.form).toBe('request');
+      expect(s.pendingConfirmation).toMatchObject({ target: 'form', form: 'request', cancel: true });
+      expect(s.lastPromptId).toBe('cancel_request');
+      expect(s.lastPromptText).toBe('Do you want to cancel this request?');
+      expect(s.slots.request_patronName!.value).not.toBeNull();
+      // Only an app in agent mode has the context.
+      expect(() => parseCorpus('{"id":"cn-2","text":"yes","intent":"none","context":"cancel_report_missing","confirm":"yes"}')).toThrow(/unknown context cancel_report_missing/);
+    } finally {
+      useTestkit();
+    }
   });
 
   it('leaves a no_form session untouched', () => {

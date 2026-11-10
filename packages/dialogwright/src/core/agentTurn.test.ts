@@ -50,7 +50,7 @@ function jev(delayMs = 0): JevClient & { asked: JevRequest[] } {
       const intent = req.questions.intent;
       if (intent !== undefined && intent.type === 'choice') {
         const labels = Object.keys(intent.criteria);
-        const label = /study room/.test(text) ? 'booking' : /\bhold\b/.test(text) ? 'request' : /\b(person|someone)\b/.test(text) ? 'agent' : 'none';
+        const label = /study room/.test(text) ? 'booking' : /\bhold\b/.test(text) ? 'request' : /\b(person|someone)\b/.test(text) ? 'agent' : /never mind|that's all/.test(text) ? 'done' : 'none';
         answers.intent = choiceAnswer(sharp(labels, label, 0.9));
       }
       if (/\bhoney\b/.test(text)) answers.addressedToSystem = noulAnswer(0.05);
@@ -603,6 +603,82 @@ describe('a reply that takes leave of the caller is never said where the call go
     const c = await call({ [HOLD]: { ...HOLD_ANSWER, reply: 'Thanks for calling Example Library.', closes: true } }, [HOLD]);
     expect(heard(c.last)).toBe("What's your name?");
     expect(c.last.record.agent).toMatchObject({ replySaid: false, closes: true });
+  });
+});
+
+describe('"never mind" at the read-back asks whether to cancel (call 55, the maintainer\'s decision 2026-11-10)', () => {
+  const toReadBack = { [HOLD]: HOLD_ANSWER, [DETAILS]: DETAILS_ANSWER };
+  // The model's goodbye, as at the live call: never said where the call goes on.
+  const NEVER_MIND = { 'never mind': { ...said('No problem, Avery. Thanks for calling Example Library.'), closes: true } };
+  const formCancelled = (r: TurnRun) => r.result.audit.filter((d) => d.type === 'form_cancelled');
+
+  it('the decision model\'s done at the read-back: "Do you want to cancel this request?", never the reply, no attempt counted', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND }, [HOLD, DETAILS, 'never mind']);
+    expect(promptOf(c.last)).toBe('cancel_request');
+    expect(heard(c.last)).toBe('Do you want to cancel this request?');
+    expect(c.last.result.session.pendingConfirmation).toMatchObject({ target: 'form', form: 'request', cancel: true, attempts: 0 });
+    expect(c.last.result.session.promptedFor).toBe('confirm');
+    expect(c.last.record.agent).toMatchObject({ replySaid: false, cancel: 'asked' });
+    expect(c.sys.holds).toEqual([]);
+  });
+
+  it('a yes to it ends the call with nothing sent: the goodbye, the form closed, the audit\'s form_cancelled', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND, yes: said('Okay, cancelled.') }, [HOLD, DETAILS, 'never mind', 'yes']);
+    expect(c.last.result.decision).toMatchObject({ kind: 'complete', promptId: 'goodbye', completed: [] });
+    expect(heard(c.last)).toBe('Thanks for calling Example Library.');
+    expect(toolCalls(c, 'placeHold')).toEqual([]);
+    expect(toolCalls(c, 'notifyDesk')).toEqual([]);
+    expect(c.sys.holds).toEqual([]);
+    expect(c.last.result.session.form).toBeNull();
+    expect(formCancelled(c.last)).toEqual([{ type: 'form_cancelled', detail: { form: 'request', at: 'read-back' } }]);
+    expect(c.last.result.audit.find((d) => d.type === 'call_ended')?.detail).toMatchObject({ completed: [] });
+    expect(c.last.record.agent).toMatchObject({ cancel: 'cancelled', replySaid: false });
+  });
+
+  it('a no to it reads the request back again, uncounted; a yes then sends it', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND, no: said(''), yes: said('') }, [HOLD, DETAILS, 'never mind', 'no', 'yes']);
+    const kept = c.runs.at(-2)!;
+    expect(promptOf(kept)).toBe('readback_request');
+    expect(kept.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 0 });
+    expect(kept.result.session.pendingConfirmation).not.toHaveProperty('cancel');
+    expect(kept.record.agent).toMatchObject({ cancel: 'kept' });
+    expect(formCancelled(kept)).toEqual([]);
+    expect(c.sys.holds).toHaveLength(1);
+  });
+
+  it('anything else at it is read as at the read-back: a correction reads it back with the change', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND, 'actually make it three copies': said('Three.', [['copies', 'three', 'three copies']]) }, [HOLD, DETAILS, 'never mind', 'actually make it three copies']);
+    expect(promptOf(c.last)).toBe('readback_request');
+    expect(heard(c.last)).toContain('three of The Quiet Harbor');
+    expect(c.last.result.session.pendingConfirmation).not.toHaveProperty('cancel');
+    expect(c.sys.holds).toEqual([]);
+  });
+
+  it('a silence at it reads the request back again, as the read-back\'s own ladder, the keypad not next', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND }, [HOLD, DETAILS, 'never mind', { text: '', silence: true }]);
+    expect(promptOf(c.last)).toBe('readback_request');
+    expect(c.last.result.session.pendingConfirmation).not.toHaveProperty('cancel');
+  });
+
+  it('a yes at the read-back, read done as well ("yes, that\'s all"), is a yes: the request is sent', async () => {
+    const c = await call({ ...toReadBack, "yes that's all": said('') }, [HOLD, DETAILS, "yes that's all"]);
+    expect(c.sys.holds).toHaveLength(1);
+    expect(c.last.record.agent!.cancel).toBeUndefined();
+  });
+
+  it('the agent failing at the cancel question: the scripted reading decides it, and a yes still cancels, nothing sent', async () => {
+    const c = await call({ ...toReadBack, ...NEVER_MIND, yes: { fail: 'timeout' } }, [HOLD, DETAILS, 'never mind', 'yes']);
+    expect(c.last.record.agent).toMatchObject({ use: 'failed', scripted: 'read' });
+    expect(c.last.result.decision).toMatchObject({ kind: 'complete', promptId: 'goodbye' });
+    expect(c.sys.holds).toEqual([]);
+    expect(formCancelled(c.last)).toHaveLength(1);
+  });
+
+  it('a reply that takes leave of the caller, at a read-back that goes on, is not said: the read-back again alone', async () => {
+    const c = await call({ ...toReadBack, um: { ...said('Okay, thanks for calling!'), closes: true } }, [HOLD, DETAILS, 'um']);
+    expect(promptOf(c.last)).toBe('readback_request');
+    expect(c.last.record.agent).toMatchObject({ replySaid: false, closes: true });
+    expect(heard(c.last)).not.toContain('thanks for calling');
   });
 });
 

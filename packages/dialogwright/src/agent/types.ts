@@ -46,6 +46,14 @@ export const fullNonePromptOf = (slot: string): string => `full_${slot}_none`;
  * decision model's yes to it fills the one free option. Absent from an app whose field gives none.
  */
 export const fullAskPromptOf = (slot: string): string => `full_${slot}_ask`;
+/**
+ * The question an app in agent mode asks at a form's read-back where the caller says they don't want to go ahead
+ * (the `done` intent; the agent-mode design, call 55): business.yaml's form `cancel`, by default
+ * AGENT_CANCEL_LINE. A yes ends the call with nothing sent; a no reads the request back again.
+ */
+export const cancelPromptOf = (form: string): string => `cancel_${form}`;
+/** The cancel question's words where business.yaml's form gives none (cancelPromptOf). */
+export const AGENT_CANCEL_LINE = 'Do you want to cancel this request?';
 /** The variable of a full line that says the options free, as the field says them ("morning or afternoon"). */
 export const FREE_VAR = 'free';
 

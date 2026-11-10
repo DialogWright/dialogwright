@@ -6,7 +6,7 @@ import { withReplies } from './replies';
 import { withSources } from './sources';
 import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
-import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
+import { isChoice, noulValue, rankProbabilities, type AnswerMap, type QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import { wordsOf, type SessionEvent, type UserSpeech, type UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
@@ -46,7 +46,7 @@ import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
-import type { AgentResult, SeenResult } from '../agent/types';
+import { cancelPromptOf, type AgentResult, type SeenResult } from '../agent/types';
 import { agentDropped, agentLed, agentWords, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
@@ -315,6 +315,8 @@ export interface TurnResult {
   unchecked?: UncheckedReply[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
+  /** an app in agent mode: the cancel question at a form's read-back this turn, asked, answered no or yes (TurnOut.cancel); absent on every other turn */
+  cancel?: TurnOut['cancel'];
   /** the offer of the caller's number this turn settled; absent on every other turn */
   offer?: OfferSettled;
   /** the slots this turn filled from the call's consent to text (app.yaml's textConsent), in order; absent on every other turn */
@@ -513,6 +515,8 @@ function summaryValuesGiven(s: Session, answers: AnswerMap, ctx: SlotContext): R
 function summaryPrompt(s: Session, form: FormId, acks: Ack[]): PromptDecision {
   const promptId = formOf(appOf(s), form).summaryPromptId;
   if (promptId === null) throw new Error(`form ${form} has no summary prompt`);
+  // The read-back said again: the cancel question, if it was asked, is no longer the question (agent mode, call 55).
+  if (s.pendingConfirmation?.target === 'form') delete s.pendingConfirmation.cancel;
   takeSummaryHash(s, form);
   return prompt(promptId, 'confirm', summaryVars(s), acks, ['yes', 'no']);
 }
@@ -575,6 +579,7 @@ function readBackExact(s: Session, form: FormId, acks: Ack[]): PromptDecision {
  * rung so that three answers with nothing usable in them still reach an agent.
  */
 function askChange(pc: Extract<PendingConfirmation, { target: 'form' }>, acks: Ack[]): PromptDecision {
+  delete pc.cancel;
   pc.askedChange = true;
   pc.attempts = Math.max(pc.attempts, 1);
   return prompt('ask_change', 'confirm', {}, acks);
@@ -985,6 +990,7 @@ function reaskCurrent(s: Session, acks: Ack[], intentQuestion = 'ask_intent'): D
       case 'form':
         if (s.lastPromptId === 'ask_change') return prompt('ask_change', 'confirm', {}, acks);
         if (s.lastPromptId === 'confirm_dtmf') return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
+        if (pc.cancel === true) return cancelQuestion(pc.form, acks);
         return summaryPrompt(s, pc.form, acks);
       case 'slot':
         return slotConfirmPrompt(pc, acks);
@@ -1262,12 +1268,16 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     return offerTransfer(acks);
   }
   if (pc.target === 'form') {
+    // The cancel question unanswered (agent mode, call 55): the read-back's own ladder from here.
+    const cancelAsked = pc.cancel === true;
+    delete pc.cancel;
     if (!count) return summaryPrompt(s, pc.form, acks);
     pc.attempts += 1;
     const step = rungFor(s, pc.attempts, t);
     if (step === 'agent') { s.pendingConfirmation = null; return handoff(s, 'max-attempts', acks); }
-    // A summary the caller keeps talking past is offered on the keypad rather than read again.
-    if (step === 'dtmf') return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
+    // A summary the caller keeps talking past is offered on the keypad rather than read again. Not straight
+    // after the cancel question, whose yes the keypad's 1 would seem to be: the read-back first.
+    if (step === 'dtmf' && !cancelAsked) return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
     return summaryPrompt(s, pc.form, acks);
   }
   if (!count) return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, pc.intent, s.locale) }, acks, ['yes', 'no']);
@@ -2252,6 +2262,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       }
       // A check's refusal read back (its outcome's `confirm`), and the caller agrees: it acts as written.
       if (pc.target === 'check') return { decision: checkConfirmed(s, pc, io), events: [] };
+      // A yes to "Do you want to cancel this request?" (agent mode, call 55): nothing is sent, and the call ends.
+      if (pc.target === 'form' && pc.cancel === true) return { decision: cancelAtReadBack(s, pc.form, io), events: [] };
       if (pc.target === 'form') {
         const acks = enqueue(s, verdict.queue);
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
@@ -2313,6 +2325,10 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const fill = correctingFill(s, answers, ctx, pc.form);
         if (fill.progress) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         s.pendingConfirmation = pc;
+        // Agent mode (call 55): a no to the cancel question reads the request back again; a caller who says at
+        // the read-back that they don't want to go ahead is asked whether to cancel it.
+        const cancel = readBackCancel(s, verdict, answers, io, acks);
+        if (cancel !== null) return { decision: cancel, events: fill.events };
         // "No, anything later?" is the form's own move along what its summary offers: a move is a
         // correction and re-arms the summary; no move, with its line (an edge), is an unchanged
         // summary and counts a turn on its ladder.
@@ -2412,6 +2428,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
           return { decision: continueForm(s, io, [...acks, ...fill.acks, ...move.acks], null), events: fill.events };
         }
         if (move) return { decision: reaskConfirmation(s, io, [...acks, ...move.acks], acks.length === 0), events: fill.events };
+        const cancel = readBackCancel(s, verdict, answers, io, acks);
+        if (cancel !== null) return { decision: cancel, events: fill.events };
         return { decision: (acks.length === 0 ? caughtFrustration(s, io) : null) ?? reaskConfirmation(s, io, acks, acks.length === 0), events: fill.events };
       }
       if (pc?.target === 'slot' && pc.offered) {
@@ -3283,6 +3301,65 @@ function overLineMiss(before: Session, after: Session, event: SessionEvent, verd
 }
 
 /**
+ * The cancel question at a form's read-back in an app in agent mode (the agent-mode design, call 55, decided by
+ * the maintainer 2026-11-10): "Do you want to cancel this request?" (`cancel_<form>`, business.yaml's form
+ * `cancel`), its yes and no the read-back's own. Null where the read-back's turn goes on as ever.
+ *
+ * - The cancel question asked last (PendingConfirmation `cancel`): a no (`rejected`, nothing corrected) reads the
+ *   request back again, uncounted; a yes is the caller's (handleVerdict's `confirmed`: cancelAtReadBack);
+ *   anything else is read as at the read-back (the cancel question set aside).
+ * - Otherwise, where the caller's words at the read-back are neither a yes nor a correction and the decision
+ *   model reads them as the caller being done (the `done` intent at INTENT_ROUTE or more, the bar a question at
+ *   a form's summary is read at, and above any other request): the cancel question, in place of the read-back
+ *   asked again or "What should I change?" ("never mind" at call 55 had heard a goodbye, then the read-back).
+ *
+ * Only in an app in agent mode, whose read-back is reached once every field is in: a scripted app's no at its
+ * summary is the app's to word (forms.yaml's `summary.onNo`).
+ */
+function readBackCancel(s: Session, verdict: Verdict, answers: AnswerMap, io: TurnIO, acks: Ack[] = []): Decision | null {
+  const pc = s.pendingConfirmation;
+  if (pc?.target !== 'form' || io.app.mode !== 'agent') return null;
+  if (pc.cancel === true) {
+    if (verdict.kind !== 'rejected') return null;
+    io.out.cancel = { form: pc.form, step: 'kept' };
+    return summaryPrompt(s, pc.form, acks);
+  }
+  if ((verdict.kind !== 'rejected' && verdict.kind !== 'confirm_unanswered') || !doneRead(io.app, answers, io.tc.thresholds)) return null;
+  // Asking costs the caller no turn of the read-back's ladder: they answered, though not with a yes or a no.
+  pc.cancel = true;
+  io.out.cancel = { form: pc.form, step: 'asked' };
+  return cancelQuestion(pc.form, acks);
+}
+
+/** "Do you want to cancel this request?": the form's cancel question, its answers a yes or a no (readBackCancel). */
+function cancelQuestion(form: FormId, acks: Ack[]): PromptDecision {
+  return prompt(cancelPromptOf(form), 'confirm', {}, acks, ['yes', 'no']);
+}
+
+/**
+ * Whether the decision model reads the caller as done (the `done` intent, where the app has it) at INTENT_ROUTE or
+ * more, as its likeliest request.
+ */
+function doneRead(app: App, answers: AnswerMap, t: Thresholds): boolean {
+  const intent = answers.intent;
+  if (!Object.hasOwn(app.intents, 'done') || !isChoice(intent)) return false;
+  const [top] = rankProbabilities(intent.probabilities);
+  return top?.label === 'done' && atLeast(top.p, t.INTENT_ROUTE);
+}
+
+/**
+ * The yes to the cancel question (readBackCancel): the form closed with nothing sent (no `then` tool is called,
+ * and it is not among the completed), the audit told (`form_cancelled`), and the call ends with the app's goodbye.
+ */
+function cancelAtReadBack(s: Session, form: FormId, io: TurnIO): CompleteDecision {
+  s.pendingConfirmation = null;
+  s.pendingHash = null;
+  io.out.cancel = { form, step: 'cancelled' };
+  closeForm(s);
+  return goodbye(s);
+}
+
+/**
  * A person asked for by the agent model alone, the decision model not reading one (agent mode: a `callback`
  * proposed on words the gates did not hand off on): checked with the caller first, as a request the
  * decision model is unsure of is ("Just to check, do you want to speak with someone?"). A yes opens the
@@ -3298,6 +3375,7 @@ const SCRIPTED_STEPS: ScriptedSteps = {
   handleVerdict,
   personForm,
   checkPerson,
+  readBackCancel: (s, verdict, answers, io) => readBackCancel(s, verdict, answers, io),
   askSummary,
   summaryPrompt,
   askChange,
@@ -3320,6 +3398,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
     ...(r.stopped ? { stopped: r.stopped } : {}),
     ...(r.movedOn ? { movedOn: r.movedOn } : {}),
     ...(r.reconfirmed ? { reconfirmed: r.reconfirmed } : {}),
+    ...(r.cancel?.step === 'cancelled' ? { cancelled: r.cancel.form } : {}),
     ...(r.offer ? { offer: r.offer } : {}),
     ...(r.consented ? { consented: r.consented } : {}),
     ...(r.consent ? { consent: r.consent } : {}),

@@ -163,6 +163,12 @@ export interface AgentTurnRecord {
   /** The answer said its reply takes leave of the caller (AgentAnswer.closes, call 55): the reply was not said. Absent otherwise. */
   closes?: true;
   /**
+   * The cancel question at the read-back on this turn (TurnOut.cancel; call 55): `asked` (the caller said they don't
+   * want to go ahead), `kept` (their no: the read-back again) or `cancelled` (their yes: nothing sent, the call
+   * ended). Absent on every other turn.
+   */
+  cancel?: 'asked' | 'kept' | 'cancelled';
+  /**
    * The fixed line said whole before the turn's line in place of the reply (the price line): the one the answer
    * named (AgentAnswer.fixedLine), or the price line the decision model read the caller asking for where the
    * answer named none (`priceAsked`). The reply was not said.
@@ -456,6 +462,8 @@ export interface ScriptedSteps {
   personForm(s: Session, reason: string, answers: AnswerMap, ctx: SlotContext, io: TurnIO): Handled | null;
   /** A person the agent model alone asked for, checked with the caller: a yes opens the person form, a no goes back to the form. */
   checkPerson(s: Session, answers: AnswerMap, ctx: SlotContext, acks: Ack[], io: TurnIO): PromptDecision;
+  /** The cancel question at a read-back (call 55): asked where the caller is done, a no reads back again; null otherwise (core/turn.ts readBackCancel). */
+  readBackCancel(s: Session, verdict: Verdict, answers: AnswerMap, io: TurnIO): Decision | null;
   askSummary(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision;
   /** The pending read-back said again as it stands: its attempts and its "What should I change?" kept. */
   summaryPrompt(s: Session, form: FormId, acks: Ack[]): PromptDecision;
@@ -1161,6 +1169,7 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
   const { due, refused } = answer !== null ? lineDue(app, named, answers, io.tc.thresholds, record) : { due: null, refused: false };
   const fixed = fixedLineOf(app, due, s.form);
   const handled = answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null });
+  if (io.out.cancel !== undefined) record.cancel = io.out.cancel.step;
   if (refused) return withoutAgentReply(handled, record);
   if (fixed === null || !lineAllowed(app, fixed.name, s.form)) {
     // A line named and due where the business does not allow it (prices.forms), with the form open before the
@@ -1411,6 +1420,10 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     return { decision: steps.checkPerson(s, answers, ctx, [], io), events: applied.events };
   }
   actionDone('ignored');
+  // The caller says they don't want to go ahead ("never mind", the decision model's `done`): "Do you want to cancel
+  // this request?", never the reply (a goodbye said before the read-back again, call 55); a no to it reads back.
+  const cancel = steps.readBackCancel(s, verdict, answers, io);
+  if (cancel !== null) return { decision: cancel, events: applied.events };
   if (verdict.kind === 'rejected') {
     // A no with nothing more: what to change; a second asks the read-back again, on its ladder.
     return { decision: pc.askedChange === true ? steps.reaskConfirmation(s, io) : steps.askChange(pc, []), events: applied.events };

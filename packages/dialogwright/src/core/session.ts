@@ -166,6 +166,14 @@ export type PendingConfirmation =
        * facts, or the price line), so the next aside in a row is counted (core/agentTurn.ts). Absent otherwise.
        */
       aside?: true;
+      /**
+       * An app in agent mode: the caller said at this read-back that they don't want to go ahead (the `done`
+       * intent), and the line asked whether to cancel the request (`cancel_<form>`; the agent-mode design, call
+       * 55). A yes ends the call with nothing sent, a no reads the request back again, and anything else is
+       * read as at the read-back. Gone as soon as the read-back or "What should I change?" is said again.
+       * Absent otherwise (and in a session saved before it, which never asked).
+       */
+      cancel?: true;
     }
   /**
    * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts

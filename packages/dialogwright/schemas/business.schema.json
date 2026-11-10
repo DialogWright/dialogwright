@@ -464,6 +464,11 @@
           "type": "string",
           "minLength": 1,
           "description": "The line said, in fixed words, once the form's tools have run, with the values as {placeholders}."
+        },
+        "cancel": {
+          "description": "The question asked, in fixed words, where the caller says at the read-back that they don't want to go ahead (\"never mind\"; the agent-mode design, call 55): a yes ends the call with nothing sent, a no reads the request back again. It names no field. Default: \"Do you want to cancel this request?\"",
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -713,6 +718,11 @@
           "type": "string",
           "minLength": 1,
           "description": "The line said, in fixed words, once the form's tools have run, with the values as {placeholders}."
+        },
+        "cancel": {
+          "description": "The question asked, in fixed words, where the caller says at the read-back that they don't want to go ahead (\"never mind\"; the agent-mode design, call 55): a yes ends the call with nothing sent, a no reads the request back again. It names no field. Default: \"Do you want to cancel this request?\"",
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -960,6 +970,11 @@
           "type": "string",
           "minLength": 1,
           "description": "The line said, in fixed words, once the form's tools have run, with the values as {placeholders}."
+        },
+        "cancel": {
+          "description": "The question asked, in fixed words, where the caller says at the read-back that they don't want to go ahead (\"never mind\"; the agent-mode design, call 55): a yes ends the call with nothing sent, a no reads the request back again. It names no field. Default: \"Do you want to cancel this request?\"",
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [

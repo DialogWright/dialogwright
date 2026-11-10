@@ -26,9 +26,11 @@ export interface AnswerOverride {
  * - `anything_else`: a form just completed, no form open, the last prompt "anything else?";
  * - `check_<intent>`: no form open, the line having just checked a request with the caller ("Just to check,
  *   do you want to <the intent's label>?", `confirm_intent_explicit`): an agent-mode app's "do you want to speak
- *   with someone?" is `check_agent` (the agent-mode design, call 54).
+ *   with someone?" is `check_agent` (the agent-mode design, call 54);
+ * - `cancel_<form>`: an agent-mode app's form at its read-back, the line having just asked whether to cancel it
+ *   ("Do you want to cancel this request?", after the caller said they don't want to go ahead; call 55).
  */
-export type CorpusContext = 'no_form' | FormId | `confirm_${FormId}` | 'offer_transfer' | 'anything_else' | `check_${string}`;
+export type CorpusContext = 'no_form' | FormId | `confirm_${FormId}` | 'offer_transfer' | 'anything_else' | `check_${string}` | `cancel_${FormId}`;
 
 /** check_ contexts only: the intent the line has just checked with the caller, where the app has it; else null. */
 export function checkIntent(context: CorpusContext, app: App = corpusApp()): string | null {
@@ -162,13 +164,26 @@ function isForm(app: App, id: string): id is FormId {
 }
 
 /**
- * confirm_ contexts only: the form behind the confirm, else null. Not a prefix test: a confirm_
- * context is exact membership, confirm_<FormId> for every form that asks a summary question
- * (e.g. report_missing; the other forms complete without one).
+ * confirm_ contexts (and an agent-mode app's cancel_ contexts, cancelForm, which are its summary too) only: the
+ * form behind the confirm, else null. Not a prefix test: a confirm_ context is exact membership,
+ * confirm_<FormId> for every form that asks a summary question (e.g. report_missing; the other forms complete
+ * without one).
  */
 export function confirmForm(context: CorpusContext, app: App = corpusApp()): FormId | null {
+  const cancel = cancelForm(context, app);
+  if (cancel !== null) return cancel;
   if (!context.startsWith('confirm_')) return null;
   const form = context.slice('confirm_'.length);
+  return isForm(app, form) && app.forms[form]!.summaryPromptId !== null ? form : null;
+}
+
+/**
+ * cancel_ contexts only, in an app in agent mode: the form at whose read-back the line has just asked whether to
+ * cancel it ("Do you want to cancel this request?", `cancel_<form>`; the agent-mode design, call 55); else null.
+ */
+export function cancelForm(context: CorpusContext, app: App = corpusApp()): FormId | null {
+  if (!context.startsWith('cancel_') || app.mode !== 'agent') return null;
+  const form = context.slice('cancel_'.length);
   return isForm(app, form) && app.forms[form]!.summaryPromptId !== null ? form : null;
 }
 

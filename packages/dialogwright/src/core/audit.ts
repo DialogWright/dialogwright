@@ -11,7 +11,7 @@ import { saidCode } from './spokenCode';
 import { callDataAuditDetail } from './callData';
 import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
-import type { App } from './app/types';
+import type { App, FormId } from './app/types';
 import { configAuditDetail } from './app/configHash';
 import { recordedValue, recordingOf, scrubbedDrafts, scrubberOf } from './recording';
 import { kbAuditRow } from '../kb/record';
@@ -47,6 +47,8 @@ export interface AuditInput {
   consent?: ConsentSettled;
   /** The check whose read-back the caller said no to this turn (core/turn.ts): its `check_reconfirmed` row. */
   reconfirmed?: CheckReconfirmed;
+  /** The form the caller cancelled at its read-back this turn (an app in agent mode, core/turn.ts cancelAtReadBack): its `form_cancelled` row. */
+  cancelled?: FormId;
   /** What became of the caller-ID match this turn (lifecycle.ts TurnOut.callerMatch): an `identity_caller_match` row for each. */
   callerMatch?: readonly CallerMatchStep[];
   /** The forms that completed this turn and went on to their next (lifecycle.ts TurnOut.movedOn): a `form_next` row for each. */
@@ -186,6 +188,9 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   if (t.kb !== null && !drafts.some((d) => d.type === 'kb_answer')) drafts.push(kbAuditRow(t.kb));
   // A form a check ended (core/checks.ts): which check, for what reason, and how the form ended.
   // `confirmed` only where the refusal was read back first and the caller said yes (the outcome's `confirm`).
+  // A form cancelled at its read-back (agent mode, the caller's yes to "Do you want to cancel this request?"):
+  // which, and where. Nothing was sent: no gate row of its `then` precedes it.
+  if (t.cancelled !== undefined) drafts.push({ type: 'form_cancelled', detail: { form: t.cancelled, at: 'read-back' } });
   if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then, ...(t.stopped.next !== undefined ? { next: t.stopped.next } : {}), ...(t.stopped.confirmed ? { confirmed: true } : {}) } });
   if (decision.kind === 'handoff') {
     // The slots the caller never confirmed, by id and never by value, for an app whose handoff marks

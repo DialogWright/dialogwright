@@ -1,16 +1,16 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { NO_ACTION, type AgentClient, type AgentResult } from '../agent/types';
+import { cancelPromptOf, NO_ACTION, type AgentClient, type AgentResult } from '../agent/types';
 import { agentCassetteMissed, agentPropertyMismatches, isScriptedAgentStep, stepAgent, validAgentProperties, type AgentProperties, type ScriptedAgentStep } from './agentScript';
 import { questionVarsFor } from '../core/questionVars';
 import { rulesAt } from '../core/routes';
 import { localDateIso } from '../run/clock';
 import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
-import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
+import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type PendingConfirmation, type Session } from '../core/session';
 import { untilReplied, type ToolMemo } from '../core/toolWait';
 import { callerMatchWay, waysOf } from '../core/identityWays';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerMatch, checkIntent, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
+import { atCallerMatch, cancelForm, checkIntent, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
@@ -237,6 +237,20 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   // The entry call, through the gate: ALLOW for the seed customer (facts loaded, entered), STEP_UP for an
   // anonymous caller (the step-up pending, the next factor asked).
   ensureEntry(session, tc, newTurnOut(), []);
+  if (confirming && cancelForm(entry.context, app) !== null) {
+    // An agent-mode app's read-back, the line having just asked whether to cancel it (call 55): its summary
+    // read and its hash taken, then the cancel question the last line said.
+    const promptId = formOf(app, form).summaryPromptId!;
+    const pending: PendingConfirmation = { target: 'form', form, attempts: 0 };
+    session.pendingConfirmation = pending;
+    renderSummary(session, prompt(promptId, 'confirm', summaryVars(session), [], ['yes', 'no']), tc, newTurnOut());
+    pending.cancel = true;
+    session.promptedFor = 'confirm';
+    session.lastPromptId = cancelPromptOf(form);
+    session.lastPromptText = promptText(app, cancelPromptOf(form), {}, session.locale, { shown: !session.caps.speech });
+    session.lastPromptOptions = ['yes', 'no'];
+    return session;
+  }
   if (confirming) {
     const promptId = formOf(app, form).summaryPromptId;
     if (!promptId) throw new Error(`corpus ${entry.id}: form ${form} has no summary prompt`);

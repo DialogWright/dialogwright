@@ -15,10 +15,10 @@ One JSON object per line:
 | `id` | Unique. A short prefix per intent or slot and a number (`pl-03`, `fd-02`). |
 | `text` | What the caller says. Unique in the whole corpus after normalization (lower case, punctuation dropped): the regression refuses a duplicate. |
 | `intent` | The intent the words express. Inside a form, an answer to the question asked is `none`; a request for something else (a person, another task) is that intent. |
-| `context` | Where the words are said: `no_form` (the opening, or after "anything else?"), a form id (inside that form), `confirm_<form>` (at that form's summary), `anything_else`, `offer_transfer`, `check_<intent>` (just after "Just to check, do you want to ...?", the line checking that request; `check_agent` for "speak with someone?"). |
+| `context` | Where the words are said: `no_form` (the opening, or after "anything else?"), a form id (inside that form), `confirm_<form>` (at that form's summary), `anything_else`, `offer_transfer`, `check_<intent>` (just after "Just to check, do you want to ...?", the line checking that request; `check_agent` for "speak with someone?"), and in agent mode `cancel_<form>` (at that form's read-back, just after "Do you want to cancel this request?"). |
 | `prompted` | Inside a form: the slot the caller was just asked for (a form slot, or an identity factor during a step-up). Default: the form's first empty slot. |
 | `labels` | The answer to each question the words bear on, by question id (below). A question with no label gets the quiet answer: `none` for a choice, no for a yes-or-no. |
-| `confirm` | At a summary (`confirm_<form>`), a request checked (`check_<intent>`) or the transfer offer: `yes`, `no` or `unanswered`. |
+| `confirm` | At a summary (`confirm_<form>`), the cancel question (`cancel_<form>`), a request checked (`check_<intent>`) or the transfer offer: `yes`, `no` or `unanswered`. |
 | `changeSlot` | At a summary, with `confirm: "no"`: the slot the caller says is wrong without saying its new value ("no, the address is wrong"). A no that gives the new value ("no, it's flickering") has no `changeSlot`: label the value instead, since the change question answers `none` to a new value said. |
 | `change` | Inside a form, for a new request: `adding` (as well) or `replacing` (instead). |
 | `secondIntent` | At `no_form`: a second task said in the same breath ("check my balance and then report a fault"). |

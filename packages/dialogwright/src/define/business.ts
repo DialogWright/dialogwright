@@ -173,6 +173,10 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
         report(at([key]), `the ${key === 'readBack' ? 'read-back' : 'done line'} names {${v}}, which is not a field of the ${name}${name === 'booking' ? ` nor {${ACCOUNT_SLOT}}` : ''}`, near ? `rename it to {${near}} if it is that field, or add a field "${v}"` : `name one of ${known.map((k) => `{${k}}`).join(', ')}, or add a field "${v}"`);
       }
     }
+    // The cancel question (call 55) is said as written: it names nothing.
+    if (form.cancel !== undefined) {
+      for (const v of placeholdersOf(form.cancel)) report(at(['cancel']), `the cancel question names {${v}}, but it is said as written, with no value in it`, `write it without {${v}}, as in "Do you want to cancel this request?"`);
+    }
     // A field that may be left empty would read nothing in the read-back, unless it says what is said then
     // (says.unset); and every field is sent by the form's then, so an optional one is still named there.
     const read = placeholdersOf(form.readBack);

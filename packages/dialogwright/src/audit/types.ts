@@ -8,7 +8,9 @@ export interface AuditDraft {
    * code_spoken (a one-time code said aloud at the code prompt: masked on arrival, and a new code
    * sent), form_stopped (a form's check refused and ended the form: the form, the check's action,
    * the reason and how it ended, `next` the form entered when it ended by going to another, and
-   * `confirmed` when its refusal was read back first and the caller said yes), check_reconfirmed (a check's read-back the caller said no to: the form, the action and
+   * `confirmed` when its refusal was read back first and the caller said yes), form_cancelled (an app in agent
+   * mode: the caller said yes to cancelling a form at its read-back, so nothing was sent: the form and `at:
+   * read-back`), check_reconfirmed (a check's read-back the caller said no to: the form, the action and
    * the reason, the slots it reads emptied to be asked again), form_next (a form completed and went
    * on to the form its `next` names: the form and the next), offer (an offer settled, of the number the caller is calling from or
    * of a value proposed from the facts: the slot, the line as said, the answer and how it was given;

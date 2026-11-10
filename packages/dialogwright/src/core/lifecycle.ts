@@ -144,6 +144,13 @@ export interface TurnOut {
   /** The check whose read-back the caller said no to this turn (core/turn.ts), for the audit's `check_reconfirmed` row. Absent on every other turn. */
   reconfirmed?: CheckReconfirmed;
   /**
+   * An app in agent mode: the cancel question at a form's read-back this turn (core/turn.ts readBackCancel; the
+   * agent-mode design, call 55): `asked`, the caller said they don't want to go ahead and was asked whether to
+   * cancel; `kept`, they said no, and the request was read back again; `cancelled`, they said yes, and the form
+   * closed with nothing sent (the audit's `form_cancelled` row). Absent on every other turn.
+   */
+  cancel?: { readonly form: FormId; readonly step: 'asked' | 'kept' | 'cancelled' };
+  /**
    * What became of the caller-ID match this turn (identity.yaml's `callerId`), in order, for the
    * audit's `identity_caller_match` rows: asked (`offered`), then `verified`, `declined` or `failed`,
    * each with `at`, the number of the turn's gate events before it, so its row sits where it happened

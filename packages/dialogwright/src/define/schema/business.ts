@@ -165,6 +165,9 @@ const formShape = {
     }))
     .describe('The tools a yes at the read-back calls, in order, each through the gate: the first is the form\'s write. Each is called with the form\'s values by field name (and, on a form for accounts, the account as `account`), and each carries exactly what the caller confirmed. A tool follows one form only. A tool after the first may be `{ tool, when: { field, is } }`, called only where a choice field of the form holds that option (a text sent only with the caller\'s consent): the gate refuses it otherwise, and the form goes on without it.'),
   done: text().describe('The line said, in fixed words, once the form\'s tools have run, with the values as {placeholders}.'),
+  cancel: text()
+    .optional()
+    .describe('The question asked, in fixed words, where the caller says at the read-back that they don\'t want to go ahead ("never mind"; the agent-mode design, call 55): a yes ends the call with nothing sent, a no reads the request back again. It names no field. Default: "Do you want to cancel this request?"'),
 };
 
 const form = z.strictObject(formShape).describe('A form: what it collects, its read-back, the tools a yes calls and its done line.');

@@ -211,6 +211,17 @@ describe('business.yaml', () => {
     expect(problemsOf(nowhere)).toEqual([expect.objectContaining({ path: 'request.fields[2].full', message: expect.stringContaining('has no "freeFrom"') })]);
   });
 
+  it('the cancel question (call 55): each form\'s own words, or the engine\'s; said as written, naming nothing', () => {
+    const fixture = loadAppFolder(FIXTURE).config!;
+    expect(fixture.prompts['en-US']!.cancel_request!.text).toBe('Do you want to cancel this request?');
+    expect(fixture.prompts['en-US']!.cancel_booking!.text).toBe('Do you want to cancel this request?');
+    const own = copy({ 'business.yaml': (t) => t.replace(/\n  done: Thanks, \{patronName\}\.[^\n]*/, (m) => `${m}\n  cancel: Shall I cancel this hold?`) });
+    expect(problemsOf(own)).toEqual([]);
+    expect(loadAppFolder(own).config!.prompts['en-US']!.cancel_request!.text).toBe('Shall I cancel this hold?');
+    const named = copy({ 'business.yaml': (t) => t.replace(/\n  done: Thanks, \{patronName\}\.[^\n]*/, (m) => `${m}\n  cancel: Shall I cancel the hold for {patronName}?`) });
+    expect(problemsOf(named)).toEqual([expect.objectContaining({ path: 'request.cancel', message: expect.stringContaining('{patronName}') })]);
+  });
+
   it('a field the records hide sees no tool: its value, and the result for it, would reach the model whole (the review of Task 8)', () => {
     const dir = copy({ 'business.yaml': replacing("      question: What's the best number to reach you when it's ready?\n", "      question: What's the best number to reach you when it's ready?\n      sees: roomAvailability\n") });
     expect(problemsOf(dir)).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'request.fields[6].sees', message: expect.stringContaining('is recorded by its last four (redact last4, its type\'s default), but it sees "roomAvailability"') })]));
