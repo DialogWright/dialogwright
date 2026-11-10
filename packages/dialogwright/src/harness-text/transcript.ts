@@ -130,6 +130,7 @@ function agentLines(run: TurnRun, indent: string): string[] {
   if (a.action !== 'none') out.push(`${pad}       action ${a.action}${a.actionOutcome !== undefined ? ` (${a.actionOutcome})` : ''}`);
   if (a.fixedLine !== undefined) out.push(`${pad}       fixedLine ${a.fixedLine}`);
   // The field the reply said its question asks for (call 55), and whether the turn asked it.
+  if (a.cancel !== undefined) out.push(`${pad}       cancel ${a.cancel === 'asked' ? 'asked (the caller is done at the read-back)' : a.cancel === 'kept' ? 'answered no: read back again' : 'answered yes: nothing sent, the call ended'}`);
   if (a.asks !== undefined) out.push(`${pad}       asks ${a.asks.field}${a.asks.taken ? '' : ' (not taken: the form\'s next field)'}`);
   // The decision model's reading of a price asked, where it bore on the turn (the line named, or read as asked: call 43).
   const p = a.priceAsked;

@@ -30,7 +30,7 @@ import { recordedValue, recordingOf } from '../core/recording';
  * (`{ fail: "timeout" }`: a slow, malformed or failed model).
  */
 export type ScriptedAgentAnswer =
-  | { reply?: string; values?: AgentValue[]; action?: string; fromFacts?: boolean; fixedLine?: string }
+  | { reply?: string; values?: AgentValue[]; action?: string; fromFacts?: boolean; fixedLine?: string; asks?: string; closes?: boolean }
   | { fail: AgentFailure; detail?: string };
 
 /** A step's answers: one, or one per asking (the second when the turn asks again, shown a tool's result); every asking needs its own. */
@@ -45,6 +45,8 @@ export function scriptedAnswer(a: ScriptedAgentAnswer): AgentAnswer | { fail: Ag
     action: a.action ?? NO_ACTION,
     fromFacts: a.fromFacts ?? false,
     ...(a.fixedLine !== undefined ? { fixedLine: a.fixedLine } : {}),
+    ...(a.asks !== undefined ? { asks: a.asks } : {}),
+    ...(a.closes !== undefined ? { closes: a.closes } : {}),
   };
 }
 
@@ -55,7 +57,7 @@ export function isScriptedAgentStep(v: unknown): v is ScriptedAgentStep {
     const x = a as Record<string, unknown>;
     if ('fail' in x) return x.fail === 'timeout' || x.fail === 'invalid' || x.fail === 'error';
     const values = x.values === undefined || (Array.isArray(x.values) && x.values.every((y) => typeof y === 'object' && y !== null && ['field', 'value', 'words'].every((k) => typeof (y as Record<string, unknown>)[k] === 'string')));
-    return values && ['reply', 'action', 'fixedLine'].every((k) => x[k] === undefined || typeof x[k] === 'string') && (x.fromFacts === undefined || typeof x.fromFacts === 'boolean');
+    return values && ['reply', 'action', 'fixedLine', 'asks'].every((k) => x[k] === undefined || typeof x[k] === 'string') && ['fromFacts', 'closes'].every((k) => x[k] === undefined || typeof x[k] === 'boolean');
   };
   return Array.isArray(v) ? v.length > 0 && v.every(one) : one(v);
 }

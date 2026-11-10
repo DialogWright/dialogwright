@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parcelsFact } from '../testing/testkit/domain/facts';
 import {
-  runTurn, runCorpusEntry, runScenario, loadScenarios, unanswerableSteps, checkExpectation, outcomeOf, spokenText, saidEvent, seedCorpusSession, followEffects, startSession,
+  answerKey, runTurn, runCorpusEntry, runScenario, loadScenarios, unanswerableSteps, checkExpectation, outcomeOf, spokenText, saidEvent, seedCorpusSession, followEffects, startSession,
   type Outcome, type Scenario, type ScenarioStep,
 } from './runner';
 import { summarize } from './metrics';
@@ -302,6 +302,15 @@ describe('seedCorpusSession', () => {
     } finally {
       useTestkit();
     }
+  });
+
+  it('answerKey: a field\'s question, its retry and the full line\'s question for its one free option are answered by the field (call 55)', () => {
+    const answers = { request_window: {}, request_day: {}, readback_request: {} };
+    expect(answerKey(answers, 'ask_request_window')).toBe('request_window');
+    expect(answerKey(answers, 'ask_request_window_retry')).toBe('request_window');
+    expect(answerKey(answers, 'full_request_window_ask')).toBe('request_window');
+    expect(answerKey(answers, 'full_request_vehicle_ask')).toBeNull();
+    expect(answerKey(answers, 'readback_request')).toBe('readback_request');
   });
 
   it('leaves a no_form session untouched', () => {

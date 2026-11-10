@@ -629,7 +629,8 @@ export interface Scenario {
    * An app in agent mode: what the caller says to each question the line asks, by the question, so the call
    * does not rest on the order the model asks the fields in (the agent-mode design, call 41). The key is the
    * prompt the line said (`readback_request`, `confirm_intent_explicit`, `offer_request_callbackNumber`), or
-   * the slot a field's question asks (`request_day` answers `ask_request_day` and its retry); a question
+   * the slot a field's question asks (`request_day` answers `ask_request_day`, its retry and the full line's
+   * question for its one free option, `full_request_day_ask`); a question
    * asked again is answered again with the same words. Once `steps` (the turns tied to no question: the
    * opening, an aside) are said, each turn says the answer to the line's question, until the line says no
    * question (`anything_else`, a handoff, the call's end) or the one `expect.promptId` names. A question with
@@ -850,6 +851,9 @@ export function askedOf(result: TurnResult, endsAt?: string): string | null {
  */
 export function answerKey(answers: Readonly<Record<string, unknown>>, promptId: string): string | null {
   if (Object.hasOwn(answers, promptId)) return promptId;
+  // A full line's question for the one option free (`full_<slot>_ask`, call 55) asks its field as its own question does.
+  const freeAsk = /^full_(.+)_ask$/.exec(promptId);
+  if (freeAsk !== null) return Object.hasOwn(answers, freeAsk[1]!) ? freeAsk[1]! : null;
   if (!promptId.startsWith('ask_')) return null;
   const rest = promptId.slice('ask_'.length);
   const slots = Object.keys(answers).filter((k) => rest === k || rest.startsWith(`${k}_`)).sort((a, b) => b.length - a.length);
