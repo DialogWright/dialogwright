@@ -29,7 +29,8 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge,
  * The checks, each of the reply's data and shape, by code (render/checks.ts says why no check reads meaning):
  *
  * - `format`: over MAX_CHARS; on a call, markup or a line break (it is read aloud); in a chat, braces or
- *   angle brackets (a piece of a structure, or markup).
+ *   angle brackets (a piece of a structure, or markup); on both, a reply that does not end as a sentence
+ *   (endsAsSentence: a piece of the answer's keys run onto its end, "Friday. wevalues", calls 57 to 59).
  * - `question`: more than one question.
  * - `shape`: a key of the answer's own shape (agent/schema.ts AGENT_SHAPE_KEYS) run into its words with no
  *   space ("What's your name?values"), or a key as the shape spells it (fromFacts): the answer's structure
@@ -95,6 +96,16 @@ export function shapeLeak(text: string, keys: ReadonlySet<string> = AGENT_SHAPE_
   return before.test(text) || after.test(text) || quoted.test(text);
 }
 
+/**
+ * Whether a reply ends as a sentence does: its last mark one that ends a sentence (`.`, `?`, `!` or `…`),
+ * with only closing quotes or brackets after it. A shape, not grammar: an answer cut off, or a piece of
+ * the answer's own structure run onto its end ("... Monday through Friday. wevalues", "...?,"), ends
+ * otherwise (the agent-mode design, calls 57 to 59).
+ */
+export function endsAsSentence(text: string): boolean {
+  return /[.?!…]["'”’»)\]]*$/u.test(text.trim());
+}
+
 /** What an agent reply is held to by code (checkAgentReply). */
 export interface AgentReplyGuard {
   readonly channel: 'voice' | 'chat';
@@ -114,6 +125,8 @@ export function checkAgentReply(text: string, g: AgentReplyGuard): RenderFallbac
   if (g.channel === 'voice' ? /[\r\n]/.test(text) || /[*_#`<>{}[\]|\\]/.test(text) : /[<>{}]/.test(text)) return 'format';
   if ((text.match(/\?/g) ?? []).length > 1) return 'question';
   if (shapeLeak(text)) return 'shape';
+  // After shape, so a key run into a reply's words is named as the leak it is.
+  if (!endsAsSentence(text)) return 'format';
   if (wordCount(text) > g.words) return 'words';
   const folded = fold(text);
   if (g.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';

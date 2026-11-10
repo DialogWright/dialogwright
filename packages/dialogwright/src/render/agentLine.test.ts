@@ -14,7 +14,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { mockCodeVerifier } from '../core/tools';
 import { newSession, type Session } from '../core/session';
-import { agentWordBudget, checkAgentReply, judgedHistory, shapeLeak, textValueFigures } from './agentLine';
+import { agentWordBudget, checkAgentReply, endsAsSentence, judgedHistory, shapeLeak, textValueFigures } from './agentLine';
 import { styleOf } from './config';
 import { redactRecordSlots } from '../trace/redact';
 import { AGENT_DRIFT_QUESTION_ID } from './checks';
@@ -148,6 +148,21 @@ describe('an agent line: the checks by code', () => {
     expect(shapeLeak('Thanks.values')).toBe(true);
     expect(shapeLeak('{"values":[')).toBe(true);
     expect(shapeLeak('fixedLine')).toBe(true);
+  });
+
+  it('checkAgentReply: a reply that does not end as a sentence fails as format, on both channels (calls 55 and 59)', () => {
+    const voice = { channel: 'voice' as const, words: 40, avoid: [], sources: ['We are open Monday through Friday.'] };
+    expect(checkAgentReply("Great, diamond cut wheels are what our lathe is for. What day would you like to drop them off? We're open Monday through Friday. wevalues", voice)).toBe('format');
+    expect(checkAgentReply("What's your name?,", voice)).toBe('format');
+    expect(checkAgentReply("Thanks for confirming. We'll take it from here. In", { ...voice, channel: 'chat' })).toBe('format');
+    expect(checkAgentReply('What day would you like to drop it off?', voice)).toBeNull();
+    expect(checkAgentReply('Got it.', voice)).toBeNull();
+    expect(checkAgentReply('Great!', { ...voice, channel: 'chat' })).toBeNull();
+    expect(endsAsSentence('He said "the morning."')).toBe(true);
+    expect(endsAsSentence('Got it (the morning).')).toBe(true);
+    expect(endsAsSentence('Got it (the morning.)')).toBe(true);
+    expect(endsAsSentence('Let me think…')).toBe(true);
+    expect(endsAsSentence('Got it  ')).toBe(false);
   });
 
   it('checkAgentReply: markup on a call, two questions, the word budget, a phrase to avoid, a web address not held', () => {
