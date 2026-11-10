@@ -162,6 +162,15 @@ describe('a choice of yes and no the line has just asked, in agent mode (call 49
   });
 });
 
+describe('a consent\'s value is held to this turn\'s words only (calls 57 to 59)', () => {
+  it('a yes cited from the caller\'s earlier words is refused at the consent question; another field may cite them', async () => {
+    const c = await atConsent('hmm, what was that', said('Okay.', [['textOk', 'yes', 'Thursday morning']]), [0.1, 0.1]);
+    expect(c.last.result.session.slots.request_textOk!.value).toBeNull();
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'textOk', outcome: 'words' }]);
+    expect(c.last.record.agent!.values[0]).not.toHaveProperty('earlier');
+  });
+});
+
 describe('the read-back\'s scripted reading never reads a yes to it as a yes to a consent (call 55\'s recording)', () => {
   it('a no to texts, then the agent failing at the read-back\'s yes: the request is sent with the no, the photo text refused', async () => {
     const tools = { ...app.systems(), codes: mockCodeVerifier };

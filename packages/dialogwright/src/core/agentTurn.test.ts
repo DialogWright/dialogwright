@@ -146,18 +146,20 @@ const DETAILS_ANSWER = said('Thanks, Avery.', [
 const READ_BACK = "Here's the hold: Avery Lane, two of The Quiet Harbor in either print, collected Thursday, November 12 in the morning, and we'll call you at 5555550144. Is that right?";
 
 describe('the agent turn: values', () => {
-  it('a value with words the caller never said is dropped and the field asked', async () => {
+  it('a value with words the caller never said is dropped and the field asked, no attempt counted (calls 57 to 59)', async () => {
     const c = await call({ [HOLD]: said('Sure, Thursday it is.', [['title', 'The Quiet Harbor', 'The Quiet Harbor'], ['day', '2026-11-12', 'Thursday']]) }, [HOLD]);
     const t = c.last;
     expect(t.result.session.form).toBe('request');
     // The title was said, and is held as the agent understood it; the day's words were never said.
     expect(t.result.session.slots.request_title).toMatchObject({ value: 'The Quiet Harbor', display: 'The Quiet Harbor', by: 'agent', confirmed: false });
     expect(value(t, 'request_day')).toBeNull();
-    // The reply that took the day is not said: the day's own question is, in fixed words, as a miss: its retry line, an attempt counted.
-    expect(promptOf(t)).toBe('ask_request_day_retry');
+    // The reply that took the day is not said: the day's own question is, in fixed words. The model's value
+    // refused is not the caller's miss: no attempt counted (the maintainer's decision, 2026-11-10).
+    expect(promptOf(t)).toBe('ask_request_day');
     expect(heard(t)).toBe('What day would you like to collect it?');
-    expect(t.result.session.slots.request_day!.attempts).toBe(1);
-    expect(t.record.agent).toMatchObject({ use: 'used', replySaid: false, values: [{ field: 'title', slot: 'request_title', outcome: 'accepted', shown: 'The Quiet Harbor' }, { field: 'day', slot: 'request_day', outcome: 'words' }] });
+    expect(t.result.session.slots.request_day!.attempts).toBe(0);
+    expect(t.record.agent).toMatchObject({ use: 'used', replySaid: false, values: [{ field: 'title', slot: 'request_title', outcome: 'accepted', shown: 'The Quiet Harbor' }, { field: 'day', slot: 'request_day', outcome: 'words', counted: false }] });
+    expect(t.result.session.agent!.refused).toEqual({ slot: 'request_day', n: 1 });
   });
 
   it('several values and a correction in one turn: each checked, the correction replaces the old value, and the read-back says the new one', async () => {
@@ -1161,21 +1163,52 @@ describe('the review of Task 6', () => {
     expect(judged.last.record.agent).toMatchObject({ scripted: 'unused' });
   });
 
-  it('a refused value counts an attempt on its slot and walks its ladder to the slot\'s escape', async () => {
+  it('a value its check refuses counts no attempt the first two times in a row; from the third each counts, and the ladder reaches the slot\'s escape (calls 57 to 59)', async () => {
     const wrong = said('Thursday it is.', [['day', '2026-11-12', 'Thursday']]);
-    const c = await call({ [HOLD]: HOLD_ANSWER, 'some day': wrong, 'some other day': wrong, 'whenever': wrong, 'any day': wrong }, [HOLD, 'some day', 'some other day', 'whenever', 'any day']);
+    const turns = ['some day', 'some other day', 'whenever', 'any day', 'one day', 'a day'];
+    const c = await call({ [HOLD]: HOLD_ANSWER, ...Object.fromEntries(turns.map((t) => [t, wrong])) }, [HOLD, ...turns]);
     const asked = c.runs.slice(2).map((r) => (handedToPerson(r) !== null ? 'handoff' : r.result.decision.kind === 'prompt' ? r.result.decision.promptId : r.result.decision.kind));
-    expect(c.runs.slice(2).map((r) => r.result.session.slots.request_day!.attempts).slice(0, 2)).toEqual([1, 2]);
-    expect(asked[0]).toBe('ask_request_day_retry');
+    expect(c.runs.slice(2).map((r) => r.result.session.slots.request_day!.attempts).slice(0, 4)).toEqual([0, 0, 1, 2]);
+    expect(asked.slice(0, 3)).toEqual(['ask_request_day', 'ask_request_day', 'ask_request_day_retry']);
+    expect(c.runs.slice(2, 5).map((r) => r.record.agent!.values[0]!.counted)).toEqual([false, false, undefined]);
     // The ladder ends where a scripted miss's does: the keypad rung or a person, never the question forever.
     expect(asked.some((p) => p === 'handoff' || p.endsWith('_dtmf'))).toBe(true);
   });
 
-  it('a refused correction at the read-back sets it aside and counts an attempt on its slot', async () => {
+  it('a refused correction at the read-back sets it aside and asks its field, no attempt counted the first time (calls 57 to 59)', async () => {
     const c = await call({ ...toReadBack, 'no, make it Saturday': said('Sunday then.', [['day', '2026-11-15', 'Sunday']]) }, [HOLD, DETAILS, 'no, make it Saturday']);
-    expect(promptOf(c.last)).toBe('ask_request_day_retry');
+    expect(promptOf(c.last)).toBe('ask_request_day');
     expect(c.last.result.session.pendingConfirmation).toBeNull();
-    expect(c.last.result.session.slots.request_day!.attempts).toBe(1);
+    expect(c.last.result.session.slots.request_day!.attempts).toBe(0);
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'day', outcome: 'words', counted: false }]);
+  });
+
+  it('the run of uncounted refusals ends where the field fills or another field is asked: two more are uncounted again (calls 57 to 59)', async () => {
+    const wrong = said('Thursday it is.', [['day', '2026-11-12', 'Thursday']]);
+    // Twice refused, then the caller is asked another field (the reply asks the copies), then the day refused twice more.
+    const other = { ...said('How many copies?', [['patronName', 'Avery Lane', 'Avery Lane']]), asks: 'copies' };
+    const c = await call({ [HOLD]: HOLD_ANSWER, 'some day': wrong, 'some other day': wrong, 'Avery Lane': other, 'whenever': wrong, 'any day': wrong }, [HOLD, 'some day', 'some other day', 'Avery Lane', 'whenever', 'any day']);
+    expect(promptOf(c.runs[4]!)).toBe('ask_request_copies');
+    expect(c.runs[5]!.result.session.agent!.refused).toEqual({ slot: 'request_day', n: 1 });
+    expect(c.runs.slice(5).map((r) => r.record.agent!.values.find((v) => v.field === 'day')?.counted)).toEqual([false, false]);
+    expect(c.last.result.session.slots.request_day!.attempts).toBe(0);
+    // A value held for the field ends the run too.
+    const held = await call({ [HOLD]: HOLD_ANSWER, 'some day': wrong, 'Thursday': said('Thursday it is.', [['day', '2026-11-12', 'Thursday']]) }, [HOLD, 'some day', 'Thursday']);
+    expect(held.last.result.session.agent!.refused).toBeUndefined();
+    expect(value(held.last, 'request_day')).toBe('2026-11-12');
+  });
+
+  it('a value\'s cited words may be the caller\'s from an earlier turn (call 59: "Porsche nine eleven" cited a turn after it was said)', async () => {
+    const c = await call({
+      [HOLD]: said('Which book was that?', []),
+      'The Quiet Harbor, I think.': said('And your name?', []),
+      'yes that one': said('The Quiet Harbor, got it. What name is it under?', [['title', 'The Quiet Harbor', 'The Quiet Harbor, I think.']]),
+    }, [HOLD, 'The Quiet Harbor, I think.', 'yes that one']);
+    expect(value(c.last, 'request_title')).toBe('The Quiet Harbor');
+    expect(c.last.record.agent!.values).toMatchObject([{ field: 'title', outcome: 'accepted', earlier: true }]);
+    // Words the caller never said on the call are refused as before.
+    const never = await call({ [HOLD]: said('Which book?', []), 'yes that one': said('Got it.', [['title', 'The Silent Harbor', 'The Silent Harbor']]) }, [HOLD, 'yes that one']);
+    expect(never.last.record.agent!.values).toMatchObject([{ field: 'title', outcome: 'words', counted: false }]);
   });
 
   it('a value for no field of the form, or an action not taken, drops the reply for the fixed question', async () => {
@@ -1612,5 +1645,28 @@ describe('a text value the judge refuses is never held as raw words (call 45)', 
     expect(promptOf(c.last)).toBe('ask_request_title');
     expect(c.last.result.session.slots.request_title!.attempts).toBe(0);
     expect(c.sys.holds).toEqual([]);
+  });
+});
+
+describe('after the agent model fails, the question the line was waiting on (calls 57 to 59)', () => {
+  it('a failure after a reply asked the day out of the form\'s order: the day is asked again, not the form\'s first empty field', async () => {
+    const askDay = { ...said('Happy to help. What day would you like to collect it?', [['title', 'The Quiet Harbor', 'The Quiet Harbor']]), asks: 'day' };
+    const c = await call({ [HOLD]: askDay, 'Three... Thursday.': { fail: 'timeout' } }, [HOLD, 'Three... Thursday.']);
+    expect(promptOf(c.runs[1]!)).toBe('ask_request_day');
+    expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'timeout' });
+    expect(promptOf(c.last)).toBe('ask_request_day');
+    expect(c.last.result.session.slots.request_day!.attempts).toBe(0);
+  });
+
+  it('every failure reason alike: an answer not in its shape asks the field waited on again', async () => {
+    const askDay = { ...said('Happy to help. What day would you like to collect it?', [['title', 'The Quiet Harbor', 'The Quiet Harbor']]), asks: 'day' };
+    const c = await call({ [HOLD]: askDay, 'Thursday please': { fail: 'invalid' } }, [HOLD, 'Thursday please']);
+    expect(promptOf(c.last)).toBe('ask_request_day');
+  });
+
+  it('where the line was waiting on no field of the form (the greeting), the form\'s next field, as before', async () => {
+    const c = await call({ [HOLD]: { fail: 'timeout' } }, [HOLD]);
+    expect(c.last.record.agent).toMatchObject({ use: 'failed' });
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
   });
 });

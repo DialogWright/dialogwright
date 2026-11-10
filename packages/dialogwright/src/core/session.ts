@@ -356,10 +356,13 @@ export interface Session {
    * (core/replyShape.ts namedPart); absent until the first. `judged`: the slots whose text value the drift
    * judge refused once with no value held since (call 45), so a second refusal counts an attempt. `fullAsked`:
    * the slots for which a free option was given for words naming a full one (the `full` outcome) once with no
-   * value held since (call 55), so a second counts an attempt. Absent for every other app, so every other
-   * session, and one saved before it, is as it was.
+   * value held since (call 55), so a second counts an attempt. `refused`: the field whose value the agent model
+   * gave and its slot type's check refused (its shape, its words), and how many times in a row, the field not
+   * filled and the caller asked no other field since (core/agentTurn.ts refusedByCheck; calls 57 to 59): the
+   * first two count no attempt, the third and on do. Absent for every other app, and until the first such
+   * refusal, so every other session, and one saved before it, is as it was.
    */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[]; fullAsked?: SlotId[] };
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[]; fullAsked?: SlotId[]; refused?: { slot: SlotId; n: number } };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -641,7 +644,7 @@ export function cloneSession(s: Session): Session {
     completed: [...s.completed],
     ...(s.acknowledged ? { acknowledged: [...s.acknowledged] } : {}),
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
-    ...(s.agent ? { agent: { ...s.agent, conversation: s.agent.conversation.map((u) => ({ ...u })), ...(s.agent.seen ? { seen: s.agent.seen.map((x) => ({ ...x })) } : {}) } } : {}),
+    ...(s.agent ? { agent: { ...s.agent, conversation: s.agent.conversation.map((u) => ({ ...u })), ...(s.agent.seen ? { seen: s.agent.seen.map((x) => ({ ...x })) } : {}), ...(s.agent.refused ? { refused: { ...s.agent.refused } } : {}) } } : {}),
   };
 }
 
