@@ -1274,8 +1274,11 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   if (read !== null) record.yesNo = { field: read.field.name, option: read.option, yes: read.yes, no: read.no, at: read.at };
   const applied = applyValues(app, s, values, said, io.tc, record);
   // 3a. The tools the model sees, for the values it gave: asked again with their results where any is new;
-  // not where a value was refused, whose slot's own question is asked (no second asking for it).
-  const looked = applied.refused === null && applied.judged === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
+  // not where a value was refused, whose slot's own question is asked (no second asking for it). On the second
+  // resolution the results the model was just shown are kept on the call all the same, refused or not: a window
+  // refused as full there had left the call without the day's result, so the next turn's model was sent every
+  // window again and the full line's question had no free option to read a yes for (call 55's recording).
+  const looked = (applied.refused === null && applied.judged === null) || io.tc.agentSeen !== undefined ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
   if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
   if (answer !== null && understoodNothing(answer, failed.fixed, record) && !opened && read === null) io.missed = true;

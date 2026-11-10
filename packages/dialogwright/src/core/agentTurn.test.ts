@@ -723,6 +723,20 @@ describe('the full line\'s question where one option is free (business.yaml\'s f
     expect(promptOf(c.last)).toBe('readback_booking');
   }));
 
+  it('refused on the second asking (the day given with it): the day\'s result is kept on the call, so the yes after it is read', () => withAsk(async () => {
+    const AFTERNOON = `${BOOK} afternoon`;
+    const values: [string, string, string][] = [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', 'afternoon', 'afternoon']];
+    const c = await call({ [AFTERNOON]: said('Saturday afternoon works.', values), yes: said('') }, [AFTERNOON, 'yes'], { number: CLUB });
+    const asked = c.runs.at(-2)!;
+    expect(asked.record.agent!.again).toMatchObject({ tools: ['roomAvailability'] });
+    expect(promptOf(asked)).toBe(ASK);
+    expect(asked.result.session.agent?.seen).toEqual([expect.objectContaining({ tool: 'roomAvailability', value: SATURDAY })]);
+    // The next turn's model is sent the free window alone, and the decision model's yes fills it.
+    expect(c.contexts.at(-1)!.fields.find((f) => f.name === 'window')).toMatchObject({ options: ['morning'], full: ['afternoon'] });
+    expect(c.last.record.agent!.yesNo).toMatchObject({ field: 'window', option: 'morning' });
+    expect(promptOf(c.last)).toBe('readback_booking');
+  }));
+
   it('a silence at it asks it again as it was', () => withAsk(async () => {
     const c = await call({ [BOOK]: booked, 'the afternoon': said('The afternoon is yours.', [['window', 'afternoon', 'afternoon']]) }, [BOOK, 'the afternoon', { text: '', silence: true }], { number: CLUB });
     expect(promptOf(c.last)).toBe(ASK);
