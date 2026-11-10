@@ -1658,5 +1658,350 @@
         }
       }
     }
+  },
+  {
+    "id": "live-call-porsche",
+    "callerNumber": "+15555550191",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "Yeah. I have, uh, scraped my wheels, and I wanted to see about getting them fixed.",
+        "agent": {
+          "reply": "Scrapes on the wheels, we see that every day. Most of that can be fixed. What are you driving?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "scraped wheels",
+              "words": "scraped my wheels"
+            }
+          ],
+          "asks": "vehicle"
+        }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": {
+        "callerName": "dale rivers",
+        "vehicle": {
+          "has": [
+            "Porsche",
+            "911"
+          ]
+        },
+        "wheels": "three",
+        "damage": {
+          "has": [
+            "scrape"
+          ]
+        },
+        "diamondCut": "yes",
+        "day": "2026-11-12",
+        "window": "morning",
+        "callbackNumber": "...0191",
+        "textOk": "yes"
+      },
+      "action": "send_photo_link",
+      "said": {
+        "notFigure": true
+      },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_vehicle": {
+        "say": "It's a it's a Porsche nine eleven.",
+        "agent": {
+          "reply": "A Porsche 911, nice. How many wheels need work?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Porsche 911",
+              "words": "It's a it's a Porsche nine eleven."
+            }
+          ],
+          "asks": "wheels"
+        }
+      },
+      "request_wheels": {
+        "say": "Uh, three wheels.",
+        "agent": {
+          "reply": "Three wheels, got it. Is the face of the wheel shiny bare metal with fine lines, or painted all over?",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "three",
+              "words": "three wheels"
+            }
+          ],
+          "asks": "diamondCut"
+        }
+      },
+      "request_diamondCut": {
+        "say": "Yes.",
+        "agent": {
+          "reply": "Great, diamond cut wheels are what our lathe is for. What day would you like to drop them off? We're open Monday through Friday. wevalues",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ],
+          "asks": "day"
+        }
+      },
+      "request_day": [
+        {
+          "say": "Three... Thursday.",
+          "agent": {
+            "fail": "timeout"
+          }
+        },
+        {
+          "say": "Thursday.",
+          "agent": [
+            {
+              "reply": "",
+              "values": [
+                {
+                  "field": "day",
+                  "value": "2026-11-12",
+                  "words": "Thursday"
+                }
+              ]
+            },
+            {
+              "reply": "",
+              "values": [
+                {
+                  "field": "day",
+                  "value": "2026-11-12",
+                  "words": "Thursday"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request_callerName": {
+        "say": "Dale Rivers.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Dale Rivers",
+              "words": "Dale Rivers"
+            }
+          ]
+        }
+      },
+      "request_window": {
+        "say": "The morning.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "The morning"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [],
+          "action": "submit"
+        }
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      }
+    }
+  },
+  {
+    "id": "live-call-infinity",
+    "callerNumber": "+15555550192",
+    "todayIso": "2026-11-10",
+    "steps": [
+      {
+        "say": "Yeah. I have, um, like, banged up my wheels, and I was wanting to get them fixed.",
+        "agent": {
+          "reply": "That's no fun. We see banged up wheels every day. What are you driving?",
+          "values": [],
+          "asks": "vehicle"
+        }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": {
+        "callerName": "nora quill",
+        "vehicle": {
+          "has": [
+            "Infinit"
+          ]
+        },
+        "wheels": "four",
+        "damage": {
+          "has": [
+            "scraped"
+          ]
+        },
+        "diamondCut": "no",
+        "day": "2026-11-11",
+        "window": "morning",
+        "callbackNumber": "...0192",
+        "textOk": "yes"
+      },
+      "action": "send_photo_link",
+      "said": {
+        "notFigure": true
+      },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_vehicle": {
+        "say": "It's a, um, Infinity two eighty.",
+        "agent": {
+          "reply": "An Infiniti 280, nice. How many wheels need work?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Infiniti 280",
+              "words": "Infinity two eighty"
+            }
+          ],
+          "asks": "wheels"
+        }
+      },
+      "request_wheels": {
+        "say": "All four.",
+        "agent": {
+          "reply": "Four wheels, got it. What happened to the wheels?",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "four",
+              "words": "All four"
+            }
+          ],
+          "asks": "damage"
+        }
+      },
+      "request_damage": {
+        "say": "They're scraped up.",
+        "agent": {
+          "reply": "Got it, scraped up. We see that every day. What's your name?",
+          "values": [
+            {
+              "field": "damage",
+              "value": "scraped up",
+              "words": "scraped up"
+            }
+          ],
+          "asks": "callerName"
+        }
+      },
+      "request_callerName": {
+        "say": "Nora Quill.",
+        "agent": {
+          "reply": "Thanks, Nora. Is the face of the wheel shiny bare metal with fine lines, or painted all over?",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Nora Quill",
+              "words": "Nora Quill"
+            }
+          ],
+          "asks": "diamondCut"
+        }
+      },
+      "request_diamondCut": {
+        "say": "No. They're painted.",
+        "agent": {
+          "reply": "Got it, painted. What day would you like to drop it off?",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "no",
+              "words": "No. They're painted."
+            }
+          ],
+          "asks": "day"
+        }
+      },
+      "request_day": {
+        "say": "Tomorrow,",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "Tomorrow"
+              }
+            ]
+          },
+          {
+            "reply": "Tomorrow works. Morning or afternoon?",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-11",
+                "words": "Tomorrow"
+              }
+            ],
+            "asks": "window"
+          }
+        ]
+      },
+      "request_window": {
+        "say": "The morning.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "The morning"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "Yeah. That's fine.",
+        "agent": {
+          "reply": "",
+          "values": [],
+          "action": "submit"
+        }
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      }
+    }
   }
 ]

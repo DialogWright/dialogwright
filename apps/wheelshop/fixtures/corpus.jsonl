@@ -60,3 +60,17 @@
 {"id":"cn-03","text":"Cancel that.","intent":"done","context":"confirm_request","confirm":"unanswered","knownGap":{"reason":"\"Cancel that.\" at the read-back read as a request the line does not handle (other 0.46, done 0.27) and a no (0.77), not as done, so the line asks \"What should I change?\" rather than whether to cancel: safe, nothing is sent, and a caller who says so again is asked to cancel; the done intent's criteria name no cancelling of the request in hand","outcome":{"promptId":"ask_change","verdict":"rejected"}}}
 {"id":"cn-04","text":"no, keep it","intent":"none","context":"cancel_request","confirm":"no"}
 {"id":"cn-05","text":"yes, cancel it","intent":"none","context":"cancel_request","confirm":"yes"}
+{"id":"rq-45","text":"Yeah. I have, uh, scraped my wheels, and I wanted to see about getting them fixed.","intent":"request","context":"no_form"}
+{"id":"rq-46","text":"It's a it's a Porsche nine eleven.","intent":"none","context":"request","prompted":"request_vehicle"}
+{"id":"rq-47","text":"Uh, three wheels.","intent":"none","context":"request","prompted":"request_wheels"}
+{"id":"rq-48","text":"Three... Thursday.","intent":"none","context":"request","prompted":"request_day"}
+{"id":"rq-49","text":"Thursday.","intent":"none","context":"request","prompted":"request_day"}
+{"id":"rq-50","text":"Dale Rivers.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-51","text":"The morning.","intent":"none","context":"request","prompted":"request_window"}
+{"id":"rq-52","text":"Yeah. I have, um, like, banged up my wheels, and I was wanting to get them fixed.","intent":"request","context":"no_form"}
+{"id":"rq-53","text":"It's a, um, Infinity two eighty.","intent":"none","context":"request","prompted":"request_vehicle"}
+{"id":"rq-54","text":"All four.","intent":"none","context":"request","prompted":"request_wheels"}
+{"id":"rq-55","text":"They're scraped up.","intent":"none","context":"request","prompted":"request_damage"}
+{"id":"rq-56","text":"Nora Quill.","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-57","text":"No. They're painted.","intent":"none","context":"request","prompted":"request_diamondCut"}
+{"id":"rq-58","text":"Tomorrow,","intent":"none","context":"request","prompted":"request_day"}

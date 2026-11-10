@@ -281,6 +281,25 @@ describe('the live call of call 54, on the stubs', () => {
     expect(cancelled.runs.flatMap((x) => x.result.gateEvents).map((e) => e.decision.call.tool)).not.toContain('request');
   });
 
+  it('call 59 on the stubs: "Porsche nine eleven" held as "Porsche 911" at once; a reply with the answer\'s keys run onto its end is not said; after a timeout at the day, the day is asked again', async () => {
+    const r = await run('live-call-porsche', {});
+    expect(r.pass, r.mismatches.join('; ')).toBe(true);
+    const said = r.runs.map((x) => spokenText(app, x.result.decision));
+    expect(said).toContain('A Porsche 911, nice. How many wheels need work?');
+    expect(said.join(' ')).not.toContain('wevalues');
+    const timedOut = r.runs.findIndex((x) => x.record.agent?.fallback === 'timeout');
+    expect(said[timedOut - 1]).toBe('What day would you like to drop it off?');
+    expect(said[timedOut]).toBe('What day would you like to drop it off?');
+    expect(r.runs[timedOut]!.result.session.slots.request_vehicle!.attempts).toBe(0);
+  });
+
+  it('call 58 on the stubs: the read-back reads any car name and a short damage phrase naturally', async () => {
+    const r = await run('live-call-infinity', {});
+    expect(r.pass, r.mismatches.join('; ')).toBe(true);
+    const said = r.runs.map((x) => spokenText(app, x.result.decision));
+    expect(said).toContain("Here's your request: Nora Quill, your Infiniti 280, damage: scraped up, on four of its wheels, not diamond cut, hoping to drop it off Wednesday, November 11 in the morning, and we'll text you at 5555550192. Is that right?");
+  });
+
   it('a bare "no" at "Is there anything else I can help with?" ends the call with the closing', async () => {
     const r = await run('no-at-anything-else', {});
     expect(r.pass, r.mismatches.join('; ')).toBe(true);
