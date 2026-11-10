@@ -357,6 +357,11 @@ describe('the review of Task 7', () => {
     // A year said in pairs is the year a value writes in digits (a live call, call 47).
     expect(textValueFigures('2023 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe('2023');
     expect(textValueFigures('2024 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe('');
+    // A number said in groups is the figure its groups make written together (call 59): the reply may say it back.
+    expect(textValueFigures('Porsche 911', "It's a it's a Porsche nine eleven.")).toBe('911');
+    expect(textValueFigures('1998 Porsche 911', 'In nineteen ninety eight, nine eleven.')).toBe('1998 911');
+    expect(textValueFigures('Porsche 920', 'a Porsche nine eleven')).toBe('');
+    expect(checkAgentReply('A Porsche 911, nice. How many wheels need work?', { channel: 'voice', words: 30, avoid: [], sources: [textValueFigures('Porsche 911', 'a Porsche nine eleven')] })).toBeNull();
   });
 
   it('"in two days?" against "Yes, two days is fine": the caller\'s figure, refused', async () => {

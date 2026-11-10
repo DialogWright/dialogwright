@@ -1,5 +1,5 @@
 import type { Answer, NoulQuestion, QuestionMap, ScoreQuestion } from '../jev/types';
-import { yearPairAt } from '../core/extract/spokenNumber';
+import { numbersInGroups, yearPairAt } from '../core/extract/spokenNumber';
 import { sentenceSaid } from './prompt';
 import { SPAN_GAP, type RenderFallback, type SpanAct, type SpeechAct } from './types';
 
@@ -139,6 +139,17 @@ export function figuresOf(text: string): string[] {
   return [...digitRuns(text), ...spelledNumbers(text)].map(asNumber);
 }
 
+/**
+ * The numbers a source says (what a line or a value may draw its figures from: a fixed line, a passage, the
+ * caller's words): figuresOf's, and a number said in groups read as the groups written together as well
+ * ("Porsche nine eleven" is 911 too, "two eighty" 280, "seven forty seven" 747; core/extract/spokenNumber.ts
+ * numbersInGroups, English; the agent-mode design's calls 57 to 59). It widens only what counts as said:
+ * a line's or a value's own figures are read by figuresOf, so "nine eleven" never licenses 920.
+ */
+export function sourceFiguresOf(text: string): string[] {
+  return [...figuresOf(text), ...numbersInGroups(text).map(asNumber)];
+}
+
 /** What an amount word says, as a sign a source may have instead ("dollars" for "$"). */
 const AMOUNT_SIGNS: Readonly<Record<string, RegExp>> = {
   dollar: /\$/, dollars: /\$/, bucks: /\$/, cent: /\u00a2/, cents: /\u00a2/, percent: /%/, euro: /\u20ac/, euros: /\u20ac/, pound: /\u00a3/, pounds: /\u00a3/,
@@ -146,12 +157,13 @@ const AMOUNT_SIGNS: Readonly<Record<string, RegExp>> = {
 
 /**
  * Whether `text` says a figure none of `sources` has: a number (in digits or in words, by its value:
- * "one hundred fifty dollars" is the "$150" a source says), a currency sign, an amount word (unless a
+ * "one hundred fifty dollars" is the "$150" a source says; a source's number said in groups also as the
+ * groups written together, sourceFiguresOf), a currency sign, an amount word (unless a
  * source says it or its sign: "percent" for "%"), or another number, amount or date word a source
  * does not say. Data, compared exactly.
  */
 export function foreignFigure(text: string, sources: readonly string[]): boolean {
-  const allowed = new Set(sources.flatMap(figuresOf));
+  const allowed = new Set(sources.flatMap(sourceFiguresOf));
   if (figuresOf(text).some((n) => !allowed.has(n))) return true;
   const said = new Set(sources.flatMap(words));
   // A currency sign, where a source has it or says its word ("$" for "dollars").

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkGenerated, checkSpan, cleanGenerated, copiesFrame, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
+import { checkGenerated, checkSpan, cleanGenerated, copiesFrame, cleanSpan, foreignFigure, sourceFiguresOf, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { fakeSpanWording } from './fake';
 import { instructionsOf, sentenceSaid, spanSentence, SPAN_INSTRUCTIONS, SPAN_INSTRUCTIONS_TO_CALLER } from './prompt';
@@ -466,5 +466,23 @@ describe('the fake renderer: a test double that never drops a turning clause (li
     }
     // Spoken to the caller, the whole content turned toward them.
     expect(fakeSpanWording(span('send my invoice to accounts, not to me', { speaks: 'to-caller' }))).toBe('send your invoice to accounts, not to you');
+  });
+});
+
+describe('a number said in groups is said, as a source (calls 57 to 59)', () => {
+  it('"nine eleven" is 911 as well as what it read before; "two eighty" 280, "seven forty seven" 747, "three fifty" 350', () => {
+    expect(sourceFiguresOf('a Porsche nine eleven')).toEqual(expect.arrayContaining(['911']));
+    expect(foreignFigure('Porsche 911', ["It's a it's a Porsche nine eleven."])).toBe(false);
+    expect(foreignFigure('1998 Porsche 911', ['In nineteen ninety eight, nine eleven.'])).toBe(false);
+    expect(foreignFigure('Infiniti 280', ["It's a, um, Infinity two eighty."])).toBe(false);
+    expect(foreignFigure('Boeing 747', ['a seven forty seven'])).toBe(false);
+    expect(foreignFigure('Chevy 350', ['the three fifty'])).toBe(false);
+  });
+  it('never licenses another figure: "nine eleven" is no 920, and "two eighty" no 282', () => {
+    expect(foreignFigure('Porsche 920', ['a Porsche nine eleven'])).toBe(true);
+    expect(foreignFigure('Infiniti 282', ['an Infinity two eighty'])).toBe(true);
+  });
+  it('widens only the source: a line\'s own words "nine eleven" are not 911', () => {
+    expect(foreignFigure('a Porsche nine eleven', ['Porsche 911'])).toBe(true);
   });
 });

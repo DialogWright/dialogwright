@@ -33,6 +33,15 @@ export function tokenize(text: string, locale?: string): string[] {
  * it always has, but for a word an object inherits ("constructor"), which is now no number word.
  */
 export function spokenToDigits(text: string, locale?: string): string {
+  return spokenGroups(text, locale).join('');
+}
+
+/**
+ * The groups spokenToDigits reads `text` as, in order, each as digits ("nine eleven" is 9 and 11, "two
+ * eighty" 2 and 80, "one hundred fifty" 150, "double five" 55): what spokenToDigits writes one after the
+ * other.
+ */
+export function spokenGroups(text: string, locale?: string): string[] {
   const lex = lexiconOf(locale);
   const parts: string[] = [];
   // The group being built: what a million or more scaled (high), what a thousand scaled (total), and the rest (small).
@@ -160,7 +169,7 @@ export function spokenToDigits(text: string, locale?: string): string {
     }
   }
   close();
-  return parts.join('');
+  return parts;
 }
 
 /**
@@ -191,4 +200,34 @@ export function yearPairAt(tokens: readonly string[], i: number, lex: Lexicon = 
     return { value: century + lex.tens[second]! + (u ?? 0), next: u === null ? i + 2 : i + 3 };
   }
   return null;
+}
+
+/**
+ * The numbers a text says in groups, read as the groups written together, for a language whose lexicon reads
+ * them so (Lexicon.readsInGroups; English): within each run of number words, every two or more groups side by
+ * side ("nine eleven" is 911, "two eighty" 280, "seven forty seven" 747, "three fifty" 350, "nine one one"
+ * 91, 11 and 911, "nineteen ninety eight, nine eleven" 1998, 989, 911 and the rest), each as digits. A model,
+ * a flight or a room is said so. Only another reading of what was said, beside the ones a text already has
+ * (render/checks.ts sourceFiguresOf): never what a value's or a line's own figures are read as. A run ends
+ * at any word that is no number word; a language with no such rule reads none.
+ */
+export function numbersInGroups(text: string, lex: Lexicon = ENGLISH): string[] {
+  if (!lex.readsInGroups) return [];
+  const tokens = lex.tokenize(text);
+  const out = new Set<string>();
+  let i = 0;
+  while (i < tokens.length) {
+    if (!lex.numberWords.has(lex.fold(tokens[i]!))) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < tokens.length && lex.numberWords.has(lex.fold(tokens[j]!))) j += 1;
+    const groups = j - i > 1 ? spokenGroups(tokens.slice(i, j).join(' '), lex.language) : [];
+    for (let a = 0; a < groups.length; a += 1) {
+      for (let b = a + 2; b <= groups.length; b += 1) out.add(groups.slice(a, b).join(''));
+    }
+    i = j;
+  }
+  return [...out];
 }

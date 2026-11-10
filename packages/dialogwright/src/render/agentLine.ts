@@ -16,7 +16,7 @@ import { noteSaidLine, promptSay, promptText, saidLineOf, spokenText, type Rende
 import { maskedConversation } from '../agent/history';
 import { withReplies } from '../core/replies';
 import type { SlotContext } from '../core/slots/types';
-import { AGENT_DRIFT_QUESTION_ID, AGENT_VALUE_QUESTION_ID, renderAgentValueQuestion, renderAgentValueState, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, figuresOf, foreignAddress, foreignFigure, renderAgentDriftQuestion, renderAgentDriftState, wordCount, words, type AgentUnderstood } from './checks';
+import { AGENT_DRIFT_QUESTION_ID, AGENT_VALUE_QUESTION_ID, renderAgentValueQuestion, renderAgentValueState, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, figuresOf, foreignAddress, foreignFigure, renderAgentDriftQuestion, sourceFiguresOf, renderAgentDriftState, wordCount, words, type AgentUnderstood } from './checks';
 import { keepChatExtras, withRenderAudit } from './turn';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge, type RenderLine } from './types';
 
@@ -70,7 +70,7 @@ export function dateWords(iso: string, today: string): string[] {
 
 /** The figures a caller's words give that a reply may say back: their numbers (in digits or in words, as digits) and their date words. */
 export function callerFigures(text: string): string {
-  return [...figuresOf(text), ...words(text).filter((w) => DATE_WORDS.has(w))].join(' ');
+  return [...sourceFiguresOf(text), ...words(text).filter((w) => DATE_WORDS.has(w))].join(' ');
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -161,7 +161,8 @@ export function agentFigureSources(app: App, s: Session, today: string, opts: { 
  * source (the design's call 34): a figure the caller said outside the value's own words stays no source.
  */
 export function textValueFigures(held: string, words: string): string {
-  const cited = new Set(figuresOf(words));
+  // The cited words as a source: a number said in groups is the groups written together too ("nine eleven", 911).
+  const cited = new Set(sourceFiguresOf(words));
   return [...new Set(figuresOf(held).filter((n) => cited.has(n)))].join(' ');
 }
 

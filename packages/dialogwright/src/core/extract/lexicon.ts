@@ -62,6 +62,13 @@ export interface Lexicon {
    * teen, a tens word with or without its unit, or a nought and a unit (yearPairAt, core/extract/spokenNumber.ts).
    */
   readonly yearPairs: { readonly firstPairs: Readonly<Record<string, number>>; readonly noughts: ReadonlySet<string> } | null;
+  /**
+   * Whether a number said in groups is also read as the groups written together, where a figure is held to
+   * what was said ("nine eleven" is 911 as well, "two eighty" 280: a model, a flight, a room;
+   * core/extract/spokenNumber.ts numbersInGroups, the agent-mode design's calls 57 to 59). English reads them;
+   * a language with no such rule yet does not.
+   */
+  readonly readsInGroups: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -124,6 +131,7 @@ export const ENGLISH: Lexicon = Object.freeze({
   nameParticles: new Set<string>(),
   months: EN_MONTHS,
   yearPairs: Object.freeze({ firstPairs: EN_YEAR_FIRST_PAIRS, noughts: new Set(['oh', 'o']) }),
+  readsInGroups: true,
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -198,6 +206,7 @@ export const SPANISH: Lexicon = Object.freeze({
   nameParticles: new Set(ES_NAME_PARTICLES),
   months: ES_MONTHS,
   yearPairs: null,
+  readsInGroups: false,
 });
 
 /** Whether a locale is Spanish: `es`, or any tag in the language (`es-US`, `es-MX`). */

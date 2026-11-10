@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SPANISH } from './lexicon';
-import { spokenToDigits, yearPairAt } from './spokenNumber';
+import { numbersInGroups, spokenGroups, spokenToDigits, yearPairAt } from './spokenNumber';
 
 describe('spokenToDigits', () => {
   it.each([
@@ -85,5 +85,28 @@ describe('a year said in pairs (yearPairAt)', () => {
   });
   it('agrees with the digits spokenToDigits reads', () => {
     for (const said of ['twenty twenty three', 'nineteen ninety nine', 'nineteen oh five', 'twenty twenty']) expect(String(at(said)!.value)).toBe(spokenToDigits(said));
+  });
+});
+
+describe('a number said in groups (numbersInGroups; calls 57 to 59)', () => {
+  it('reads the groups of a run written together', () => {
+    expect(spokenGroups('nine eleven')).toEqual(['9', '11']);
+    expect(numbersInGroups("It's a Porsche nine eleven.")).toEqual(['911']);
+    expect(numbersInGroups('an Infinity two eighty')).toEqual(['280']);
+    expect(numbersInGroups('a seven forty seven')).toEqual(['747']);
+    expect(numbersInGroups('the three fifty')).toEqual(['350']);
+    expect(numbersInGroups('nine one one')).toEqual(['91', '911', '11']);
+  });
+  it('reads every run of groups side by side, a year and a model said in one breath among them', () => {
+    expect(numbersInGroups('In nineteen ninety eight, nine eleven.')).toEqual(expect.arrayContaining(['1998', '911']));
+    expect(numbersInGroups('In nineteen ninety eight, nine eleven.')).not.toContain('920');
+  });
+  it('never joins runs an ordinary word stands between, nor a number of one group', () => {
+    expect(numbersInGroups('two wheels and nine')).toEqual([]);
+    expect(numbersInGroups('one hundred fifty')).toEqual([]);
+    expect(numbersInGroups('nine')).toEqual([]);
+  });
+  it('reads none in a language with no such rule', () => {
+    expect(numbersInGroups('nueve once', SPANISH)).toEqual([]);
   });
 });
