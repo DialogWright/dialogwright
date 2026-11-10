@@ -1209,7 +1209,10 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
   const named = answer !== null && answer.fixedLine !== undefined && answer.fixedLine !== NO_ACTION ? answer.fixedLine : null;
   const { due, refused } = answer !== null ? lineDue(app, named, answers, io.tc.thresholds, record) : { due: null, refused: false };
   const fixed = fixedLineOf(app, due, s.form);
-  const handled = answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null });
+  // The reply is not said where a fixed line takes its place, or the line it was written beside is not said: then
+  // the question the caller hears is the form's own next one, not one the reply chose (asks, call 55).
+  const replaced = refused || fixed !== null || (named !== null && due === named);
+  const handled = answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null, replaced });
   if (io.out.cancel !== undefined) record.cancel = io.out.cancel.step;
   if (refused) return withoutAgentReply(handled, record);
   if (fixed === null || !lineAllowed(app, fixed.name, s.form)) {
@@ -1230,7 +1233,7 @@ function withoutAgentReply(h: Handled, record: AgentTurnRecord): Handled {
 }
 
 /** The words turn once the answer is recorded (agentWords): the read-back's, or the form's (steps 1 to 6 at the top). */
-function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, record: AgentTurnRecord, actionDone: (o: 'taken' | 'checked' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
+function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, record: AgentTurnRecord, actionDone: (o: 'taken' | 'checked' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean; replaced: boolean }): Handled {
   const app = io.app;
   const pc = s.pendingConfirmation;
   const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
@@ -1333,7 +1336,7 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     // Where the reply asks for another field still empty (asks), that field's question is the turn's (call 55).
     const next = steps.continueForm(s, io, acks, null);
     if (!plainQuestion(app, next, form)) return { decision: next, events: applied.events };
-    const asked = replyOf(reply) !== null ? askedByReply(app, s, form, answer, next, record) : next;
+    const asked = replyOf(reply) !== null && !failed.replaced ? askedByReply(app, s, form, answer, next, record) : next;
     return { decision: replyOrAside(asked, reply, record), events: applied.events };
   }
   return { decision: replyOrAside(prompt('ask_intent', 'intent', {}, acks), reply, record), events: applied.events };
@@ -1370,7 +1373,7 @@ function personCheckable(app: App, s: Session): boolean {
 }
 
 /** The read-back's turn (step 1 at the top). */
-function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'checked' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
+function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'checked' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean; replaced: boolean }): Handled {
   const app = io.app;
   const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
   // Asides in a row at the read-back: only the first is uncounted (below), so questions alone never hold it open.

@@ -590,6 +590,18 @@ describe('the field a reply asks for is the turn\'s question (call 55)', () => {
     expect(c.last.record.agent!.asks).toEqual({ field: 'callbackNumber', taken: false });
   });
 
+  it('a reply the price line takes the place of leaves the form\'s order too: the line, then the form\'s next question', async () => {
+    const FEE = `${HOLD}, and what does a hold cost`;
+    const c = await call({ [FEE]: { ...asksCopies('It depends. How many copies?'), fixedLine: 'price' } }, [FEE]);
+    expect(c.last.record.agent).toMatchObject({ fixedLine: 'price', replySaid: false });
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+    expect(c.last.record.agent!.asks).toBeUndefined();
+    // Named with no price asked (the line not said, nor the reply written beside it): the same.
+    const unasked = await call({ [HOLD]: { ...asksCopies('It depends. How many copies?'), fixedLine: 'price' } }, [HOLD]);
+    expect(unasked.last.record.agent).toMatchObject({ replySaid: false });
+    expect(promptOf(unasked.last)).toBe('ask_request_patronName');
+  });
+
   it('a reply not said (an action the turn ignored) leaves the form\'s order: asks is only for a reply said', async () => {
     const c = await call({ [HOLD]: { ...asksCopies(), action: 'submit' } }, [HOLD]);
     expect(c.last.record.agent).toMatchObject({ replySaid: false, actionOutcome: 'ignored' });
