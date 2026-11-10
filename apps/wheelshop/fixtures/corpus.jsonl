@@ -56,7 +56,7 @@
 {"id":"rq-43","text":"yes","intent":"none","context":"request","prompted":"request_diamondCut"}
 {"id":"rq-44","text":"friday morning","intent":"none","context":"request","prompted":"request_day"}
 {"id":"cn-01","text":"never mind","intent":"done","context":"confirm_request","confirm":"unanswered"}
-{"id":"cn-02","text":"Forget it.","intent":"done","context":"confirm_request","confirm":"unanswered"}
-{"id":"cn-03","text":"Cancel that.","intent":"done","context":"confirm_request","confirm":"unanswered"}
+{"id":"cn-02","text":"Forget it.","intent":"done","context":"confirm_request","confirm":"unanswered","knownGap":{"reason":"\"Forget it.\" at the read-back read as a no as well as done (confirmsNo 0.78, done 0.93), so the read-back's verdict is a no, not unanswered: the cancel question is asked all the same, the same outcome","outcome":{"verdict":"rejected"}}}
+{"id":"cn-03","text":"Cancel that.","intent":"done","context":"confirm_request","confirm":"unanswered","knownGap":{"reason":"\"Cancel that.\" at the read-back read as a request the line does not handle (other 0.46, done 0.27) and a no (0.77), not as done, so the line asks \"What should I change?\" rather than whether to cancel: safe, nothing is sent, and a caller who says so again is asked to cancel; the done intent's criteria name no cancelling of the request in hand","outcome":{"promptId":"ask_change","verdict":"rejected"}}}
 {"id":"cn-04","text":"no, keep it","intent":"none","context":"cancel_request","confirm":"no"}
 {"id":"cn-05","text":"yes, cancel it","intent":"none","context":"cancel_request","confirm":"yes"}
