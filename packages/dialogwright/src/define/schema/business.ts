@@ -101,6 +101,10 @@ const field = z
     sees: identifier()
       .optional()
       .describe('A tool whose result the agent model may see once the field is filled (the maintainer\'s decision 2): the tool, in the app\'s code, is called through the gate with the field\'s value, and its result, checked by the tool\'s reply check in a closed form, reaches the model. For example availability, for a day.'),
+    figures: z
+      .enum(['free', 'cited'])
+      .optional()
+      .describe('A text field: whether the figures of the value the agent model gives are held to the caller\'s words it cites (the text slot\'s `figures`). "free": not compared, the read-back being the guard; "cited": a figure the words do not have is refused (a note "waived fee of $40 agreed" from words that name no fee). Only on a text field. Default: free (the maintainer\'s decision, 2026-11-10).'),
     redact: z
       .enum(['none', 'last4', 'length', 'length-summarized'])
       .optional()

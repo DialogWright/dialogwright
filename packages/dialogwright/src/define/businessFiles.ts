@@ -110,7 +110,7 @@ export function fieldSlotConfig(b: BusinessYaml, f: BusinessFieldYaml): Record<s
       };
     case 'text':
       // Read back as the line understood it (say: null), which a slot whose words the records keep only by their length cannot do: recorded as it is.
-      return { type: 'text', what: f.about ?? wordsOf(f.name), say: null, redact: 'none', ...optional };
+      return { type: 'text', what: f.about ?? wordsOf(f.name), say: null, redact: 'none', ...(f.figures !== undefined ? { figures: f.figures } : {}), ...optional };
     default:
       return { type: f.type, ...optional };
   }

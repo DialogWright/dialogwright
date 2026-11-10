@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import { BUILT_IN_SLOT_TYPES, registerSlotType } from '../slots/registry';
 import type { SlotType } from '../slots/types';
 import { agentFieldTypes, factsOf, loadBusiness } from './business';
+import { fieldSlotConfig } from './businessFiles';
 import { loadAppFolder, type Problem } from './load';
 import { checkAppFully } from './check';
 import { businessSchema } from './schema/business';
@@ -354,6 +355,14 @@ describe('business.yaml', () => {
   it('a field\'s options only on a choice, a length only on digits', () => {
     const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: name\n      length: 4\n      question: What\'s your name?') });
     expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].length', message: expect.stringContaining('only a digits field has a length') }]);
+  });
+
+  it('a field\'s figures only on a text field, and set on its slot (the maintainer\'s decision, 2026-11-10: free by default)', () => {
+    const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: name\n      figures: cited\n      question: What\'s your name?') });
+    expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].figures', message: expect.stringContaining('only a text field') }]);
+    const b = { business: { name: 'x', voice: 'y' } } as unknown as Parameters<typeof fieldSlotConfig>[0];
+    expect(fieldSlotConfig(b, { name: 'note', type: 'text', question: 'Any note?', figures: 'cited' })).toMatchObject({ type: 'text', figures: 'cited' });
+    expect(fieldSlotConfig(b, { name: 'note', type: 'text', question: 'Any note?' })).not.toHaveProperty('figures');
   });
 });
 

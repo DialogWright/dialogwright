@@ -2207,6 +2207,15 @@
               }
             ]
           },
+          "figures": {
+            "default": "free",
+            "description": "Agent mode only (the slot's check of a value the agent model understood; no scripted fill reads it): whether the value's figures are held to the words it is cited from. \"free\": they are not compared, so a value the model wrote down a little differently from the words (\"Infiniti G80\" for \"Infinity two eighty\") is taken, and the read-back, which says it, is the guard (the maintainer's decision, 2026-11-10). \"cited\": each figure in the value (a number, an amount, a date word) must be in the words cited or the value held before, compared as numbers (\"2023 Kia Sorento\" from \"twenty twenty three Kia Sorento\", \"Porsche 911\" from \"Porsche nine eleven\"), and a value with one of its own is refused (a note \"waived fee of $40 agreed\" cited from words with no fee; the agent-mode design, call 40). Either way a web address the words do not have is refused: no wording of the caller's words adds one.",
+            "type": "string",
+            "enum": [
+              "free",
+              "cited"
+            ]
+          },
           "confirm": {
             "description": "\"summary\" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. \"always\": what the caller said is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",

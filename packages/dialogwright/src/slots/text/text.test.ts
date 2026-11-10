@@ -50,7 +50,7 @@ describe('a text slot built from the defaults', () => {
 
   it('carries its type and its parsed options, defaults applied', () => {
     expect(note.type).toBe('text');
-    expect(note.config).toEqual({ what: 'a note for the courier', maxLength: 500, say: 'your description', keep: 'first-unless-prompted', redact: 'length', numbers: 'words', case: 'as-said' });
+    expect(note.config).toEqual({ what: 'a note for the courier', maxLength: 500, say: 'your description', keep: 'first-unless-prompted', redact: 'length', numbers: 'words', case: 'as-said', figures: 'free' });
     expect(Object.isFrozen(note.config)).toBe(true);
   });
 
@@ -220,7 +220,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/text.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(textType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['askedOf', 'attempts', 'case', 'commands', 'confirm', 'ids', 'instructions', 'keep', 'listen', 'maxLength', 'numbers', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'others', 'pick', 'redact', 'say', 'text', 'what']);
+    expect(options.sort()).toEqual(['askedOf', 'attempts', 'case', 'commands', 'confirm', 'figures', 'ids', 'instructions', 'keep', 'listen', 'maxLength', 'numbers', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'others', 'pick', 'redact', 'say', 'text', 'what']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });
@@ -651,7 +651,7 @@ describe('numbers and case: the value written by code, the words read back', () 
   });
 
   it('defaults to the words as said, and refuses another value', () => {
-    expect(defineSlot('place', { type: 'text', what: 'where' }).config).toMatchObject({ numbers: 'words', case: 'as-said' });
+    expect(defineSlot('place', { type: 'text', what: 'where' }).config).toMatchObject({ numbers: 'words', case: 'as-said', figures: 'free' });
     const r = buildSlot('place', { type: 'text', what: 'where', numbers: 'numerals' });
     expect(!r.ok && r.problems.map(formatProblem)).toEqual([expect.stringContaining('place.numbers')]);
   });

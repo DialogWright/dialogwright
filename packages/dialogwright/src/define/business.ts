@@ -413,6 +413,7 @@ function fieldProblems(b: BusinessYaml, f: BusinessFieldYaml, at: DataPath, allo
     if (f.length !== undefined) report([...at, 'length'], `only a digits field has a length, and "${f.name}" is ${f.type}`, 'delete "length"');
     if (f.offer !== undefined) report([...at, 'offer'], `only a digits field may offer the number the caller is calling from, and "${f.name}" is ${f.type}`, 'delete "offer"');
   }
+  if (f.figures !== undefined && f.type !== 'text') report([...at, 'figures'], `only a text field's figures are held to the caller's words, and "${f.name}" is ${f.type}`, 'delete "figures"');
   if (f.countryCode !== undefined && f.offer === undefined) report([...at, 'countryCode'], `the field "${f.name}" has a countryCode but offers no number (offer: callerNumber)`, 'delete "countryCode", or add "offer: callerNumber"');
   if (f.redact !== undefined) {
     if (f.redact === 'length-summarized') {

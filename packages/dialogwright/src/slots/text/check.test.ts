@@ -30,8 +30,17 @@ describe('text check', () => {
     expect(note('x'.repeat(21), 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
     expect(note('   ', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
   });
-  it('refuses a figure or a web address the words cited do not have: a short version carries nothing of its own (call 40)', () => {
-    const title = defineSlot('title', { type: 'text', what: 'a title', say: null, redact: 'none', maxLength: 80 }).check!;
+  it('by default (figures: free) takes a value whose figures its words do not have: the read-back is the guard (calls 57 to 59)', () => {
+    const vehicle = defineSlot('vehicle', { type: 'text', what: 'the car', say: null, redact: 'none', maxLength: 80 }).check!;
+    expect(vehicle('Infiniti G80', "It's a, um, Infinity two eighty.", "It's a, um, Infinity two eighty.", ctx)).toMatchObject({ ok: true, value: 'Infiniti G80' });
+    expect(vehicle('The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor', 'a hold on The Quiet Harbor please', ctx)).toMatchObject({ ok: true });
+    // A web address the words do not have is refused all the same: no wording of the words adds one.
+    expect(vehicle('The Quiet Harbor, see example.org/fees', 'The Quiet Harbor', 'a hold on The Quiet Harbor please', ctx)).toEqual({ ok: false, reason: 'words' });
+    // And the words must have been said.
+    expect(vehicle('Porsche 911', 'Porsche nine eleven', 'a Porsche', ctx)).toEqual({ ok: false, reason: 'words' });
+  });
+  it('refuses, with figures: cited, a figure or a web address the words cited do not have: a short version carries nothing of its own (call 40)', () => {
+    const title = defineSlot('title', { type: 'text', what: 'a title', say: null, redact: 'none', maxLength: 80, figures: 'cited' }).check!;
     const said = 'a hold on The Quiet Harbor please';
     expect(title('The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
     expect(title('The Quiet Harbor, see example.org/fees', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
@@ -42,8 +51,11 @@ describe('text check', () => {
     expect(title('The Quiet Harbor 2', 'The Quiet Harbor 2', 'a hold on The Quiet Harbor 2', ctx)).toMatchObject({ ok: true });
   });
 
-  it('compares figures as numbers on both sides: a year said in pairs, a count in words (a live call, call 47)', () => {
-    const vehicle = defineSlot('vehicle', { type: 'text', what: 'the car', say: null, redact: 'none', maxLength: 80 }).check!;
+  it('compares figures as numbers on both sides, with figures: cited: a year said in pairs, a count in words (a live call, call 47), a number said in groups (call 59)', () => {
+    const vehicle = defineSlot('vehicle', { type: 'text', what: 'the car', say: null, redact: 'none', maxLength: 80, figures: 'cited' }).check!;
+    expect(vehicle('Porsche 911', "It's a it's a Porsche nine eleven.", "It's a it's a Porsche nine eleven.", ctx)).toMatchObject({ ok: true, value: 'Porsche 911' });
+    expect(vehicle('1998 Porsche 911', 'In nineteen ninety eight, nine eleven.', 'In nineteen ninety eight, nine eleven.', ctx)).toMatchObject({ ok: true });
+    expect(vehicle('Porsche 920', 'Porsche nine eleven', 'a Porsche nine eleven', ctx)).toEqual({ ok: false, reason: 'words' });
     const said = "It's a twenty twenty three Kia Sorento.";
     const cited = 'twenty twenty three Kia Sorento';
     expect(vehicle('2023 Kia Sorento', cited, said, ctx)).toMatchObject({ ok: true, value: '2023 Kia Sorento' });
