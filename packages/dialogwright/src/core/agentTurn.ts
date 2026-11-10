@@ -740,7 +740,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     Object.assign(slot, { value: check.value, display: check.shown, confirmed: false, window: null, by: v.by ?? ('agent' as const) });
     delete slot.declined;
     delete slot.missed;
-    // A value held: a later judge's refusal of this field is a first one again (judgedAgain), and so is a check's (checkRefused).
+    // A value held: a later judge's refusal of this field is a first one again (judgedAgain), and so is a check's (refusedByCheck).
     if (s.agent?.judged?.includes(field.slot) === true) s.agent = { ...s.agent, judged: s.agent.judged.filter((x) => x !== field.slot) };
     if (s.agent?.refused?.slot === field.slot) clearRefused(s);
     record.values.push({ ...proposed, outcome: 'accepted', shown: check.shown });
