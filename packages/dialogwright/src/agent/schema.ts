@@ -6,7 +6,8 @@ import { NO_ACTION, type AgentAnswer } from './types';
  * The shape the agent model answers in: its zod schema, which is what the engine accepts, and the
  * same shape as a JSON Schema for the request's `response_format` (`strict: true`: every object
  * closed, every field required, as Inception's and OpenAI's structured output take it). The engine
- * accepts one leniency the request does not offer: `values` left out is no values. The action
+ * accepts leniencies the request does not offer: `values` left out is no values, and `asks` and `closes` left
+ * out are `none` and false (an answer recorded before them, call 55). The action
  * is one of the app's, or `none`; where the form's fields are given, a value names one of them.
  */
 
@@ -31,6 +32,11 @@ function lineNames(lines: readonly string[] | undefined): [string, ...string[]] 
   return named.length === 0 ? null : [named[0]!, ...named.slice(1), NO_ACTION];
 }
 
+/** The fields a reply's question may ask for (AgentAnswer.asks): the form's, and `none`, once. */
+function askNames(fields: readonly string[]): [string, ...string[]] {
+  return [...new Set([...fields.filter((f) => f !== NO_ACTION), NO_ACTION])] as [string, ...string[]];
+}
+
 /**
  * The zod schema of an answer naming one of `actions` (or `none`), and where `fields` is given, values of
  * those fields only; where `lines` names any, with `fixedLine`, one of them or `none` (AgentAnswer.fixedLine).
@@ -49,6 +55,10 @@ export function agentAnswerSchema(actions: readonly string[], fields?: readonly 
     action: z.enum(actionNames(actions)),
     fromFacts: z.boolean(),
     ...(fixed !== null ? { fixedLine: z.enum(fixed) } : {}),
+    // The field the reply's question asks for, and whether the reply takes leave of the caller (call 55). The
+    // request asks for both; an answer without them (one recorded before them, a test's) is `none` and false.
+    asks: (names === undefined || names.length === 0 ? nonEmpty : z.enum(askNames(names))).default(NO_ACTION),
+    closes: z.boolean().default(false),
   }) as z.ZodType<AgentAnswer>;
 }
 
@@ -59,7 +69,7 @@ export function agentJsonSchema(actions: readonly string[], fields?: readonly st
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['reply', 'values', 'action', 'fromFacts', ...(fixed !== null ? ['fixedLine'] : [])],
+    required: ['reply', 'values', 'action', 'fromFacts', ...(fixed !== null ? ['fixedLine'] : []), 'asks', 'closes'],
     properties: {
       reply: { type: 'string', description: 'What the line says to the caller this turn.' },
       values: {
@@ -79,6 +89,8 @@ export function agentJsonSchema(actions: readonly string[], fields?: readonly st
       action: { type: 'string', enum: actionNames(actions) },
       fromFacts: { type: 'boolean', description: 'Whether the reply says something from the knowledge base.' },
       ...(fixed !== null ? { fixedLine: { type: 'string', enum: fixed, description: 'A fixed line that answers what the caller asked this turn, said in its own words in place of the reply; none where the caller asked nothing a fixed line answers.' } } : {}),
+      asks: { type: 'string', ...(names !== undefined && names.length > 0 ? { enum: askNames(names) } : {}), description: "The field whose value the reply's question asks the caller for; none where the reply asks for no field." },
+      closes: { type: 'boolean', description: 'Whether the reply takes leave of the caller, as at the end of a call.' },
     },
   };
 }
@@ -96,7 +108,7 @@ function unfenced(raw: string): string {
  * The keys of the shape: a path names only these (or an index); any other key, which the model chose, is `?`.
  * A reply that runs one of them into its words is a piece of the shape said (render/agentLine.ts shapeLeak).
  */
-export const AGENT_SHAPE_KEYS: ReadonlySet<string> = new Set(['reply', 'values', 'action', 'fromFacts', 'fixedLine', 'field', 'value', 'words']);
+export const AGENT_SHAPE_KEYS: ReadonlySet<string> = new Set(['reply', 'values', 'action', 'fromFacts', 'fixedLine', 'asks', 'closes', 'field', 'value', 'words']);
 const SHAPE_KEYS = AGENT_SHAPE_KEYS;
 
 /**

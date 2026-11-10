@@ -40,6 +40,12 @@ export const PRICE_QUESTION = 'asksPrice';
  */
 export const fullPromptOf = (slot: string): string => `full_${slot}`;
 export const fullNonePromptOf = (slot: string): string => `full_${slot}_none`;
+/**
+ * The question said after a full line where exactly one option is free (business.yaml's `full.ask`, the
+ * agent-mode design's call 55: "Does the {free} work for you?"), in place of the field's own question. The
+ * decision model's yes to it fills the one free option. Absent from an app whose field gives none.
+ */
+export const fullAskPromptOf = (slot: string): string => `full_${slot}_ask`;
 /** The variable of a full line that says the options free, as the field says them ("morning or afternoon"). */
 export const FREE_VAR = 'free';
 
@@ -59,6 +65,20 @@ export interface AgentAnswer {
    * names one, the line says that line whole and never the reply: a price is never worded.
    */
   fixedLine?: string;
+  /**
+   * The field of the form whose value the reply's question asks the caller for, by its name, or `none` where it
+   * asks for none (the agent-mode design, call 55). The turn's question is then that field's: its fixed question
+   * is what a reply refused falls back to and what a silence or a miss asks again, and the next turn reads the
+   * caller's words as its answer. Taken only where it names a field of the form open still empty; otherwise
+   * the form's own next field, as before. Absent (an answer recorded before it, a test's) is `none`.
+   */
+  asks?: string;
+  /**
+   * Whether the reply takes leave of the caller, as at the end of a call (the agent-mode design, call 55). The
+   * line closes a call in its own fixed words, so a reply that does is never said: at a read-back, "No problem.
+   * Thanks for calling." was said before the read-back again. Absent is false.
+   */
+  closes?: boolean;
 }
 
 /**

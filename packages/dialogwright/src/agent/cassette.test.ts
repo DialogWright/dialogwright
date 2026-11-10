@@ -34,7 +34,7 @@ const ctx: AgentContext = {
   locale: 'en-US',
   today: '2026-11-09',
 };
-const answer: AgentAnswer = { reply: 'Thursday it is.', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'none', fromFacts: false };
+const answer: AgentAnswer = { reply: 'Thursday it is.', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'none', fromFacts: false, asks: 'none', closes: false };
 
 describe('cassetteAgent', () => {
   it('a replay of an empty cassette is a miss, an error', async () => {

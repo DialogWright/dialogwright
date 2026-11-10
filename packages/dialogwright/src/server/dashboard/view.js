@@ -152,6 +152,7 @@ export function agentOf(a) {
   if (typeof a.reply === 'string' && a.reply.trim() !== '') {
     const text = a.reply;
     if (typeof a.fixedLine === 'string') reply = { text, said: false, why: `the ${a.fixedLine} line was said whole in its place` };
+    else if (a.closes === true) reply = { text, said: false, why: 'it takes leave of the caller, and the call went on' };
     else if (line !== null && line.mode === 'generated') reply = { text, said: true, ...judgeText(line) };
     else if (line !== null) reply = { text, said: false, why: `replaced by its fixed line: ${WORDING_WHY[line.fallback ?? line.skipped] ?? line.fallback ?? line.skipped ?? 'a check failed'}`, ...judgeText(line) };
     else if (a.replySaid === true) reply = { text, said: true };

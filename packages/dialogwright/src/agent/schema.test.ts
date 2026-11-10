@@ -3,7 +3,7 @@ import { agentAnswerSchema, agentJsonSchema, parseAgentAnswer } from './schema';
 
 /** The agent's answer: its zod schema (what the engine accepts) and the JSON Schema the model is asked to answer in. */
 
-const valid = { reply: 'Sure, what day suits you?', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'none', fromFacts: false };
+const valid = { reply: 'Sure, what day suits you?', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'none', fromFacts: false, asks: 'none', closes: false };
 
 describe('agentAnswerSchema', () => {
   it('accepts an answer in the shape, its action one of the app\'s', () => {
@@ -26,6 +26,16 @@ describe('agentAnswerSchema', () => {
     const { fromFacts: _fromFacts, ...noFacts } = valid;
     expect(schema.safeParse(noFacts).success).toBe(false);
     expect(schema.safeParse({ ...valid, values: null }).success).toBe(false);
+  });
+
+  it('asks and closes left out are none and false (an answer recorded before them, call 55); asks names a field of the form or none', () => {
+    const { asks: _asks, closes: _closes, ...before } = valid;
+    expect(agentAnswerSchema(['none']).parse(before)).toEqual({ ...before, asks: 'none', closes: false });
+    const fields = agentAnswerSchema(['none'], ['day', 'window']);
+    expect(fields.safeParse({ ...valid, asks: 'window' }).success).toBe(true);
+    expect(fields.safeParse({ ...valid, asks: 'none' }).success).toBe(true);
+    expect(fields.safeParse({ ...valid, asks: 'name' }).success).toBe(false);
+    expect(fields.safeParse({ ...valid, closes: 'yes' }).success).toBe(false);
   });
 
   it('a value missing its words is refused, and so is one whose words are empty', () => {
@@ -62,8 +72,9 @@ describe('agentJsonSchema', () => {
   it('is strict: every object closed, every field required, the action and the fields enumerated', () => {
     const s = agentJsonSchema(['submit'], ['day', 'window']) as { additionalProperties: boolean; required: string[]; properties: Record<string, { enum?: string[]; items?: { additionalProperties: boolean; required: string[]; properties: Record<string, { enum?: string[] }> } }> };
     expect(s.additionalProperties).toBe(false);
-    expect([...s.required].sort()).toEqual(['action', 'fromFacts', 'reply', 'values']);
+    expect([...s.required].sort()).toEqual(['action', 'asks', 'closes', 'fromFacts', 'reply', 'values']);
     expect(s.properties.action!.enum).toEqual(['submit', 'none']);
+    expect(s.properties.asks!.enum).toEqual(['day', 'window', 'none']);
     const item = s.properties.values!.items!;
     expect(item.additionalProperties).toBe(false);
     expect([...item.required].sort()).toEqual(['field', 'value', 'words']);

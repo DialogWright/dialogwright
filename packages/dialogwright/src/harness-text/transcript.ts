@@ -129,12 +129,14 @@ function agentLines(run: TurnRun, indent: string): string[] {
   for (const v of a.values) out.push(`${pad}       value ${v.field}=${JSON.stringify(v.value)} from ${JSON.stringify(v.words)}: ${v.outcome}${v.by === 'decision-model' && a.yesNo !== undefined ? ` (the decision model's ${a.yesNo.option}: yes ${a.yesNo.yes.toFixed(2)}, no ${a.yesNo.no.toFixed(2)}, at ${a.yesNo.at})` : ''}`);
   if (a.action !== 'none') out.push(`${pad}       action ${a.action}${a.actionOutcome !== undefined ? ` (${a.actionOutcome})` : ''}`);
   if (a.fixedLine !== undefined) out.push(`${pad}       fixedLine ${a.fixedLine}`);
+  // The field the reply said its question asks for (call 55), and whether the turn asked it.
+  if (a.asks !== undefined) out.push(`${pad}       asks ${a.asks.field}${a.asks.taken ? '' : ' (not taken: the form\'s next field)'}`);
   // The decision model's reading of a price asked, where it bore on the turn (the line named, or read as asked: call 43).
   const p = a.priceAsked;
   if (p !== undefined && (p.named || a.fixedLine !== undefined)) out.push(`${pad}       price asked ${p.score.toFixed(2)} at ${p.at}${p.named ? ', the line named' : ', the line not named'}${a.fixedLine === undefined ? ': not said' : ''}`);
   if (a.reply !== undefined && a.reply !== '') {
     const l = a.line;
-    const how = l === undefined ? (a.replySaid ? 'said' : 'not said') : l.mode === 'generated' ? 'said' : l.fallback !== undefined ? `replaced (${l.fallback})` : `not said (${l.skipped ?? 'not tried'})`;
+    const how = a.closes === true ? 'not said (it takes leave of the caller)' : l === undefined ? (a.replySaid ? 'said' : 'not said') : l.mode === 'generated' ? 'said' : l.fallback !== undefined ? `replaced (${l.fallback})` : `not said (${l.skipped ?? 'not tried'})`;
     const judge = l?.judge !== undefined ? `, judge ${l.judge.score.toFixed(2)} at ${l.judge.refuseAt}` : '';
     out.push(`${pad}       reply ${JSON.stringify(a.reply)}: ${how}${judge}${a.fromFacts === true ? ', from the facts' : ''}`);
   }

@@ -76,7 +76,10 @@ import type { RenderLine } from '../render/types';
  * 4. **The read-back** once every required field is filled (`submit` before that is ignored).
  * 5. **The reply**, said as an agent line (PromptDecision.agent) in place of its fallback, the next empty
  *    field's question, or with no form the open question; a reply that asks nothing is said before that
- *    question instead. Where the core's own next step is not a plain question (the offer of the caller's
+ *    question instead. Where the answer says its reply asks for another field of the form still empty
+ *    (`asks`, call 55), that field's question is the turn's: the reply's fallback, what a silence or a miss
+ *    asks again, and what the next turn reads the words for. A reply that takes leave of the caller
+ *    (`closes`, call 55) is never said: the line closes a call in its own fixed words. Where the core's own next step is not a plain question (the offer of the caller's
  *    number, a slot's own read-back, the identity a form needs), that step is said. A reply that could
  *    contradict what the core did is never said: where a value was refused or named no field of the form,
  *    the action was not taken, a form only a recognized caller may open said its line, or the form open is
@@ -149,6 +152,16 @@ export interface AgentTurnRecord {
   fromFacts?: boolean;
   /** Whether the reply was said, as an agent line in place of its fallback or before it. */
   replySaid: boolean;
+  /**
+   * The field the answer said its reply's question asks for (AgentAnswer.asks; the agent-mode design, call 55),
+   * where it named one, and whether the turn took it as its question (`taken`: the reply said in place of that
+   * field's fixed question, which is its fallback, what a silence asks again and what the next turn reads the
+   * words for). Not taken where it names no field of the form open still empty, or the reply was not said in
+   * place of a field's plain question: the form's own next field, as before. Absent where it named none.
+   */
+  asks?: { field: string; taken: boolean };
+  /** The answer said its reply takes leave of the caller (AgentAnswer.closes, call 55): the reply was not said. Absent otherwise. */
+  closes?: true;
   /**
    * The fixed line said whole before the turn's line in place of the reply (the price line): the one the answer
    * named (AgentAnswer.fixedLine), or the price line the decision model read the caller asking for where the
@@ -482,6 +495,42 @@ export function requiredFilled(app: App, s: Session, form: FormId): boolean {
 
 /** A reply with words in it, trimmed; null for none. */
 const replyOf = (reply: string | null | undefined): string | null => (reply === null || reply === undefined || reply.trim() === '' ? null : reply.trim());
+
+/**
+ * The answer's reply as the turn may say it: none where the answer says it takes leave of the caller
+ * (AgentAnswer.closes; the agent-mode design, call 55), since the line closes a call in its own fixed words
+ * and a goodbye said where the call goes on (before the read-back again, at call 55) is untrue.
+ */
+function sayable(answer: AgentAnswer | null, record: AgentTurnRecord): string | null {
+  if (answer === null) return null;
+  if (answer.closes === true) {
+    record.closes = true;
+    return null;
+  }
+  return answer.reply;
+}
+
+/**
+ * The question the turn asks in place of `next` (the form's next field's plain question), where the answer says
+ * its reply asks for another field (AgentAnswer.asks; the agent-mode design, call 55): that field's own question,
+ * so the reply stands in for it, falls back to it, and the next turn reads the caller's words as its answer. Only
+ * a field of the form open still empty, asked by its plain question (not one that offers the number calling);
+ * otherwise `next`. Recorded either way (AgentTurnRecord.asks).
+ */
+function askedByReply(app: App, s: Session, form: FormId, answer: AgentAnswer | null, next: PromptDecision, record: AgentTurnRecord): PromptDecision {
+  const named = answer?.asks;
+  if (named === undefined || named === NO_ACTION) return next;
+  const field = app.agent!.forms[form]?.fields.find((f) => f.name === named);
+  const slot = field !== undefined ? s.slots[field.slot] : undefined;
+  const open = field !== undefined && slot !== undefined && slot.value === null && slot.declined !== true && slot.window === null && app.slots[field.slot]?.callerNumber === undefined;
+  if (!open || field.slot === next.target) {
+    record.asks = { field: named, taken: open };
+    return next;
+  }
+  const asked = askSlot(s, field.slot, null, next.acks);
+  record.asks = { field: named, taken: true };
+  return asked;
+}
 
 /** Whether a reply asks the caller anything: a question mark in it. */
 const asks = (reply: string): boolean => reply.includes('?');
@@ -1228,11 +1277,14 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const forFormOpen = formBefore === form || (formBefore === null && form !== null && openable(app, s).includes(form));
   // Nor a reply written without a result the model sees: one it is to be asked again with, or a value's whose result it was not shown.
   const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen || looked.again !== null || looked.unseen || overruled;
-  const reply = contradicts ? null : (answer?.reply ?? null);
+  const reply = contradicts ? null : sayable(answer, record);
   if (form !== null) {
     // The reply in place of the core's own next question; any other next step of the core's is said instead.
+    // Where the reply asks for another field still empty (asks), that field's question is the turn's (call 55).
     const next = steps.continueForm(s, io, acks, null);
-    return { decision: plainQuestion(app, next, form) ? replyOrAside(next, reply, record) : next, events: applied.events };
+    if (!plainQuestion(app, next, form)) return { decision: next, events: applied.events };
+    const asked = replyOf(reply) !== null ? askedByReply(app, s, form, answer, next, record) : next;
+    return { decision: replyOrAside(asked, reply, record), events: applied.events };
   }
   return { decision: replyOrAside(prompt('ask_intent', 'intent', {}, acks), reply, record), events: applied.events };
 }
@@ -1329,7 +1381,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     }
     const again = steps.askSummary(s, pc.form, leftOut !== null ? fullAcks(app, s, leftOut) : [], io);
     const informed = leftOut === null && io.tc.agentSeen !== undefined && !looked.unseen && again.kind === 'prompt';
-    return { decision: informed ? withAside(again as PromptDecision, answer?.reply ?? null, record) : again, events: applied.events };
+    return { decision: informed ? withAside(again as PromptDecision, sayable(answer, record), record) : again, events: applied.events };
   }
   // A value held to a seen result that the latest no longer lists: never confirmed as it stands.
   const unfree = clearUnfree(app, s, io.tc);
@@ -1370,7 +1422,7 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   // review of Task 7), so a caller who only asks still reaches the keypad and a person.
   // A callback not taken (the decision model read no sign of a person asked for): its reply, written as if
   // it were, is never said; the turn goes on as one with nothing to say.
-  const spoken = record.action === CALLBACK_ACTION ? null : (answer?.reply ?? null);
+  const spoken = record.action === CALLBACK_ACTION ? null : sayable(answer, record);
   const isAside = answer !== null && answer.values.length === 0 && (answer.fromFacts || failed.fixed);
   const answeredSomething = failed.fixed || replyOf(spoken) !== null;
   if (isAside && answeredSomething && !asideBefore) {

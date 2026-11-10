@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { fakeAgent, type FakeAgentFailure } from '../agent/fake';
 import type { AgentAnswer, AgentContext } from '../agent/types';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
-import { speechEvent, startEvent, textEvent, withCallerNumber, type SessionEvent } from '../channel/events';
+import { silenceEvent, speechEvent, startEvent, textEvent, withCallerNumber, type SessionEvent } from '../channel/events';
 import { businessFixtureApp, type LibrarySystems } from '../define/__fixtures__/business/app';
 import { ANONYMOUS } from '../gate/principal';
 import { choiceAnswer, noulAnswer, sharp } from '../jev/distributions';
@@ -72,6 +72,8 @@ const said = (reply: string, values: [string, string, string][] = [], action = '
 interface Step {
   text: string;
   overLine?: true;
+  /** No words: the no-input wait ran out at the question (the text is not said). */
+  silence?: true;
 }
 
 interface Call {
@@ -113,8 +115,9 @@ async function call(script: Record<string, Scripted>, steps: (string | Step)[], 
   };
   await run(withCallerNumber(startEvent(), opts.chat ? undefined : (opts.number ?? STRANGER)));
   for (const step of steps) {
-    const s = typeof step === 'string' ? { text: step } : step;
-    await run(opts.chat ? textEvent(s.text) : { ...speechEvent(s.text), ...(s.overLine ? { overLine: true as const } : {}) });
+    const s: Step = typeof step === 'string' ? { text: step } : step;
+    if (s.silence === true) await run(silenceEvent());
+    else await run(opts.chat ? textEvent(s.text) : { ...speechEvent(s.text), ...(s.overLine ? { overLine: true as const } : {}) });
   }
   return { runs, contexts, sys: tools.sys as LibrarySystems, last: runs.at(-1)! };
 }
@@ -533,6 +536,73 @@ describe('a free option given for a full one\'s words is the full one asked for 
     expect(c.last.record.agent!.values).toMatchObject([{ field: 'window', value: 'morning', outcome: 'full' }]);
     expect(c.last.record.agent!.replySaid).toBe(false);
     expect(c.sys.bookings).toEqual([]);
+  });
+});
+
+describe('the field a reply asks for is the turn\'s question (call 55)', () => {
+  // The hold asks its fields in the form's order: after the title, the patron's name. The model asks the copies.
+  const asksCopies = (reply = 'Sure. How many copies would you like?'): AgentAnswer => ({ ...HOLD_ANSWER, reply, asks: 'copies' });
+
+  it('the reply stands in for the field it asks: its question is the turn\'s, promptedFor and the next turn\'s reading follow it', async () => {
+    const c = await call({ [HOLD]: asksCopies() }, [HOLD]);
+    expect(promptOf(c.last)).toBe('ask_request_copies');
+    expect(heard(c.last)).toBe('Sure. How many copies would you like?');
+    expect(c.last.result.session.promptedFor).toBe('request_copies');
+    expect(c.last.record.agent).toMatchObject({ replySaid: true, asks: { field: 'copies', taken: true } });
+    // Held to the facts as any reply: its fallback is the copies' fixed question.
+    expect(c.last.record.agent!.line).toMatchObject({ promptId: 'ask_request_copies', fixed: 'How many copies?' });
+  });
+
+  it('a silence after it asks that field\'s fixed question again, not the form\'s next', async () => {
+    const c = await call({ [HOLD]: asksCopies() }, [HOLD, { text: '', silence: true }]);
+    expect(heard(c.last)).toBe("I didn't hear anything. How many copies?");
+    expect(c.last.result.session.promptedFor).toBe('request_copies');
+  });
+
+  it('a reply refused by a check falls back to the field it asks for', async () => {
+    const two = asksCopies('How many copies? And would you like large print?');
+    const c = await call({ [HOLD]: two }, [HOLD]);
+    expect(promptOf(c.last)).toBe('ask_request_copies');
+    expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fixed: 'How many copies?' });
+    expect(heard(c.last)).toBe('How many copies?');
+    expect(c.last.result.session.promptedFor).toBe('request_copies');
+  });
+
+  it('asks naming a field already filled, or no field of the form, is not taken: the form\'s next field, as before', async () => {
+    const filled = await call({ [HOLD]: { ...HOLD_ANSWER, asks: 'title' } }, [HOLD]);
+    expect(promptOf(filled.last)).toBe('ask_request_patronName');
+    expect(filled.last.result.session.promptedFor).toBe('request_patronName');
+    expect(filled.last.record.agent!.asks).toEqual({ field: 'title', taken: false });
+    const unknown = await call({ [HOLD]: { ...HOLD_ANSWER, asks: 'people' } }, [HOLD]);
+    expect(promptOf(unknown.last)).toBe('ask_request_patronName');
+    expect(unknown.last.record.agent!.asks).toEqual({ field: 'people', taken: false });
+    // The form's next field named: the same question, taken.
+    const next = await call({ [HOLD]: { ...HOLD_ANSWER, asks: 'patronName' } }, [HOLD]);
+    expect(promptOf(next.last)).toBe('ask_request_patronName');
+    expect(next.last.record.agent!.asks).toEqual({ field: 'patronName', taken: true });
+    // None named: nothing recorded.
+    expect((await call({ [HOLD]: HOLD_ANSWER }, [HOLD])).last.record.agent!.asks).toBeUndefined();
+  });
+
+  it('a field that offers the number calling is never asked by the reply in its place: the core\'s own step', async () => {
+    const c = await call({ [HOLD]: { ...HOLD_ANSWER, asks: 'callbackNumber' } }, [HOLD]);
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+    expect(c.last.record.agent!.asks).toEqual({ field: 'callbackNumber', taken: false });
+  });
+
+  it('a reply not said (an action the turn ignored) leaves the form\'s order: asks is only for a reply said', async () => {
+    const c = await call({ [HOLD]: { ...asksCopies(), action: 'submit' } }, [HOLD]);
+    expect(c.last.record.agent).toMatchObject({ replySaid: false, actionOutcome: 'ignored' });
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+    expect(c.last.record.agent!.asks).toBeUndefined();
+  });
+});
+
+describe('a reply that takes leave of the caller is never said where the call goes on (call 55)', () => {
+  it('mid-form: the next question alone', async () => {
+    const c = await call({ [HOLD]: { ...HOLD_ANSWER, reply: 'Thanks for calling Example Library.', closes: true } }, [HOLD]);
+    expect(heard(c.last)).toBe("What's your name?");
+    expect(c.last.record.agent).toMatchObject({ replySaid: false, closes: true });
   });
 });
 
