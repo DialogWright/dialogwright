@@ -86,7 +86,7 @@ describe('the console\'s call view of an agent turn', () => {
     // A value accepted and one refused, with the words each cited; the reply not said (a value was refused), and why.
     expect(first!.values).toEqual([
       { field: 'title', value: 'The Quiet Harbor', words: 'The Quiet Harbor', outcome: 'accepted', accepted: true },
-      { field: 'day', value: '2026-11-12', words: 'Thursday', outcome: 'refused: the caller never said its words', accepted: false },
+      { field: 'day', value: '2026-11-12', words: 'Thursday', outcome: 'refused: the caller never said its words; no attempt counted', accepted: false },
     ]);
     expect(first!.reply).toEqual({ text: 'Happy to help. What name is it under?', said: false, why: 'the turn said its fixed line' });
     // A reply the judge refused: replaced by its fixed line, with the judge's reading.
@@ -96,6 +96,14 @@ describe('the console\'s call view of an agent turn', () => {
     expect(third!).toMatchObject({ use: 'used', action: 'none', ms: 420, reply: { said: true, judge: 'the judge passed it at 0.04 (cutoff 0.5)' } });
     // The script view carries it too.
     expect(scriptOf(v.lines, v.turnsView).filter((l) => l.agent !== undefined)).toHaveLength(3);
+  });
+
+  it('agentOf: a value refused with no attempt counted, and one whose words are from an earlier turn (calls 57 to 59)', () => {
+    const a = agentOf({ ms: 500, use: 'used', action: 'none', replySaid: false, values: [
+      { field: 'vehicle', value: 'Porsche 911', words: 'Porsche nine eleven', outcome: 'words', counted: false },
+      { field: 'title', value: 'The Quiet Harbor', words: 'The Quiet Harbor', outcome: 'accepted', earlier: true },
+    ] })!;
+    expect(a.values.map((v) => v.outcome)).toEqual(['refused: the caller never said its words; no attempt counted', 'accepted, its words from an earlier turn']);
   });
 
   it('agentOf: an answer that never came, one set aside, and the price line said in a reply\'s place', () => {

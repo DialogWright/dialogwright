@@ -126,7 +126,7 @@ function agentLines(run: TurnRun, indent: string): string[] {
   const use = a.use === 'used' ? 'used' : a.use === 'dropped' ? `dropped (${a.dropped ?? '?'})` : `failed (${a.fallback ?? '?'}${a.detail !== undefined ? `: ${a.detail}` : ''})`;
   const again = a.again === undefined ? '' : `; asked again with ${a.again.tools.join(', ')}${a.again.fallback !== undefined ? `, no second answer (${a.again.fallback})` : ''}`;
   const out = [`${pad}agent  ${use}, ${Math.round(a.ms)} ms${again}`];
-  for (const v of a.values) out.push(`${pad}       value ${v.field}=${JSON.stringify(v.value)} from ${JSON.stringify(v.words)}: ${v.outcome}${v.by === 'decision-model' && a.yesNo !== undefined ? ` (the decision model's ${a.yesNo.option}: yes ${a.yesNo.yes.toFixed(2)}, no ${a.yesNo.no.toFixed(2)}, at ${a.yesNo.at})` : ''}`);
+  for (const v of a.values) out.push(`${pad}       value ${v.field}=${JSON.stringify(v.value)} from ${JSON.stringify(v.words)}: ${v.outcome}${v.earlier === true ? ' (its words from an earlier turn)' : ''}${v.counted === false ? ', no attempt counted' : ''}${v.by === 'decision-model' && a.yesNo !== undefined ? ` (the decision model's ${a.yesNo.option}: yes ${a.yesNo.yes.toFixed(2)}, no ${a.yesNo.no.toFixed(2)}, at ${a.yesNo.at})` : ''}`);
   if (a.action !== 'none') out.push(`${pad}       action ${a.action}${a.actionOutcome !== undefined ? ` (${a.actionOutcome})` : ''}`);
   if (a.fixedLine !== undefined) out.push(`${pad}       fixedLine ${a.fixedLine}`);
   // The field the reply said its question asks for (call 55), and whether the turn asked it.

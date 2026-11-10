@@ -143,7 +143,8 @@ export function agentOf(a) {
     field: String(v.field),
     value: String(v.value),
     words: String(v.words),
-    outcome: AGENT_OUTCOME[v.outcome] ?? String(v.outcome),
+    // A value cited from the caller's earlier words, and a refusal that counted no attempt (calls 57 to 59), said beside the outcome.
+    outcome: `${AGENT_OUTCOME[v.outcome] ?? String(v.outcome)}${v.earlier === true ? ', its words from an earlier turn' : ''}${v.counted === false ? '; no attempt counted' : ''}`,
     accepted: v.outcome === 'accepted',
     ...(typeof v.shown === 'string' && v.shown !== v.value ? { shown: v.shown } : {}),
   }));
