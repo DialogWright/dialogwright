@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `e1ca3a24b6c32cde9c7cd5caafacb9e22dc6dceaea9b6eacc8ed3ed99130d2bc` |
+| `business.yaml` | `196748ec6bfdbefb05e5595ef80874f0b1c52dff09213f34d896860ddeb5a672` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 

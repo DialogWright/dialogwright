@@ -114,12 +114,14 @@ request:
       question: How many wheels need work?
     - name: damage
       type: text
-      # Short, in the caller's own terms: the read-back says it after "damage:", so any short phrase reads (a recording
-      # held "scraped my wheel on a curb pulling into a parking garage", too long to read back; calls 51 and 58 read
-      # "a ... Kia Sorento with curbed and scraped up" and "a Infinity with scraped up" through the old frame, "a
-      # {vehicle} with {damage}", which needed an article and a noun). No example phrase here: one the caller never
-      # said ("on the rim") was copied into a value, and refused.
-      about: What the damage is, as the line understood it, a few words in the caller's own terms (not a whole sentence), since the read-back says it after "damage:".
+      # Short, in the caller's own terms: the read-back says it after "damage:", so any short phrase reads (calls 51
+      # and 58 read "a ... Kia Sorento with curbed and scraped up" and "a Infinity with scraped up" through the old
+      # frame, "a {vehicle} with {damage}", which needed an article and a noun; a recording held "scraped my wheel on a
+      # curb pulling into a parking garage", too long to read back). The parenthesis keeps the value a name for the
+      # damage: worded "a few words ... (not a whole sentence)", the model left the damage out of 3 of 9 openings in the
+      # bake-off, and with it of none (calls 57 to 59). No example phrase here: one the caller never said ("on the
+      # rim") was copied into a value, and refused.
+      about: What the damage is, as the line understood it, short and in the caller's own terms (a name for the damage, not a clause or a sentence).
       question: What happened to the wheel?
     - name: diamondCut
       type: choice
