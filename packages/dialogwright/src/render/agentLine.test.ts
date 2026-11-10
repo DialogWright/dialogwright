@@ -152,7 +152,7 @@ describe('an agent line: the checks by code', () => {
 
   it('checkAgentReply: a reply that does not end as a sentence fails as format, on both channels (calls 55 and 59)', () => {
     const voice = { channel: 'voice' as const, words: 40, avoid: [], sources: ['We are open Monday through Friday.'] };
-    expect(checkAgentReply("Great, diamond cut wheels are what our lathe is for. What day would you like to drop them off? We're open Monday through Friday. wevalues", voice)).toBe('format');
+    expect(checkAgentReply("Great, that one is easy. What day would you like to collect it? We're open Monday through Friday. wevalues", voice)).toBe('format');
     expect(checkAgentReply("What's your name?,", voice)).toBe('format');
     expect(checkAgentReply("Thanks for confirming. We'll take it from here. In", { ...voice, channel: 'chat' })).toBe('format');
     expect(checkAgentReply('What day would you like to drop it off?', voice)).toBeNull();
@@ -163,6 +163,14 @@ describe('an agent line: the checks by code', () => {
     expect(endsAsSentence('Got it (the morning.)')).toBe(true);
     expect(endsAsSentence('Let me think…')).toBe(true);
     expect(endsAsSentence('Got it  ')).toBe(false);
+    // In a chat an emoji or an emoticon may follow the sentence's end; on a call it may not, and nothing ends a sentence but its mark.
+    expect(endsAsSentence('Thanks! 😊', 'chat')).toBe(true);
+    expect(endsAsSentence('See you then. 👍🏽', 'chat')).toBe(true);
+    expect(endsAsSentence('Great :)', 'chat')).toBe(false);
+    expect(endsAsSentence('Great. :)', 'chat')).toBe(true);
+    expect(endsAsSentence('Thanks! 😊', 'voice')).toBe(false);
+    expect(endsAsSentence('Call us at 555 0100', 'voice')).toBe(false);
+    expect(checkAgentReply('Thanks! 😊', { channel: 'chat', words: 30, avoid: [], sources: [] })).toBeNull();
   });
 
   it('checkAgentReply: markup on a call, two questions, the word budget, a phrase to avoid, a web address not held', () => {
@@ -373,10 +381,12 @@ describe('the review of Task 7', () => {
     expect(textValueFigures('2023 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe('2023');
     expect(textValueFigures('2024 Kia Sorento', 'twenty twenty three Kia Sorento')).toBe('');
     // A number said in groups is the figure its groups make written together (call 59): the reply may say it back.
-    expect(textValueFigures('Porsche 911', "It's a it's a Porsche nine eleven.")).toBe('911');
-    expect(textValueFigures('1998 Porsche 911', 'In nineteen ninety eight, nine eleven.')).toBe('1998 911');
-    expect(textValueFigures('Porsche 920', 'a Porsche nine eleven')).toBe('');
-    expect(checkAgentReply('A Porsche 911, nice. How many wheels need work?', { channel: 'voice', words: 30, avoid: [], sources: [textValueFigures('Porsche 911', 'a Porsche nine eleven')] })).toBeNull();
+    expect(textValueFigures('Vega 911', "It's a it's a Vega nine eleven.")).toBe('911');
+    expect(textValueFigures('1998 Vega 911', 'In nineteen ninety eight, nine eleven.')).toBe('1998 911');
+    expect(textValueFigures('Vega 920', 'the Vega nine eleven')).toBe('');
+    // In a language whose lexicon reads no groups, none is joined.
+    expect(textValueFigures('Vega 911', 'el Vega nueve once', 'es-US')).toBe('');
+    expect(checkAgentReply('The Vega 911, lovely. Which copy is it?', { channel: 'voice', words: 30, avoid: [], sources: [textValueFigures('Vega 911', 'the Vega nine eleven')] })).toBeNull();
   });
 
   it('"in two days?" against "Yes, two days is fine": the caller\'s figure, refused', async () => {

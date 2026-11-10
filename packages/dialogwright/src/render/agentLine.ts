@@ -18,6 +18,8 @@ import { withReplies } from '../core/replies';
 import type { SlotContext } from '../core/slots/types';
 import { AGENT_DRIFT_QUESTION_ID, AGENT_VALUE_QUESTION_ID, renderAgentValueQuestion, renderAgentValueState, DATE_WORDS, DRIFT_FIRE, MAX_CHARS, figuresOf, foreignAddress, foreignFigure, renderAgentDriftQuestion, sourceFiguresOf, renderAgentDriftState, wordCount, words, type AgentUnderstood } from './checks';
 import { keepChatExtras, withRenderAudit } from './turn';
+import { lexiconOf } from '../core/extract/lexicon';
+import { slotLocaleOf } from '../core/locale';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type RenderJudge, type RenderLine } from './types';
 
 /**
@@ -70,8 +72,8 @@ export function dateWords(iso: string, today: string): string[] {
 }
 
 /** The figures a caller's words give that a reply may say back: their numbers (in digits or in words, as digits) and their date words. */
-export function callerFigures(text: string): string {
-  return [...sourceFiguresOf(text), ...words(text).filter((w) => DATE_WORDS.has(w))].join(' ');
+export function callerFigures(text: string, locale?: string): string {
+  return [...sourceFiguresOf(text, lexiconOf(locale)), ...words(text).filter((w) => DATE_WORDS.has(w))].join(' ');
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -96,14 +98,20 @@ export function shapeLeak(text: string, keys: ReadonlySet<string> = AGENT_SHAPE_
   return before.test(text) || after.test(text) || quoted.test(text);
 }
 
+/** An emoji (with its variation, skin tone and joined parts) or a plain emoticon (":)", ";-)", ":D"), as a chat reply may end with one. */
+const TRAILING_EMOJI = String.raw`(?:\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}])?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*|[:;]-?[)(DPp])`;
+const SENTENCE_END = /[.?!…]["'”’»)\]]*$/u;
+const SENTENCE_END_CHAT = new RegExp(String.raw`[.?!…]["'”’»)\]]*(?:\s*${TRAILING_EMOJI})*$`, 'u');
+
 /**
  * Whether a reply ends as a sentence does: its last mark one that ends a sentence (`.`, `?`, `!` or `…`),
- * with only closing quotes or brackets after it. A shape, not grammar: an answer cut off, or a piece of
- * the answer's own structure run onto its end ("... Monday through Friday. wevalues", "...?,"), ends
- * otherwise (the agent-mode design, calls 57 to 59).
+ * with only closing quotes or brackets after it, and in a chat an emoji or an emoticon or two after that
+ * ("Thanks! 😊"). A shape, not grammar: an answer cut off, or a piece of the answer's own structure run onto
+ * its end ("... Monday through Friday. wevalues", "...?,"), ends otherwise (the agent-mode design, calls 57
+ * to 59). On a call a reply ending in a figure or a web address with no mark after it falls back too.
  */
-export function endsAsSentence(text: string): boolean {
-  return /[.?!…]["'”’»)\]]*$/u.test(text.trim());
+export function endsAsSentence(text: string, channel: 'voice' | 'chat' = 'voice'): boolean {
+  return (channel === 'chat' ? SENTENCE_END_CHAT : SENTENCE_END).test(text.trim());
 }
 
 /** What an agent reply is held to by code (checkAgentReply). */
@@ -114,6 +122,8 @@ export interface AgentReplyGuard {
   readonly avoid: readonly string[];
   /** Everything a figure or a web address in it may come from (agentFigureSources). */
   readonly sources: readonly string[];
+  /** The call's language (a slot's locale): a number said in groups in a source is read by its lexicon (render/checks.ts sourceFiguresOf). */
+  readonly locale?: string;
 }
 
 const fold = (s: string): string => s.replace(/[‘’ʼ]/g, "'").toLowerCase().replace(/\s+/g, ' ').trim();
@@ -126,12 +136,12 @@ export function checkAgentReply(text: string, g: AgentReplyGuard): RenderFallbac
   if ((text.match(/\?/g) ?? []).length > 1) return 'question';
   if (shapeLeak(text)) return 'shape';
   // After shape, so a key run into a reply's words is named as the leak it is.
-  if (!endsAsSentence(text)) return 'format';
+  if (!endsAsSentence(text, g.channel)) return 'format';
   if (wordCount(text) > g.words) return 'words';
   const folded = fold(text);
   if (g.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   if (foreignAddress(text, g.sources.join(' '))) return 'foreign';
-  if (foreignFigure(text, g.sources)) return 'foreign';
+  if (foreignFigure(text, g.sources, { groups: lexiconOf(g.locale) })) return 'foreign';
   return null;
 }
 
@@ -173,9 +183,9 @@ export function agentFigureSources(app: App, s: Session, today: string, opts: { 
  * The figures of a text value that are both in the value as held and in the words it was cited from, as one
  * source (the design's call 34): a figure the caller said outside the value's own words stays no source.
  */
-export function textValueFigures(held: string, words: string): string {
+export function textValueFigures(held: string, words: string, locale?: string): string {
   // The cited words as a source: a number said in groups is the groups written together too ("nine eleven", 911).
-  const cited = new Set(sourceFiguresOf(words));
+  const cited = new Set(sourceFiguresOf(words, lexiconOf(locale)));
   return [...new Set(figuresOf(held).filter((n) => cited.has(n)))].join(' ');
 }
 
@@ -202,7 +212,7 @@ function typeOfSlot(app: App, slot: string | undefined): string {
 export function citedFigureSources(app: App, s: Session, accepted: readonly { slot?: string; words: string }[]): string[] {
   return [
     ...accepted.filter((v) => CITED_TYPES.has(typeOfSlot(app, v.slot))).map((v) => v.words),
-    ...accepted.filter((v) => typeOfSlot(app, v.slot) === 'text').map((v) => textValueFigures(s.slots[v.slot as string]?.value ?? '', v.words)),
+    ...accepted.filter((v) => typeOfSlot(app, v.slot) === 'text').map((v) => textValueFigures(s.slots[v.slot as string]?.value ?? '', v.words, slotLocaleOf(s))),
   ];
 }
 
@@ -346,7 +356,8 @@ export async function holdAgentLine(input: AgentLineInput): Promise<HeldAgentLin
       seen: input.seen ?? [],
       fixed: [spokenText(app, fixedDecision, session.locale, shown)],
     });
-    const failed = checkAgentReply(reply, { channel, words: agentWordBudget(style, channel, result.agent?.fromFacts === true), avoid: style.avoid, sources });
+    const locale = slotLocaleOf(session);
+    const failed = checkAgentReply(reply, { channel, words: agentWordBudget(style, channel, result.agent?.fromFacts === true), avoid: style.avoid, sources, ...(locale !== undefined ? { locale } : {}) });
     if (failed !== null) return { fallback: failed };
     const cited = new Map(accepted.map((v) => [v.field, v.words]));
     const understood: AgentUnderstood[] = heldFields(app, session).map((f) => {

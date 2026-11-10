@@ -7,6 +7,8 @@ import { gateOf } from '../core/app/lookup';
 import type { App } from '../core/app/types';
 import type { TurnRun } from '../run/turn';
 import { foreignFigure } from '../render/checks';
+import { lexiconOf } from '../core/extract/lexicon';
+import { slotLocaleOf } from '../core/locale';
 import { agentFigureSources, citedFigureSources } from '../render/agentLine';
 import { isAnonymous } from '../gate/types';
 import { inCi } from '../define/ci';
@@ -290,7 +292,8 @@ function figureSources(app: App, run: Pick<TurnRun, 'result' | 'record'>, today:
 
 /** The reply said on a turn that holds a figure its sources do not ("no-figure"). */
 export function figureViolations(app: App, turns: readonly Pick<TurnRun, 'result' | 'record'>[], today: string): string[] {
-  return repliesSaid(turns).filter((r) => foreignFigure(r.said, figureSources(app, turns[r.turn]!, today)))
+  // Read as the line's own check reads them: a number said in groups by the call's language's lexicon.
+  return repliesSaid(turns).filter((r) => foreignFigure(r.said, figureSources(app, turns[r.turn]!, today), { groups: lexiconOf(slotLocaleOf(turns[r.turn]!.result.session)) }))
     .map((r) => `turn ${r.turn} said ${JSON.stringify(r.said)}, with a figure that the facts, the values understood and the results shown do not hold`);
 }
 

@@ -1,5 +1,6 @@
 import type { Answer, NoulQuestion, QuestionMap, ScoreQuestion } from '../jev/types';
 import { numbersInGroups, yearPairAt } from '../core/extract/spokenNumber';
+import type { Lexicon } from '../core/extract/lexicon';
 import { sentenceSaid } from './prompt';
 import { SPAN_GAP, type RenderFallback, type SpanAct, type SpeechAct } from './types';
 
@@ -140,14 +141,16 @@ export function figuresOf(text: string): string[] {
 }
 
 /**
- * The numbers a source says (what a line or a value may draw its figures from: a fixed line, a passage, the
- * caller's words): figuresOf's, and a number said in groups read as the groups written together as well
- * ("Porsche nine eleven" is 911 too, "two eighty" 280, "seven forty seven" 747; core/extract/spokenNumber.ts
- * numbersInGroups, English; the agent-mode design's calls 57 to 59). It widens only what counts as said:
- * a line's or a value's own figures are read by figuresOf, so "nine eleven" never licenses 920.
+ * The numbers a source says (what a line or a value may draw its figures from): figuresOf's, and with
+ * `groups`, the lexicon of the call's language, a number said in groups read as the groups written together as
+ * well ("the Vega nine eleven" is 911 too, "two eighty" 280; core/extract/spokenNumber.ts numbersInGroups,
+ * where the lexicon reads them, English; the agent-mode design's calls 57 to 59). Only agent mode passes
+ * `groups` (the text slot's check, the agent reply's sources); a generated line, a span and a knowledge answer
+ * read their sources by figuresOf alone. It widens only what counts as said: a line's or a value's own figures
+ * are read by figuresOf, so "nine eleven" never licenses 920.
  */
-export function sourceFiguresOf(text: string): string[] {
-  return [...figuresOf(text), ...numbersInGroups(text).map(asNumber)];
+export function sourceFiguresOf(text: string, groups: Lexicon | null = null): string[] {
+  return [...figuresOf(text), ...(groups !== null ? numbersInGroups(text, groups).map(asNumber) : [])];
 }
 
 /** What an amount word says, as a sign a source may have instead ("dollars" for "$"). */
@@ -157,13 +160,13 @@ const AMOUNT_SIGNS: Readonly<Record<string, RegExp>> = {
 
 /**
  * Whether `text` says a figure none of `sources` has: a number (in digits or in words, by its value:
- * "one hundred fifty dollars" is the "$150" a source says; a source's number said in groups also as the
- * groups written together, sourceFiguresOf), a currency sign, an amount word (unless a
+ * "one hundred fifty dollars" is the "$150" a source says; with `groups`, in agent mode, a source's number
+ * said in groups also as the groups written together, sourceFiguresOf), a currency sign, an amount word (unless a
  * source says it or its sign: "percent" for "%"), or another number, amount or date word a source
  * does not say. Data, compared exactly.
  */
-export function foreignFigure(text: string, sources: readonly string[]): boolean {
-  const allowed = new Set(sources.flatMap(sourceFiguresOf));
+export function foreignFigure(text: string, sources: readonly string[], opts: { groups?: Lexicon } = {}): boolean {
+  const allowed = new Set(sources.flatMap((s) => sourceFiguresOf(s, opts.groups ?? null)));
   if (figuresOf(text).some((n) => !allowed.has(n))) return true;
   const said = new Set(sources.flatMap(words));
   // A currency sign, where a source has it or says its word ("$" for "dollars").

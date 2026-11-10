@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { cassetteFileName } from '../jev/provider';
 import { figuresOf, foreignFigure } from '../render/checks';
 import { callerFigures, dateWords } from '../render/agentLine';
+import { lexiconOf } from '../core/extract/lexicon';
 import { openRouterThinkingOf, RENDER_EFFORTS, RENDER_THINKING_MODES, resolveRenderProvider, type RenderEffort, type RenderThinkingMode } from '../render/providers';
 import type { RenderPrice, RenderUsage } from '../render/types';
 import type { BakeoffCall, BakeoffCases, BakeoffTurn, TextLabel, ValueLabel } from './bakeoffCases';
@@ -305,14 +306,14 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   const sources = [
     ...t.ctx.facts.says,
     ...Object.values(t.ctx.facts.fixed),
-    ...(strict ? [] : [callerFigures(t.said)]),
+    ...(strict ? [] : [callerFigures(t.said, t.ctx.locale)]),
     ...Object.entries(t.collected).filter(([f]) => typeOf(f) !== 'text').flatMap(([f, v]) => [v, ...(typeOf(f) === 'date' ? dateWords(v, t.call.today) : [])]),
     ...a.values.filter((v) => right(v.field, v.value)).flatMap((v) => [v.value, ...(hasWords(t.said, v.words) ? [v.words] : []), ...(typeOf(v.field) === 'date' ? dateWords(v.value, t.call.today) : [])]),
   ];
   if (strict && numbersNotIn(a.reply, Object.values(t.ctx.facts.fixed)).length > 0) {
     s.figure = true;
     s.mistakes.push(`a number on a turn that may say none: "${a.reply}"`);
-  } else if (foreignFigure(a.reply, sources)) {
+  } else if (foreignFigure(a.reply, sources, { groups: lexiconOf(t.ctx.locale) })) {
     s.figure = true;
     s.mistakes.push(`a figure not in the facts: "${a.reply}"`);
   }

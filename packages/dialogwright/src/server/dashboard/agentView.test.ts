@@ -100,7 +100,7 @@ describe('the console\'s call view of an agent turn', () => {
 
   it('agentOf: a value refused with no attempt counted, and one whose words are from an earlier turn (calls 57 to 59)', () => {
     const a = agentOf({ ms: 500, use: 'used', action: 'none', replySaid: false, values: [
-      { field: 'vehicle', value: 'Porsche 911', words: 'Porsche nine eleven', outcome: 'words', counted: false },
+      { field: 'item', value: 'Vega 911', words: 'Vega nine eleven', outcome: 'words', counted: false },
       { field: 'title', value: 'The Quiet Harbor', words: 'The Quiet Harbor', outcome: 'accepted', earlier: true },
     ] })!;
     expect(a.values.map((v) => v.outcome)).toEqual(['refused: the caller never said its words; no attempt counted', 'accepted, its words from an earlier turn']);

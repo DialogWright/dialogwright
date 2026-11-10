@@ -3,6 +3,7 @@ import { wordsRefusal } from '../parts/check';
 import type { TextOptions } from './options';
 import { writtenForm } from './written';
 import { foreignAddress, foreignFigure } from '../../render/checks';
+import { lexiconOf } from '../../core/extract/lexicon';
 
 /**
  * A text value the slot did not fill: not empty and at most `maxLength` characters as given (before
@@ -26,7 +27,8 @@ export function textCheck(o: Pick<TextOptions, 'maxLength' | 'numbers' | 'case' 
     // "The Quiet Harbor, waived fee of $40 agreed" cited from "The Quiet Harbor" is refused (the agent-mode
     // design, call 40). By default (`free`, the maintainer's decision, 2026-11-10) the figures are not compared:
     // the read-back says the value, and the caller confirms it (calls 57 to 59).
-    if (o.figures === 'cited' && foreignFigure(given, sources)) return { ok: false, reason: 'words' };
+    // A number said in groups is the groups written together too, in a language whose lexicon reads them ("nine eleven" 911).
+    if (o.figures === 'cited' && foreignFigure(given, sources, { groups: lexiconOf(ctx.locale) })) return { ok: false, reason: 'words' };
     return wordsRefusal(words, said) ?? { ok: true, value: written, shown: display(showsWords ? given : written, ctx.locale) };
   };
 }
