@@ -507,7 +507,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       continue;
     }
     agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs, checkTimeoutMs, price: defaultRenderPrice(model.model), retry: settings.retry });
-    log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its judge ${checkTimeoutMs.voice} and ${checkTimeoutMs.chat} ms, ${settings.retry ? 'an answer not in its shape asked again once where time allows' : 'an answer not in its shape not asked again (AGENT_RETRY=off)'}`);
+    log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its judge ${checkTimeoutMs.voice} and ${checkTimeoutMs.chat} ms, ${settings.retry ? 'an answer not in its shape asked again once where time allows' : 'an answer not in its shape not asked again (AGENT_RETRY=off)'}${a.app.agent.waiting !== undefined ? `, on a call a line after ${a.app.agent.waiting.afterMs} ms and a wait up to ${Math.max(a.app.agent.waiting.upToMs, settings.timeoutMs.voice)} ms (business.yaml waiting)` : ''}`);
   }
   const agentOf = (id: string): AgentRunner | null => agents.get(appRun(id).id) ?? null;
 
