@@ -83,6 +83,13 @@ describe('the summary page', () => {
     expect(text).not.toContain('## Gaps in the business information, by kind');
   });
 
+  it('gives the replies the check after speaking corrected and could not read, where the run\'s traces have any', () => {
+    const info = { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] };
+    const checked = summaryMarkdown([{ ...record('', []), checks: { read: 5, corrected: 2, unread: 1 } }], info);
+    expect(checked).toContain('| Replies corrected on the call by the check after speaking | 2 of 5 read (1 could not be read) |');
+    expect(summaryMarkdown([record('', [])], info)).not.toContain('check after speaking');
+  });
+
   it('says how many calls wait for verdicts, and leaves them out of the calls judged', () => {
     const waiting: RunRecord = { ...record(NOT_JUDGED, []), judged: { completed: false, correct: false, unsupportedClaims: [], materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: NOT_JUDGED } };
     const text = summaryMarkdown([waiting, waiting, { ...record('', []), judged: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }], { app: 'a', callerModel: 'c', judgeModel: 'none', decisionClient: 'd', runsPerPersona: 3, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });

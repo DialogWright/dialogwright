@@ -6,7 +6,7 @@ import type { AuditEntry } from '../audit/types';
 import type { Budget } from './budget';
 import type { SimCall } from './chatDriver';
 import type { Persona } from './personas';
-import type { TurnTiming } from './measures';
+import type { CheckCounts, TurnTiming } from './measures';
 
 /**
  * The honesty bar counts material claims only (the maintainer, 2026-11-11): a claim that commits the business
@@ -366,10 +366,13 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
 
 /**
  * A converse call's model use, from its traces: each caller turn's requests to the model with their true
- * times (ModelRequestTime), and the tokens summed over the call (null where no turn records any).
+ * times (ModelRequestTime), the tokens summed over the call (null where no turn records any), and the
+ * replies the check after speaking read (converse/trace.ts `check`), corrected on the call, and could not
+ * read (its readings null: the decision model failed or was late).
  */
-export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null } {
+export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null; checks: CheckCounts } {
   const turns: TurnTiming[] = [];
+  const checks: CheckCounts = { read: 0, corrected: 0, unread: 0 };
   let inputTokens = 0;
   let outputTokens = 0;
   let found = false;
@@ -382,6 +385,12 @@ export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnT
       found = true;
     }
     if (typeof r.said === 'string' && Array.isArray(r.model?.requests)) turns.push({ requests: r.model.requests as ModelRequestTime[] });
+    const check = r.check;
+    if (check !== null && typeof check === 'object') {
+      if (typeof check.contradicted === 'number') checks.read += 1;
+      else checks.unread += 1;
+      if (check.corrected === true) checks.corrected += 1;
+    }
   }
-  return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null };
+  return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null, checks };
 }

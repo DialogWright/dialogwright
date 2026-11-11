@@ -207,8 +207,8 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     const agentCostUsd = callId === '' ? null : agentCostOfCall(traceDir, callId);
     // The line's own model is spent too: its cost, priced in its traces, counts toward the budget.
     if (agentCostUsd !== null) spend.addUsd(agentCostUsd);
-    const use = callId === '' ? { turns: [], tokens: null } : modelUseOfCall(traceDir, callId);
-    const record: RunRecord = { persona: p.id, run, today, call, judged, actions, agentCostUsd, failures, cooperative: isCooperative(p), turns: use.turns, agentTokens: use.tokens };
+    const use = callId === '' ? { turns: [], tokens: null, checks: undefined } : modelUseOfCall(traceDir, callId);
+    const record: RunRecord = { persona: p.id, run, today, call, judged, actions, agentCostUsd, failures, cooperative: isCooperative(p), turns: use.turns, agentTokens: use.tokens, ...(use.checks !== undefined ? { checks: use.checks } : {}) };
     // With no judge, the call's judge input is written beside it, for judging by hand.
     if (o.judgeModel === null) writeJudgeInput(o.outDir, record, businessText, p, o.comparisonFolder !== undefined ? { folder: o.comparisonFolder } : {});
     return record;

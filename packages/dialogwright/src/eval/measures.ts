@@ -47,7 +47,20 @@ export interface RunSummary {
   agentCostPerCallUsd: number | null;
   /** The agent model's tokens per call, where they are known. */
   agentTokensPerCall: { inputTokens: number; outputTokens: number } | null;
+  /** The replies the check after speaking (docs/designs/2026-11-11-claims-check.md) was asked to read, from the traces: read or not. */
+  repliesChecked: number;
+  /** Of those, the replies it corrected on the call: read as wrong, and the model asked to put it right. */
+  repliesCorrected: number;
+  /** Of those, the replies it could not read (the decision model failed or was late), so nothing was corrected. */
+  checksUnread: number;
   failures: Record<string, number>;
+}
+
+/** A call's replies by the check after speaking, from its traces: read, corrected on the call, and not read. */
+export interface CheckCounts {
+  read: number;
+  corrected: number;
+  unread: number;
 }
 
 /** One caller turn's requests to the model, each with its true time. */
@@ -65,6 +78,8 @@ export interface RunResult {
   /** Each caller turn's model requests, from the traces. */
   turns?: TurnTiming[];
   agentTokens?: { inputTokens: number; outputTokens: number } | null;
+  /** The call's replies by the check after speaking, from the traces; absent for a run before it. */
+  checks?: CheckCounts;
 }
 
 /** The value at a fraction of the sorted values, by the nearest rank (0 for none). */
@@ -124,6 +139,9 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     wouldTimeout: Object.fromEntries(WOULD_TIMEOUT_MS.map((ms) => [String(ms), share((t) => t.requests.some((r) => wouldTimeOut(r, ms)))])),
     agentCostPerCallUsd: costs.length === 0 ? null : costs.reduce((s, c) => s + c, 0) / costs.length,
     agentTokensPerCall: tokens.length === 0 ? null : { inputTokens: tokens.reduce((s, t) => s + t.inputTokens, 0) / tokens.length, outputTokens: tokens.reduce((s, t) => s + t.outputTokens, 0) / tokens.length },
+    repliesChecked: results.reduce((s, r) => s + (r.checks ? r.checks.read + r.checks.unread : 0), 0),
+    repliesCorrected: results.reduce((s, r) => s + (r.checks?.corrected ?? 0), 0),
+    checksUnread: results.reduce((s, r) => s + (r.checks?.unread ?? 0), 0),
     failures,
   };
 }

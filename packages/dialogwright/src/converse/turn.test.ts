@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { AuditSink } from '../audit/sink';
 import type { AuditDraft } from '../audit/types';
 import { confirmationHash } from '../gate/lines';
-import type { JevClient, JevRequest } from '../jev/types';
+import type { AnswerMap, JevClient, JevRequest } from '../jev/types';
 import { idempotencyKey } from './actions';
 import { agentBusinessProblems } from './business/load';
+import { CHECK_NOTE_MARK } from './claims';
 import type { AgentBusiness } from './business/schema';
 import { CALLER, NO_LOOKUPS, confirmedFields, policyOf } from './policy';
 import { fakeModel } from './model/fake';
@@ -137,7 +138,7 @@ interface Harness {
   run(s: ConverseState, input: Input): Promise<ConverseState>;
 }
 
-function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools'] } = {}): Harness {
+function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number } = {}): Harness {
   const b = business(o.edit);
   const model = (o.model ?? fakeModel(turns)) as Harness['model'];
   const calendar = fakeCalendar({ days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], windows: [{ name: 'morning', label: 'by noon', capacity: 1 }, { name: 'afternoon', label: 'by five', capacity: 1 }], now: () => NOW, timeZone: businessZone(b) });
@@ -153,7 +154,7 @@ function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number
   const traces: ConverseTraceRecord[] = [];
   const notified: Record<string, string>[] = [];
   const calledBack: string[] = [];
-  const jev = fakeJev(o.reading ?? { yes: 0.95, no: 0.05 });
+  const jev = o.jev ?? fakeJev(o.reading ?? { yes: 0.95, no: 0.05 });
   const out: Out = {
     say: (t, f) => {
       // Out's contract: never an empty piece.
@@ -185,7 +186,7 @@ function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number
     texts: null,
     now: () => NOW,
     trace: (r) => void traces.push(r),
-    jevTimeoutMs: 1000,
+    jevTimeoutMs: o.jevTimeoutMs ?? 1000,
   };
   return { deps, model, rows, said, ended, traces, calendar, notified, calledBack, jev, out, run: (s, input) => converseTurn(s, input, deps, out) };
 }
@@ -194,6 +195,9 @@ const fresh = (): ConverseState => newConverseState({ appId: 'menders', callId: 
 
 /** The last message of the model's latest request, as JSON. */
 const lastMessage = (h: Harness): string => JSON.stringify(h.model.requests.at(-1)!.messages.at(-1));
+
+/** The decision model's readings of answers to a read-back, apart from the check after speaking's. */
+const confirmAsks = (h: Harness): JevRequest[] => h.jev.asked.filter((r) => Object.hasOwn(r.questions, 'confirmsYes'));
 
 const READ_BACK = 'A visit Friday, November 13, by noon, for the lamp. Is that right?';
 
@@ -249,7 +253,7 @@ describe('converseTurn: a booking', () => {
     expect(JSON.stringify(h.model.requests[1]!.messages.at(-1))).toContain(SLOT);
 
     s = await h.run(s, { kind: 'text', text: 'yes, that is right' });
-    expect(h.jev.asked[0]!.state).toEqual({ readBack: READ_BACK, said: 'yes, that is right' });
+    expect(confirmAsks(h)[0]!.state).toEqual({ readBack: READ_BACK, said: 'yes, that is right' });
     expect(s.pending).toBeNull();
     expect(h.calendar.bookings).toHaveLength(1);
     expect(h.calendar.bookings[0]!.key).toBe(idempotencyKey('call-1', 'book', { slot: SLOT, item: 'lamp' }));
@@ -781,6 +785,187 @@ describe('converseTurn: the model\'s failures', () => {
     expect(spent.said.at(-1)).toEqual(['Let me get a person to call you back.', true]);
     expect(s.ended).toBe('handoff');
     expect(spent.ended).toEqual(['handoff']);
+  });
+});
+
+/**
+ * A decision model that reads every reply as `claims` (or fails, or never answers) and every answer to a
+ * read-back as a clear yes, keeping what it was asked.
+ */
+function claimsJev(claims: { contradicted: number; notDone: number; gap: number } | 'fails' | 'hangs'): Harness['jev'] {
+  const asked: JevRequest[] = [];
+  return {
+    asked,
+    async ask(req) {
+      asked.push(req);
+      if (Object.hasOwn(req.questions, 'contradicted')) {
+        if (claims === 'fails') throw new Error('down');
+        if (claims === 'hangs') return new Promise(() => {});
+      }
+      const answers: AnswerMap = Object.hasOwn(req.questions, 'contradicted') && typeof claims === 'object'
+        ? { contradicted: { type: 'noul' as const, noul: claims.contradicted }, notDone: { type: 'noul' as const, noul: claims.notDone }, gap: { type: 'noul' as const, noul: claims.gap } }
+        : { confirmsYes: { type: 'noul' as const, noul: 0.95 }, confirmsNo: { type: 'noul' as const, noul: 0.05 } };
+      return { answers, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
+    },
+  };
+}
+
+/** The decision model's readings of replies (the check after speaking), apart from the read-back's. */
+const claimAsks = (h: Harness): JevRequest[] => h.jev.asked.filter((r) => Object.hasOwn(r.questions, 'contradicted'));
+
+const WRONG = { contradicted: 0.9, notDone: 0.1, gap: 0.1 };
+const NOT_DONE = { contradicted: 0.1, notDone: 0.9, gap: 0.1 };
+const FINE = { contradicted: 0.3, notDone: 0.3, gap: 0.1 };
+const GAP = { contradicted: 0.1, notDone: 0.1, gap: 0.9 };
+const SLIP = 'We are open Saturdays too.';
+const CORRECTION = 'Sorry, I should correct that: we are open weekdays only.';
+
+/** A call: the greeting, then the caller asks, the model replies `reply`, and, where asked again, `correction`. */
+async function asked(h: Harness): Promise<ConverseState> {
+  const s = await h.run(fresh(), { kind: 'start' });
+  return h.run(s, { kind: 'text', text: 'Are you open Saturday?' });
+}
+
+describe('converseTurn: the check after speaking', () => {
+  const replyThenCorrection: ModelEvent[][] = [[text(SLIP), done()], [text(CORRECTION), done()]];
+
+  it('reads a reply once it is said, and where it reads as contradicted, sends the model a note and says its correction after the reply', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG) });
+    const s = await asked(h);
+    expect(h.said.slice(1)).toEqual([[SLIP, true], [CORRECTION, true]]);
+    expect(claimAsks(h)).toHaveLength(1);
+    const state = claimAsks(h)[0]!.state as { reply: string; today: string; actions: unknown[]; business: string };
+    expect(state.reply).toBe(SLIP);
+    expect(state.today).toBe('Wednesday, November 11, 2026 (2026-11-11)');
+    expect(state.business).toContain('Example Menders');
+    expect(state.actions).toEqual([]);
+    const trace = h.traces.at(-1)!;
+    expect(trace.replies).toEqual([SLIP, CORRECTION]);
+    expect(trace.check).toMatchObject({ contradicted: 0.9, notDone: 0.1, gap: 0.1, flagged: ['contradicted'], corrected: true, correction: 1 });
+    expect(trace.check!.ms).toBeGreaterThanOrEqual(0);
+    expect(trace.said).toBe('Are you open Saturday?');
+    // The correction is the line's: kept in the conversation after the note.
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: CORRECTION }] });
+  });
+
+  it('sends the note as the line\'s own check, never as the caller\'s words, and tells the model what such a note is', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG) });
+    await asked(h);
+    expect(h.model.requests).toHaveLength(2);
+    const req = h.model.requests[1] as unknown as { system: string; messages: { role: string; content: { type: string; text?: string }[] }[] };
+    const texts = req.messages.map((m) => m.content.map((c) => c.text ?? '').join(''));
+    // The caller's words are their own message, as they said them; the note is a message of its own after the reply.
+    expect(texts.slice(-3)).toEqual(['Are you open Saturday?', SLIP, expect.stringContaining(CHECK_NOTE_MARK)]);
+    expect(texts.at(-1)).toContain(`"${SLIP}"`);
+    expect(texts.at(-1)!.startsWith(CHECK_NOTE_MARK)).toBe(true);
+    expect(req.system).toContain(CHECK_NOTE_MARK);
+  });
+
+  it('corrects a reply read as saying something was done that was not, the same way', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(NOT_DONE) });
+    await asked(h);
+    expect(h.said.slice(1)).toEqual([[SLIP, true], [CORRECTION, true]]);
+    expect(h.traces.at(-1)!.check).toMatchObject({ notDone: 0.9, flagged: ['notDone'], corrected: true, correction: 1 });
+  });
+
+  it('says nothing more where both readings are below the bar, and keeps the readings', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(FINE) });
+    await asked(h);
+    expect(h.said.slice(1)).toEqual([[SLIP, true]]);
+    expect(h.model.requests).toHaveLength(1);
+    expect(h.traces.at(-1)!.check).toMatchObject({ contradicted: 0.3, notDone: 0.3, gap: 0.1, flagged: [], corrected: false, correction: 0 });
+  });
+
+  it('says nothing more for a gap, and records it', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(GAP) });
+    await asked(h);
+    expect(h.said.slice(1)).toEqual([[SLIP, true]]);
+    expect(h.traces.at(-1)!.check).toMatchObject({ gap: 0.9, flagged: ['gap'], corrected: false, correction: 0 });
+  });
+
+  it('with mode record, reads and records, and says nothing more', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG), edit: (t) => `${t}checks:\n  claims: { mode: record }\n` });
+    await asked(h);
+    expect(h.said.slice(1)).toEqual([[SLIP, true]]);
+    expect(h.model.requests).toHaveLength(1);
+    expect(h.traces.at(-1)!.check).toMatchObject({ contradicted: 0.9, flagged: ['contradicted'], corrected: false, correction: 0 });
+  });
+
+  it('with mode off, never asks the decision model, and the trace has no check', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG), edit: (t) => `${t}checks:\n  claims: { mode: "off" }\n` });
+    await asked(h);
+    expect(h.jev.asked).toHaveLength(0);
+    expect(h.said.slice(1)).toEqual([[SLIP, true]]);
+    expect(h.traces.at(-1)!.check).toBeUndefined();
+  });
+
+  it('holds a reply to agent.yaml\'s correctAt', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG), edit: (t) => `${t}checks:\n  claims: { correctAt: 0.95 }\n` });
+    await asked(h);
+    expect(h.said.slice(1)).toEqual([[SLIP, true]]);
+    expect(h.traces.at(-1)!.check).toMatchObject({ flagged: [], corrected: false });
+  });
+
+  it('never reads the correction itself: the decision model is asked once a turn', async () => {
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG) });
+    await asked(h);
+    expect(claimAsks(h)).toHaveLength(1);
+    expect(h.said.slice(1)).toEqual([[SLIP, true], [CORRECTION, true]]);
+  });
+
+  it('says nothing more where the decision model fails or does not answer in time, and the trace says the check was unread', async () => {
+    for (const jev of [claimsJev('fails'), claimsJev('hangs')]) {
+      const h = harness(replyThenCorrection, { jev, jevTimeoutMs: 20 });
+      await asked(h);
+      expect(h.said.slice(1)).toEqual([[SLIP, true]]);
+      expect(h.traces.at(-1)!.check).toMatchObject({ contradicted: null, notDone: null, gap: null, flagged: [], corrected: false, correction: 0 });
+    }
+  });
+
+  it('reads none of the line\'s fixed words: the greeting, a read-back said alone, the done line, the recovery line', async () => {
+    const h = harness([[call('c1', 'check_availability', { day: FRIDAY }), done('tool')], [call('c2', 'book', { slot: SLOT, item: 'lamp' }), done('tool')], [timeout], [timeout], [timeout], [timeout]], { jev: claimsJev(WRONG), edit: (t) => t.replace('failuresPerCall: 2', 'failuresPerCall: 3') });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'Can I bring my lamp in Friday morning?' });
+    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.said.at(-1)).toEqual(["That's done.", true]);
+    s = await h.run(s, { kind: 'text', text: 'and the kettle?' });
+    expect(h.said.at(-1)).toEqual(['Sorry, could you say that again?', true]);
+    expect(claimAsks(h)).toHaveLength(0);
+    expect(h.traces.every((r) => r.check === undefined)).toBe(true);
+  });
+
+  it('reads the model\'s own words before a read-back, but corrects nothing while the read-back waits for the caller\'s yes', async () => {
+    const h = harness(lookupThenBook, { jev: claimsJev(WRONG) });
+    const s = await upToReadBack(h);
+    expect(h.said.slice(1)).toEqual([['Friday morning is free.', false], [READ_BACK, true]]);
+    expect(s.pending).not.toBeNull();
+    expect(h.model.requests).toHaveLength(2);
+    const state = claimAsks(h)[0]!.state as { reply: string; actions: { action: string; result: string }[] };
+    expect(state.reply).toBe('Friday morning is free.');
+    expect(state.actions.map((a) => a.action)).toEqual(['check_availability', 'book']);
+    expect(state.actions[1]!.result).toContain('waiting for their yes');
+    expect(h.traces.at(-1)!.check).toMatchObject({ contradicted: 0.9, flagged: ['contradicted'], corrected: false, correction: 0 });
+  });
+
+  it('reads no turn that ended the call: the closing line, or a handoff', async () => {
+    const closing = harness([[text('Glad to help.'), call('c1', 'end_call', {}), done('tool')]], { jev: claimsJev(WRONG) });
+    await asked(closing);
+    expect(closing.ended).toEqual(['closing']);
+    expect(claimAsks(closing)).toHaveLength(0);
+    const handoff = harness([[text('Let me see. Hmm'), timeout]], { jev: claimsJev(WRONG), edit: (t) => t.replace('failuresPerCall: 2', 'failuresPerCall: 1') });
+    await asked(handoff);
+    expect(handoff.said.slice(1)).toEqual([['Let me see. ', false], ['Let me get a person to call you back.', true]]);
+    expect(handoff.ended).toEqual(['handoff']);
+    expect(claimAsks(handoff)).toHaveLength(0);
+  });
+
+  it('runs a correction as any turn: an action it calls is read back, never run on the note alone', async () => {
+    const h = harness([[text('Your note is left for the counter.'), done()], [text('Sorry, it is not left yet.'), call('c1', 'leave_note', { note: 'bring the lamp' }), done('tool')]], { jev: claimsJev(NOT_DONE) });
+    const s = await asked(h);
+    expect(h.said.slice(1)).toEqual([['Your note is left for the counter.', true], ['Sorry, it is not left yet.', false], ['A note saying bring the lamp. Is that right?', true]]);
+    expect(s.pending).toMatchObject({ action: 'leave_note' });
+    expect(h.traces.at(-1)!.check).toMatchObject({ corrected: true, correction: 2 });
   });
 });
 

@@ -40,6 +40,18 @@ describe('summarize', () => {
     expect(s.correctRate).toBe(0.5);
   });
 
+  it('counts, from the traces, the replies the check after speaking read, corrected on the call and could not read', () => {
+    const s = summarize([
+      { ...result({}, [1], null), checks: { read: 4, corrected: 1, unread: 1 } },
+      { ...result({}, [1], null), checks: { read: 2, corrected: 2, unread: 0 } },
+      result({}, [1], null),
+    ]);
+    expect(s.repliesChecked).toBe(7);
+    expect(s.repliesCorrected).toBe(3);
+    expect(s.checksUnread).toBe(1);
+    expect(summarize([result({}, [1], null)])).toMatchObject({ repliesChecked: 0, repliesCorrected: 0, checksUnread: 0 });
+  });
+
   it('has no agent cost where none is known', () => {
     expect(summarize([result({}, [1], null)]).agentCostPerCallUsd).toBeNull();
   });

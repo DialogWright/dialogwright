@@ -1,4 +1,4 @@
-import { isNoul, type JevClient, type QuestionMap } from '../jev/types';
+import { isNoul, type Answer, type AnswerMap, type JevClient, type JsonValue, type QuestionMap } from '../jev/types';
 import { resultId, type Seen } from './actions';
 import type { AgentBusiness, Lang, ParamSpec } from './business/schema';
 
@@ -118,15 +118,15 @@ const YES_NO: QuestionMap = {
 const isProbability = (n: number): boolean => Number.isFinite(n) && n >= 0 && n <= 1;
 
 /**
- * The decision model's reading of what the caller said to the read-back, in one request: how much it
- * reads as a yes and as a no. Null when the model errs, gives no answer to either, or has not answered
- * within `timeoutMs` (the request is then aborted). It never throws.
+ * One request to the decision model, aborted once `timeoutMs` have passed: its answers, or null when the
+ * model errs or has not answered in time. It never throws. The converse runtime's two readings use it: the
+ * caller's answer to a read-back (readYesNo) and the check after speaking (claims.ts readClaims).
  */
-export async function readYesNo(jev: JevClient, readBack: string, said: string, timeoutMs: number): Promise<{ yes: number; no: number } | null> {
+export async function askWithin(jev: JevClient, state: JsonValue, questions: QuestionMap, timeoutMs: number): Promise<AnswerMap | null> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const asked = Promise.resolve().then(() => jev.ask({ state: { readBack, said }, questions: YES_NO, timeoutMs, signal: controller.signal }));
+    const asked = Promise.resolve().then(() => jev.ask({ state, questions, timeoutMs, signal: controller.signal }));
     const late = new Promise<null>((resolve) => {
       timer = setTimeout(() => {
         controller.abort();
@@ -134,14 +134,28 @@ export async function readYesNo(jev: JevClient, readBack: string, said: string, 
       }, timeoutMs);
     });
     const res = await Promise.race([asked, late]);
-    if (res === null) return null;
-    const yes = res.answers.confirmsYes;
-    const no = res.answers.confirmsNo;
-    if (!isNoul(yes) || !isNoul(no) || !isProbability(yes.noul) || !isProbability(no.noul)) return null;
-    return { yes: yes.noul, no: no.noul };
+    return res === null ? null : res.answers;
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** A noul answer's probability, or null where the answer is missing, of another type, or not a probability. */
+export function probabilityOf(a: Answer | undefined): number | null {
+  return a !== undefined && isNoul(a) && isProbability(a.noul) ? a.noul : null;
+}
+
+/**
+ * The decision model's reading of what the caller said to the read-back, in one request: how much it
+ * reads as a yes and as a no. Null when the model errs, gives no answer to either, or has not answered
+ * within `timeoutMs` (the request is then aborted). It never throws.
+ */
+export async function readYesNo(jev: JevClient, readBack: string, said: string, timeoutMs: number): Promise<{ yes: number; no: number } | null> {
+  const answers = await askWithin(jev, { readBack, said }, YES_NO, timeoutMs);
+  if (answers === null) return null;
+  const yes = probabilityOf(answers.confirmsYes);
+  const no = probabilityOf(answers.confirmsNo);
+  return yes === null || no === null ? null : { yes, no };
 }

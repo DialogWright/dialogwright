@@ -342,6 +342,12 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'renderDocumentsDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDocumentsDrift)
     case 'renderAgentDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentDrift)
     case 'renderAgentValue': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentValue)
+    // The converse runtime's check after speaking (converse/claims.ts), whose state holds a reply, not a
+    // caller's words: the stub reads no reply as wrong, so under it nothing is corrected (each reads low).
+    case 'contradicted':
+    case 'notDone':
+    case 'gap':
+      return noulAnswer(0.04);
     default: return quietAnswer(id, q, 0.9, app);
   }
 }

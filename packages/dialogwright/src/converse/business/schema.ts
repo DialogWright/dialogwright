@@ -34,6 +34,19 @@ const worded = (what: string) =>
 export const OPENERS = ['acknowledge'] as const;
 export type Opener = (typeof OPENERS)[number];
 
+/**
+ * What the check after speaking (docs/designs/2026-11-11-claims-check.md) does with a reply it reads:
+ * correct (read every reply, have the model put right what is wrong, record gaps), record (read and record
+ * only) or off.
+ */
+export const CLAIM_MODES = ['correct', 'record', 'off'] as const;
+export type ClaimMode = (typeof CLAIM_MODES)[number];
+/** The check's defaults: on, correcting, with both bars at 0.7. */
+export const CLAIM_CHECK_DEFAULTS = { mode: 'correct', correctAt: 0.7, gapAt: 0.7 } as const satisfies { mode: ClaimMode; correctAt: number; gapAt: number };
+
+/** A probability a reading is held to: over 0, at most 1. */
+const bar = (what: string, d: number) => z.number().gt(0).max(1).default(d).describe(`${what} A number over 0 and at most 1. Default: ${d}.`);
+
 /** The runtime's own action, offered to every model: it says the closing line and ends the call. No business action takes its name. */
 export const END_CALL = 'end_call';
 
@@ -265,6 +278,19 @@ export const agentBusinessSchema = z
       })
       .default({ failuresPerCall: 4, refusalsPerAction: 3 })
       .describe('When to stop trying and offer a person.'),
+    checks: z
+      .strictObject({
+        claims: z
+          .strictObject({
+            mode: z.enum(CLAIM_MODES).default(CLAIM_CHECK_DEFAULTS.mode).describe('correct: the decision model reads each reply of the agent model once it has been said; a reply read as contradicted by the business information or the call\'s actions, or as saying something was done that was not, goes back to the model with a note, and its correction is said after it; a gap (a commitment the business information does not address) is recorded. record: each reply is read and its readings recorded, nothing said. off: no reply is read. Default: correct.'),
+            correctAt: bar('The bar a reading of contradicted or of not done must reach for the reply to be corrected (with mode correct) and recorded as such.', CLAIM_CHECK_DEFAULTS.correctAt),
+            gapAt: bar('The bar a reading of a gap must reach for it to be recorded as one.', CLAIM_CHECK_DEFAULTS.gapAt),
+          })
+          .default({ ...CLAIM_CHECK_DEFAULTS })
+          .describe('The check after speaking (docs/designs/2026-11-11-claims-check.md): each reply of the agent model read by the decision model once it is said.'),
+      })
+      .default({ claims: { ...CLAIM_CHECK_DEFAULTS } })
+      .describe('Checks the runtime makes of what the agent model says.'),
     sources: z
       .strictObject({
         calendar: calendar.optional(),

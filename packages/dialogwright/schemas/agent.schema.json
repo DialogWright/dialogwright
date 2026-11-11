@@ -378,6 +378,56 @@
       },
       "additionalProperties": false
     },
+    "checks": {
+      "default": {
+        "claims": {
+          "mode": "correct",
+          "correctAt": 0.7,
+          "gapAt": 0.7
+        }
+      },
+      "description": "Checks the runtime makes of what the agent model says.",
+      "type": "object",
+      "properties": {
+        "claims": {
+          "default": {
+            "mode": "correct",
+            "correctAt": 0.7,
+            "gapAt": 0.7
+          },
+          "description": "The check after speaking (docs/designs/2026-11-11-claims-check.md): each reply of the agent model read by the decision model once it is said.",
+          "type": "object",
+          "properties": {
+            "mode": {
+              "default": "correct",
+              "description": "correct: the decision model reads each reply of the agent model once it has been said; a reply read as contradicted by the business information or the call's actions, or as saying something was done that was not, goes back to the model with a note, and its correction is said after it; a gap (a commitment the business information does not address) is recorded. record: each reply is read and its readings recorded, nothing said. off: no reply is read. Default: correct.",
+              "type": "string",
+              "enum": [
+                "correct",
+                "record",
+                "off"
+              ]
+            },
+            "correctAt": {
+              "default": 0.7,
+              "description": "The bar a reading of contradicted or of not done must reach for the reply to be corrected (with mode correct) and recorded as such. A number over 0 and at most 1. Default: 0.7.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "gapAt": {
+              "default": 0.7,
+              "description": "The bar a reading of a gap must reach for it to be recorded as one. A number over 0 and at most 1. Default: 0.7.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "sources": {
       "default": {},
       "description": "Where the calendar and the caller accounts come from.",

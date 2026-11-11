@@ -233,12 +233,16 @@ describe('the run artifacts', () => {
       rec(null, undefined, 0, 0),
       rec('hello', [{ firstMs: 200, ms: 600 }], 1000, 50),
       rec('Friday?', [{ firstMs: 100, ms: 300 }, { firstMs: 400, ms: 900, error: 'x' }], 2000, 80),
+      JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', said: 'and Monday?', model: { usage: { inputTokens: 0, outputTokens: 0 } }, check: { contradicted: 0.9, notDone: 0.1, gap: 0.1, flagged: ['contradicted'], ms: 300, corrected: true, correction: 1 } }),
+      JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', said: 'thanks', model: { usage: { inputTokens: 0, outputTokens: 0 } }, check: { contradicted: null, notDone: null, gap: null, flagged: [], ms: 1500, corrected: false, correction: 0 } }),
+      JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', said: 'ok', model: { usage: { inputTokens: 0, outputTokens: 0 } }, check: { contradicted: 0.1, notDone: 0.1, gap: 0.8, flagged: ['gap'], ms: 300, corrected: false, correction: 0 } }),
       JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c2', said: 'no', model: { usage: { inputTokens: 5, outputTokens: 5 }, requests: [{ firstMs: 1, ms: 1 }] } }),
     ].join('\n'));
     expect(modelUseOfCall(traces, 'c1')).toEqual({
       turns: [{ requests: [{ firstMs: 200, ms: 600 }] }, { requests: [{ firstMs: 100, ms: 300 }, { firstMs: 400, ms: 900, error: 'x' }] }],
       tokens: { inputTokens: 3000, outputTokens: 130 },
+      checks: { read: 2, corrected: 1, unread: 1 },
     });
-    expect(modelUseOfCall(traces, 'c9')).toEqual({ turns: [], tokens: null });
+    expect(modelUseOfCall(traces, 'c9')).toEqual({ turns: [], tokens: null, checks: { read: 0, corrected: 0, unread: 0 } });
   });
 });

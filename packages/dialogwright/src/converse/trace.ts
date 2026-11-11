@@ -40,6 +40,13 @@ export interface ConverseTraceRecord {
   model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; requests?: ModelRequestTime[] };
   /** The read-back said, or answered, this turn: the decision model's reading of the answer and whether it confirmed. */
   readBack?: { text: string; yes?: number; no?: number; confirmed?: boolean };
+  /**
+   * The check after speaking (docs/designs/2026-11-11-claims-check.md), where the turn's reply was read: the
+   * decision model's readings (null each where the check was unread: the model failed or was late), the
+   * readings at or over their bars (agent.yaml `checks.claims`), the reading's time, whether the model was
+   * asked to correct the reply, and how many of `replies`, at their end, are its correction.
+   */
+  check?: { contradicted: number | null; notDone: number | null; gap: number | null; flagged: ('contradicted' | 'notDone' | 'gap')[]; ms: number; corrected: boolean; correction: number };
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
 }

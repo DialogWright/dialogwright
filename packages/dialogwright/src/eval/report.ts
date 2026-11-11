@@ -167,6 +167,8 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     ...(all.modelTurns > 0 ? [`| Would time out at ${Object.keys(all.wouldTimeout).map(seconds).join(' / ')} | ${Object.values(all.wouldTimeout).map((x) => pctOrNone(x)).join(' / ')} |`] : []),
     `| Agent cost per call | ${usd(all.agentCostPerCallUsd)} |`,
     ...(all.agentTokensPerCall !== null ? [`| Agent tokens per call (in / out) | ${Math.round(all.agentTokensPerCall.inputTokens)} / ${Math.round(all.agentTokensPerCall.outputTokens)} |`] : []),
+    // The check after speaking, where the run's traces have it (a run before it has none).
+    ...(all.repliesChecked > 0 ? [`| Replies corrected on the call by the check after speaking | ${all.repliesCorrected} of ${all.repliesChecked - all.checksUnread} read (${all.checksUnread} could not be read) |`] : []),
     '',
   ];
   if (Object.keys(all.failures).length > 0) {

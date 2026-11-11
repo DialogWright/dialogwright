@@ -2,6 +2,7 @@ import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText } from './business/text';
+import { CHECK_NOTE_MARK } from './claims';
 import type { ModelTool } from './model/types';
 import { businessZone, type ConverseState } from './state';
 
@@ -52,6 +53,8 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" Times and availability come only from lookups made on this call.`,
     '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. If the caller does not confirm, you are told what they said.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
+    '',
+    `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that your last reply read as wrong, and why. Put the slip right for the caller then, in a sentence or two, naturally, as a person would; the caller has not seen the note.`,
     '',
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,
     '',

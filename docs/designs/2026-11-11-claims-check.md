@@ -104,3 +104,34 @@ judging models). What counts as material is the eval's rubric (item 4 of the run
 - How long the business information may be before the decision model's request is too large, and what is
   sent then.
 - The note's words to the model, given the goal and the context.
+
+## As built (2026-11-11)
+
+The runtime's part is built (`packages/dialogwright/src/converse/claims.ts`, the turn in `turn.ts`); the
+console's marks, the gaps command and the labelled cases with `converse:claims-eval` are not yet. The
+builder's choices:
+
+- **One request** to the decision model, the three questions together, with the read-back's timeout
+  (`JEV_TIMEOUT_MS`) and abort. A failure or a late answer is an unread check: nothing is corrected, and the
+  trace says so (each reading null).
+- **What it reads:** the model's own words of the turn (each round's text, joined), never a fixed line or a
+  read-back. A turn that ended the call (the closing line, a handoff) is not read. The state: the business
+  information as the agent model is given it, the business's day, the call's actions from the conversation
+  (the agent model's arguments and the result it was sent, a refusal or failure marked as one, a read-back
+  waiting for the caller's yes said to be not done yet), and the reply. The business information is sent
+  whole: no bound on its size yet.
+- **Where it runs:** inside the turn, after the reply's last piece has gone to the channel, so the turn's
+  trace record carries the readings (`check`: the three readings, those at or over their bars as `flagged`,
+  the reading's time, whether it was corrected, and how many of the turn's `replies` at their end are the
+  correction). On the chat, every piece of a turn goes in one `say`, so the correction follows the reply in
+  the same message (and as `say_delta`s as it comes).
+- **The note** is a message on the caller's side (a model is sent a conversation that ends there), marked at
+  its start as the line's own check; the agent model's instructions say a message so marked never comes from
+  the caller. It holds the reply as said and what it was read as, and asks the model to put it right in a
+  sentence or two, as a person would after a slip.
+- **A read-back waiting:** where the turn ended on a read-back, the reply is read and recorded, but nothing is
+  corrected: the model may not be asked again until the caller has answered the read-back, which itself says
+  nothing is done until their yes.
+- **The correction is not read** (once per reply), so the decision model is asked once a turn.
+- **The stubs:** the heuristic stub reads each of the three questions low (0.04), and the fixture stub
+  answers them at its quiet value (0.1), so under a stub nothing is corrected.

@@ -10,6 +10,9 @@ import { isChoice, isNoul, isScore, rankProbabilities, type Question } from './t
 import { VOICE_RELAY } from '../channel/caps';
 import { useTestkit } from '../testing/apps';
 import { testkitApp } from '../testing/testkit';
+import { CLAIM_QUESTIONS, readClaims } from '../converse/claims';
+import { CLAIM_CHECK_DEFAULTS } from '../converse/business/schema';
+import { quietAnswer } from './defaults';
 
 useTestkit();
 
@@ -200,5 +203,18 @@ describe("the stub's agent text value judge", () => {
   });
   it('reads the field\'s setting from the app: free where the slot does not say cited', () => {
     expect(fieldFigures(null, { value: { field: 'title' } })).toBe('free');
+  });
+});
+
+describe('the converse runtime\'s check after speaking, under the stub', () => {
+  it('reads every reply low, under the bars, so nothing is corrected; an unknown question reads at its quiet value, low too', async () => {
+    const state = { business: 'Example Co: mends things.', today: 'Wednesday, November 11, 2026 (2026-11-11)', actions: [], reply: 'Your visit is booked for Friday.' };
+    for (const app of [null, testkitApp]) {
+      const reading = await readClaims(new HeuristicStubClient({ todayIso: '2026-11-11', app }), state, 1000);
+      expect(reading).toEqual({ contradicted: 0.04, notDone: 0.04, gap: 0.04 });
+      expect(Math.max(reading!.contradicted, reading!.notDone)).toBeLessThan(CLAIM_CHECK_DEFAULTS.correctAt);
+    }
+    // The fixture stub answers a question it has no label for at its quiet value (0.1 unless an app names one), as here.
+    for (const [id, q] of Object.entries(CLAIM_QUESTIONS)) expect(noulOf(quietAnswer(id, q, 0.9, null))).toBeLessThan(CLAIM_CHECK_DEFAULTS.correctAt);
   });
 });

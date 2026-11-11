@@ -9,6 +9,7 @@ import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
+import { checkNote, claimsState, readClaims } from './claims';
 import { isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
@@ -38,7 +39,10 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  * - a model still calling actions after MAX_ROUNDS rounds fails the turn the same way, with the stuck line
  *   (lines.stuck) in place of the recovery line;
  * - an answer to a read-back the decision model could not read (it timed out or failed) runs nothing, and
- *   the model is told the answer could not be read.
+ *   the model is told the answer could not be read;
+ * - once the model's own words of a turn have been said, the decision model reads them (the check after
+ *   speaking, docs/designs/2026-11-11-claims-check.md, agent.yaml `checks.claims`); a reply read as wrong
+ *   goes back to the model with a note marked as the line's own, and its correction is said after the reply.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
@@ -62,7 +66,7 @@ export interface ConverseDeps {
   texts: Texts | null;
   now: () => Date;
   trace: (r: ConverseTraceRecord) => void;
-  /** How long the decision model may take to read the caller's answer to a read-back. */
+  /** How long the decision model may take to read the caller's answer to a read-back, and a reply after it is said. */
   jevTimeoutMs: number;
   /** The app's settings by name, as its actions' code reads them (ToolImpl's ctx.env); absent, none is set. */
   env?: (name: string) => string | undefined;
@@ -71,8 +75,12 @@ export interface ConverseDeps {
 /**
  * Where a turn's words go, and the call's end. `say` is given each piece of the turn's reply as it is
  * ready, never an empty one: whole sentences of the model's text (`final` false), and last the piece that
- * ends the turn's reply (`final` true: the rest of the model's text, or a fixed line), exactly once in a
- * turn that says anything. A turn that says nothing (the caller left) calls neither.
+ * ends the turn's reply (`final` true: the rest of the model's text, or a fixed line). A turn that says
+ * anything has one final piece, or two where the check after speaking corrects the reply: the correction's
+ * pieces follow the reply's final one, its own last piece final again. A turn that says nothing (the
+ * caller left) calls neither. The chat runtime sends every piece of a turn in one `say` (and each as a
+ * `say_delta` as it comes), so a correction appears after the reply in the same message; the phone (plan 2
+ * of the runtime's design) is to say it once the reply has played, unless the caller has begun to speak.
  */
 export interface Out {
   say(text: string, final: boolean): void;
@@ -111,6 +119,10 @@ interface Turn {
   confirmedRan: boolean;
   /** The model called end_call this round. */
   ending: boolean;
+  /** The model's own words said this turn, each round's whole (never a fixed line or a read-back): what the check after speaking reads. */
+  own: string[];
+  /** The check after speaking's reading of the turn's reply, where it was read. */
+  check?: ConverseTraceRecord['check'];
 }
 
 /** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
@@ -481,7 +493,10 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
     const r = await round(t, sp);
     if (!r.ok) {
       const said = sp.abandon();
-      if (said !== '') add(t.st, 'assistant', [{ type: 'text', text: said }]);
+      if (said !== '') {
+        add(t.st, 'assistant', [{ type: 'text', text: said }]);
+        t.own.push(said);
+      }
       failed(t, sp);
       return;
     }
@@ -489,7 +504,10 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
     const said = sp.endRound(final);
     add(t.st, 'assistant', [...(said !== '' ? [{ type: 'text' as const, text: said }] : []), ...r.calls.map((c) => ({ type: 'tool_call' as const, id: c.id, name: c.name, args: c.args }))]);
     // The caller has heard a reply after the action they confirmed.
-    if (said !== '') t.confirmedRan = false;
+    if (said !== '') {
+      t.confirmedRan = false;
+      t.own.push(said);
+    }
     if (final) return;
     const { results, readBack } = await runCalls(t, r.calls);
     add(t.st, 'user', results);
@@ -508,6 +526,43 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
   }
   // Its rounds used up on calls: the caller asked nothing that needs saying again.
   failed(t, sp, 'stuck');
+}
+
+/**
+ * The check after speaking (docs/designs/2026-11-11-claims-check.md): once the turn's reply has been said,
+ * the decision model reads the model's own words of it (never a fixed line or a read-back) against the
+ * business information and the call's actions. A turn that ended the call, or in which the model said
+ * nothing of its own, is not read, nor with agent.yaml's `checks.claims.mode` off. A reply read as
+ * contradicted or not done at or over `correctAt` (with mode correct) goes back to the model with a note
+ * marked as the line's own check, and the model is asked once more: its correction is said after the reply,
+ * and may call actions, gated and read back as on any turn. The correction is not read again. While a
+ * read-back waits for the caller's yes, the reading is recorded and nothing is corrected: the model may not
+ * be asked again until the caller has answered it. A reading that fails or comes late is an unread check:
+ * nothing is corrected.
+ */
+async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
+  const claims = t.deps.business.checks.claims;
+  if (claims.mode === 'off' || t.st.ended !== undefined || t.own.length === 0) return;
+  const reply = t.own.join(' ');
+  const started = Date.now();
+  const reading = await readClaims(t.deps.jev, claimsState(t.deps.business, t.st, t.todayIso, reply), t.deps.jevTimeoutMs);
+  const flagged: NonNullable<ConverseTraceRecord['check']>['flagged'] = [];
+  if (reading !== null) {
+    if (reading.contradicted >= claims.correctAt) flagged.push('contradicted');
+    if (reading.notDone >= claims.correctAt) flagged.push('notDone');
+    if (reading.gap >= claims.gapAt) flagged.push('gap');
+  }
+  const check = { contradicted: reading?.contradicted ?? null, notDone: reading?.notDone ?? null, gap: reading?.gap ?? null, flagged, ms: Date.now() - started, corrected: false, correction: 0 };
+  t.check = check;
+  const wrong = flagged.includes('contradicted') || flagged.includes('notDone');
+  if (reading === null || !wrong || claims.mode !== 'correct' || t.st.pending !== null) return;
+  // The note is a message of its own on the caller's side (a model is sent a conversation that ends there),
+  // marked as the line's own check; the system prompt says what such a note is.
+  add(t.st, 'user', [{ type: 'text', text: checkNote(reply, reading, claims.correctAt) }]);
+  const before = t.replies.length;
+  await converse(t, sp);
+  check.corrected = true;
+  check.correction = t.replies.length - before;
 }
 
 /** A confirmed action through the gate with the hash of exactly its own values (the read-back's, or a follow-on's own), run when allowed. */
@@ -586,6 +641,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     masked: [],
     confirmedRan: false,
     ending: false,
+    own: [],
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
@@ -602,6 +658,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     if (st.pending !== null) await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: input.text }]);
     await converse(t, sp);
+    await checkAfterSpeaking(t, sp);
   }
   // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
   const scrub = scrubberOfValues(t.masked);
@@ -617,6 +674,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     tools: t.tools,
     model: { ...t.model, costUsd: input.kind === 'text' ? costUsd(deps.model.id, t.model.usage) : null },
     ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
+    ...(t.check !== undefined ? { check: t.check } : {}),
   });
   st.turnIndex += 1;
   return st;
