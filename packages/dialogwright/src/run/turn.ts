@@ -822,7 +822,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       const a = resolved.session.agent ?? { conversation: [], failures: 0 };
       resolved = { ...resolved, session: { ...resolved.session, agent: { ...a, waitLine: fillerSaid.index } } };
     }
-    const held = appOf(session).mode === 'agent'
+    let held = appOf(session).mode === 'agent'
       ? await holdAgentLine({
         result: resolved, event, judge: opts.renderer?.drift ?? opts.client, clips: opts.render ?? null, seen: agentShown?.seen ?? [], todayIso: opts.todayIso,
         slotContext: () => slotContext(resolved.session, '', turnTc),
@@ -830,6 +830,17 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
         ...((opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs) !== undefined ? { checkTimeoutMs: (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs)! } : {}),
       })
       : null;
+    // A form done on the call, held back for a reply that its checks or the judge then refused (TurnResult.agentReopen):
+    // the turn resolved again, the form opened and its first question said, never "anything else?" to a caller who
+    // asked for a second job (core/agentTurn.ts requested; the review of call 61). The refused line stays on the record.
+    if (held !== null && resolved.agentReopen !== undefined && held.result.agent?.line?.mode === 'fixed') {
+      const line = held.result.agent.line;
+      const fellBack = held.result.audit.slice(resolved.audit.length);
+      const next = await resolveWaiting(session, event, turnAnswers, { ...(used ?? turnTc), agentReplyRefused: true }, error, screen, channel, toolTimeout, first.memo);
+      resolved = { ...next.result, audit: [...next.result.audit, ...fellBack], ...(next.result.agent !== undefined ? { agent: { ...next.result.agent, line } } : {}) };
+      waited = next.waited ?? waited;
+      held = { ...held, result: resolved };
+    }
     const decided = held?.result ?? resolved;
     // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
     // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.

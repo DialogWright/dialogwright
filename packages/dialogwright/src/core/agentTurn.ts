@@ -639,22 +639,32 @@ function formForValues(app: App, s: Session, fields: readonly string[]): FormId 
 }
 
 /**
- * The form the decision model read the turn as asking for, to open with none open: its verdict's form, unless
- * the call has completed it already (Session.completed) and the answer gives no value for a field of it (the
- * agent-mode design, call 61, decided by the maintainer 2026-11-10). After a request is done, "What if I have a
- * wheel that's bent?" read as the request's intent at 0.82 opened it afresh, the reply that answered the question
- * stood in for its first field's question, and the next silence asked the caller's name: a question about a
- * service is not a second job. A second job opens its form once the answer gives a value for it (formForValues),
- * this turn or a later one ("I'd like to book another one": the reply may ask for the details). The person form
- * opens on its request however often it was completed: a person asked for is never held to values. Null where
- * the verdict reads no form, or one such.
+ * The form the decision model read the turn as asking for, to open with none open: its verdict's form, unless the
+ * call has completed it already (Session.completed) and the answer neither gives a value for a field of it, nor
+ * asks for one (its `asks`), nor leaves the caller without a reply (the agent-mode design, call 61, decided by the
+ * maintainer 2026-11-10, and its review). After a request is done, "What if I have a wheel that's bent?" read as the
+ * request's intent at 0.82 opened it afresh, the reply that answered the question stood in for its first field's
+ * question, and the next silence asked the caller's name: a question about a service is not a second job. So:
+ * - a value for one of its fields opens it (as formForValues would);
+ * - a reply that asks for one of its fields ("Sure, what car is it?", `asks: vehicle`) opens it, the reply standing
+ *   in for that field's question (askedByReply), so a silence and the next turn follow it;
+ * - read at INTENT_ROUTE (the verdict's plain route) with no reply to say (the answer failed, gave none, or takes
+ *   leave; or the reply was refused by its checks or the judge, TurnContext.agentReplyRefused), it opens as before,
+ *   its first question said: a caller who asked for a second job never hears "anything else?" in answer;
+ * - otherwise (a question answered, its reply said) it is held back (`heldBack`): the runner opens it after all
+ *   where that reply is then refused (TurnResult.agentReopen).
+ * The person form opens on its request however often it was completed: a person asked for is never held back.
  */
-function requested(app: App, s: Session, verdict: Verdict, given: readonly string[]): FormId | null {
-  if (verdict.kind !== 'route' || !isFormIntent(app, verdict.intent)) return null;
+function requested(app: App, s: Session, verdict: Verdict, answer: AgentAnswer | null, given: readonly string[], tc: TurnContext): { form: FormId | null; heldBack?: FormId } {
+  if (verdict.kind !== 'route' || !isFormIntent(app, verdict.intent)) return { form: null };
   const form = verdict.intent;
-  if (!s.completed.includes(form) || app.personForm?.form === form) return form;
+  if (!s.completed.includes(form) || app.personForm?.form === form) return { form };
   const names = new Set((app.agent!.forms[form]?.fields ?? []).map((f) => f.name));
-  return given.some((f) => names.has(f)) ? form : null;
+  if (given.some((f) => names.has(f))) return { form };
+  if (answer?.asks !== undefined && answer.asks !== NO_ACTION && names.has(answer.asks)) return { form };
+  const plain = verdict.confirm === 'none';
+  if (plain && (answer === null || replyOf(sayable(answer)) === null || tc.agentReplyRefused === true)) return { form };
+  return plain ? { form: null, heldBack: form } : { form: null };
 }
 
 /**
@@ -1434,8 +1444,10 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   let opened = false;
   if (s.form === null) {
     const given = (answer?.values ?? []).map((v) => v.field);
-    const want = requested(app, s, verdict, given) ?? formForValues(app, s, given);
+    const asked = requested(app, s, verdict, answer, given, io.tc);
+    const want = asked.form ?? formForValues(app, s, given);
     if (want !== null) opened = openForm(app, s, want, acks) !== null || acks.length > 0;
+    else if (asked.heldBack !== undefined) io.agentReopen = asked.heldBack;
   }
   const lineSaid = acks.length > 0;
 
@@ -1514,7 +1526,8 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const forFormOpen = formBefore === form || (formBefore === null && form !== null && openable(app, s).includes(form));
   // Nor a reply written without a result the model sees: one it is to be asked again with, or a value's whose result it was not shown.
   const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen || looked.again !== null || looked.unseen || overruled;
-  const reply = contradicts ? null : sayable(answer);
+  // Nor one already refused by its checks or the judge, the turn resolved again for a form held back (agentReplyRefused).
+  const reply = contradicts || io.tc.agentReplyRefused === true ? null : sayable(answer);
   if (form !== null && answer === null && !failed.none) {
     // 7. A failed answer: the question the line was waiting on, where it is a field still empty, asked again
     // (as a full line's question, where that was it), not the form's first empty field (calls 57 to 59).
@@ -1536,6 +1549,13 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   }
   // With no form open, the open question stands: "Is there anything else I can help with?" after a form is done
   // (what a silence then asks again, App.anythingElseSilence), else the opening question (call 61).
+  // A form done on the call held back for a reply that is not said after all (requested): it opens, its first question said.
+  const heldBack = io.agentReopen;
+  if (heldBack !== undefined && replyOf(reply) === null) {
+    delete io.agentReopen;
+    openForm(app, s, heldBack, acks);
+    return { decision: steps.continueForm(s, io, acks, null), events: applied.events };
+  }
   const open = s.lastPromptId === 'anything_else' ? 'anything_else' : 'ask_intent';
   return { decision: replyOrAside(prompt(open, 'intent', {}, acks), reply, record), events: applied.events };
 }

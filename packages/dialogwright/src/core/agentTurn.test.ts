@@ -1867,6 +1867,34 @@ describe('a form done on the call is not opened again by a question (call 61, th
     expect(heard(c.last)).toBe('Sure. Which title would you like?');
   });
 
+  it('a reply that asks for a field of the form done opens it, the reply standing in for that field\'s question: a silence asks it again (the review of call 61)', async () => {
+    const ANOTHER = 'another hold please';
+    const asking = { ...said('Sure. Which title would you like?'), asks: 'title' };
+    const c = await call({ ...done, [ANOTHER]: asking }, [HOLD, DETAILS, 'yes', ANOTHER]);
+    expect(c.last.result.session.form).toBe('request');
+    expect(promptOf(c.last)).toBe('ask_request_title');
+    expect(heard(c.last)).toBe('Sure. Which title would you like?');
+    const quiet = await call({ ...done, [ANOTHER]: asking }, [HOLD, DETAILS, 'yes', ANOTHER, { text: '', silence: true }]);
+    expect(quiet.last.result.session.form).toBe('request');
+    expect(promptOf(quiet.last)).toMatch(/^ask_request_title/);
+  });
+
+  it('read as asking for the form done, with no reply to say (the model failed, gave none, or its reply was refused): the form opens, its first question (the review of call 61)', async () => {
+    const ANOTHER = 'another hold please';
+    for (const answer of [{ fail: 'timeout' as const }, said(''), { ...said('Thanks for calling. Goodbye.'), closes: true }]) {
+      const c = await call({ ...done, [ANOTHER]: answer }, [HOLD, DETAILS, 'yes', ANOTHER]);
+      expect(c.last.result.session.form, JSON.stringify(answer)).toBe('request');
+      expect(promptOf(c.last), JSON.stringify(answer)).toMatch(/^ask_request_/);
+    }
+    // A reply its checks refuse (a figure the facts do not hold): the turn resolved again, the form opened, the reply not said.
+    const refused = await call({ ...done, [ANOTHER]: said('Sure, we keep 30 holds a day. Anything else?') }, [HOLD, DETAILS, 'yes', ANOTHER]);
+    expect(refused.last.result.session.form).toBe('request');
+    expect(promptOf(refused.last)).toMatch(/^ask_request_/);
+    expect(heard(refused.last)).not.toContain('30');
+    expect(refused.last.record.agent).toMatchObject({ replySaid: false, line: { mode: 'fixed' } });
+    expect(refused.last.result.audit.some((d) => d.type === 'render_fallback')).toBe(true);
+  });
+
   it('a form the call has not completed opens on its request alone, as the call\'s first request does', async () => {
     const c = await call({ [HOLD]: said('Happy to help. What name is it under?') }, [HOLD]);
     expect(c.last.result.session.form).toBe('request');

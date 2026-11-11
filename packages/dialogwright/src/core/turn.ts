@@ -148,6 +148,12 @@ export interface TurnContext {
    */
   agentTextRefused?: readonly string[];
   /**
+   * The agent's reply on this turn was not said, its checks or the drift judge having refused it (render/agentLine.ts):
+   * set by the runner only to resolve again a turn that held back a form done on the call for that reply
+   * (TurnResult.agentReopen). The form then opens, its first question said, and the reply is not said.
+   */
+  agentReplyRefused?: true;
+  /**
    * The run has no agent client for an app in agent mode (no key): set by the runner on every turn of
    * such a run. A call that begins so runs as a scripted app for the whole call (Session.agent.scripted).
    */
@@ -271,6 +277,8 @@ export interface TurnIO {
   agent?: AgentTurnRecord;
   /** The agent model is to be asked again, with these results shown (TurnResult.agentAgain). */
   agentAgain?: { seen: SeenResult[]; changed?: true };
+  /** A form done on the call, read as asked for, held back for the reply said in its place (TurnResult.agentReopen). */
+  agentReopen?: FormId;
 }
 
 export interface Plan {
@@ -354,6 +362,13 @@ export interface TurnResult {
    * the second resolution, TurnContext.agentSeen). Absent on every other turn.
    */
   agentAgain?: { seen: SeenResult[]; changed?: true };
+  /**
+   * A form done on the call that the decision model read as asked for at INTENT_ROUTE, not opened because the
+   * agent's reply, said in its place, answers the caller (core/agentTurn.ts requested; call 61's review). Where
+   * that reply is then not said (its checks or the judge refuse it), the runner resolves the turn again with
+   * TurnContext.agentReplyRefused, and the form opens as it did before call 61. Absent on every other turn.
+   */
+  agentReopen?: FormId;
 }
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */
@@ -3482,7 +3497,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     return withSources(io.app, withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) }), io.out.kb, { shown: !s.caps.speech });
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
-  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false, ...(io.agent !== undefined ? { agent: io.agent } : {}), ...(io.agentAgain !== undefined ? { agentAgain: io.agentAgain } : {}) });
+  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false, ...(io.agent !== undefined ? { agent: io.agent } : {}), ...(io.agentAgain !== undefined ? { agentAgain: io.agentAgain } : {}), ...(io.agentReopen !== undefined ? { agentReopen: io.agentReopen } : {}) });
   // A reply that did not pass its tool's check this turn ends the turn with a person, whatever the
   // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
   const settle = (decision: Decision, label: string): Decision => {
