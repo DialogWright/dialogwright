@@ -1,11 +1,12 @@
 import { DEFAULT_CODE_LENGTH } from '../core/app/lookup';
 import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
-import { lookupNameProblem, parseDateBound, parseLookupRef, parseNumberBound, refText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
+import { lookupNameProblem, refText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
 import { attachSource, BUILT_IN_RULES, isBuiltInRuleId, LEGACY_RULE_ID, TABLE_RULE_ID, type LegacyRuleName, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
-import { normalizeIdentity, type IdentityFile, type IdentityYaml, type PolicyYaml, type RuleEntryYaml } from './schema/index';
+import { normalizeIdentity, type IdentityFile, type IdentityYaml, type PolicyYaml } from './schema/index';
+import { readRule } from './ruleEntry';
 
 /**
  * policy.yaml and identity.yaml in their new shape (./schema/policy.ts, ./schema/identity.ts),
@@ -49,64 +50,8 @@ export { DEFAULT_CODE_LENGTH };
 /** One rule as written, read: its name and its parameters (the gate's own type, gate/compiled.ts). */
 export type { Rule };
 
-/** A rule entry of a valid file, read. */
-export function readRule(entry: RuleEntryYaml): Rule {
-  if (entry === 'identity' || entry === 'attempts') return { rule: entry };
-  if ('scope' in entry) {
-    const { param, record } = entry.scope;
-    return { rule: 'scope', subject: record !== undefined ? { param: record, via: 'record' } : { param: param! } };
-  }
-  if ('role' in entry) {
-    const { reason, ...access } = entry.role;
-    return reason === undefined ? { rule: 'role', access: access as Record<string, RoleAccess> } : { rule: 'role', access: access as Record<string, RoleAccess>, reason };
-  }
-  if ('confirmed' in entry) return { rule: 'confirmed', fields: entry.confirmed };
-  if ('fields' in entry) return { rule: 'fields', fields: entry.fields };
-  if ('dateInRange' in entry) {
-    const { field, unscoped, notBefore, notAfter, within, reasons, verdicts } = entry.dateInRange;
-    return {
-      rule: 'dateInRange',
-      field,
-      ...(unscoped === true ? { unscoped } : {}),
-      ...(notBefore !== undefined ? { notBefore: dateBoundOf(notBefore) } : {}),
-      ...(notAfter !== undefined ? { notAfter: dateBoundOf(notAfter) } : {}),
-      ...(within !== undefined ? { within: refOf(within) } : {}),
-      ...(reasons !== undefined ? { reasons } : {}),
-      ...(verdicts !== undefined ? { verdicts } : {}),
-    };
-  }
-  if ('limit' in entry) {
-    const { field, unscoped, min, max, reasons, verdicts } = entry.limit;
-    return {
-      rule: 'limit',
-      field,
-      ...(unscoped === true ? { unscoped } : {}),
-      ...(min !== undefined ? { min: numberBoundOf(min) } : {}),
-      ...(max !== undefined ? { max: numberBoundOf(max) } : {}),
-      ...(reasons !== undefined ? { reasons } : {}),
-      ...(verdicts !== undefined ? { verdicts } : {}),
-    };
-  }
-  if ('oneOf' in entry || 'noneOf' in entry) {
-    const which = 'oneOf' in entry ? 'oneOf' : 'noneOf';
-    const { field, values, reason, verdict } = 'oneOf' in entry ? entry.oneOf : entry.noneOf;
-    return { rule: which, field, values: Object.freeze([...values]), ...(reason !== undefined ? { reason } : {}), ...(verdict !== undefined ? { verdict } : {}) };
-  }
-  if ('callerNumber' in entry) {
-    const { field, else: otherwise, withheld } = entry.callerNumber;
-    return { rule: 'callerNumber', field, ...(otherwise !== undefined ? { else: otherwise } : {}), ...(withheld !== undefined ? { withheld } : {}) };
-  }
-  return { rule: 'custom', id: entry.custom };
-}
-
-/** A bound or reference of a valid file, read (the schema has checked it parses). */
-function readOrThrow<T>(read: { problem: string } | T, text: unknown): T {
-  if (typeof read === 'object' && read !== null && 'problem' in read) throw new Error(`policy.yaml was not checked: ${String(text)}: ${(read as { problem: string }).problem}`);
-  return read as T;
-}
-const refOf = (text: string): LookupRef => readOrThrow(parseLookupRef(text), text).ref;
-const dateBoundOf = (text: string): DateBound => readOrThrow(parseDateBound(text), text).bound;
-const numberBoundOf = (value: number | string): NumberBound => readOrThrow(parseNumberBound(value), value).bound;
+/** A rule entry of a valid file, read (./ruleEntry.ts). */
+export { readRule };
 
 /** The references a range rule makes to the app's lookups, with where each is written. */
 export function lookupRefsOf(rule: Rule): { key: string; ref: LookupRef }[] {
