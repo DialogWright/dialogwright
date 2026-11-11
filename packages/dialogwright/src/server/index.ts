@@ -39,7 +39,8 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
 import { DayCounters, latencyOf, ServersSeen, REPORT_EVERY_MS, verifyAudit, type ServerReport } from './dashboard/health';
-import type { JevClient } from '../jev/types';
+import type { JevClient, JsonValue } from '../jev/types';
+import type { ClaimsReading } from '../converse/claims';
 import { TraceWriter, type TraceSink } from '../trace/writer';
 import { S3TraceStore, type CallMeta } from '../trace/store';
 import { guardFrames, guardTrace, TraceFailures } from '../trace/guard';
@@ -210,6 +211,11 @@ export interface ServerOverrides {
    * no end-of-turn message. A harness's seam, not a setting: a deployment gives none.
    */
   onTurnEnd?: (chatId: string) => void;
+  /**
+   * The converse chat's check after speaking told what it was sent for each reply and what it read (the evaluation's
+   * --claims-cases, eval/server.ts). A harness's seam, not a setting: a deployment gives none.
+   */
+  onClaimsRead?: (callId: string, read: { turn: number; state: JsonValue; reading: ClaimsReading | null }) => void;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -1012,6 +1018,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const converseChatOf = (a: AppRun<ConverseApp>): ChatEndpoint => chatTransport(transportOf(a), converseChatRuntime({
     app: a.app, model: converseModels.get(a.id)!, jev: clientOf(a.id), jevTimeoutMs: thresholds.JEV_TIMEOUT_MS, audit: auditOf(a.id), texts: textsOf(a.id), now, log,
     ...(overrides.onTurnEnd !== undefined ? { onTurnEnd: overrides.onTurnEnd } : {}),
+    ...(overrides.onClaimsRead !== undefined ? { onClaimsRead: overrides.onClaimsRead } : {}),
     env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined),
     resources: (id) => {
       const startedAtMs = now();

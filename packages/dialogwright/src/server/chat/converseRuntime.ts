@@ -71,6 +71,11 @@ export interface ConverseChatDeps {
    * the chat wire having no end-of-turn message. Absent on a deployment.
    */
   onTurnEnd?: (chatId: string) => void;
+  /**
+   * Called with what the check after speaking was sent for a reply and what it read (ConverseDeps.onClaimsRead):
+   * the evaluation keeps each reply's input with it (eval --claims-cases). Absent on a deployment.
+   */
+  onClaimsRead?: ConverseDeps['onClaimsRead'];
 }
 
 /** One chat as this runtime holds it. */
@@ -135,9 +140,19 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
     }
   };
 
+  /** The check's input told (deps.onClaimsRead); a hook that throws is logged, never the chat's failure. */
+  const claimsRead: ConverseDeps['onClaimsRead'] = deps.onClaimsRead === undefined ? undefined : (callId, read) => {
+    try {
+      deps.onClaimsRead!(callId, read);
+    } catch (err) {
+      log(`chat ${callId}: the check's input hook failed: ${describeError(err)}`);
+    }
+  };
+
   /** A turn's dependencies: the app's, its texts recorded in the chat's audit, each trace record written to the chat's trace. */
   const turnDeps = (id: string, c: ConverseChat): ConverseDeps => ({
     business: app.business,
+    ...(claimsRead !== undefined ? { onClaimsRead: claimsRead } : {}),
     model: deps.model,
     jev: deps.jev,
     policy,

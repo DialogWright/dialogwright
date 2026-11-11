@@ -140,7 +140,7 @@ interface Harness {
   run(s: ConverseState, input: Input): Promise<ConverseState>;
 }
 
-function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number } = {}): Harness {
+function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number; onClaimsRead?: ConverseDeps['onClaimsRead'] } = {}): Harness {
   const b = business(o.edit);
   const model = (o.model ?? fakeModel(turns)) as Harness['model'];
   const calendar = fakeCalendar({ days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], windows: [{ name: 'morning', label: 'by noon', capacity: 1 }, { name: 'afternoon', label: 'by five', capacity: 1 }], now: () => NOW, timeZone: businessZone(b) });
@@ -189,6 +189,7 @@ function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number
     now: () => NOW,
     trace: (r) => void traces.push(r),
     jevTimeoutMs: o.jevTimeoutMs ?? 1000,
+    ...(o.onClaimsRead !== undefined ? { onClaimsRead: o.onClaimsRead } : {}),
   };
   return { deps, model, rows, said, ended, traces, calendar, notified, calledBack, jev, out, run: (s, input) => converseTurn(s, input, deps, out) };
 }
@@ -930,6 +931,24 @@ describe('converseTurn: the check after speaking', () => {
     expect(trace.said).toBe('Are you open Saturday?');
     // The correction is the line's: kept in the conversation after the note.
     expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: CORRECTION }] });
+  });
+
+  it('tells onClaimsRead exactly what the decision model was sent and what it read, with the turn\'s index as the trace records it', async () => {
+    const told: { callId: string; turn: number; state: unknown; reading: unknown }[] = [];
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG), onClaimsRead: (callId, r) => void told.push({ callId, ...r }) });
+    await asked(h);
+    expect(told).toHaveLength(1);
+    expect(told[0]!.callId).toBe('call-1');
+    expect(told[0]!.state).toEqual(claimAsks(h)[0]!.state);
+    expect(told[0]!.reading).toEqual({ contradicted: 0.9, notDone: 0.1, gap: 0.1 });
+    expect(told[0]!.turn).toBe(h.traces.at(-1)!.turnIndex);
+  });
+
+  it('tells onClaimsRead a reading of null where the decision model could not be read', async () => {
+    const told: unknown[] = [];
+    const h = harness(replyThenCorrection, { jev: claimsJev('fails'), onClaimsRead: (_c, r) => void told.push(r.reading) });
+    await asked(h);
+    expect(told).toEqual([null]);
   });
 
   it('sends the note as the line\'s own check, never as the caller\'s words, and tells the model what such a note is', async () => {

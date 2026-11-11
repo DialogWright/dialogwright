@@ -112,7 +112,7 @@ function claimsJev(claims: { contradicted: number; notDone: number; gap: number 
 }
 
 /** A chat on the fixture app, opened (the greeting said), with the model's side `turns` and a decision model reading replies as `claims`. */
-async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0) {
+async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0, extra: { onClaimsRead?: Parameters<typeof converseChatRuntime>[0]['onClaimsRead']; log?: (l: string) => void } = {}) {
   const t = fakeIo('chat-9');
   const jev = claimsJev(claims, t.says, lateMs);
   const { app } = converseFixture(() => new Date('2030-01-14T15:00:00Z'));
@@ -121,7 +121,8 @@ async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDo
   const ends: { id: string; sent: ServerMessage[] }[] = [];
   const rt = converseChatRuntime({
     app, model: fakeModel(turns), jev, jevTimeoutMs: 2000, onTurnEnd: (id) => void ends.push({ id, sent: [...t.sent] }), audit: { append: (callId, channel, row) => ({ ...row, seq: 1, at: '2030-01-14T15:00:00.000Z', callId, channel, prevHash: '', hash: '' }) },
-    texts: null, now: () => Date.parse('2030-01-14T15:00:00Z'), log: () => {},
+    texts: null, now: () => Date.parse('2030-01-14T15:00:00Z'), log: extra.log ?? (() => {}),
+    ...(extra.onClaimsRead !== undefined ? { onClaimsRead: extra.onClaimsRead } : {}),
     resources: () => ({ trace: { write: (r) => void traced.push(r) }, frames: t.io.frames }),
   });
   rt.prepare('chat-9');
@@ -150,6 +151,14 @@ describe('converseChatRuntime: a reply on the wire', () => {
     expect(c.jev.saysWhenAsked).toEqual([2]);
     expect(firstAt).not.toBeNull();
     expect(firstAt!).toBeLessThan(100);
+  });
+
+  it('catches a throwing onClaimsRead hook: logged, and the turn goes on to its correction', async () => {
+    const logged: string[] = [];
+    const c = await chat([[text(SLIP), done()], [text(CORRECTION), done()]], WRONG, 0, { onClaimsRead: () => { throw new Error('hook broke'); }, log: (l) => void logged.push(l) });
+    await c.rt.text('chat-9', 'Are you open Saturday?', c.io);
+    expect(c.says().slice(1)).toEqual([SLIP, CORRECTION]);
+    expect(logged.join('\n')).toMatch(/chat chat-9: the check's input hook failed: Error: hook broke/);
   });
 
   it('sends one say for a reply the check reads as fine', async () => {

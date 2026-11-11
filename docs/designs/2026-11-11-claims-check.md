@@ -184,3 +184,23 @@ builder's choices:
 - **The correction is not read** (once per reply), so the decision model is asked once a turn.
 - **The stubs:** the heuristic stub reads each of the three questions low (0.04), and the fixture stub
   answers them at its quiet value (0.1), so under a stub nothing is corrected.
+- **Measuring the check on its own** (the next step after the measured run, which found it catches about a
+  third of the line's wrong claims): other question sets (narrower questions, a five-level score of how
+  misleading a reply is) are compared with this one offline, on the same replies. `pnpm eval ... --claims-cases`
+  keeps what the check was sent for each reply it read: `ConverseDeps.onClaimsRead` is told, right after the
+  reading, the exact state the decision model was sent and the reading (or null) with the turn's index as the
+  trace records it, and the evaluation (alone; a deployment gives none, and a hook that throws is logged, never
+  the call's failure) writes `claims-cases.jsonl` into `--out`: the business text on a first line, then a line
+  per reply (`id` as `<persona>-<run>/t<turn>`, the day, the actions, the reply, the reading). It holds what was
+  said, so it is refused with `--publish`. A person (or a reviewer in the session) labels the replies in a
+  file of lines `{id, wrong, severity 0 to 4, kinds, gap, why}`, where `wrong` means the reply states what the
+  business information or the actions contradict, or says something was done that they do not show.
+  `pnpm converse:claims-eval --cases <file>... --labels <file> --variant <module>...` asks the decision model
+  each variant's questions once per labelled case (four at a time, into a cassette beside the labels file, so a
+  variant's rules can be changed and scored again with no new request; `--replay` needs no key) and reports,
+  per rule, the cases scored and unread, flagged, true and false positives and false negatives, recall and
+  precision at thresholds 0.3 to 0.9, recall over the wrong replies of severity 2 or more and per kind, the
+  average precision (one number to compare variants), the live requests' median and p95 time, and each wrong
+  reply's score under each rule. A variant is a module whose default export is `{ name, questions, rules }`
+  (`src/converse/claimsVariants/current.ts` is the check as it runs, built from `CLAIM_QUESTIONS`). The report
+  holds the case ids and the labels' kinds, never the words of a call.

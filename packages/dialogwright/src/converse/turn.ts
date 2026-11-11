@@ -3,13 +3,13 @@ import { chainDrafts, type AuditSink } from '../audit/sink';
 import { RULE_ID, type CompiledPolicy } from '../gate/compiled';
 import { confirmationHash } from '../gate/lines';
 import { passed, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import type { JevClient } from '../jev/types';
+import type { JevClient, JsonValue } from '../jev/types';
 import { localDateIso } from '../core/localDate';
 import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
-import { checkNote, claimsState, neutralised, readClaims } from './claims';
+import { checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
@@ -75,6 +75,13 @@ export interface ConverseDeps {
   jevTimeoutMs: number;
   /** The app's settings by name, as its actions' code reads them (ToolImpl's ctx.env); absent, none is set. */
   env?: (name: string) => string | undefined;
+  /**
+   * Told, right after a reply is read by the check after speaking, exactly what the decision model was sent
+   * (the state of claimsState) and what it read, with the turn's index as the trace records it. Absent on a
+   * deployment: the evaluation sets it to keep each reply's check input (eval --claims-cases). A hook that
+   * throws is the caller's to catch (the chat runtime logs it); it is never the call's failure.
+   */
+  onClaimsRead?: (callId: string, read: { turn: number; state: JsonValue; reading: ClaimsReading | null }) => void;
 }
 
 /**
@@ -647,7 +654,9 @@ async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
   if (claims.mode === 'off' || t.st.ended !== undefined || t.own.length === 0) return;
   const reply = t.own.join(' ');
   const started = Date.now();
-  const reading = await readClaims(t.deps.jev, claimsState(t.deps.business, t.st, t.todayIso, reply), t.deps.jevTimeoutMs);
+  const state = claimsState(t.deps.business, t.st, t.todayIso, reply);
+  const reading = await readClaims(t.deps.jev, state, t.deps.jevTimeoutMs);
+  t.deps.onClaimsRead?.(t.st.callId, { turn: t.st.turnIndex, state, reading });
   const flagged: NonNullable<ConverseTraceRecord['check']>['flagged'] = [];
   if (reading !== null) {
     if (reading.contradicted >= claims.correctAt) flagged.push('contradicted');

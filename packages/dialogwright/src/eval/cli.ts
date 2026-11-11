@@ -14,6 +14,7 @@ import { loadFolderApp } from '../define/pageCommand';
 import { REPO_ROOT } from '../define/home';
 import { fakeTextProvider } from '../texts/record';
 import { readEnvFile } from '../server/envFile';
+import { ClaimsCases } from './claimsCases';
 import { startEvalServer, type EvalModel, type EvalServer, type EvalStyle } from './server';
 import { defaultTimeZone } from '../core/localDate';
 import { Budget } from './budget';
@@ -51,7 +52,7 @@ export async function registerFolderApp(dir: string): Promise<HostedApp> {
 }
 
 export const EVAL_USAGE = [
-  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--publish]',
+  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--claims-cases] [--publish]',
   '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire,',
   '  a model playing the caller and a model judging the call (or none, below); writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
   '  writes run.json beside them too (the business text and the personas the calls were judged against), so the calls can be judged again with no call made (dialogwright eval:rejudge)',
@@ -60,6 +61,7 @@ export const EVAL_USAGE = [
   '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
   '  a caller, judge or line model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
   '  the decision model (TYPESAFE_API_KEY) is required, as on a real line; --stub-decision runs with the heuristic stub instead, and the summary says so',
+  '  --claims-cases: also writes claims-cases.jsonl into --out, what the check after speaking was sent for each reply it read and what it read (the business text, then one line per reply: the day, the call\'s actions, the reply, the reading), to measure other questions on the same replies (dialogwright converse:claims-eval); it holds what was said, so it is refused with --publish',
   '  --publish writes summary.md as a page to commit: no per-call notes, each material claim by its sentence alone, the personas\' names and phone numbers withheld (results.jsonl keeps every verdict whole)',
   '  the keys: from the environment, then the app\'s .env, then the repository\'s .env; never printed. Refused in CI.',
 ].join('\n');
@@ -115,6 +117,8 @@ export interface EvalRun {
   publish?: boolean;
   /** The results folder's name where it is one of a comparison's (eval:compare): each judge input's verdict line names it. */
   comparisonFolder?: string;
+  /** Write claims-cases.jsonl into outDir (--claims-cases): each reply the check after speaking read, with its input. */
+  claimsCases?: boolean;
 }
 
 export interface EvalOutcome {
@@ -155,7 +159,8 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   });
   // A converse app: a server of its own for each call, on the app made fresh (eval/server.ts); a scripted app: one server for the run.
   const perCall = isConverseApp(app);
-  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, textProvider: fakeTextProvider(), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
+  const cases = o.claimsCases === true ? new ClaimsCases(o.outDir) : null;
+  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, textProvider: fakeTextProvider(), ...(cases !== null ? { onClaimsRead: cases.onClaimsRead } : {}), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
   let shared: EvalServer | null = null;
   try {
     if (!perCall) shared = await serverFor();
@@ -200,6 +205,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     if (call.ended === 'turns') failures.push('turn limit');
     if (call.turns.length > 0 && call.turns.every((t) => t.who === 'caller')) failures.push('the line never spoke');
     const callId = call.callId ?? '';
+    if (cases !== null && callId !== '') cases.write(callId, p.id, run);
     const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
     const today = todayWords();
     const judged = call.turns.length === 0 ? failedJudgement('no call was held') : o.judgeModel === null ? notJudged() : await judgeCall(o.judgeModel, spend, businessText, p, call, actions, { today });
@@ -287,6 +293,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
         'allow-unpriced': { type: 'boolean', default: false },
         'stub-decision': { type: 'boolean', default: false },
         publish: { type: 'boolean', default: false },
+        'claims-cases': { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -318,6 +325,10 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   }
   if (positionals.length !== 1 || values.personas === undefined) {
     io.err(`dialogwright eval: give the app folder and --personas <file>\n${EVAL_USAGE}`);
+    return 2;
+  }
+  if (values['claims-cases'] && values.publish) {
+    io.err(`dialogwright eval: --claims-cases and --publish do not go together: the cases hold what was said on the calls\n${EVAL_USAGE}`);
     return 2;
   }
   const effort = values.effort === undefined ? undefined : effortArg(values.effort);
@@ -394,6 +405,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
       ...(values.model !== undefined ? { model: { default: values.model, ...(effort !== undefined ? { effort } : {}) } } : {}),
       ...(opener !== undefined ? { style: { opener } } : {}),
       ...(values.publish ? { publish: true } : {}),
+      ...(values['claims-cases'] ? { claimsCases: true } : {}),
     });
   } catch (e) {
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);

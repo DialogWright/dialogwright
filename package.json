@@ -38,6 +38,7 @@
     "fallback": "tsx packages/dialogwright/src/define/cli.ts fallback",
     "console:link": "tsx packages/dialogwright/src/define/cli.ts console:link",
     "render:bakeoff": "tsx packages/dialogwright/src/define/cli.ts render:bakeoff",
+    "converse:claims-eval": "tsx packages/dialogwright/src/define/cli.ts converse:claims-eval",
     "render:judge-eval": "tsx packages/dialogwright/src/define/cli.ts render:judge-eval",
     "agent:bakeoff": "tsx packages/dialogwright/src/define/cli.ts agent:bakeoff",
     "eval": "tsx packages/dialogwright/src/define/cli.ts eval",

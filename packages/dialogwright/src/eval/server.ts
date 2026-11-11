@@ -5,7 +5,7 @@ import type { ConverseModel, ModelEffort } from '../converse/model/types';
 import type { Opener } from '../converse/business/schema';
 import { loadConfig } from '../server/config';
 import { hostRouting, type HostedApp } from '../server/host';
-import { startServer, type RunningServer } from '../server/index';
+import { startServer, type RunningServer, type ServerOverrides } from '../server/index';
 import type { TextProvider } from '../texts/types';
 import { turnEndSignal, type TurnEnds } from './chatDriver';
 
@@ -64,7 +64,7 @@ export interface EvalServer {
 
 let started = 0;
 
-export async function startEvalServer(app: HostedApp, env: Record<string, string | undefined>, o: { work: string; textProvider?: TextProvider; converseModel?: (appId: string) => ConverseModel; model?: EvalModel; style?: EvalStyle }): Promise<EvalServer> {
+export async function startEvalServer(app: HostedApp, env: Record<string, string | undefined>, o: { work: string; textProvider?: TextProvider; converseModel?: (appId: string) => ConverseModel; model?: EvalModel; style?: EvalStyle; onClaimsRead?: ServerOverrides['onClaimsRead'] }): Promise<EvalServer> {
   const dir = join(o.work, `server-${++started}`);
   const auditDir = join(dir, 'audit');
   const traceDir = join(dir, 'traces');
@@ -72,7 +72,7 @@ export async function startEvalServer(app: HostedApp, env: Record<string, string
   const serverEnv: Record<string, string | undefined> = { ...env, AUDIT_DIR: auditDir, TRACE_DIR: traceDir };
   let running: RunningServer;
   const ends = turnEndSignal();
-  const base = { host: '127.0.0.1', log: () => {}, env: serverEnv, onTurnEnd: ends.ended, ...(o.textProvider !== undefined ? { textProvider: o.textProvider } : {}) };
+  const base = { host: '127.0.0.1', log: () => {}, env: serverEnv, onTurnEnd: ends.ended, ...(o.onClaimsRead !== undefined ? { onClaimsRead: o.onClaimsRead } : {}), ...(o.textProvider !== undefined ? { textProvider: o.textProvider } : {}) };
   if (isConverseApp(app)) {
     const made: ConverseApp = evalApp(app.fresh?.() ?? app, o.model, o.style);
     const call: ConverseApp = { ...made, chat: { ...made.chat, callerNumberFromContext: true } };
