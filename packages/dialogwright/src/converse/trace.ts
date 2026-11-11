@@ -10,7 +10,8 @@ import type { ActionSpec } from './business/schema';
  * where it says nothing), in the trace and the audit alike.
  */
 
-export type ConverseToolOutcome = 'ran' | 'refused' | 'readBack' | 'confirmed' | 'notConfirmed' | 'invalid';
+/** ran: allowed and done; failed: allowed, and the action threw; confirmed: run after the caller's yes. */
+export type ConverseToolOutcome = 'ran' | 'failed' | 'refused' | 'readBack' | 'confirmed' | 'notConfirmed' | 'invalid';
 
 export interface ConverseTraceRecord {
   v: 3;
@@ -52,4 +53,21 @@ export function recordedArgs(spec: ActionSpec | undefined, params: Record<string
 /** The scrub of free text recorded beside a call (a rule's line, a reason): each raw masked value replaced by its recorded form. */
 export function scrubOf(spec: ActionSpec | undefined, call: ToolCall): Scrub {
   return scrubberFor(recordingOf(spec), call) ?? ((t) => t);
+}
+
+/**
+ * What to mask in what the line said with a call's values in it (a read-back, a reply): each param
+ * recorded masked or never, paired with its recorded form, both as it is and as the read-back says it
+ * (`shown`: a slot's label, a day, "ending in 0142"). The pairs of a turn's calls make one scrub
+ * (scrubberOfValues), so the longest value is masked first.
+ */
+export function saidPairs(spec: ActionSpec | undefined, call: ToolCall, shown: Record<string, string>): [string, string][] {
+  const pairs: [string, string][] = [];
+  for (const [k, v] of Object.entries(call.params)) {
+    const how = spec !== undefined && Object.hasOwn(spec.params, k) ? spec.audit?.[k] ?? 'mask' : 'mask';
+    if (how === 'keep' || v === '') continue;
+    const recorded = recordedValue(how, v) ?? '•';
+    for (const form of [shown[k], v]) if (form !== undefined && form !== '' && form !== recorded) pairs.push([form, recorded]);
+  }
+  return pairs;
 }

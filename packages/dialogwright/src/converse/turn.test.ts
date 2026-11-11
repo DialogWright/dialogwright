@@ -67,10 +67,18 @@ actions:
     about: Tell the counter about a visit.
     kind: change
     params:
-      item: { type: text, about: The item. }
+      item: { type: choice, options: [lamp, kettle, clock], about: The item. }
     readBack:
       en: "Tell the counter about the {item}."
     audit: { item: keep }
+  callback:
+    about: Ask the counter to call the caller back.
+    kind: change
+    params:
+      phone: { type: phone, about: The number to call back. }
+    readBack:
+      en: "A call back to the number {phone}. Is that right?"
+    audit: { phone: last4 }
   leave_note:
     about: Leave a note for the counter.
     kind: change
@@ -123,12 +131,13 @@ interface Harness {
   traces: ConverseTraceRecord[];
   calendar: ReturnType<typeof fakeCalendar>;
   notified: Record<string, string>[];
+  calledBack: string[];
   jev: ReturnType<typeof fakeJev>;
   out: Out;
   run(s: ConverseState, input: Input): Promise<ConverseState>;
 }
 
-function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel } = {}): Harness {
+function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools'] } = {}): Harness {
   const b = business(o.edit);
   const model = (o.model ?? fakeModel(turns)) as Harness['model'];
   const calendar = fakeCalendar({ days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], windows: [{ name: 'morning', label: 'by noon', capacity: 1 }, { name: 'afternoon', label: 'by five', capacity: 1 }], now: () => NOW, timeZone: businessZone(b) });
@@ -143,8 +152,16 @@ function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number
   const ended: string[] = [];
   const traces: ConverseTraceRecord[] = [];
   const notified: Record<string, string>[] = [];
+  const calledBack: string[] = [];
   const jev = fakeJev(o.reading ?? { yes: 0.95, no: 0.05 });
-  const out: Out = { say: (t, f) => void said.push([t, f]), end: (how) => void ended.push(how) };
+  const out: Out = {
+    say: (t, f) => {
+      // Out's contract: never an empty piece.
+      if (t.trim() === '') throw new Error(`an empty piece was said (final ${f})`);
+      said.push([t, f]);
+    },
+    end: (how) => void ended.push(how),
+  };
   const deps: ConverseDeps = {
     business: b,
     model,
@@ -159,13 +176,18 @@ function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number
         return 'noted';
       },
       leave_note: async () => 'left',
+      callback: async (p) => {
+        calledBack.push(p.phone!);
+        return 'queued';
+      },
+      ...o.tools,
     },
     texts: null,
     now: () => NOW,
     trace: (r) => void traces.push(r),
     jevTimeoutMs: 1000,
   };
-  return { deps, model, rows, said, ended, traces, calendar, notified, jev, out, run: (s, input) => converseTurn(s, input, deps, out) };
+  return { deps, model, rows, said, ended, traces, calendar, notified, calledBack, jev, out, run: (s, input) => converseTurn(s, input, deps, out) };
 }
 
 const fresh = (): ConverseState => newConverseState({ appId: 'menders', callId: 'call-1', channel: 'voice', callerNumber: CALLER_NUMBER, account: null });
@@ -209,7 +231,7 @@ describe('the model\'s request', () => {
     expect(req.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
     expect(req.messages[0]!.content).toEqual([{ type: 'text', text: '[The call is connected.]' }]);
     expect(s.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant']);
-    expect(req.tools.map((t) => t.name)).toEqual(['check_availability', 'book', 'notify', 'leave_note']);
+    expect(req.tools.map((t) => t.name)).toEqual(['check_availability', 'book', 'notify', 'callback', 'leave_note', 'end_call']);
     expect(req.maxTokens).toBe(400);
   });
 });
@@ -251,8 +273,11 @@ describe('converseTurn: a booking', () => {
     expect(h.rows[1]!.detail.call).toBe('book(slot=•, item=lamp)');
 
     expect(h.traces.map((t) => t.tools.map((x) => `${x.name}:${x.outcome}`))).toEqual([[], ['check_availability:ran', 'book:readBack'], ['book:confirmed', 'notify:ran']]);
-    expect(h.traces[1]!.readBack).toEqual({ text: READ_BACK });
-    expect(h.traces[2]!.readBack).toEqual({ text: READ_BACK, yes: 0.95, no: 0.05, confirmed: true });
+    // The trace keeps what was said with the masked slot masked, as said (its label) and as sent (its id).
+    const MASKED = 'A visit •, for the lamp. Is that right?';
+    expect(h.traces[1]!.readBack).toEqual({ text: MASKED });
+    expect(h.traces[1]!.replies).toEqual(['Friday morning is free.', MASKED]);
+    expect(h.traces[2]!.readBack).toEqual({ text: MASKED, yes: 0.95, no: 0.05, confirmed: true });
     expect(h.traces[1]!.model.usage).toEqual({ inputTokens: 200, outputTokens: 20 });
     expect(h.traces[1]!.tools[1]!.args).toEqual({ slot: '•', item: 'lamp' });
   });
@@ -268,7 +293,7 @@ describe('converseTurn: a booking', () => {
     expect(lastMessage(h)).toContain('yes but make it the afternoon');
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed' }]);
-    expect(h.traces.at(-1)!.readBack).toEqual({ text: READ_BACK, yes: 0.9, no: 0.6, confirmed: false });
+    expect(h.traces.at(-1)!.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?', yes: 0.9, no: 0.6, confirmed: false });
   });
 
   it('refuses a slot the lookup never returned, naming the lookup, and reads nothing back', async () => {
@@ -333,13 +358,148 @@ describe('converseTurn: a booking', () => {
   });
 });
 
+describe('converseTurn: after the yes', () => {
+  it('needs a fresh read-back for a change the model calls again once it ran', async () => {
+    const h = harness([...lookupThenBook, [call('c3', 'book', { slot: SLOT, item: 'lamp' }), done('tool')]]);
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(s.pending).toMatchObject({ action: 'book', id: 'c3' });
+    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
+    expect(h.rows.filter((r) => r.type === 'gate' && r.detail.tool === 'book').map((r) => r.detail.verdict)).toEqual(['BLOCK', 'ALLOW', 'BLOCK']);
+  });
+
+  it('answers a read-back kept through a save and a restore (JSON) as it would have', async () => {
+    const h = harness([...lookupThenBook, [text('Booked.'), done()]]);
+    const s = await upToReadBack(h);
+    const restored = JSON.parse(JSON.stringify(s)) as ConverseState;
+    const after = await h.run(restored, { kind: 'text', text: 'yes' });
+    expect(after.pending).toBeNull();
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(h.calendar.bookings[0]!.key).toBe(idempotencyKey('call-1', 'book', { slot: SLOT, item: 'lamp' }));
+  });
+
+  it('says the done line where the reply after a confirmed action fails, rather than asking again', async () => {
+    const h = harness([...lookupThenBook, [timeout], [timeout]]);
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(h.said.at(-1)).toEqual(["That's done.", true]);
+    expect(h.said.map(([t]) => t)).not.toContain('Sorry, could you say that again?');
+    expect(s.failures).toBe(1);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: "That's done." }] });
+  });
+
+  it('says the done line before the handoff line where the failure spends the budget', async () => {
+    const h = harness([...lookupThenBook, [timeout], [timeout]], { edit: (t) => t.replace('failuresPerCall: 2', 'failuresPerCall: 1').replace('  handoff: { en: "Let me get a person to call you back." }', '  handoff: { en: "Let me get a person to call you back." }\n  done: { en: "All set." }') });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.said.slice(-2)).toEqual([['All set.', false], ['Let me get a person to call you back.', true]]);
+    expect(h.ended).toEqual(['handoff']);
+  });
+
+  it('traces an action that throws once allowed as failed: a lookup, a confirmed change and a follow-on', async () => {
+    const h = harness([
+      [call('c1', 'check_availability', { day: FRIDAY }), done('tool')],
+      [call('c2', 'check_availability', { day: FRIDAY }), done('tool')],
+      [call('c3', 'book', { slot: SLOT, item: 'lamp' }), done('tool')],
+      [text('Sorry about that.'), done()],
+    ], {
+      tools: {
+        check_availability: (() => {
+          let n = 0;
+          return async () => {
+            if (n++ === 0) throw new Error('down for a moment');
+            return [{ id: SLOT, label: 'by noon' }];
+          };
+        })(),
+        notify: async () => {
+          throw new Error('no answer');
+        },
+      },
+    });
+    let s = await upToReadBack(h);
+    expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['check_availability:failed', 'check_availability:ran', 'book:readBack']);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['book:confirmed', 'notify:failed']);
+    expect(h.traces.at(-1)!.tools[1]!.reason).toBe('no answer');
+
+    const throwing = harness([...lookupThenBook, [text('Sorry.'), done()]], { tools: { book: async () => { throw new Error('the window just filled'); } } });
+    s = await upToReadBack(throwing);
+    s = await throwing.run(s, { kind: 'text', text: 'yes' });
+    expect(throwing.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['book:failed']);
+    expect(throwing.notified).toEqual([]);
+    expect(JSON.stringify(throwing.model.requests.at(-1)!.messages.at(-1))).toContain('"isError":true');
+  });
+});
+
+describe('converseTurn: the caller\'s number', () => {
+  it('takes "caller" for the number calling, reads back its last four, gives the tool the whole number, and never tells the model', async () => {
+    const h = harness([[call('c1', 'callback', { phone: 'caller' }), done('tool')], [text('We will call you back.'), done()]]);
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'please call me back on this number' });
+    expect(h.said.at(-1)).toEqual(['A call back to the number ending in 0142. Is that right?', true]);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calledBack).toEqual([CALLER_NUMBER]);
+    for (const req of h.model.requests) expect(JSON.stringify(req)).not.toContain('5555550142');
+    expect(h.rows.find((r) => r.type === 'gate')!.detail.call).toBe('callback(phone=...0142)');
+    expect(systemPrompt(h.deps.business, s, NOW)).toContain('"caller"');
+  });
+
+  it('refuses "caller" on a chat with no number, saying to ask for one', async () => {
+    const h = harness([[call('c1', 'callback', { phone: 'caller' }), done('tool')], [text('What number should we call?'), done()]]);
+    const chat = newConverseState({ appId: 'menders', callId: 'chat-1', channel: 'chat' });
+    await h.run(chat, { kind: 'text', text: 'call me back' });
+    expect(JSON.stringify(h.model.requests[1]!.messages.at(-1))).toMatch(/not known on this call; ask the caller/);
+    expect(h.traces[0]!.tools.map((t) => t.outcome)).toEqual(['invalid']);
+  });
+});
+
+describe('converseTurn: ending the call', () => {
+  it('says the closing line once when the model calls end_call, records it and ends', async () => {
+    const h = harness([[text('Glad to help.'), call('c1', 'end_call', {}), done('tool')]]);
+    const s = await h.run(fresh(), { kind: 'text', text: 'that is all, thanks' });
+    expect(h.said).toEqual([['Glad to help.', false], ['Thanks for calling. Goodbye.', true]]);
+    expect(h.ended).toEqual(['closing']);
+    expect(s.ended).toBe('closing');
+    expect(h.rows).toEqual([{ type: 'converse_end', detail: { by: 'end_call' } }]);
+    expect(h.model.requests).toHaveLength(1);
+    expect(h.traces[0]!.tools).toEqual([{ name: 'end_call', args: {}, outcome: 'ran' }]);
+    // An ended call takes no more turns.
+    expect(await h.run(s, { kind: 'text', text: 'wait' })).toBe(s);
+  });
+
+  it('refuses end_call while a read-back waits for the caller\'s answer (one confirmation at a time), counting no refusal', async () => {
+    const h = harness([
+      [call('c1', 'check_availability', { day: FRIDAY }), done('tool')],
+      [call('c2', 'book', { slot: SLOT, item: 'lamp' }), call('c3', 'end_call', {}), call('c4', 'check_availability', { day: FRIDAY }), done('tool')],
+    ]);
+    const s = await upToReadBack(h);
+    expect(s.pending).toMatchObject({ action: 'book' });
+    expect(s.ended).toBeUndefined();
+    expect(h.ended).toEqual([]);
+    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
+    expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['check_availability:ran', 'book:readBack', 'end_call:refused', 'check_availability:refused']);
+    // Only a change counts toward its refusals.
+    expect(s.refusals).toEqual({});
+  });
+});
+
+describe('converseTurn: Out', () => {
+  it('ends a reply whose text ends in a space with its last sentence as the final piece, never an empty one', async () => {
+    const h = harness([[text('Sure. '), done()]]);
+    await h.run(fresh(), { kind: 'text', text: 'hi' });
+    expect(h.said).toEqual([['Sure. ', true]]);
+  });
+});
+
 describe('converseTurn: refusals', () => {
   it('sends the gate\'s refusal back as an error, counts it, and past the limit says to offer a person', async () => {
     const h = harness([
       [call('c1', 'notify', { item: 'lamp' }), done('tool')],
       [call('c2', 'notify', { item: 'kettle' }), done('tool')],
       [text('I can not do that.'), done()],
-    ], { edit: (t) => t.replace('      item: { type: text, about: The item. }\n    readBack:\n      en: "Tell the counter', '      item: { type: text, about: The item. }\n    rules:\n      - oneOf: { field: item, values: [clock], reason: not-offered }\n    readBack:\n      en: "Tell the counter') });
+    ], { edit: (t) => t.replace('    readBack:\n      en: "Tell the counter', '    rules:\n      - oneOf: { field: item, values: [clock], reason: not-offered }\n    readBack:\n      en: "Tell the counter') });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'tell them about my lamp' });
     expect(s.refusals).toEqual({ notify: 2 });
@@ -400,7 +560,36 @@ describe('converseTurn: the model\'s failures', () => {
     expect(s.ended).toBe('handoff');
   });
 
-  it('gives up on a stream that says nothing within the model\'s time, with no time left to ask again', async () => {
+  it('stops a model that has not begun within half its time, and asks once more with the time left', async () => {
+    const asked: AbortSignal[] = [];
+    let n = 0;
+    const slowFirst: ConverseModel = {
+      id: 'slow-first',
+      async *stream(_req, signal) {
+        asked.push(signal);
+        if (n++ === 0) {
+          // Never answers: only the runtime's own abort ends it.
+          await new Promise((resolve) => signal.addEventListener('abort', resolve));
+          return;
+        }
+        yield text('Hello there.');
+        yield done();
+      },
+    };
+    const h = harness([], { model: slowFirst, edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  timeoutMs: 1000') });
+    const started = Date.now();
+    const s = await h.run(fresh(), { kind: 'text', text: 'hi' });
+    expect(asked).toHaveLength(2);
+    expect(asked[0]!.aborted).toBe(true);
+    expect(h.said).toEqual([['Hello there.', true]]);
+    expect(s.failures).toBe(0);
+    expect(h.traces[0]!.model).toMatchObject({ retried: true });
+    expect(h.traces[0]!.model.error).toMatch(/no answer began within 500 ms/);
+    // Half the time and the second answer: never the whole of it.
+    expect(Date.now() - started).toBeLessThan(900);
+  });
+
+  it('gives up on a model that never answers, after asking it twice within its time', async () => {
     const asked: AbortSignal[] = [];
     const silent: ConverseModel = {
       id: 'silent',
@@ -409,13 +598,34 @@ describe('converseTurn: the model\'s failures', () => {
         await new Promise((resolve) => signal.addEventListener('abort', resolve));
       },
     };
-    const h = harness([], { model: silent, edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  timeoutMs: 40') });
+    const h = harness([], { model: silent, edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  timeoutMs: 60') });
+    const started = Date.now();
     const s = await h.run(fresh(), { kind: 'text', text: 'hi' });
-    expect(asked).toHaveLength(1);
-    expect(asked[0]!.aborted).toBe(true);
+    expect(asked).toHaveLength(2);
+    expect(asked.every((a) => a.aborted)).toBe(true);
     expect(h.said).toEqual([['Sorry, could you say that again?', true]]);
     expect(s.failures).toBe(1);
     expect(h.traces[0]!.model.error).toMatch(/timeout/);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('bounds a model that trickles its answer by its time, not only by the gap between words', async () => {
+    const trickle: ConverseModel = {
+      id: 'trickle',
+      async *stream(_req, signal) {
+        while (!signal.aborted) {
+          yield text('word ');
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      },
+    };
+    const h = harness([], { model: trickle, edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  timeoutMs: 80') });
+    const started = Date.now();
+    const s = await h.run(fresh(), { kind: 'text', text: 'hi' });
+    expect(h.said).toEqual([['Sorry, could you say that again?', true]]);
+    expect(s.failures).toBe(1);
+    expect(h.traces[0]!.model.error).toMatch(/not done within/);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('takes an empty reply as a failure', async () => {

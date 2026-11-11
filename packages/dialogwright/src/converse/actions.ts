@@ -10,6 +10,9 @@ import type { ActionSpec, ParamSpec } from './business/schema';
  * no value but the one the model sent.
  */
 
+/** What the model writes in a phone param for the number the caller is calling from. */
+export const CALLER_TOKEN = 'caller';
+
 /** What each lookup returned on this call, by the lookup's name, and when (ms since the epoch). */
 export interface Seen {
   [lookup: string]: { results: unknown[]; atMs: number };
@@ -45,7 +48,7 @@ function asE164(written: string): string | null {
 }
 
 /** One param's value checked by its type: the value as it is sent on, or the reason it is refused. */
-function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: Seen, todayIso: string): { value: string } | { reason: string } {
+function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: Seen, todayIso: string, callerNumber: string | undefined): { value: string } | { reason: string } {
   const text = String(raw).trim();
   switch (spec.type) {
     case 'date':
@@ -65,8 +68,13 @@ function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: See
     case 'number':
       return text !== '' && Number.isFinite(Number(text)) ? { value: String(Number(text)) } : { reason: `${name} must be a number; "${text}" is not one` };
     case 'phone': {
+      if (text.toLowerCase() === CALLER_TOKEN) {
+        // The number the caller is calling from, which the model never sees whole: resolved here, for the gate and the tool.
+        const own = callerNumber === undefined ? null : asE164(callerNumber);
+        return own !== null ? { value: own } : { reason: `${name}: the number the caller is calling from is not known on this call; ask the caller for the number` };
+      }
       const n = asE164(text);
-      return n !== null ? { value: n } : { reason: `${name} must be a phone number with its area code (ten digits, or + and the country code); "${text}" is not one` };
+      return n !== null ? { value: n } : { reason: `${name} must be a phone number with its area code (ten digits, or + and the country code), or "${CALLER_TOKEN}" for the number the caller is calling from; "${text}" is not one` };
     }
     case 'text':
       return { value: text };
@@ -78,9 +86,11 @@ function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: See
  * one given, each value checked by its type. An optional param left out (or given as empty or null) is
  * sent as '', so the call carries every param and the confirmation covers each (./policy.ts). The params
  * come back as strings, as the gate and the tools take them. `todayIso` is the call's today, which a
- * refused date's reason names so the model can work out the day it meant.
+ * refused date's reason names so the model can work out the day it meant. A phone param written as
+ * "caller" (CALLER_TOKEN) is the number the caller is calling from, `callerNumber`, which the model
+ * is never sent whole; it is refused where the call has none.
  */
-export function checkArgs(spec: ActionSpec, args: Record<string, unknown>, seen: Seen, todayIso: string): CheckedArgs {
+export function checkArgs(spec: ActionSpec, args: Record<string, unknown>, seen: Seen, todayIso: string, callerNumber?: string): CheckedArgs {
   const names = Object.keys(spec.params);
   const extra = Object.keys(args).filter((k) => !Object.hasOwn(spec.params, k));
   if (extra.length > 0) return { ok: false, reason: `${extra.join(', ')} ${extra.length === 1 ? 'is no param' : 'are no params'} of this action; it takes: ${names.join(', ') || 'none'}` };
@@ -97,7 +107,7 @@ export function checkArgs(spec: ActionSpec, args: Record<string, unknown>, seen:
       return { ok: false, reason: `${name} is missing: ${p.about}` };
     }
     if (typeof raw !== 'string' && typeof raw !== 'number') return { ok: false, reason: `${name} must be given as text, not ${Array.isArray(raw) ? 'a list' : typeof raw}` };
-    const checked = checkOne(name, p, raw, seen, todayIso);
+    const checked = checkOne(name, p, raw, seen, todayIso, callerNumber);
     if ('reason' in checked) return { ok: false, reason: checked.reason };
     params[name] = checked.value;
   }

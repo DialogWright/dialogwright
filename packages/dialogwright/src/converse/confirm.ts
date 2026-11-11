@@ -62,6 +62,14 @@ export function readBackText(b: AgentBusiness, action: string, params: Record<st
   return frame.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen));
 }
 
+/** Each param of `action` as its read-back says it (a date as its day, a slot by its label, a phone by its last four), for the trace to mask where it is said. */
+export function shownParams(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen): Record<string, string> {
+  const spec = Object.hasOwn(b.actions, action) ? b.actions[action] : undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) out[k] = shown(b, spec?.params[k], v, lang, seen);
+  return out;
+}
+
 /** At or above this, the caller's answer reads as a yes. */
 export const CONFIRM_YES_AT = 0.7;
 /** Below this, it does not read as a no as well. */

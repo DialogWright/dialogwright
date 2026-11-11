@@ -4,13 +4,14 @@
  * streaming engine waits for anyway). A sentence ends at ".", "?" or "!" (with any closing quotes or
  * brackets) followed by white space; a decimal ("$1.50") has none after its point, and a short
  * abbreviation ("Dr.", "e.g.", "a.m.") or an initial does not end one. What is left at the end of the
- * stream is said as it is.
+ * stream is said as it is. A sentence goes on only once the next one has begun, so the last of a reply
+ * is always in what is left, said as the reply's final piece: a final piece is never empty.
  */
 
 /** Words that end in a period without ending a sentence, compared in lower case without the period. */
-const ABBREVIATIONS = new Set(['dr', 'mr', 'mrs', 'ms', 'mx', 'st', 'jr', 'sr', 'vs', 'etc', 'e.g', 'i.e', 'a.m', 'p.m', 'no', 'approx', 'inc', 'ltd', 'co', 'ave', 'rd', 'mt', 'ft', 'apt', 'dept', 'est']);
+const ABBREVIATIONS = new Set(['dr', 'mr', 'mrs', 'ms', 'mx', 'st', 'jr', 'sr', 'vs', 'etc', 'e.g', 'i.e', 'a.m', 'p.m', 'approx', 'inc', 'ltd', 'co', 'ave', 'rd', 'mt', 'ft', 'apt', 'dept', 'est']);
 
-const END = /[.?!]+["'”’)\]]*\s+/g;
+const END = /[.?!]+["'”’)\]]*\s+(?=\S)/g;
 
 /** Whether the period ending `before` (the text up to and including it) closes an abbreviation or an initial. */
 function abbreviated(before: string): boolean {

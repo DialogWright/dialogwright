@@ -6,16 +6,17 @@ import { passed, type GateDecision, type GateFacts, type ToolCall } from '../gat
 import type { JevClient } from '../jev/types';
 import { localDateIso } from '../core/localDate';
 import type { Texts } from '../texts/types';
+import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
-import type { ActionSpec, AgentBusiness } from './business/schema';
-import { isConfirmed, readBackText, readYesNo, type PendingReadBack } from './confirm';
+import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
+import { isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
 import { systemPrompt, toolsOf } from './prompt';
 import { SentenceBuffer } from './sentences';
 import { businessZone, type ConverseState } from './state';
-import { recordedArgs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
+import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
 
 /**
  * The converse runtime's turn (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and
@@ -29,8 +30,11 @@ import { recordedArgs, scrubOf, type ConverseToolOutcome, type ConverseTraceReco
  *   the line, in the business's own words filled with exactly the call's values, and the turn ends there;
  *   the caller's answer is read by the decision model, and only a clear yes runs it (with its follow-on
  *   actions, each through the gate). Anything else goes back to the model with what the caller said;
- * - a model that errs, is slow or says nothing is asked once more while half its time is left; else the
- *   line says the recovery line, and once the call's failure budget is spent, the handoff line.
+ * - the model ends the call with the runtime's own action, end_call: the line says the closing line;
+ * - a model that errs or says nothing is asked once more while half its time is left, and one that has
+ *   not begun to answer within half its time is stopped and asked once more; else the line says the
+ *   recovery line (the done line instead, where an action the caller confirmed has just run), and once
+ *   the call's failure budget is spent, the handoff line.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
@@ -53,7 +57,12 @@ export interface ConverseDeps {
   jevTimeoutMs: number;
 }
 
-/** Where a turn's words go: each piece of a reply as it is ready (`final` on the last of the turn's), and the call's end. */
+/**
+ * Where a turn's words go, and the call's end. `say` is given each piece of the turn's reply as it is
+ * ready, never an empty one: whole sentences of the model's text (`final` false), and last the piece that
+ * ends the turn's reply (`final` true: the rest of the model's text, or a fixed line), exactly once in a
+ * turn that says anything. A turn that says nothing (the caller left) calls neither.
+ */
 export interface Out {
   say(text: string, final: boolean): void;
   end(how: 'closing' | 'handoff'): void;
@@ -85,6 +94,12 @@ interface Turn {
   tools: ConverseTraceRecord['tools'];
   model: ConverseTraceRecord['model'];
   readBack?: ConverseTraceRecord['readBack'];
+  /** The masked values of the turn's calls with their recorded forms, masked in what the trace keeps of what the line said. */
+  masked: [string, string][];
+  /** An action the caller confirmed ran this turn, and the caller has not yet heard a reply after it. */
+  confirmedRan: boolean;
+  /** The model called end_call this round. */
+  ending: boolean;
 }
 
 /** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
@@ -108,11 +123,14 @@ class Speaker {
     return this.said !== '';
   }
 
-  /** The round's text ends: what is left is said (final, when the reply ends with it); the round's whole text is returned. */
+  /**
+   * The round's text ends: what is left is said (final, when the reply ends with it); the round's whole
+   * text is returned. The buffer holds back a reply's last sentence, so a round with any text has some
+   * left to say final.
+   */
   endRound(final: boolean): string {
     const rest = this.sentences.rest();
-    if (final) this.t.out.say(rest.trim() === '' ? '' : rest, true);
-    else if (rest.trim() !== '') this.t.out.say(rest, false);
+    if (rest.trim() !== '') this.t.out.say(rest, final);
     const all = (this.said + rest).trim();
     this.said = '';
     if (all !== '') this.t.replies.push(all);
@@ -128,9 +146,9 @@ class Speaker {
     return all;
   }
 
-  /** A fixed line, said whole as the turn's final piece. */
-  line(text: string): void {
-    this.t.out.say(text, true);
+  /** A fixed line, said whole: the turn's final piece unless another line follows it. */
+  line(text: string, final = true): void {
+    this.t.out.say(text, final);
     this.t.replies.push(text);
   }
 }
@@ -205,6 +223,7 @@ function traceTool(t: Turn, spec: ActionSpec | undefined, name: string, args: Re
   for (const [k, v] of Object.entries(args)) raw[k] = typeof v === 'string' ? v : JSON.stringify(v) ?? '';
   const scrub = scrubOf(spec, { tool: name, params: raw });
   t.tools.push({ name, args: recordedArgs(spec, args), outcome, ...(reason !== undefined ? { reason: scrub(reason) } : {}) });
+  t.masked.push(...saidPairs(spec, { tool: name, params: raw }, shownParams(t.deps.business, name, raw, 'en', t.st.seen)));
 }
 
 /**
@@ -219,16 +238,32 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
   const error = (id: string, content: string): void => void results.push({ type: 'tool_result', id, content, isError: true });
   for (const c of calls) {
     const spec = Object.hasOwn(b.actions, c.name) ? b.actions[c.name] : undefined;
+    if (t.ending) {
+      const why = 'Not run: the call is ending.';
+      traceTool(t, spec, c.name, c.args, 'refused', why);
+      error(c.id, why);
+      continue;
+    }
     if (t.st.pending !== null) {
-      const why = `Not run: one confirmation at a time. The caller is answering the read-back of "${t.st.pending.action}"; call this again after their answer.`;
+      // One confirmation at a time: nothing else runs while the caller answers a read-back, and the call is
+      // not ended under it. Only a change counts toward the action's refusals.
+      const why = `Not run: one confirmation at a time. The caller is answering the read-back of "${t.st.pending.action}"; ${c.name === END_CALL ? 'end the call after their answer' : 'call this again after their answer'}.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'one-confirmation-at-a-time', pending: t.st.pending.action } });
       traceTool(t, spec, c.name, c.args, 'refused', why);
-      error(c.id, refused(t, c.name, why));
+      error(c.id, spec?.kind === 'change' ? refused(t, c.name, why) : why);
+      continue;
+    }
+    if (c.name === END_CALL) {
+      // The runtime's own action: no params, no confirmation, recorded; the line says the closing line once the round's calls are done.
+      await record(t, { type: 'converse_end', detail: { by: END_CALL } });
+      traceTool(t, undefined, c.name, {}, 'ran');
+      t.ending = true;
+      results.push({ type: 'tool_result', id: c.id, content: 'The call is ending: the line says the closing line.' });
       continue;
     }
     let params: Record<string, string> = {};
     if (spec !== undefined) {
-      const checked = checkArgs(spec, c.args, t.st.seen, t.todayIso);
+      const checked = checkArgs(spec, c.args, t.st.seen, t.todayIso, t.st.caller.number);
       if (!checked.ok) {
         traceTool(t, spec, c.name, c.args, 'invalid', checked.reason);
         error(c.id, checked.reason);
@@ -254,7 +289,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     }
     const ran = await runTool(t, c.name, params);
     if (!ran.ok) {
-      traceTool(t, spec, c.name, params, 'ran', `failed: ${ran.error}`);
+      traceTool(t, spec, c.name, params, 'failed', ran.error);
       error(c.id, `Failed: ${ran.error}`);
       continue;
     }
@@ -266,7 +301,8 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
   return { results, readBack };
 }
 
-type Round = { ok: true; calls: Extract<ModelEvent, { type: 'tool_call' }>[]; text: string } | { ok: false; error: string; spoke: boolean };
+/** A request's outcome; a failure says whether anything of it was said, and whether it never began (stalled). */
+type Round = { ok: true; calls: Extract<ModelEvent, { type: 'tool_call' }>[]; text: string } | { ok: false; error: string; spoke: boolean; stalled: boolean };
 
 const TIMED_OUT = Symbol('timed out');
 
@@ -285,29 +321,32 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
  * written without the call's result, and is dropped), its calls collected. It fails on an error event, a
  * thrown stream, nothing at all, or no event within `firstWaitMs` at first and the model's time after.
  */
-async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number): Promise<Round> {
+async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number): Promise<Round> {
   const controller = new AbortController();
   const started = Date.now();
   const iter = t.deps.model.stream(req, controller.signal)[Symbol.asyncIterator]();
   const calls: Extract<ModelEvent, { type: 'tool_call' }>[] = [];
   let text = '';
-  let wait = firstWaitMs;
-  const fail = (error: string): Round => {
+  let first = true;
+  const fail = (error: string, stalled = false): Round => {
     controller.abort();
     void Promise.resolve(iter.return?.()).catch(() => undefined);
-    return { ok: false, error, spoke: sp.spoke };
+    return { ok: false, error, spoke: sp.spoke, stalled };
   };
   try {
     for (;;) {
+      // The first event within firstWaitMs, and every event before the attempt's deadline: a model that
+      // trickles its answer is bounded as one that never starts.
+      const wait = Math.min(first ? firstWaitMs : Infinity, deadline - Date.now());
       let next: IteratorResult<ModelEvent> | typeof TIMED_OUT;
       try {
         next = await within(iter.next(), wait);
       } catch (e) {
         return fail(`invalid: the stream threw (${e instanceof Error ? e.name : 'error'})`);
       }
-      if (next === TIMED_OUT) return fail(`timeout: no answer within ${wait} ms`);
+      if (next === TIMED_OUT) return first ? fail(`timeout: no answer began within ${Math.round(wait)} ms`, true) : fail(`timeout: the answer was not done within the model's ${t.deps.business.model.timeoutMs} ms`);
       if (next.done) break;
-      wait = t.deps.business.model.timeoutMs;
+      first = false;
       const ev = next.value;
       if (ev.type === 'text') {
         if (calls.length === 0) {
@@ -339,33 +378,47 @@ function requestMessages(st: ConverseState): ModelMessage[] {
   return [{ role: 'user', content: [{ type: 'text', text: st.channel === 'voice' ? '[The call is connected.]' : '[The chat is open.]' }] }, ...messages];
 }
 
-/** One round: the request, and once more if it failed before saying anything while half the model's time is left. */
+/**
+ * One round: the request, and once more with the time left if it failed before saying anything: when it
+ * had not begun within half the model's time (it is stopped then), or failed with half or more left.
+ */
 async function round(t: Turn, sp: Speaker): Promise<Round> {
   const b = t.deps.business;
   const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b), maxTokens: b.model.maxTokens };
   const budget = b.model.timeoutMs;
   const start = Date.now();
-  let r = await streamOnce(t, sp, req, budget);
+  const deadline = start + budget;
+  let r = await streamOnce(t, sp, req, budget / 2, deadline);
   if (r.ok) return r;
   t.model.error = r.error;
-  if (!r.spoke && budget - (Date.now() - start) >= budget / 2) {
+  if (!r.spoke && (r.stalled || deadline - Date.now() >= budget / 2)) {
     // Nothing was said: the words of a sentence not yet finished are dropped, and the model asked again.
     sp.abandon();
     t.model.retried = true;
-    r = await streamOnce(t, sp, req, budget - (Date.now() - start));
+    r = await streamOnce(t, sp, req, deadline - Date.now(), deadline);
     if (!r.ok) t.model.error = r.error;
   }
   return r;
 }
 
-/** The model failed the turn: the recovery line, or past the call's budget the handoff line, and the call ends with a person. */
+/**
+ * The model failed the turn: the recovery line, or past the call's budget the handoff line, and the call
+ * ends with a person. Where an action the caller confirmed has just run, the caller hears the done line
+ * first, and it stands for the recovery line: they need not say anything again.
+ */
 function failed(t: Turn, sp: Speaker): void {
   const lines = t.deps.business.lines;
   t.st.failures += 1;
   const handoff = t.st.failures >= t.deps.business.limits.failuresPerCall;
-  const line = handoff ? lines.handoff.en : lines.recovery.en;
-  sp.line(line);
-  add(t.st, 'assistant', [{ type: 'text', text: line }]);
+  const said: string[] = [];
+  if (t.confirmedRan) {
+    t.confirmedRan = false;
+    said.push(lines.done.en);
+  }
+  if (handoff) said.push(lines.handoff.en);
+  else if (said.length === 0) said.push(lines.recovery.en);
+  said.forEach((line, i) => sp.line(line, i === said.length - 1));
+  add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
   if (handoff) {
     t.st.ended = 'handoff';
     t.out.end('handoff');
@@ -385,6 +438,8 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
     const final = r.calls.length === 0;
     const said = sp.endRound(final);
     add(t.st, 'assistant', [...(said !== '' ? [{ type: 'text' as const, text: said }] : []), ...r.calls.map((c) => ({ type: 'tool_call' as const, id: c.id, name: c.name, args: c.args }))]);
+    // The caller has heard a reply after the action they confirmed.
+    if (said !== '') t.confirmedRan = false;
     if (final) return;
     const { results, readBack } = await runCalls(t, r.calls);
     add(t.st, 'user', results);
@@ -392,21 +447,29 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
       sp.line(readBack);
       return;
     }
+    if (t.ending) {
+      const closing = t.deps.business.lines.closing.en;
+      sp.line(closing);
+      add(t.st, 'assistant', [{ type: 'text', text: closing }]);
+      t.st.ended = 'closing';
+      t.out.end('closing');
+      return;
+    }
   }
   failed(t, sp);
 }
 
-/** A confirmed action through the gate with the hash of its own values, run when allowed. */
-async function runConfirmed(t: Turn, name: string, params: Record<string, string>, hash: string): Promise<{ ok: boolean; text: string; why?: string }> {
-  const spec = t.deps.business.actions[name];
+/** A confirmed action through the gate with the hash of exactly its own values (the read-back's, or a follow-on's own), run when allowed. */
+async function runConfirmed(t: Turn, name: string, params: Record<string, string>, hash: string): Promise<{ outcome: 'ran' | 'refused' | 'failed'; text: string; why?: string }> {
+  const spec = Object.hasOwn(t.deps.business.actions, name) ? t.deps.business.actions[name] : undefined;
   const call: ToolCall = { tool: name, params };
-  const d = await gate(t, spec, call, confirmedHashFor(call, { action: name, params, hash, text: '', id: '' }));
+  const d = await gate(t, spec, call, hash);
   if (d.verdict !== 'ALLOW') {
     const why = gateReason(d, spec, call, Object.keys(t.deps.business.actions));
-    return { ok: false, text: refused(t, name, why), why };
+    return { outcome: 'refused', text: refused(t, name, why), why };
   }
   const ran = await runTool(t, name, params);
-  return ran.ok ? { ok: true, text: resultText(ran.result) } : { ok: false, text: `Failed: ${ran.error}`, why: `failed: ${ran.error}` };
+  return ran.ok ? { outcome: 'ran', text: resultText(ran.result) } : { outcome: 'failed', text: `Failed: ${ran.error}`, why: ran.error };
 }
 
 /** The caller answered a read-back: a clear yes runs the action and its follow-ons; anything else goes back to the model. */
@@ -426,26 +489,28 @@ async function answered(t: Turn, said: string): Promise<void> {
   }
   await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });
   const parent = await runConfirmed(t, p.action, p.params, p.hash);
-  traceTool(t, spec, p.action, p.params, parent.ok ? 'confirmed' : 'refused', parent.why);
+  traceTool(t, spec, p.action, p.params, parent.outcome === 'ran' ? 'confirmed' : parent.outcome, parent.why);
+  if (parent.outcome === 'ran') t.confirmedRan = true;
   const done = [`${p.action}: ${parent.text}`];
   // Follow-ons run only after their parent ran, each with the parent's confirmed values by name (agent.yaml's
   // check makes every param a follow-on takes one its parent has), its own hash, and a row naming the yes.
-  for (const name of parent.ok ? spec?.then ?? [] : []) {
-    const follow = b.actions[name];
+  for (const name of parent.outcome === 'ran' ? spec?.then ?? [] : []) {
+    const follow = Object.hasOwn(b.actions, name) ? b.actions[name] : undefined;
     if (follow === undefined) continue;
-    const checked = checkArgs(follow, Object.fromEntries(Object.keys(follow.params).map((k) => [k, p.params[k] ?? ''])), t.st.seen, t.todayIso);
+    const filled = Object.fromEntries(Object.keys(follow.params).map((k) => [k, p.params[k] ?? '']));
+    const checked = checkArgs(follow, filled, t.st.seen, t.todayIso, t.st.caller.number);
     if (!checked.ok) {
-      traceTool(t, follow, name, {}, 'invalid', checked.reason);
+      traceTool(t, follow, name, filled, 'invalid', checked.reason);
       done.push(`${name}: not run (${checked.reason})`);
       continue;
     }
     const hash = confirmationHash(checked.params, confirmedFields(follow));
     await record(t, { type: 'confirmed', detail: { action: name, parent: p.action, parentHash: p.hash, hash } });
     const ran = await runConfirmed(t, name, checked.params, hash);
-    traceTool(t, follow, name, checked.params, ran.ok ? 'ran' : 'refused', ran.why);
+    traceTool(t, follow, name, checked.params, ran.outcome, ran.why);
     done.push(`${name}: ${ran.text}`);
   }
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${said}'`, ...(parent.ok ? {} : { isError: true }) }]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${said}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
 }
 
 export async function converseTurn(s: ConverseState, input: Input, deps: ConverseDeps, out: Out): Promise<ConverseState> {
@@ -461,6 +526,9 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     replies: [],
     tools: [],
     model: { id: deps.model.id, ms: 0, firstTextMs: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null },
+    masked: [],
+    confirmedRan: false,
+    ending: false,
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
@@ -478,6 +546,9 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     else add(st, 'user', [{ type: 'text', text: input.text }]);
     await converse(t, sp);
   }
+  // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
+  const scrub = scrubberOfValues(t.masked);
+  const scrubbed = (text: string): string => (scrub === null ? text : scrub(text));
   deps.trace({
     v: 3,
     kind: 'converse',
@@ -485,10 +556,10 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     turnIndex: st.turnIndex,
     ts: now.toISOString(),
     said: input.kind === 'text' ? input.text : null,
-    replies: t.replies,
+    replies: t.replies.map(scrubbed),
     tools: t.tools,
     model: { ...t.model, costUsd: input.kind === 'text' ? costUsd(deps.model.id, t.model.usage) : null },
-    ...(t.readBack !== undefined ? { readBack: t.readBack } : {}),
+    ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
   });
   st.turnIndex += 1;
   return st;

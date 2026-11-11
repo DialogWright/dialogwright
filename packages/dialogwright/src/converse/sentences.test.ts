@@ -22,6 +22,15 @@ describe('SentenceBuffer', () => {
     });
   });
 
+  it('ends a sentence at "no."', () => {
+    expect(split('Sorry, no. We are closed Sunday.')).toEqual({ said: ['Sorry, no. '], rest: 'We are closed Sunday.' });
+  });
+
+  it('holds a finished sentence until the next begins, so the reply\'s last is always left over', () => {
+    expect(split('Sure. ')).toEqual({ said: [], rest: 'Sure. ' });
+    expect(split('Sure. ', ' ', 'Next.')).toEqual({ said: ['Sure.  '], rest: 'Next.' });
+  });
+
   it('ends a sentence after closing quotes and repeated marks', () => {
     expect(split('He said "fine." Then?! ok')).toEqual({ said: ['He said "fine." ', 'Then?! '], rest: 'ok' });
   });

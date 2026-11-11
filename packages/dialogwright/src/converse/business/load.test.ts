@@ -84,11 +84,24 @@ describe('what is refused', () => {
   });
 
   it('a follow-on taking a param its parent has not, which would run with a value never read back', () => {
-    const [p, ...rest] = problemsOf(changed('      item: { type: text, about: The item. }', '      item: { type: text, about: The item. }\n      note: { type: text, about: A note. }'));
+    const [p, ...rest] = problemsOf(changed('      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }', '      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }\n      note: { type: text, about: A note. }'));
     expect(rest).toEqual([]);
     expect(p).toMatchObject({ path: 'actions.book.then[0]' });
     expect(p!.message).toMatch(/"notify" takes note, which "book" has not/);
     expect(p!.fix).toMatch(/day, window, item, details, phone/);
+  });
+
+  it('a follow-on param of another type than its parent\'s param of that name', () => {
+    const [p, ...rest] = problemsOf(changed('      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }', '      item: { type: text, about: The item. }'));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.notify.params.item' });
+    expect(p!.message).toMatch(/"item" is a text in the follow-on "notify" and a choice in "book"/);
+  });
+
+  it('an action named as the runtime\'s own end_call', () => {
+    const [p] = problemsOf(changed('  notify:\n', '  end_call:\n').replace('then: [notify]', 'then: [end_call]'));
+    expect(p).toMatchObject({ path: 'actions.end_call' });
+    expect(p!.message).toMatch(/runtime's own action/);
   });
 
   it('a slot param without from', () => {

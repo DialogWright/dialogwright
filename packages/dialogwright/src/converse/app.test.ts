@@ -40,7 +40,7 @@ describe('defineConverseApp', () => {
   });
 
   it('refuses a follow-on that takes a param its parent does not have', () => {
-    const text = readFileSync(FIXTURE, 'utf8').replace('      item: { type: text, about: The item. }', '      item: { type: text, about: The item. }\n      note: { type: text, about: A note. }');
+    const text = readFileSync(FIXTURE, 'utf8').replace('      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }', '      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }\n      note: { type: text, about: A note. }');
     writeFileSync(join(dir, 'agent.yaml'), text);
     expect(() => defineConverseApp(dir, { tools: { availability: noop, book: noop, notify: noop } })).toThrow(/"notify" takes note, which "book" has not/);
   });

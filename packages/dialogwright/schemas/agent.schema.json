@@ -234,6 +234,24 @@
           ],
           "additionalProperties": false,
           "description": "The line said when the caller did not confirm a read-back, per language."
+        },
+        "done": {
+          "default": {
+            "en": "That's done."
+          },
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done, in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done, per language."
         }
       },
       "required": [

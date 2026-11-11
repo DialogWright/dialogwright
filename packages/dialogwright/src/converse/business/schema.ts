@@ -29,6 +29,9 @@ export type Lang = (typeof LANGS)[number];
 const worded = (what: string) =>
   z.strictObject({ en: text().describe(`${what}, in English.`) }).describe(`${what}, per language.`);
 
+/** The runtime's own action, offered to every model: it says the closing line and ends the call. No business action takes its name. */
+export const END_CALL = 'end_call';
+
 /** Param types the runtime checks a value by. */
 export const PARAM_TYPES = ['date', 'slot', 'choice', 'number', 'text', 'phone'] as const;
 /** How a param may be recorded (the same words as policy.yaml's audit). */
@@ -108,6 +111,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   const actions = isMap(root.actions) ? root.actions : {};
   const kindOf = (name: string): unknown => (isMap(actions[name]) ? (actions[name] as Record<string, unknown>).kind : undefined);
   for (const [name, a] of Object.entries(actions)) {
+    if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which says the closing line and ends the call`);
     if (!isMap(a)) continue;
     const params = isMap(a.params) ? a.params : {};
     if (a.kind === 'change' && a.readBack === undefined) {
@@ -134,6 +138,12 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
           const takes = isMap(follow) && isMap(follow.params) ? Object.keys(follow.params) : [];
           const missing = takes.filter((p) => !Object.hasOwn(params, p));
           if (missing.length > 0) issue(ctx, ['actions', name, 'then', i], `the follow-on "${t}" takes ${missing.join(', ')}, which "${name}" has not`, `give "${t}" only params of "${name}" (${Object.keys(params).join(', ') || 'it has none'}): a follow-on runs with the values the caller said yes to, by name`);
+          const typeOf = (m: unknown): unknown => (isMap(m) ? m.type : undefined);
+          for (const p of takes.filter((k) => Object.hasOwn(params, k))) {
+            const theirs = typeOf((follow as Record<string, Record<string, unknown>>).params![p]);
+            const ours = typeOf(params[p]);
+            if (theirs !== ours) issue(ctx, ['actions', t, 'params', p], `"${p}" is a ${String(theirs)} in the follow-on "${t}" and a ${String(ours)} in "${name}", whose value it takes`, `make "${p}" a ${String(ours)} in "${t}", as in "${name}"`);
+          }
         }
       });
     }
@@ -190,6 +200,7 @@ export const agentBusinessSchema = z
         recovery: worded('The short line said when the agent did not catch something'),
         handoff: worded('The line said when the call goes to a person'),
         notConfirmed: worded('The line said when the caller did not confirm a read-back').optional(),
+        done: worded('The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done').default({ en: "That's done." }),
       })
       .describe('The lines said word for word.'),
     model: z

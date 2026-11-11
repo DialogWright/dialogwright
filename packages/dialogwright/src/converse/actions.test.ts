@@ -69,6 +69,16 @@ describe('checkArgs', () => {
     expect(checkArgs(book, { ...good, window: 'w-9' }, { check_availability: { results: ['w-9'], atMs: 1 } }, TODAY).ok).toBe(true);
   });
 
+  it('takes "caller" in a phone param as the number the caller is calling from, or refuses it with none', () => {
+    const r = checkArgs(book, { ...good, phone: 'Caller' }, seen, TODAY, '+15555550177');
+    expect(r.ok && r.params.phone).toBe('+15555550177');
+    const ten = checkArgs(book, { ...good, phone: 'caller' }, seen, TODAY, '5555550177');
+    expect(ten.ok && ten.params.phone).toBe('+15555550177');
+    expect(reasonOf({ ...good, phone: 'caller' })).toMatch(/not known on this call; ask the caller/);
+    const odd = checkArgs(book, { ...good, phone: 'caller' }, seen, TODAY, 'anonymous');
+    expect(!odd.ok && odd.reason).toMatch(/not known/);
+  });
+
   it('normalises a phone number to E.164, or refuses it', () => {
     const as = (phone: unknown): string | null => {
       const r = checkArgs(book, { ...good, phone }, seen, TODAY);

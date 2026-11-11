@@ -65,7 +65,7 @@ actions:
     about: Tell the office about a booking.
     kind: change
     params:
-      item: { type: text, about: The item. }
+      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }
     readBack:
       en: "Tell the office about the {item}."
 transfer:

@@ -1,5 +1,6 @@
 import { localDateIso } from '../core/localDate';
-import type { ActionSpec, AgentBusiness, ParamSpec } from './business/schema';
+import { CALLER_TOKEN } from './actions';
+import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText } from './business/text';
 import type { ModelTool } from './model/types';
 import { businessZone, type ConverseState } from './state';
@@ -23,7 +24,7 @@ function nowWords(now: Date, zone: string): string {
 function callerWords(s: ConverseState): string {
   const parts: string[] = [];
   if (s.caller.account) parts.push(`The number they are calling from is on file for the account "${s.caller.account}" (a number on file recognises an account; it does not prove who is speaking).`);
-  if (s.caller.number && lastFour(s.caller.number).length === 4) parts.push(`They are calling from a number ending in ${lastFour(s.caller.number)}; only the business's actions see the whole number.`);
+  if (s.caller.number && lastFour(s.caller.number).length === 4) parts.push(`They are calling from a number ending in ${lastFour(s.caller.number)}; only the business's actions see the whole number. Where an action takes a phone number and the caller means this one, write "${CALLER_TOKEN}" for it.`);
   else if (s.channel === 'voice') parts.push('Their number is not known.');
   if (parts.length === 0) parts.push('Nothing is known about them yet.');
   return parts.join(' ');
@@ -57,7 +58,7 @@ function paramSchema(p: ParamSpec): Record<string, unknown> {
     case 'slot': return { type: 'string', description: `${p.about} The id of one of the results ${p.from} returned on this call.` };
     case 'choice': return { type: 'string', enum: [...(p.options ?? [])], description: p.about };
     case 'number': return { type: 'string', description: `${p.about} A number.` };
-    case 'phone': return { type: 'string', description: `${p.about} A phone number with its area code.` };
+    case 'phone': return { type: 'string', description: `${p.about} A phone number with its area code, or "${CALLER_TOKEN}" for the number the caller is calling from.` };
     case 'text': return { type: 'string', description: p.about };
   }
 }
@@ -73,7 +74,14 @@ function toolOf(name: string, spec: ActionSpec): ModelTool {
   return { name, description: about, parameters: { type: 'object', properties, required, additionalProperties: false } };
 }
 
-/** The business's actions as the model's tools, each with its params' JSON Schema. */
+/** The runtime's own action, offered on every call: it ends the call, and the line says the business's closing line. */
+const END_CALL_TOOL: ModelTool = {
+  name: END_CALL,
+  description: 'End the call, once the caller has nothing more they want or says goodbye. The line then says the business\'s closing line.',
+  parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+};
+
+/** The business's actions as the model's tools, each with its params' JSON Schema, and the runtime's end_call. */
 export function toolsOf(b: AgentBusiness): ModelTool[] {
-  return Object.entries(b.actions).map(([name, spec]) => toolOf(name, spec));
+  return [...Object.entries(b.actions).map(([name, spec]) => toolOf(name, spec)), END_CALL_TOOL];
 }
