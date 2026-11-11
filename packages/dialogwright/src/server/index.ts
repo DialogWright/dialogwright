@@ -886,8 +886,17 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // A converse app's own pages (ConverseApp.pages, built by its code), under /<app id> as a scripted app's are.
   const conversePages = conversesRun.flatMap((a) => {
     const own = a.app.pages;
-    if (own === undefined) return [];
     const base = appPagesBase(a.id);
+    // The engine's chat page (app.yaml's chat.page), unless the app serves a page of its own at its path.
+    // A server of one app reaches its chat at /chat; with others, at /chat/<app id>.
+    const builtIn = (routes: readonly AppRoute[]): AppRoute[] => {
+      if (routes.some((r) => routeOwns(r, CHAT_PAGE_PATH) || routeOwns({ path: CHAT_PAGE_PATH }, r.path))) return [];
+      const chatPath = hosted.length === 1 ? CHAT_PATH : `${CHAT_PATH}/${a.id}`;
+      const made = forApp(a.id, () => chatPageRoutes({ app: a.app, base, chatPath, env: (name: string) => a.settings[name], chat: config.chat !== undefined, widget: config.widget !== undefined }));
+      for (const w of made.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
+      return forApp(a.id, () => mountAppPages(base, made.routes));
+    };
+    if (own === undefined) return builtIn([]);
     // Routes made with the app, or made now with its settings, its sender, the clock and the log.
     const made = typeof own === 'function'
       ? forApp(a.id, () => own({
@@ -897,7 +906,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       }))
       : own;
     for (const w of made.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
-    return forApp(a.id, () => mountAppPages(base, made.routes));
+    return [...forApp(a.id, () => mountAppPages(base, made.routes)), ...builtIn(made.routes)];
   });
   const routes = [...mounted.routes, ...pages, ...conversePages];
   validateRoutes(routes);

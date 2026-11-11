@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { App, ChatPageChoice } from '../core/app/types';
+import type { App, AppBrand, ChatPageConfig, ChatPageChoice } from '../core/app/types';
 import type { ChatBlock, ChatInline } from '../channel/actions';
 import { chatLine } from '../prompts/rich';
 import type { AppRoute, AppRoutes } from './appRoutes';
@@ -37,13 +37,27 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const capitalized = (words: string): string => (words === '' ? words : words[0]!.toUpperCase() + words.slice(1));
 
 /**
+ * What the page needs of an app, of either kind: a scripted app is one (App), and a converse app gives
+ * its id, brand and app.yaml's chat.page (it has no intents or forms to take default starters from).
+ */
+export interface ChatPageApp {
+  readonly id: string;
+  readonly brand?: AppBrand;
+  readonly chat?: { readonly page?: ChatPageConfig };
+  readonly locales?: { readonly default?: string };
+  readonly intents?: App['intents'];
+  readonly forms?: App['forms'];
+}
+
+/**
  * The app's ways to start by default: the labels of its forms and of its informational intents that say
  * something, at most six. Not a form only a caller recognized by the number calling may open
  * (FormDef.recognizedOnly): a chat carries no number, so such a form never opens there.
  */
-export function defaultStarters(app: App): string[] {
-  return Object.entries(app.intents)
-    .filter(([id, i]) => (i.kind === 'form' && app.forms[id]?.recognizedOnly === undefined) || (i.kind === 'informational' && (i.promptId !== undefined || i.passage !== undefined)))
+export function defaultStarters(app: ChatPageApp): string[] {
+  const forms = app.forms ?? {};
+  return Object.entries(app.intents ?? {})
+    .filter(([id, i]) => (i.kind === 'form' && forms[id]?.recognizedOnly === undefined) || (i.kind === 'informational' && (i.promptId !== undefined || i.passage !== undefined)))
     .map(([, i]) => i)
     .map((i) => capitalized(i.label.trim()))
     .filter((w) => w !== '' && w.length <= 60)
@@ -206,7 +220,7 @@ ${about}
 
 /** What the page is built with: the app, where its chat is, its own settings, and whether the server serves a chat and the widget's script. */
 export interface ChatPageDeps {
-  app: App;
+  app: ChatPageApp;
   /** Where the app's pages are mounted, `/<app id>`. */
   base: string;
   chatPath: string;

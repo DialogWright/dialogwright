@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LineCounter, parseDocument } from 'yaml';
 import { z } from 'zod';
-import type { App } from '../core/app/types';
+import type { App, AppBrand, ChatPageConfig } from '../core/app/types';
 import { positionOf, problemsOfIssues, type Problem } from '../define/problems';
 import { appSchema } from '../define/schema/app';
 import type { JsonSchema } from '../define/schema/json';
@@ -31,6 +31,8 @@ export interface ConverseApp {
   onText?: App['onText'];
   /** The app's chat settings (app.yaml's `chat`). */
   chat: ConverseChatSettings;
+  /** The app's name and look on its chat page (app.yaml's `brand`; the logo an absolute path). */
+  brand?: AppBrand;
   /**
    * The app made again, with state of its own (its systems, its calendar), where its code keeps any: a test
    * harness starts each simulated call on one (pnpm eval), so no call sees what another booked. Absent, the
@@ -68,6 +70,8 @@ export interface ConverseChatSettings {
    * as, and the "caller" token of a phone param. Off by default, so a site cannot claim an account.
    */
   callerNumberFromContext: boolean;
+  /** The engine's chat page (app.yaml's `chat.page`), served at /<id>/chat as a scripted app's is. Absent: none. */
+  page?: ChatPageConfig;
 }
 
 /** The file beside agent.yaml that names a converse app and holds its chat settings. */
@@ -143,10 +147,23 @@ export function defineConverseApp(dir: string, code: { tools: Record<string, Too
     dir: resolve(dir),
     business,
     tools: { ...code.tools },
-    chat: { callerNumberFromContext: yaml.chat?.callerNumberFromContext === true },
+    chat: { callerNumberFromContext: yaml.chat?.callerNumberFromContext === true, ...(yaml.chat?.page !== undefined ? { page: chatPageOf(yaml.chat.page) } : {}) },
+    ...(yaml.brand !== undefined ? { brand: { ...(yaml.brand as AppBrand), ...(yaml.brand.logo !== undefined ? { logo: resolve(dir, yaml.brand.logo) } : {}) } } : {}),
     ...(code.pages !== undefined ? { pages: code.pages } : {}),
     ...(code.onText !== undefined ? { onText: code.onText } : {}),
     ...(code.fresh !== undefined ? { fresh: code.fresh } : {}),
+  };
+}
+
+/** app.yaml's chat.page as the page is built from it (the same reading a scripted app's gets in defineApp). */
+function chatPageOf(page: NonNullable<NonNullable<AppYaml['chat']>['page']>): ChatPageConfig {
+  return {
+    serve: page.serve,
+    ...(page.intro !== undefined ? { intro: page.intro } : {}),
+    ...(page.starters !== undefined ? { starters: [...page.starters] } : {}),
+    ...(page.phone !== undefined ? { phone: page.phone.replace(/^env\./, '') } : {}),
+    ...(page.about !== undefined ? { about: page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
+    ...(page.choose !== undefined ? { choose: { key: page.choose.key, label: page.choose.label, options: page.choose.options.map((o) => ({ value: o.value, label: o.label, ...(o.detail !== undefined ? { detail: o.detail } : {}), ...(o.starters !== undefined ? { starters: [...o.starters] } : {}) })) } } : {}),
   };
 }
 

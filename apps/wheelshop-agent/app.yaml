@@ -4,7 +4,25 @@
 # every action through the gate. Its code is src/app.ts. Invented throughout.
 id: wheelshop-agent
 mode: converse
+brand:
+  name: Example Wheel Works
+  mark: EW
+  tagline: Wheel repair, by chat
 chat:
   # A chat names no number it calls from: a page could otherwise claim a dealership's account. The simulated
   # callers' own server (pnpm eval) turns it on for itself alone (DESIGN.md, "The chat and the number calling").
   callerNumberFromContext: false
+  # The engine's chat page, at /wheelshop-agent/chat. A chat carries no calling number, so the dealership
+  # flow (a caller recognized by the number) is not reachable on the page; it is a call's, or the simulated
+  # callers' (pnpm eval).
+  page:
+    serve: public
+    intro: >-
+      Example Wheel Works is an invented wheel repair shop, answered by DialogWright's agent mode running as its
+      own runtime: a model holds the conversation from the shop's facts, and nothing is booked or sent until you
+      hear the details read back and say yes. Ballpark prices, hours and drop-off windows are demo assumptions.
+    starters:
+      - I curbed my wheel
+      - How much does curb rash repair cost?
+      - Can I drop it off Friday?
+      - I'd like someone to call me back
