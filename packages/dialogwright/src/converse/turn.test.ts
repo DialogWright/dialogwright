@@ -793,6 +793,21 @@ describe('systemPrompt', () => {
     expect(prompt).not.toContain('5555550142');
     expect(prompt).not.toContain('555-0142');
   });
+
+  it('asks for no opener unless the persona names one', () => {
+    expect(prompt).not.toMatch(/acknowledgement/);
+  });
+
+  it('with persona.opener acknowledge, gives the opener as a goal and its purpose: brief, natural, committing to nothing, varied, left out where odd', () => {
+    const own = { ...b, persona: { ...b.persona, opener: 'acknowledge' as const } };
+    const text = systemPrompt(own, fresh(), NOW);
+    expect(text).toMatch(/Begin each reply with a brief, natural acknowledgement/);
+    expect(text).toMatch(/commits the business to nothing/);
+    expect(text).toMatch(/different words from one reply to the next/);
+    expect(text).toMatch(/leave it out where it would sound odd/);
+    expect(text).toMatch(/first whole sentence/);
+    expect(agentBusinessProblems('persona:\n  style: x\n  opener: always\n').problems.some((p) => p.path.includes('opener'))).toBe(true);
+  });
 });
 
 describe('engine vocabulary', () => {

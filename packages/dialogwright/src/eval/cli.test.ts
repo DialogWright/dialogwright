@@ -31,6 +31,12 @@ describe('dialogwright eval', () => {
     expect(t.err.join('\n')).toMatch(/TYPESAFE_API_KEY is unset.*--stub-decision/);
   });
 
+  it('refuses an opener it does not know', async () => {
+    const t = io({});
+    expect(await evalCommand(['.', '--personas', 'p.yaml', '--opener', 'always'], t.io)).toBe(2);
+    expect(t.err.join('\n')).toMatch(/--opener is one of acknowledge/);
+  });
+
   it('wants the folder and the personas file', async () => {
     const t = io({});
     expect(await evalCommand([], t.io)).toBe(2);

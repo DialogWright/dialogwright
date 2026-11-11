@@ -19,8 +19,8 @@
 
 - The agent model is sent, in full: the caller's words, its own replies, the fixed lines said, the arguments of its own action calls, each read-back as it was said (the caller's own values among it), and what each action returned, as the action returned it. Nothing checks an action's result: there is no closed-form check on a converse action's reply, so an action returns only what the model may see. This app has no identity factors to withhold.
 - The caller's number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions' code (a phone param the model writes as `caller` is resolved by the runtime).
-- The reason a call was refused is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form.
-- The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below), and an action's result as the model is sent it, with the values of hidden params replaced and cut to 600 characters.
+- Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call's values were not valid for their types, and the words an action failed with, go to the agent model as written.
+- The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below). Only the audit records an action's result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.
 
 ## Actions
 

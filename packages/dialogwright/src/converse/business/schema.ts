@@ -30,6 +30,10 @@ export type Lang = (typeof LANGS)[number];
 const worded = (what: string) =>
   z.strictObject({ en: text().describe(`${what}, in English.`) }).describe(`${what}, per language.`);
 
+/** The openers a persona may ask for (persona.opener). */
+export const OPENERS = ['acknowledge'] as const;
+export type Opener = (typeof OPENERS)[number];
+
 /** The runtime's own action, offered to every model: it says the closing line and ends the call. No business action takes its name. */
 export const END_CALL = 'end_call';
 
@@ -195,6 +199,10 @@ export const agentBusinessSchema = z
     persona: z
       .strictObject({
         style: text().describe('How the agent speaks.'),
+        opener: z
+          .enum(OPENERS)
+          .optional()
+          .describe('acknowledge: each reply begins with a brief, natural acknowledgement that commits the business to nothing ("Got it."), varied, and left out where it would sound odd, so the caller hears a whole first sentence almost at once. Absent: no opener is asked for.'),
         voices: z.strictObject({ twilio: text().optional().describe('The voice on Twilio.'), telnyx: text().optional().describe('The voice on Telnyx.') }).optional().describe('The voice to use per carrier.'),
       })
       .describe('How the agent sounds.'),

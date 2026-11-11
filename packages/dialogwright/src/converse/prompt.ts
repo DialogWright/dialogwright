@@ -31,12 +31,19 @@ function callerWords(s: ConverseState): string {
   return parts.join(' ');
 }
 
+/**
+ * persona.opener acknowledge: a goal and its purpose, never a script. The caller hears a reply sentence by
+ * sentence, so a short first sentence reaches them almost as soon as the model begins.
+ */
+const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgement of what the caller just said, one that commits the business to nothing (such as "Got it." or "Sure, let me look."), in different words from one reply to the next, and leave it out where it would sound odd. The caller hears each reply a sentence at a time, so this gives them a first whole sentence almost as soon as you begin, while the rest of the reply follows.';
+
 export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): string {
   const zone = businessZone(b);
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
   const person = b.transfer ? 'a person at the business can take the call over' : 'a person at the business can call them back';
   return [
     `You are the automated assistant answering ${where}. You speak for the business, in this style: ${b.persona.style} The style shapes how you sound, never what you claim.`,
+    ...(b.persona.opener === 'acknowledge' ? [OPENER_ACKNOWLEDGE] : []),
     '',
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),

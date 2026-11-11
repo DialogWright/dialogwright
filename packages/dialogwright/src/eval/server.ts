@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { isConverseApp, type ConverseApp } from '../converse/app';
 import type { ConverseModel, ModelEffort } from '../converse/model/types';
+import type { Opener } from '../converse/business/schema';
 import { loadConfig } from '../server/config';
 import { hostRouting, type HostedApp } from '../server/host';
 import { startServer, type RunningServer } from '../server/index';
@@ -12,7 +13,7 @@ import type { TextProvider } from '../texts/types';
  * `work`, its texts to a fake sender. A converse app gets a server of its own for each call, on the app made
  * fresh (ConverseApp.fresh), so no call sees what another booked, and its chat takes the number a persona
  * calls from out of the start's context (chat.callerNumberFromContext), whatever app.yaml says; its model is
- * the one a run names (eval:compare), and its model's time the eval's own (EVAL_MODEL_TIMEOUT_MS). Each is the
+ * the one a run names (eval:compare), its opener the one a run names (eval --opener), and its model's time the eval's own (EVAL_MODEL_TIMEOUT_MS). Each is the
  * harness's own override, given to this server alone, never a setting a deployment can have. A scripted app
  * runs on one server for the whole run, as it is registered.
  */
@@ -30,13 +31,22 @@ export interface EvalModel {
   effort?: ModelEffort | null;
 }
 
-/** A converse app as an evaluation runs it: the model a run names, if it names one, and the eval's long timeout. The app given is left as it is. */
-export function evalApp(app: ConverseApp, model?: EvalModel): ConverseApp {
+/** The persona's style a run asks for in place of the app's own (agent.yaml persona.opener). */
+export interface EvalStyle {
+  opener?: Opener;
+}
+
+/** A converse app as an evaluation runs it: the model and the opener a run names, if it names them, and the eval's long timeout. The app given is left as it is. */
+export function evalApp(app: ConverseApp, model?: EvalModel, style: EvalStyle = {}): ConverseApp {
   const { effort: own, ...rest } = app.business.model;
   const effort = model?.effort === undefined ? own : model.effort ?? undefined;
   return {
     ...app,
-    business: { ...app.business, model: { ...rest, ...(model ? { default: model.default } : {}), ...(effort !== undefined ? { effort } : {}), timeoutMs: EVAL_MODEL_TIMEOUT_MS } },
+    business: {
+      ...app.business,
+      ...(style.opener !== undefined ? { persona: { ...app.business.persona, opener: style.opener } } : {}),
+      model: { ...rest, ...(model ? { default: model.default } : {}), ...(effort !== undefined ? { effort } : {}), timeoutMs: EVAL_MODEL_TIMEOUT_MS },
+    },
   };
 }
 
@@ -50,7 +60,7 @@ export interface EvalServer {
 
 let started = 0;
 
-export async function startEvalServer(app: HostedApp, env: Record<string, string | undefined>, o: { work: string; textProvider?: TextProvider; converseModel?: (appId: string) => ConverseModel; model?: EvalModel }): Promise<EvalServer> {
+export async function startEvalServer(app: HostedApp, env: Record<string, string | undefined>, o: { work: string; textProvider?: TextProvider; converseModel?: (appId: string) => ConverseModel; model?: EvalModel; style?: EvalStyle }): Promise<EvalServer> {
   const dir = join(o.work, `server-${++started}`);
   const auditDir = join(dir, 'audit');
   const traceDir = join(dir, 'traces');
@@ -59,7 +69,7 @@ export async function startEvalServer(app: HostedApp, env: Record<string, string
   let running: RunningServer;
   const base = { host: '127.0.0.1', log: () => {}, env: serverEnv, ...(o.textProvider !== undefined ? { textProvider: o.textProvider } : {}) };
   if (isConverseApp(app)) {
-    const made: ConverseApp = evalApp(app.fresh?.() ?? app, o.model);
+    const made: ConverseApp = evalApp(app.fresh?.() ?? app, o.model, o.style);
     const call: ConverseApp = { ...made, chat: { ...made.chat, callerNumberFromContext: true } };
     const apps = hostRouting<HostedApp>({ apps: [{ id: call.id, app: call, dir: call.dir, env: serverEnv, own: [], ignored: [] }], numbers: [], defaultApp: call.id, env: serverEnv });
     running = await startServer(loadConfig(serverEnv), { ...base, apps, ...(o.converseModel !== undefined ? { converseModel: o.converseModel } : {}) });

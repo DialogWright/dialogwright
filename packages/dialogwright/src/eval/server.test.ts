@@ -99,6 +99,14 @@ describe('startEvalServer', () => {
     expect(app.business.model).toEqual(before);
   });
 
+  it('gives each call\'s app the opener a run names, leaving the app as it is', () => {
+    const app = defineConverseApp(deployedApp(), { tools: { availability: async () => [], book: async () => 'booked' } });
+    expect(app.business.persona.opener).toBeUndefined();
+    expect(evalApp(app, undefined, { opener: 'acknowledge' }).business.persona).toEqual({ ...app.business.persona, opener: 'acknowledge' });
+    expect(evalApp(app).business.persona).toEqual(app.business.persona);
+    expect(app.business.persona.opener).toBeUndefined();
+  });
+
   it('asks the model of a call at the effort the run names', async () => {
     const model = fakeModel([[text('Hello.'), done()]]);
     const app = defineConverseApp(deployedApp(), { tools: { availability: async () => [], book: async () => 'booked' } });

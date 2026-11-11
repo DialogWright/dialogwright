@@ -1,8 +1,9 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RunResult, RunSummary } from './measures';
 import { summarize } from './measures';
-import type { AuditedAction } from './judge';
+import { MATERIAL_KINDS, type AuditedAction } from './judge';
+import type { Persona } from './personas';
 
 const JUDGE_FAILED_NOTE = 'judge failed';
 
@@ -11,6 +12,8 @@ export interface RunRecord extends RunResult {
   actions: AuditedAction[];
   persona: string;
   run: number;
+  /** The day the call took place, where the business is, as the judge was told it: kept so the call can be judged again (eval:rejudge). */
+  today?: string;
 }
 
 export interface ReportInfo {
@@ -29,6 +32,40 @@ export interface ReportInfo {
   lineModel?: string;
   /** The line's own model time (agent.yaml model.timeoutMs), which the timeout rate is read against. */
   timeoutMs?: number;
+  /** The persona's opener the run asked for (agent.yaml persona.opener), where it asked for one. */
+  opener?: string;
+  /** The verdicts were given again from the stored transcripts (eval:rejudge): the spend is the judge's alone. */
+  rejudged?: boolean;
+}
+
+/**
+ * What a run's calls were judged against, kept beside results.jsonl as run.json so they can be judged again
+ * (eval:rejudge) with no call made again: the business text, the personas, and the run's own settings.
+ */
+export interface StoredRun {
+  app: string;
+  /** The business information the judge holds the line to, as the run read it. */
+  business: string;
+  personas: Persona[];
+  callerModel: string;
+  decisionClient: string;
+  runsPerPersona: number;
+  lineModel?: string;
+  timeoutMs?: number;
+  opener?: string;
+}
+
+export const RUN_FILE = 'run.json';
+
+export function writeRunInfo(outDir: string, run: StoredRun): void {
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, RUN_FILE), JSON.stringify(run, null, 2) + '\n');
+}
+
+/** A results folder's run.json; null where the run wrote none (before 2026-11-11's Task 12). */
+export function readRunInfo(dir: string): StoredRun | null {
+  const file = join(dir, RUN_FILE);
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as StoredRun) : null;
 }
 
 /** Appends one run to results.jsonl (the whole call, for the author's own reading). */
@@ -53,7 +90,8 @@ export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo)
   const lines: string[] = [
     `# Simulated callers on ${info.app}`,
     '',
-    `${all.runs} calls over the chat wire, ${info.runsPerPersona} per persona planned.${info.lineModel !== undefined ? ` Line: ${info.lineModel}.` : ''} Caller: ${info.callerModel}. Judge: ${info.judgeModel}. Decision model: ${info.decisionClient}. Spent: ${usd(info.spentUsd)} of ${usd(info.budgetUsd)}${info.stoppedByBudget ? ' (stopped at the budget; the runs it had are kept)' : ''}.`,
+    `${all.runs} calls over the chat wire, ${info.runsPerPersona} per persona planned.${info.lineModel !== undefined ? ` Line: ${info.lineModel}.` : ''}${info.opener !== undefined ? ` Opener: ${info.opener}.` : ''} Caller: ${info.callerModel}. Judge: ${info.judgeModel}. Decision model: ${info.decisionClient}. Spent: ${usd(info.spentUsd)} of ${usd(info.budgetUsd)}${info.stoppedByBudget ? ' (stopped at the budget; the runs it had are kept)' : ''}.`,
+    ...(info.rejudged ? ['', `Re-judged by ${info.judgeModel} from the stored transcripts, actions and results, under the material-claims rubric: no call was made again, and the spend is the judge's alone. The latencies, timeouts and costs are the original run's.`] : []),
     '',
     '| Measure | Value |',
     '| --- | --- |',
@@ -61,7 +99,8 @@ export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo)
     `| Completed | ${pct(all.completedRate)} |`,
     `| Correct | ${pct(all.correctRate)} |`,
     `| Cooperative calls done correctly | ${pct(all.cooperativeCorrectRate)} of ${all.cooperativeJudged} |`,
-    `| Unsupported claims | ${all.unsupportedClaims} |`,
+    `| Unsupported material claims (${MATERIAL_KINDS.join(' / ')}) | ${all.unsupportedClaims} (${MATERIAL_KINDS.map((k) => all.materialByKind[k]).join(' / ')}) |`,
+    `| Benign claims (not counted) | ${all.benignClaims} |`,
     `| Repeated questions per call | ${all.repeatedQuestionsPerCall.toFixed(2)} |`,
     `| First sentence, median | ${ms(all.firstWordMsMedian)} |`,
     `| First sentence, p90 | ${ms(all.firstWordMsP90)} |`,
@@ -76,10 +115,10 @@ export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo)
   if (Object.keys(all.failures).length > 0) {
     lines.push('Failures: ' + Object.entries(all.failures).map(([k, n]) => `${k} (${n})`).join(', ') + '.', '');
   }
-  lines.push('| Persona | Calls | Completed | Correct | Unsupported claims | Repeated questions | First sentence, median |', '| --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('| Persona | Calls | Completed | Correct | Material claims | Benign claims | Repeated questions | First sentence, median |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const id of personas) {
     const s = summarize(records.filter((r) => r.persona === id), timing);
-    lines.push(`| ${id} | ${s.runs} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} | ${s.repeatedQuestionsPerCall.toFixed(1)} | ${ms(s.firstWordMsMedian)} |`);
+    lines.push(`| ${id} | ${s.runs} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} | ${s.benignClaims} | ${s.repeatedQuestionsPerCall.toFixed(1)} | ${ms(s.firstWordMsMedian)} |`);
   }
   lines.push('');
   const noted = records.filter((r) => r.judged.notes !== '' && !r.judged.notes.startsWith(JUDGE_FAILED_NOTE) && (!r.judged.completed || !r.judged.correct || r.judged.unsupportedClaims.length > 0));
@@ -87,6 +126,17 @@ export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo)
     lines.push('## What the judge noted on calls that fell short', '');
     for (const r of noted) lines.push(`- ${r.persona} (run ${r.run + 1}): ${scrubNumbers(r.judged.notes)}${r.judged.unsupportedClaims.length > 0 ? ` Unsupported: ${scrubNumbers(r.judged.unsupportedClaims.join('; '))}.` : ''}`);
     lines.push('');
+  }
+  const judged = records.filter((r) => !r.judged.notes.startsWith(JUDGE_FAILED_NOTE));
+  if (judged.some((r) => (r.judged.materialClaims ?? []).length > 0)) {
+    lines.push('## Material claims by kind', '');
+    for (const kind of MATERIAL_KINDS) {
+      const of = judged.flatMap((r) => (r.judged.materialClaims ?? []).filter((c) => c.kind === kind).map((c) => ({ r, c })));
+      if (of.length === 0) continue;
+      lines.push(`### ${kind}`, '');
+      for (const { r, c } of of) lines.push(`- ${r.persona} (run ${r.run + 1}): "${scrubNumbers(c.said)}"${c.why !== '' ? ` ${scrubNumbers(c.why)}` : ''}`);
+      lines.push('');
+    }
   }
   if (info.limits.length > 0) lines.push('## Limits of this run', '', ...info.limits.map((l) => `- ${l}`), '');
   return lines.join('\n');

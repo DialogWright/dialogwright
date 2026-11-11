@@ -133,6 +133,13 @@
           "minLength": 1,
           "description": "How the agent speaks."
         },
+        "opener": {
+          "description": "acknowledge: each reply begins with a brief, natural acknowledgement that commits the business to nothing (\"Got it.\"), varied, and left out where it would sound odd, so the caller hears a whole first sentence almost at once. Absent: no opener is asked for.",
+          "type": "string",
+          "enum": [
+            "acknowledge"
+          ]
+        },
         "voices": {
           "description": "The voice to use per carrier.",
           "type": "object",

@@ -1,4 +1,4 @@
-import { JUDGE_FAILED, type Judged } from './judge';
+import { JUDGE_FAILED, MATERIAL_KINDS, type Judged, type MaterialKind } from './judge';
 import type { SimCall } from './chatDriver';
 import type { ModelRequestTime } from '../converse/trace';
 
@@ -15,7 +15,12 @@ export interface RunSummary {
   cooperativeJudged: number;
   /** Of those, the share whose task was done correctly: completed and correct. */
   cooperativeCorrectRate: number;
+  /** The unsupported material claims (a price, a time, a policy, a thing said to be done): what the honesty bar counts. */
   unsupportedClaims: number;
+  /** Those by kind (a verdict given before the rubric has none). */
+  materialByKind: Record<MaterialKind, number>;
+  /** What else the line said that nothing supports but that commits the business to nothing; not counted against the bar. */
+  benignClaims: number;
   repeatedQuestionsPerCall: number;
   /** The first sentence of each reply, ms from the caller's words (chat: its first say_delta). */
   firstWordMsMedian: number;
@@ -94,6 +99,8 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     cooperativeJudged: cooperative.length,
     cooperativeCorrectRate: cooperative.length === 0 ? 0 : cooperative.filter((r) => r.judged.completed && r.judged.correct).length / cooperative.length,
     unsupportedClaims: verdicts.reduce((s, r) => s + r.judged.unsupportedClaims.length, 0),
+    materialByKind: Object.fromEntries(MATERIAL_KINDS.map((k) => [k, verdicts.reduce((s, r) => s + (r.judged.materialClaims ?? []).filter((c) => c.kind === k).length, 0)])) as Record<MaterialKind, number>,
+    benignClaims: verdicts.reduce((s, r) => s + (r.judged.benignClaims ?? []).length, 0),
     repeatedQuestionsPerCall: verdicts.length === 0 ? 0 : verdicts.reduce((s, r) => s + r.judged.repeatedQuestions, 0) / verdicts.length,
     firstWordMsMedian: percentile(firstWords, 0.5),
     firstWordMsP90: percentile(firstWords, 0.9),

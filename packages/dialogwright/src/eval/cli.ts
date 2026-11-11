@@ -14,7 +14,7 @@ import { loadFolderApp } from '../define/pageCommand';
 import { REPO_ROOT } from '../define/home';
 import { fakeTextProvider } from '../texts/record';
 import { readEnvFile } from '../server/envFile';
-import { startEvalServer, type EvalModel, type EvalServer } from './server';
+import { startEvalServer, type EvalModel, type EvalServer, type EvalStyle } from './server';
 import { defaultTimeZone } from '../core/localDate';
 import { Budget } from './budget';
 import { modelCaller } from './caller';
@@ -22,8 +22,9 @@ import { driveChat, type SimCall } from './chatDriver';
 import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall, type Judged } from './judge';
 import { summarize, type RunSummary } from './measures';
 import { isCooperative, loadPersonas, type Persona } from './personas';
-import { appendResult, writeSummary, type RunRecord } from './report';
+import { appendResult, writeRunInfo, writeSummary, type RunRecord } from './report';
 import { MODEL_EFFORTS, type ModelEffort } from '../converse/model/types';
+import { OPENERS, type Opener } from '../converse/business/schema';
 
 /**
  * The app of a folder, registered for the server this process starts: a converse app (app.yaml's mode:
@@ -50,11 +51,12 @@ export async function registerFolderApp(dir: string): Promise<HostedApp> {
 }
 
 export const EVAL_USAGE = [
-  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision]',
+  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision]',
   '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire,',
   '  a model playing the caller and a model judging the call; writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
+  '  writes run.json beside them too (the business text and the personas the calls were judged against), so the calls can be judged again with no call made (dialogwright eval:rejudge)',
   '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-haiku-5-5, --budget 5 (US dollars, the caller, the judge and the line\'s own model; the run stops, keeping what it has, once it is spent)',
-  '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none); each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
+  '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
   '  a caller, judge or line model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
   '  the decision model (TYPESAFE_API_KEY) is required, as on a real line; --stub-decision runs with the heuristic stub instead, and the summary says so',
   '  the keys: from the environment, then the app\'s .env, then the repository\'s .env; never printed. Refused in CI.',
@@ -102,6 +104,8 @@ export interface EvalRun {
   outDir: string;
   /** A converse app's model in place of agent.yaml's (eval:compare). */
   model?: EvalModel;
+  /** A converse app's persona style in place of agent.yaml's (eval --opener). */
+  style?: EvalStyle;
 }
 
 export interface EvalOutcome {
@@ -111,6 +115,12 @@ export interface EvalOutcome {
   summary: RunSummary;
   /** The summary page, as written to summary.md. */
   text: string;
+}
+
+/** The business the judge holds the line to: an agent-mode app's business.yaml, or a converse app's agent.yaml. */
+export function businessTextOf(appDir: string): string {
+  const file = [join(appDir, 'business.yaml'), join(appDir, 'agent.yaml')].find((f) => existsSync(f));
+  return file !== undefined ? readFileSync(file, 'utf8') : '(this app has no business.yaml or agent.yaml: judge by what its own answers say)';
 }
 
 /** The line's own model of a run: the one it names, or a converse app's agent.yaml's; null for a scripted app. */
@@ -135,7 +145,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   });
   // A converse app: a server of its own for each call, on the app made fresh (eval/server.ts); a scripted app: one server for the run.
   const perCall = isConverseApp(app);
-  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, textProvider: fakeTextProvider(), ...(o.model !== undefined ? { model: o.model } : {}) });
+  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, textProvider: fakeTextProvider(), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
   let shared: EvalServer | null = null;
   try {
     if (!perCall) shared = await serverFor();
@@ -147,9 +157,16 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   // The day the judge reads the line's dates against: today, where the business is (a converse app's agent.yaml time zone, else the server's).
   const zone = (isConverseApp(app) ? app.business.business.timezone : undefined) ?? env.TIMEZONE ?? (defaultTimeZone() || 'UTC');
   const todayWords = (): string => new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: zone }).format(new Date());
-  // The business the judge holds the line to: an agent-mode app's business.yaml, or a converse app's agent.yaml.
-  const businessFile = [join(appDir, 'business.yaml'), join(appDir, 'agent.yaml')].find((f) => existsSync(f));
-  const businessText = businessFile !== undefined ? readFileSync(businessFile, 'utf8') : '(this app has no business.yaml or agent.yaml: judge by what its own answers say)';
+  const businessText = businessTextOf(appDir);
+  // The timeouts are read against the line's own model time (agent.yaml's), never the eval's long one.
+  const timeoutMs = isConverseApp(app) ? app.business.model.timeoutMs : undefined;
+  const lineModel = lineModelOf(app, o.model);
+  const lineWords = lineModel === null ? undefined : `${lineModel}${o.model?.effort === null ? ' (no effort sent)' : o.model?.effort ? ` (effort ${o.model.effort})` : ''}`;
+  const decisionClient = o.decision === 'jev' ? 'the real decision model (Jev)' : 'the heuristic stub';
+  writeRunInfo(o.outDir, {
+    app: app.id, business: businessText, personas: o.personas, callerModel: o.callerModel.id, decisionClient, runsPerPersona: o.runs,
+    ...(lineWords !== undefined ? { lineModel: lineWords } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(o.style?.opener !== undefined ? { opener: o.style.opener } : {}),
+  });
   const caller = modelCaller(o.callerModel, spend);
   const records: RunRecord[] = [];
   const plan = o.personas.flatMap((p) => Array.from({ length: o.runs }, (_, run) => ({ p, run })));
@@ -174,13 +191,14 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     if (call.turns.length > 0 && call.turns.every((t) => t.who === 'caller')) failures.push('the line never spoke');
     const callId = call.callId ?? '';
     const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
-    const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(o.judgeModel, spend, businessText, p, call, actions, { today: todayWords() });
+    const today = todayWords();
+    const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(o.judgeModel, spend, businessText, p, call, actions, { today });
     if (judged.notes.startsWith(JUDGE_FAILED)) failures.push(JUDGE_FAILED);
     const agentCostUsd = callId === '' ? null : agentCostOfCall(traceDir, callId);
     // The line's own model is spent too: its cost, priced in its traces, counts toward the budget.
     if (agentCostUsd !== null) spend.addUsd(agentCostUsd);
     const use = callId === '' ? { turns: [], tokens: null } : modelUseOfCall(traceDir, callId);
-    return { persona: p.id, run, call, judged, actions, agentCostUsd, failures, cooperative: isCooperative(p), turns: use.turns, agentTokens: use.tokens };
+    return { persona: p.id, run, today, call, judged, actions, agentCostUsd, failures, cooperative: isCooperative(p), turns: use.turns, agentTokens: use.tokens };
   };
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -201,9 +219,6 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     await shared?.close();
     rmSync(work, { recursive: true, force: true });
   }
-  // The timeouts are read against the line's own model time (agent.yaml's), never the eval's long one.
-  const timeoutMs = isConverseApp(app) ? app.business.model.timeoutMs : undefined;
-  const lineModel = lineModelOf(app, o.model);
   const limits = [
     'A chat carries a caller number only where the persona names one (callingFrom): a converse app takes it from the chat\'s context on the harness\'s own server (never a deployed setting); any other persona who would be recognized by the number they call from can only name who they are.',
     ...(perCall ? ['Each call ran on a server of its own, on the app made fresh: no call saw what another booked.'] : ['Every call ran on one server, so a later call sees what earlier ones booked.']),
@@ -214,10 +229,11 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     ...(stoppedByBudget ? [`The run stopped when the budget was spent, after ${records.length} of ${plan.length} planned calls.`] : []),
   ];
   const text = writeSummary(o.outDir, records, {
-    app: app.id, callerModel: o.callerModel.id, decisionClient: o.decision === 'jev' ? 'the real decision model (Jev)' : 'the heuristic stub', judgeModel: o.judgeModel.id,
+    app: app.id, callerModel: o.callerModel.id, decisionClient, judgeModel: o.judgeModel.id,
     runsPerPersona: o.runs, spentUsd: spend.spent(), budgetUsd: spend.limit(), stoppedByBudget, limits,
-    ...(lineModel !== null ? { lineModel: `${lineModel}${o.model?.effort === null ? ' (no effort sent)' : o.model?.effort ? ` (effort ${o.model.effort})` : ''}` } : {}),
+    ...(lineWords !== undefined ? { lineModel: lineWords } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(o.style?.opener !== undefined ? { opener: o.style.opener } : {}),
   });
   return { records, planned: plan.length, stoppedByBudget, summary: summarize(records, timeoutMs !== undefined ? { timeoutMs } : {}), text };
 }
@@ -247,6 +263,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
         judge: { type: 'string', default: DEFAULT_JUDGE },
         model: { type: 'string' },
         effort: { type: 'string' },
+        opener: { type: 'string' },
         budget: { type: 'string', default: '5' },
         out: { type: 'string' },
         port: { type: 'string', default: '0' },
@@ -291,6 +308,11 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     io.err(`dialogwright eval: --effort is one of ${MODEL_EFFORTS.join(', ')} or none\n${EVAL_USAGE}`);
     return 2;
   }
+  if (values.opener !== undefined && !(OPENERS as readonly string[]).includes(values.opener)) {
+    io.err(`dialogwright eval: --opener is one of ${OPENERS.join(', ')}\n${EVAL_USAGE}`);
+    return 2;
+  }
+  const opener = values.opener as Opener | undefined;
   if (values.effort !== undefined && values.model === undefined) {
     io.err(`dialogwright eval: --effort goes with --model\n${EVAL_USAGE}`);
     return 2;
@@ -331,8 +353,8 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
   }
-  if (values.model !== undefined && !isConverseApp(app)) {
-    io.err('dialogwright eval: --model is for a converse app (app.yaml mode: converse), whose agent.yaml names its model');
+  if ((values.model !== undefined || opener !== undefined) && !isConverseApp(app)) {
+    io.err('dialogwright eval: --model and --opener are for a converse app (app.yaml mode: converse), whose agent.yaml names its model and persona');
     return 2;
   }
   const own = lineModelOf(app);
@@ -352,6 +374,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     outcome = await runEval({
       appDir, app, personas, runs, parallel, port, env, callerModel, judgeModel, decision, spend, outDir,
       ...(values.model !== undefined ? { model: { default: values.model, ...(effort !== undefined ? { effort } : {}) } } : {}),
+      ...(opener !== undefined ? { style: { opener } } : {}),
     });
   } catch (e) {
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);

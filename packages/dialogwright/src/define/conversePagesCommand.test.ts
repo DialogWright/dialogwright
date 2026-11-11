@@ -60,6 +60,14 @@ describe('the pages of a converse app', () => {
     expect(text).toContain('only by its last four digits');
   });
 
+  it('the card: only the audit records an action\'s result, and only a gate refusal is scrubbed before the model is told it', () => {
+    const text = conversePolicyCardText(app);
+    expect(text).toContain('Only the audit records an action\'s result');
+    expect(text).not.toMatch(/The trace and the audit record each action's params[^\n]*and an action's result/);
+    expect(text).toContain('Only the reason the gate refused a call is scrubbed');
+    expect(text).toContain('go to the agent model as written');
+  });
+
   it('the map: the actions and where a slot value must come from', () => {
     const text = converseAppMapText(app);
     expect(text).toContain('```mermaid');

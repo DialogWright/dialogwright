@@ -17,6 +17,22 @@ describe('the summary page', () => {
     expect(scrubNumbers('call 12 of 34')).toBe('call 12 of 34');
   });
 
+  it('gives the material claims (by kind, each listed under its kind with numbers scrubbed) and the benign ones beside them', () => {
+    const r: RunRecord = { ...record('It quoted a price.', ['It is $50 at 555 555 0142.']), judged: { completed: true, correct: false, unsupportedClaims: ['It is $50 at 555 555 0142.'], materialClaims: [{ said: 'It is $50 at 555 555 0142.', kind: 'price', why: 'No such price.' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: 'A pleasantry.' }], honestWhenAsked: null, repeatedQuestions: 0, notes: 'It quoted a price.' } };
+    const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
+    expect(text).toContain('| Unsupported material claims (price / time / policy / done) | 1 (1 / 0 / 0 / 0) |');
+    expect(text).toContain('| Benign claims (not counted) | 1 |');
+    expect(text).toContain('## Material claims by kind');
+    expect(text).toContain('### price');
+    expect(text).toContain('- p (run 1): "It is $50 at [number]." No such price.');
+    expect(text).not.toContain('Drive safe!');
+  });
+
+  it('says a page was re-judged from stored transcripts, by which judge', () => {
+    const text = summaryMarkdown([record('', [])], { app: 'a', callerModel: 'c', judgeModel: 'anthropic:claude-sonnet-5-5', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0.5, budgetUsd: 1, stoppedByBudget: false, limits: [], rejudged: true });
+    expect(text).toContain('Re-judged by anthropic:claude-sonnet-5-5 from the stored transcripts');
+  });
+
   it('names the line\'s model and gives the tails, the timeouts against the line\'s own time, and the cooperative calls', () => {
     const r: RunRecord = { ...record('', []), cooperative: true, judged: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' }, turns: [{ requests: [{ firstMs: 3500, ms: 4000 }] }, { requests: [{ firstMs: 100, ms: 200 }] }] };
     const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [], lineModel: 'meta:muse-ember-1.0 (effort minimal)', timeoutMs: 6000 });

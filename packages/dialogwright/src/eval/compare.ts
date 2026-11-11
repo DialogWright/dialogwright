@@ -21,7 +21,7 @@ export interface Bars {
   timeoutRate: number;
   /** The share of cooperative calls whose task was done correctly (completed and correct; personas.ts isCooperative). */
   correctRate: number;
-  /** Unsupported claims (a price, a time or a policy the business never gave), in all. */
+  /** Unsupported material claims (a price, a time, a policy that commits the business, a thing said to be done), in all: benign ones are not counted (judge.ts). */
   unsupportedClaims: number;
 }
 
@@ -171,19 +171,20 @@ const BAR_WORDS: Record<keyof Bars, string> = {
   firstWordMsP95: 'first sentence p95',
   timeoutRate: 'timeouts',
   correctRate: 'cooperative calls done correctly',
-  unsupportedClaims: 'unsupported claims',
+  unsupportedClaims: 'unsupported material claims',
 };
 
 /** The comparison as a page: one row per candidate (every measure, its cost per call, the price used and where it was read), the bars missed, the stop point and the spend. */
-export function compareMarkdown(results: readonly CandidateResult[], info: { app: string; bars: Bars; spentUsd: number; budgetUsd: number; runsPerPersona: number }): string {
+export function compareMarkdown(results: readonly CandidateResult[], info: { app: string; bars: Bars; spentUsd: number; budgetUsd: number; runsPerPersona: number; note?: string }): string {
   const b = info.bars;
   const name = (r: CandidateResult): string => `${r.model}${r.effort === null ? ' (no effort sent)' : r.effort ? ` (${r.effort})` : ''}${r.reference ? ' (reference)' : ''}`;
   const lines = [
     `# The model comparison on ${info.app}`,
     '',
-    `Bars: first sentence median ≤ ${b.firstWordMsMedian} ms; p95 ≤ ${b.firstWordMsP95} ms; timeouts ≤ ${pct(b.timeoutRate)} of turns; cooperative calls done correctly ≥ ${pct(b.correctRate)}; unsupported claims ≤ ${b.unsupportedClaims}. ${info.runsPerPersona} runs per persona. Spent: $${info.spentUsd.toFixed(2)} of $${info.budgetUsd.toFixed(2)}.`,
+    `Bars: first sentence median ≤ ${b.firstWordMsMedian} ms; p95 ≤ ${b.firstWordMsP95} ms; timeouts ≤ ${pct(b.timeoutRate)} of turns; cooperative calls done correctly ≥ ${pct(b.correctRate)}; unsupported material claims ≤ ${b.unsupportedClaims}. ${info.runsPerPersona} runs per persona. Spent: $${info.spentUsd.toFixed(2)} of $${info.budgetUsd.toFixed(2)}.`,
     '',
-    '| Candidate | Calls | Cooperative done correctly | Completed | Correct | Unsupported claims | First sentence median / p90 / p95 / p99 (ms) | Timeouts | Would time out at 1.8 / 3 / 4 / 6 s | Agent cost per call | Run cost per call | Price in / out per M | Price source | Bars missed |',
+    ...(info.note !== undefined ? [info.note, ''] : []),
+    '| Candidate | Calls | Cooperative done correctly | Completed | Correct | Unsupported material claims (benign beside them) | First sentence median / p90 / p95 / p99 (ms) | Timeouts | Would time out at 1.8 / 3 / 4 / 6 s | Agent cost per call | Run cost per call | Price in / out per M | Price source | Bars missed |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const r of results) {
@@ -195,7 +196,7 @@ export function compareMarkdown(results: readonly CandidateResult[], info: { app
     const miss = missed(s, b);
     const missWords = r.stoppedByBudget ? 'stopped by the budget (not whole)' : miss.length === 0 ? 'none: clears' : miss.map((m) => `${BAR_WORDS[m.bar]} ${m.by}`).join('; ');
     const would = ['1800', '3000', '4000', '6000'].map((k) => pct(s.wouldTimeout[k] ?? null)).join(' / ');
-    lines.push(`| ${name(r)} | ${s.runs} | ${pct(s.cooperativeCorrectRate)} of ${s.cooperativeJudged} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} | ${ms(s.firstWordMsMedian)} / ${ms(s.firstWordMsP90)} / ${ms(s.firstWordMsP95)} / ${ms(s.firstWordMsP99)} | ${pct(s.timeoutRate)} of ${s.modelTurns} | ${would} | ${usd(s.agentCostPerCallUsd)} | ${usd(r.spentUsd !== undefined && s.runs > 0 ? r.spentUsd / s.runs : null)} | ${r.price ? `$${r.price.input} / $${r.price.output}` : 'unknown'} | ${r.price?.source ?? ''} | ${missWords} |`);
+    lines.push(`| ${name(r)} | ${s.runs} | ${pct(s.cooperativeCorrectRate)} of ${s.cooperativeJudged} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} (${s.benignClaims} benign) | ${ms(s.firstWordMsMedian)} / ${ms(s.firstWordMsP90)} / ${ms(s.firstWordMsP95)} / ${ms(s.firstWordMsP99)} | ${pct(s.timeoutRate)} of ${s.modelTurns} | ${would} | ${usd(s.agentCostPerCallUsd)} | ${usd(r.spentUsd !== undefined && s.runs > 0 ? r.spentUsd / s.runs : null)} | ${r.price ? `$${r.price.input} / $${r.price.output}` : 'unknown'} | ${r.price?.source ?? ''} | ${missWords} |`);
   }
   const winner = results.find((r) => r.cleared && !r.reference);
   const stop = winner ? `Stopped at ${winner.model}: the first to clear every bar.` : results.some((r) => r.stoppedByBudget) ? 'Stopped when the budget was spent.' : 'No candidate cleared every bar.';

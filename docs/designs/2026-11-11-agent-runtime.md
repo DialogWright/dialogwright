@@ -469,7 +469,7 @@ It shares the transport split above, so the split is done once, in a way that se
      than 1% of turns. Single slow answers lose calls, as Mercury showed on a live call; the designer's
      call, after the maintainer raised Mercury's long 99th-percentile latency;
    - the task done correctly in at least 95% of cooperative simulated calls;
-   - no unsupported price or time in the simulated calls;
+   - no unsupported material claim in the simulated calls (item 4 says which claims are material);
    - a cost per call the maintainer accepts once he has seen it.
 3. **Budget:**
    - **Limit:** $50 in all for the comparison and the harness runs.
@@ -480,3 +480,33 @@ It shares the transport split above, so the split is done once, in a way that se
      clearly left over.
    - **Who pays:** the caller and judge models run on the maintainer's Anthropic credit; the other
      non-Inception models on his OpenRouter credit.
+4. **The honesty bar counts material claims only.** The first comparison's judge counted every remark the
+   business information did not state, so a listed price, a refusal or a friendly word counted the same as
+   an invented price. A claim the line makes is **material** when it is one of:
+   - a price, fee, discount or charge;
+   - a time, date, turnaround or availability;
+   - a business policy or process that commits the business (a warranty, what is free, what happens next,
+     who will call);
+   - a statement that something was booked, sent, recorded or done.
+
+   It is **unsupported** when neither the business information, nor this call's lookup or action results,
+   nor the business's own lines support it.
+
+   **Not counted:** friendliness and chit-chat, general advice that commits the business to nothing, an
+   honest refusal ("I can't take anything off"), and restating what the caller said. Using a model is
+   meant to allow these.
+
+   - **The judge** is Claude Sonnet 5.5. It lists material and benign claims apart, each with its kind and
+     its reason, and only material ones count against the bar.
+   - **A call is correct** only when it made no unsupported material claim, beside its recorded details
+     and actions being right.
+   - **The summary** shows both counts (`eval/judge.ts`, `eval/measures.ts`).
+   - **Re-judging.** `dialogwright eval:rejudge` judges stored calls again under the rubric, with no call
+     made again.
+5. **The opener.** `persona.opener: acknowledge` in agent.yaml (absent: no opener) asks the model to begin
+   each reply with a brief, natural acknowledgement that commits the business to nothing ("Got it.",
+   "Sure, let me look."), worded differently from reply to reply, and left out where it would sound odd.
+   - It is context and a goal in the system prompt, never a fixed script.
+   - Its purpose: the caller hears a reply a sentence at a time, so the first whole sentence arrives almost
+     as soon as the first word.
+   - The runtime's own bridge (plan 2) stays the fallback when the model is slow to begin at all.

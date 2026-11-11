@@ -33,6 +33,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright render:bakeoff [dir] --models ...  (../harness-text/renderBakeoffCommand.ts: render models compared)
  *   dialogwright render:judge-eval [--replay] ...   (../harness-text/judgeEvalCommand.ts: the span drift judge measured against the shape checks)
  *   dialogwright eval <app dir> --personas ...   (../eval/cli.ts: simulated callers over the chat wire)
+ *   dialogwright eval:rejudge <results dir> ...   (../eval/rejudge.ts: stored calls judged again)
  *   dialogwright agent:bakeoff --cases ... --models ...   (../harness-text/agentBakeoffCommand.ts: agent models compared on a cases file's calls)
  *   dialogwright configure | start | serve | diagnose | service | fallback | console:link   (../server: running an app, or a host file's apps)
  *   dialogwright audit:verify [dir | postgres://...] (../audit/verifyCli.ts: each audit day file's hash chain, or the audit in Postgres)
@@ -65,6 +66,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['agent:bakeoff', "compare agent models on a cases file's calls: answered, valid JSON, values and actions right, figures, latency and cost, each recorded into its own cassette beside the cases (--replay: from the cassettes)"],
   ['eval', "simulated callers over the chat wire: a model plays each persona, a model judges the call, one summary of the measures (the author's own keys; refused in CI)"],
   ['eval:compare', "a converse app's models compared on its simulated callers, cheapest first, against the bars, within a budget; stops at the first that clears them (the author's own keys; refused in CI)"],
+  ['eval:rejudge', "a run's stored calls judged again under the material-claims rubric, with no call made again: rejudged/summary.md beside each, and a comparison's table again (the author's own key; refused in CI)"],
   ['policy:matrix', 'write policy.matrix, the reviewed golden of what the gate decides'],
   ['policy:card', 'write POLICY.md, the policy in plain English with its diagrams'],
   ['app:diagram', "write APP-MAP.md, the app's intents, forms, slots, actions and rules as diagrams"],
@@ -277,6 +279,10 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'eval:compare') {
     const { compareCommand } = await import('../eval/compareCli');
     return compareCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
+  }
+  if (command === 'eval:rejudge') {
+    const { rejudgeCommand } = await import('../eval/rejudge');
+    return rejudgeCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
   }
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);

@@ -41,7 +41,8 @@
     "render:judge-eval": "tsx packages/dialogwright/src/define/cli.ts render:judge-eval",
     "agent:bakeoff": "tsx packages/dialogwright/src/define/cli.ts agent:bakeoff",
     "eval": "tsx packages/dialogwright/src/define/cli.ts eval",
-    "eval:compare": "tsx packages/dialogwright/src/define/cli.ts eval:compare"
+    "eval:compare": "tsx packages/dialogwright/src/define/cli.ts eval:compare",
+    "eval:rejudge": "tsx packages/dialogwright/src/define/cli.ts eval:rejudge"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

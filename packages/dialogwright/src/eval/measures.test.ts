@@ -51,6 +51,24 @@ describe('summarize', () => {
   });
 });
 
+describe('summarize: the material claims and the benign ones', () => {
+  it('counts the material claims against the bar, by kind, and the benign ones beside them', () => {
+    const s = summarize([
+      result({ unsupportedClaims: ['It is $50.', 'It is ready Friday.'], materialClaims: [{ said: 'It is $50.', kind: 'price', why: '' }, { said: 'It is ready Friday.', kind: 'time', why: '' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: '' }] }, [100], null),
+      result({ unsupportedClaims: ['Your request is sent.'], materialClaims: [{ said: 'Your request is sent.', kind: 'done', why: '' }], benignClaims: [{ said: 'I cannot take anything off.', kind: 'refusal', why: '' }, { said: 'Mornings are quieter.', kind: 'advice', why: '' }] }, [100], null),
+      result({ unsupportedClaims: ['x'], materialClaims: [{ said: 'x', kind: 'price', why: '' }], notes: 'judge failed: no verdict' }, [100], null),
+    ]);
+    expect(s.unsupportedClaims).toBe(3);
+    expect(s.materialByKind).toEqual({ price: 1, time: 1, policy: 0, done: 1 });
+    expect(s.benignClaims).toBe(3);
+  });
+
+  it('counts a verdict given before the rubric by its unsupported claims, with no kind and no benign ones', () => {
+    const s = summarize([result({ unsupportedClaims: ['a', 'b'] }, [100], null)]);
+    expect([s.unsupportedClaims, s.benignClaims, s.materialByKind]).toEqual([2, 0, { price: 0, time: 0, policy: 0, done: 0 }]);
+  });
+});
+
 describe('summarize: the tails, the timeouts and the cooperative calls', () => {
   const timed = (turns: { firstMs: number | null; ms: number; error?: string }[][]): RunResult => ({ ...result({}, [100], null), turns: turns.map((requests) => ({ requests })) });
 

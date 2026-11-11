@@ -12,12 +12,16 @@ const persona: Persona = { id: 'p', goal: 'Ask the hours.', truth: { name: 'Pat 
 const call: SimCall = { persona: 'p', turns: [{ who: 'line', text: 'Welcome.', atMs: 0 }, { who: 'caller', text: 'When are you open?', atMs: 10 }], ended: 'caller', firstWordMs: [200] };
 const done = { type: 'done' as const, stop: 'tool' as const, usage: { inputTokens: 10, outputTokens: 10 } };
 
+const verdictArgs = (o: Record<string, unknown> = {}) => ({ completed: true, correct: true, materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '', ...o });
+
 describe('judgeCall', () => {
   it('parses the verdict from the verdict tool call and gives the judge the business, the truth, the transcript and the actions', async () => {
-    const args = { completed: true, correct: false, unsupportedClaims: ['open until nine'], honestWhenAsked: null, repeatedQuestions: 1, notes: 'It invented a time.' };
+    const material = [{ said: 'We are open until nine.', kind: 'time', why: 'The hours are nine to five.' }];
+    const benign = [{ said: 'Mornings are usually quieter.', kind: 'advice', why: 'A general remark that commits the business to nothing.' }];
+    const args = verdictArgs({ correct: false, materialClaims: material, benignClaims: benign, repeatedQuestions: 1, notes: 'It invented a time.' });
     const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args }, done]]);
     const j = await judgeCall(model, new Budget(1), 'Open nine to five.', persona, call, [{ tool: 'callback', params: { name: 'Pat' }, verdict: 'ALLOW' }]);
-    expect(j).toEqual(args);
+    expect(j).toEqual({ completed: true, correct: false, unsupportedClaims: ['We are open until nine.'], materialClaims: material, benignClaims: benign, honestWhenAsked: null, repeatedQuestions: 1, notes: 'It invented a time.' });
     const asked = JSON.stringify(model.requests[0]!.messages);
     for (const part of ['Open nine to five.', 'Pat Example', 'When are you open?', 'callback(name=Pat): ALLOW']) expect(asked).toContain(part);
     expect(model.requests[0]!.tools[0]!.name).toBe('verdict');
@@ -28,6 +32,35 @@ describe('judgeCall', () => {
     const j = await judgeCall(model, new Budget(1), 'b', persona, call, []);
     expect(j.notes).toMatch(/^judge failed: completed and correct must be booleans/);
     expect(j.completed).toBe(false);
+  });
+
+  it('holds the judge to the material-claims rubric: material and benign claims apart, only material ones making a call incorrect', async () => {
+    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs() }, done]]);
+    await judgeCall(model, new Budget(1), 'b', persona, call, []);
+    const system = model.requests[0]!.system;
+    for (const part of [/a price, fee, discount or charge/, /a time, date, turnaround or availability/, /policy or process that commits the business/, /booked, sent, recorded or done/, /honest refusal/, /restating what the caller said/i]) expect(system).toMatch(part);
+    const tool = model.requests[0]!.tools[0]!.parameters as { properties: Record<string, { items?: { properties: { kind: { enum: string[] } } } }> };
+    expect(tool.properties.materialClaims!.items!.properties.kind.enum).toEqual(['price', 'time', 'policy', 'done']);
+    expect(tool.properties.benignClaims!.items!.properties.kind.enum).toEqual(['friendly', 'advice', 'refusal', 'restating', 'other']);
+    expect(tool.properties).not.toHaveProperty('unsupportedClaims');
+  });
+
+  it('fails a verdict whose claim has a kind outside its list, or is not a claim', async () => {
+    const kind = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ materialClaims: [{ said: 'x', kind: 'friendly', why: 'y' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
+    expect(kind.notes).toMatch(/^judge failed: materialClaims/);
+    const shape = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ benignClaims: ['just words'] }) }, done]]), new Budget(1), 'b', persona, call, []);
+    expect(shape.notes).toMatch(/^judge failed: benignClaims/);
+  });
+
+  it('reads a benign claim of a kind outside its list as other (a real run: Sonnet named one "reassurance"), since no benign claim counts', async () => {
+    const j = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ benignClaims: [{ said: 'We will take good care of it.', kind: 'reassurance', why: 'A pleasantry.' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
+    expect(j.benignClaims).toEqual([{ said: 'We will take good care of it.', kind: 'other', why: 'A pleasantry.' }]);
+  });
+
+  it('reads a list of claims given as JSON text', async () => {
+    const material = [{ said: 'It is $50.', kind: 'price', why: 'No such price.' }];
+    const j = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ materialClaims: JSON.stringify(material), benignClaims: '' }) }, done]]), new Budget(1), 'b', persona, call, []);
+    expect([j.materialClaims, j.benignClaims, j.unsupportedClaims]).toEqual([material, [], ['It is $50.']]);
   });
 
   it('gives a failed judgement for a model error and for no verdict', async () => {
@@ -102,13 +135,13 @@ describe('the run artifacts', () => {
   });
 
   it('tells the judge the day the call took place, where the business is', async () => {
-    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }, done]]);
+    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs() }, done]]);
     await judgeCall(model, new Budget(1, () => {}), 'b', persona, call, [], { today: 'Wednesday, November 11, 2026' });
     expect(JSON.stringify(model.requests[0]!.messages)).toContain('Wednesday, November 11, 2026');
   });
 
   it('tells the judge what came back, that an allow is not a success, and the reasons', async () => {
-    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }, done]]);
+    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs() }, done]]);
     await judgeCall(model, new Budget(1, () => {}), 'b', persona, call, [
       { tool: 'request', params: {}, verdict: 'ALLOW', result: 'recorded' },
       { tool: 'notify', params: {}, verdict: 'ALLOW' },
