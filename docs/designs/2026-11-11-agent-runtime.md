@@ -255,7 +255,7 @@ assumptions for the owner to correct.
       permission to make changes;
     - the key file stays out of the repository (a path in the git-ignored settings);
     - no Google app verification is needed;
-    - slots come from the business's drop-off windows and capacity, and each booking is an event.
+    - slots come from the business's drop-off windows, their capacity and, optionally, the last time a car may be dropped off in each (`until`, "HH:MM" in the business's zone, so today's window is not offered after it), and each booking is an event.
 - **Caller records:** the accounts list, matched on the calling number. Caller ID is never an identity
   factor, as in the scripted mode: it only tells the agent who is probably calling.
 - **Texting:** the existing capability, with consent as a policy rule on the action.

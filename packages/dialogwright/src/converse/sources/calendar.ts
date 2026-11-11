@@ -1,4 +1,4 @@
-import { localDateIso } from '../../core/localDate';
+import { localDateIso, localMinutes, minutesOfTime } from '../../core/localDate';
 
 /** A fake calendar for the converse runtime: free places per day by window and capacity, booked with a key. */
 
@@ -45,7 +45,7 @@ const dayWords = (d: Date): string => d.toLocaleDateString('en-US', { weekday: '
 
 export function fakeCalendar(o: {
   days: string[];
-  windows: { name: string; label: string; capacity: number }[];
+  windows: { name: string; label: string; capacity: number; /** The last time a car may be dropped off in it, "HH:MM" in the zone; absent, all day. */ until?: string }[];
   now: () => Date;
   /** The business's IANA zone, what "today" means; default UTC. */
   timeZone?: string;
@@ -59,12 +59,19 @@ export function fakeCalendar(o: {
   };
   const taken = (slotId: string): number => bookings.filter((b) => b.slotId === slotId).length;
   const openDay = (d: Date | null): d is Date => d !== null && open.has(WEEKDAYS[d.getUTCDay()]!) && d.toISOString().slice(0, 10) >= localDateIso(o.now().getTime(), o.timeZone ?? 'UTC');
+  const zone = o.timeZone ?? 'UTC';
+  /** Whether a window's drop-off time has passed on `dayIso`: only today's can have. */
+  const over = (dayIso: string, w: { until?: string }): boolean => {
+    if (w.until === undefined) return false;
+    const now = o.now().getTime();
+    return dayIso === localDateIso(now, zone) && localMinutes(now, zone) > minutesOfTime(w.until);
+  };
   return {
     bookings,
     async free(dayIso) {
       const d = parseDay(dayIso);
       if (!openDay(d)) return [];
-      return o.windows.filter((w) => taken(`${dayIso}:${w.name}`) < w.capacity).map((w) => slotOf(dayIso, w));
+      return o.windows.filter((w) => !over(dayIso, w) && taken(`${dayIso}:${w.name}`) < w.capacity).map((w) => slotOf(dayIso, w));
     },
     async book(slotId, details, key) {
       const before = byKey.get(key);
@@ -74,7 +81,7 @@ export function fakeCalendar(o: {
       const dayIso = slotId.slice(0, at);
       const w = o.windows.find((x) => x.name === slotId.slice(at + 1));
       const d = parseDay(dayIso);
-      if (w === undefined || !openDay(d)) throw new UnknownSlot(slotId);
+      if (w === undefined || !openDay(d) || over(dayIso, w)) throw new UnknownSlot(slotId);
       if (taken(slotId) >= w.capacity) throw new SlotFull(slotId);
       bookings.push({ slotId, details: { ...details }, key });
       const id = `bk-${bookings.length}`;

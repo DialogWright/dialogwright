@@ -23,7 +23,7 @@ const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', '
 /** What the systems take from agent.yaml: the calendar's days and windows, the business's time zone and the accounts. */
 export interface ShopConfig {
   readonly days: readonly string[];
-  readonly windows: readonly { readonly name: string; readonly label: string; readonly capacity: number }[];
+  readonly windows: readonly { readonly name: string; readonly label: string; readonly capacity: number; readonly until?: string }[];
   readonly timeZone: string;
   readonly accounts: readonly { readonly name: string; readonly numbers: readonly string[] }[];
 }
@@ -153,6 +153,18 @@ export function printTexts(on: boolean): void {
 function localDay(ms: number, timeZone: string): string {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(ms).map((x) => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day}`;
+}
+
+/** The minutes since midnight at `ms` in a time zone. */
+function localMinutes(ms: number, timeZone: string): number {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(ms).map((x) => [x.type, x.value]));
+  return Number(p.hour) * 60 + Number(p.minute);
+}
+
+/** The minutes since midnight of a 24-hour "HH:MM" time. */
+function minutesOfTime(hhmm: string): number {
+  const [h, m] = hhmm.split(':');
+  return Number(h) * 60 + Number(m);
 }
 
 /**
@@ -367,9 +379,16 @@ export class Systems {
     return this.windowNames.filter((w) => this.roomIn(day, w) > 0);
   }
 
-  /** The cars a window has room for on a day, after the standing drop-off, the bookings, the requests waiting for a quote and the quotes holding it: none on a day the shop is closed or in a window it does not have. */
+  /** Whether a window's drop-off time (agent.yaml's `until`, "HH:MM" in the business's zone) has passed on a day: only today's can have. */
+  windowOver(day: string, window: string): boolean {
+    const until = this.config.windows.find((w) => w.name === window)?.until;
+    if (until === undefined || day !== this.today()) return false;
+    return localMinutes(this.now(), this.config.timeZone) > minutesOfTime(until);
+  }
+
+  /** The cars a window has room for on a day, after the standing drop-off, the bookings, the requests waiting for a quote and the quotes holding it: none on a day the shop is closed or in a window it does not have or whose drop-off time has passed today. */
   roomIn(day: string, window: string): number {
-    if (!this.opensOn(day) || !this.windowNames.includes(window)) return 0;
+    if (!this.opensOn(day) || !this.windowNames.includes(window) || this.windowOver(day, window)) return 0;
     return this.capacityOf(window) - this.standingCars(day, window) - (this.booked.get(`${day} ${window}`) ?? 0) - this.held(day, window) - this.waiting(day, window);
   }
 

@@ -101,8 +101,9 @@ questions: # assumption: the owner corrects these
     a: A clear photo of the damaged part of the wheel is enough; more than one angle helps. Reply to our text with them.
   - q: Do I get a confirmation number or a written quote?
     a: >-
-      There's no booking number: the shop texts you its price, and your reply to that text books it. That text
-      is your confirmation.
+      It depends. A repair request has no booking number: the shop texts you its price, that text is your
+      confirmation of the price, and your reply to it books the drop-off. A dealership's booking is made on
+      this line once we read it back and you confirm it, and the line says it is booked.
   - q: Can I call the shop directly?
     a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
   - q: Is my car ready? What's the status of my wheel?
@@ -130,9 +131,9 @@ sources:
   calendar:
     kind: fake # the shop's stand-in calendar (src/shop.ts), from these days and windows
     days: [monday, tuesday, wednesday, thursday, friday] # assumption: the owner corrects these
-    windows: # assumption: the owner corrects these (each holds up to three cars)
-      - { name: morning, label: "morning, by 8", capacity: 3 }
-      - { name: afternoon, label: "afternoon, by noon", capacity: 3 }
+    windows: # assumption: the owner corrects these (each holds up to three cars; `until` is the last time a car may be dropped off in it, in the shop's time zone, so today's window is not offered after it)
+      - { name: morning, label: "morning, by 8", capacity: 3, until: "08:00" }
+      - { name: afternoon, label: "afternoon, by noon", capacity: 3, until: "12:00" }
   accounts: # regular dealership accounts, recognised by the number they call from
     - name: Rivergate Motors
       # env.DEALER_TEST_LINE: a tester's own phone, set privately in the app's settings (never this file), so

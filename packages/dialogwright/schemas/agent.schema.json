@@ -475,6 +475,11 @@
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991,
                     "description": "How many visits it holds."
+                  },
+                  "until": {
+                    "description": "The last time a car may be dropped off in it, as 24-hour \"HH:MM\" in the business's time zone. Today's window is not offered or bookable after it; a later day's is unchanged. Absent, the window is offered all day.",
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
                   }
                 },
                 "required": [

@@ -96,7 +96,7 @@ const calendar = z
   .strictObject({
     kind: z.enum(['fake', 'google']).describe('fake: the days and windows below, for a demo. google: reserved for a later release.'),
     days: z.array(text()).default([]).describe('The days the business is open to book, as dates.'),
-    windows: z.array(z.strictObject({ name: identifier().describe('The window\'s id.'), label: text().describe('How it is said to a caller (for example "9 to 12").'), capacity: z.number().int().positive().describe('How many visits it holds.') })).default([]).describe('The windows of a day a visit may be booked into, each with its capacity.'),
+    windows: z.array(z.strictObject({ name: identifier().describe('The window\'s id.'), label: text().describe('How it is said to a caller (for example "9 to 12").'), capacity: z.number().int().positive().describe('How many visits it holds.'), until: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'a 24-hour time such as "08:00"').optional().describe('The last time a car may be dropped off in it, as 24-hour "HH:MM" in the business\'s time zone. Today\'s window is not offered or bookable after it; a later day\'s is unchanged. Absent, the window is offered all day.') })).default([]).describe('The windows of a day a visit may be booked into, each with its capacity.'),
   })
   .describe('Where availability comes from.');
 
