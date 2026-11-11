@@ -1166,9 +1166,14 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   taken as the caller's, at its arrival, and a line said again (a cut line, a spurious interrupt), which
  *   starts from its own send. After a turn set aside, or a prompt ignored, the no-input wait runs from this
  *   end (armNoInput `fromLines`); every other wait is counted as it always was, from the last send's own
- *   estimate, which does not see lines queued behind one still playing. A carrier's reports of its playback never shorten it:
- *   Telnyx's agentSpeaking and tokensPlayed follow its speech synthesis, not the audio (on that call
- *   agentSpeaking went off 2.1 s into the 8 s greeting, as the no-match line was sent).
+ *   estimate, which does not see lines queued behind one still playing. Where the carrier reports a line played
+ *   sooner than its estimate (Telnyx's tokensPlayed naming it, or agentSpeaking off that stays off for
+ *   RESAY_SETTLE_MS), that report is its end, and the lines queued behind it start there (linesPlayed; the
+ *   agent-mode design, call 61, decided by the maintainer 2026-11-10: a line estimated at 9.2 s was reported
+ *   played at 7.5 s, and "No. That's it." begun 1.4 s after the report was taken as over it and set aside).
+ *   A stop that names no line and is followed at once by a start is not one: on a call before, agentSpeaking
+ *   went off 2.1 s into the 8 s greeting as the no-match line was sent, and on again 230 ms later. A report
+ *   later than the estimate changes nothing.
  * - **The speech's start** is when the carrier reported the caller starting the run of speech the prompt
  *   carries (Telnyx with TELNYX_EVENTS speaker-events: followSpeechRun, from speech that ran MIN_SPEECH_MS or
  *   was still going as the prompt came, across pauses no longer than RESUME_AFTER_PAUSE_MS after speech that
@@ -1198,20 +1203,29 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   Continuation joins to the words they began before, a turn still running included (mayContinue): a
  *   caller who had not finished is not dropped. Every final prompt ends the run of speech it carries,
  *   whether or not it is looked at (held words, a service's wait, after the end).
- * - **For replay.** The frame log has `{ speechOverLine: { mode, afterMs, expectedMs, start } }` just
- *   before the prompt's own line: how far into the lines the speech began and their estimated length,
- *   from their first send, and whether the start was the carrier's report (`speaking`) or the prompt's
- *   arrival (`arrival`). Replay marks the prompt there, or runs no turn for it (harness-text/replay.ts), as
+ * - **For replay.** The frame log has `{ speechOverLine: { mode, afterMs, expectedMs, start, played? } }` just
+ *   before the prompt's own line: how far into the lines the speech began and their length, from their
+ *   first send (estimated, or to the carrier's report of them played where that came sooner, `played: true`),
+ *   and whether the start was the carrier's report (`speaking`) or the prompt's arrival (`arrival`). Replay marks the prompt there, or runs no turn for it (harness-text/replay.ts), as
  *   the log says, whatever SPEECH_OVER_LINE is now; the console notes it under the line spoken over.
  */
 interface LineSpan {
-  /** When the line is estimated to start and to end playing: from its send, behind the lines of the same send before it. */
+  /**
+   * When the line is estimated to start and to end playing: from its send, behind the lines of the same send
+   * before it; its end the carrier's report of it played where one came first (linesPlayed, `played`).
+   */
   fromMs: number;
   toMs: number;
   /** When the first line of its send went out: where the lines start, for the log. */
   sentAtMs: number;
+  /** When this line itself went out. */
+  sentMs: number;
+  /** The line's text as it went out, whitespace folded (a clip has none): what a carrier's report of it played names. */
+  text: string | null;
   /** Speech cannot interrupt it: the call's barge-in `none` or `dtmf`, or the line sent `interruptible: false`. */
   held: boolean;
+  /** Its end is the carrier's report that it played, sooner than its estimate (linesPlayed). */
+  played?: true;
 }
 
 /**
@@ -1249,6 +1263,9 @@ const partialRuns = new Map<string, { firstMs: number; lastMs: number }>();
 /** Drop what is known of a call's lines and its caller's speech (a reconnect, a close, a call gone). */
 function forgetLines(callSid: string): void {
   linesOut.delete(callSid);
+  const settling = stopsSettling.get(callSid);
+  if (settling !== undefined) clearTimeout(settling);
+  stopsSettling.delete(callSid);
   waitWindows.delete(callSid);
   speechRuns.delete(callSid);
   partialRuns.delete(callSid);
@@ -1268,8 +1285,64 @@ function noteLineSent(callSid: string, frame: OutboundFrame, bargeIn: BargeIn, d
   const queued = last !== undefined && last.toMs > now;
   const fromMs = queued ? last.toMs : now;
   const held = (bargeIn !== 'any' && bargeIn !== 'speech') || !frame.interruptible;
-  spans.push({ fromMs, toMs: fromMs + playbackEstimateMs([frame], durations), sentAtMs: queued ? last.sentAtMs : now, held });
+  spans.push({ fromMs, toMs: fromMs + playbackEstimateMs([frame], durations), sentAtMs: queued ? last.sentAtMs : now, sentMs: now, text: frame.type === 'text' ? folded(frame.token) : null, held });
   linesOut.set(callSid, spans.slice(-LINE_SPANS_KEPT));
+}
+
+/** A carrier's stop that names no line, waiting out RESAY_SETTLE_MS before it is taken as the lines' end (linesPlayed). */
+const stopsSettling = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * The carrier's report of its playback, read for the lines' end (the agent-mode design, call 61, decided by the
+ * maintainer 2026-11-10). A report that a line played (Telnyx's tokensPlayed, its text as sent; a turn's lines may
+ * come run together as one, so a report ending with a line's text names it) ends that line, and every line sent
+ * before it, there, where its estimate ran later: speech that starts after it is not over them. Lines queued
+ * behind it start from it. A stop that names no line (agentSpeaking off) ends the lines sent before it once it has
+ * stayed stopped for RESAY_SETTLE_MS (a carrier may stop between lines, and a frame sent mid-line gave a stop and
+ * a start 230 ms apart: server/voice/telnyx.ts); a start meanwhile cancels it. Never later than the estimate: a
+ * report after it changes nothing. Where no report has come, the estimate is all there is.
+ */
+function linesPlayed(callSid: string, ev: PlaybackEvent): void {
+  if (ev.kind !== 'playback') return;
+  const settling = stopsSettling.get(callSid);
+  if (settling !== undefined) {
+    clearTimeout(settling);
+    stopsSettling.delete(callSid);
+  }
+  if (ev.state === 'started') return;
+  const now = Date.now();
+  const spans = linesOut.get(callSid) ?? [];
+  if (ev.text !== undefined) {
+    const said = folded(ev.text);
+    let named = -1;
+    spans.forEach((l, i) => {
+      if (l.text !== null && l.text !== '' && l.sentMs <= now && said.endsWith(l.text)) named = i;
+    });
+    if (named >= 0) endLinesAt(callSid, named, now);
+    return;
+  }
+  const timer = setTimeout(() => {
+    stopsSettling.delete(callSid);
+    const before = (linesOut.get(callSid) ?? []).reduce((at, l, i) => (l.sentMs <= now ? i : at), -1);
+    if (before >= 0) endLinesAt(callSid, before, now);
+  }, RESAY_SETTLE_MS);
+  timer.unref?.();
+  stopsSettling.set(callSid, timer);
+}
+
+/**
+ * The lines up to the one at `index` played by `atMs` (linesPlayed): each that was to end later ends there
+ * (`played`), and the lines queued behind the last of them start that much sooner.
+ */
+function endLinesAt(callSid: string, index: number, atMs: number): void {
+  const spans = linesOut.get(callSid);
+  if (spans === undefined || spans[index] === undefined) return;
+  const was = spans[index]!.toMs;
+  const sooner = Math.max(0, was - atMs);
+  linesOut.set(callSid, spans.map((l, i) => {
+    if (i <= index) return l.toMs > atMs ? { ...l, fromMs: Math.min(l.fromMs, atMs), toMs: atMs, played: true as const } : l;
+    return sooner > 0 && l.fromMs >= was ? { ...l, fromMs: l.fromMs - sooner, toMs: l.toMs - sooner } : l;
+  }));
 }
 
 /**
@@ -1358,6 +1431,8 @@ interface OverLine {
   afterMs: number;
   expectedMs: number;
   start: SpeechStart;
+  /** Their end is the carrier's report that they played, sooner than the estimate (linesPlayed): `expectedMs` is to it. */
+  played?: true;
 }
 
 /**
@@ -1371,7 +1446,8 @@ function overLineOf(deps: AdapterDeps, entry: CallEntry, { atMs, start }: { atMs
   const at = spans.find((l) => l.fromMs <= atMs && atMs < l.toMs);
   if (at === undefined || !at.held) return null;
   const endMs = linesEndAt(entry.callSid, atMs)!;
-  return { mode, afterMs: Math.round(atMs - at.sentAtMs), expectedMs: Math.round(endMs - at.sentAtMs), start };
+  const played = spans.some((l) => l.sentAtMs === at.sentAtMs && l.played === true && l.toMs === endMs);
+  return { mode, afterMs: Math.round(atMs - at.sentAtMs), expectedMs: Math.round(endMs - at.sentAtMs), start, ...(played ? { played: true as const } : {}) };
 }
 
 /**
@@ -2690,7 +2766,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     entry.frames.write('in', { carrierEvent: recordedCarrierEvent(entry, message, ev?.kind === 'playback' && ev.state === 'finished' ? ev.text : undefined) });
     // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
     if (ev) {
-      if (ev.kind === 'playback') reportsPlayback.add(entry.callSid);
+      if (ev.kind === 'playback') {
+        reportsPlayback.add(entry.callSid);
+        // The lines' end for speech over a line and the no-input wait from their end: the report, where it is sooner (call 61).
+        linesPlayed(entry.callSid, ev);
+      }
       // The caller heard speaking holds the no-input wait, on any carrier whose provider reports it.
       else onCallerSpeech(deps, entry, ev.speaking);
       onHeldEndEvent(entry.callSid, ev);

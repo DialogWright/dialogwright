@@ -370,6 +370,123 @@ describe('blips of noise over a question are not the start of the answer after i
   });
 });
 
+/**
+ * The carrier's report of a line played is its end (call 61, 2026-11-10, Telnyx with BARGE_IN=none): a 9.2 s line
+ * was reported played (tokensPlayed, then agentSpeaking off) 7.5 s in, and the caller's "No. That's it." began
+ * 1.4 s after the report, before the estimate's end, and was taken as speech over it and set aside. Here on the
+ * test app's greeting (11.6 s by the estimate), at the same distances from its end; the words are the test's.
+ */
+describe('the carrier\'s report of a line played is its end (call 61)', () => {
+  /** The greeting played and reported 2.1 s before its estimated end, as call 61's line was 1.7 s before its own. */
+  const REPORTED_MS = 9_500;
+  async function reported(call: Call): Promise<void> {
+    await call.start();
+    await vi.advanceTimersByTimeAsync(71);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(REPORTED_MS - 71);
+    await call.played(GREETING);
+    await vi.advanceTimersByTimeAsync(31);
+    await call.agent(false);
+  }
+  /** The caller's speech from `onMs` into the greeting, as call 61's came: two runs, the prompt 181 ms after the second stops. */
+  async function speech(call: Call, onMs: number, words = ASIDE): Promise<void> {
+    await vi.advanceTimersByTimeAsync(onMs - (REPORTED_MS + 31));
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(69);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(353);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(181);
+    await call.say(words);
+  }
+
+  it('speech begun after the report, before the estimate\'s end, is not over the line: a turn as after any line', async () => {
+    const call = liveCall('telnyx', 'none');
+    await reported(call);
+    await speech(call, REPORTED_MS + 1_400);
+    expect(noteBefore(call, ASIDE)).toBeUndefined();
+    expect(call.records().at(-1)!.event).not.toHaveProperty('overLine');
+    expect(call.lines().at(-1)).toBe(NOMATCH);
+    expect(call.session().intentAttempts).toBe(1);
+    await sameOnReplay(call);
+  });
+
+  it('a request begun after the report is taken as ever', async () => {
+    const call = liveCall('telnyx', 'none');
+    await reported(call);
+    await speech(call, REPORTED_MS + 1_400, 'i want to report a problem');
+    expect(noteBefore(call, 'i want to report a problem')).toBeUndefined();
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
+  });
+
+  it('speech begun before the report is over the line, placed against the reported end, and the wait after it set aside runs from that end', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(71);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(8_000 - 71);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(REPORTED_MS - 8_000);
+    await call.played(GREETING);
+    await vi.advanceTimersByTimeAsync(31);
+    await call.agent(false);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 8_000, expectedMs: REPORTED_MS, start: 'speaking', played: true });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    expect(call.lines()).toHaveLength(1);
+    // The question again a no-input wait from now, the reported end being past, where the estimate's end would
+    // have it 1.4 s later (the caller spoke: no "I didn't hear anything").
+    await vi.advanceTimersByTimeAsync(NO_INPUT_MS - 1);
+    expect(call.lines()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(call.lines()[1]).toBe(testkitApp.prompts.manifest.ask_intent!.text);
+    await sameOnReplay(call);
+  });
+
+  it('a stop that names no line ends the lines once it has stayed stopped; one followed at once by a start does not', async () => {
+    const settled = liveCall('telnyx', 'none');
+    await settled.start();
+    await vi.advanceTimersByTimeAsync(71);
+    await settled.agent(true);
+    await vi.advanceTimersByTimeAsync(REPORTED_MS - 71);
+    await settled.agent(false);
+    await vi.advanceTimersByTimeAsync(31);
+    await speech(settled, REPORTED_MS + 1_400);
+    expect(noteBefore(settled, ASIDE)).toBeUndefined();
+    expect(settled.lines().at(-1)).toBe(NOMATCH);
+    forgetNoInput(CALL);
+    // A frame sent mid-line gave a stop and a start 230 ms apart (server/voice/telnyx.ts): the line plays on.
+    const restarted = liveCall('telnyx', 'none');
+    await restarted.start();
+    await vi.advanceTimersByTimeAsync(71);
+    await restarted.agent(true);
+    await vi.advanceTimersByTimeAsync(REPORTED_MS - 71);
+    await restarted.agent(false);
+    await vi.advanceTimersByTimeAsync(31);
+    await restarted.agent(true);
+    await speech(restarted, REPORTED_MS + 1_400);
+    expect(noteBefore(restarted, ASIDE)).toMatchObject({ mode: 'unless-miss', expectedMs: GREETING_MS, start: 'speaking' });
+    expect(noteBefore(restarted, ASIDE)).not.toHaveProperty('played');
+    expect(restarted.lines()).toHaveLength(1);
+  });
+
+  it('a report that names another line, or comes after the estimate, changes nothing', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(REPORTED_MS);
+    await call.played('Some other line.');
+    await vi.advanceTimersByTimeAsync(31);
+    await speech(call, REPORTED_MS + 1_400);
+    expect(noteBefore(call, ASIDE)).toMatchObject({ expectedMs: GREETING_MS });
+    expect(call.lines()).toHaveLength(1);
+  });
+});
+
 describe('the lines\' end the no-input wait reads', () => {
   it('a reply of two lines on Twilio: speech over the second is placed against both, and the wait after it runs from their end', async () => {
     const call = liveCall('twilio', 'none');
