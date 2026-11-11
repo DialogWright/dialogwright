@@ -451,6 +451,9 @@ It shares the transport split above, so the split is done once, in a way that se
    the prompt and the tools, and measured by the harness. Every action stays gated.
 2. **Bars:**
    - time to the first spoken word on a call about 1.2 s or less at the median;
+   - the slow turns too: the first sentence within 2.5 s at the 95th percentile, and timeouts on no more
+     than 1% of turns. Single slow answers lose calls, as Mercury showed on a live call; the designer's
+     call, after the maintainer raised Mercury's long 99th-percentile latency;
    - the task done correctly in at least 95% of cooperative simulated calls;
    - no unsupported price or time in the simulated calls;
    - a cost per call the maintainer accepts once he has seen it.
