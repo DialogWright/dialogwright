@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DIR } from '../define/fixture/app';
-import { evalCommand } from './cli';
+import { EVAL_USAGE, evalCommand } from './cli';
+import { costUsd } from '../converse/model/price';
 
 const io = (env: Record<string, string>) => {
   const err: string[] = [];
@@ -35,6 +36,19 @@ describe('dialogwright eval', () => {
     const t = io({});
     expect(await evalCommand(['.', '--personas', 'p.yaml', '--opener', 'always'], t.io)).toBe(2);
     expect(t.err.join('\n')).toMatch(/--opener is one of acknowledge/);
+  });
+
+  it('judges with Claude Sonnet 5.5 by default, a priced model, and says so', () => {
+    expect(EVAL_USAGE).toMatch(/--judge anthropic:claude-sonnet-5-5 \(a cheaper one with --judge\)/);
+    expect(costUsd('anthropic:claude-sonnet-5-5', { inputTokens: 1, outputTokens: 1 })).not.toBeNull();
+  });
+
+  it('takes --publish, the summary as a page to commit', async () => {
+    const t = io({});
+    // The command line is read whole before anything runs: --publish is known, and the opener check answers.
+    expect(await evalCommand(['.', '--personas', 'p.yaml', '--publish', '--opener', 'always'], t.io)).toBe(2);
+    expect(t.err.join('\n')).toMatch(/--opener is one of acknowledge/);
+    expect(EVAL_USAGE).toContain('--publish writes summary.md as a page to commit');
   });
 
   it('wants the folder and the personas file', async () => {

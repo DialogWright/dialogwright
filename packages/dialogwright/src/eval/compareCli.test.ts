@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DIR } from '../define/fixture/app';
-import { compareCommand } from './compareCli';
+import { COMPARE_USAGE, compareCommand } from './compareCli';
 
 const io = (env: Record<string, string>) => {
   const err: string[] = [];
@@ -27,6 +27,14 @@ describe('dialogwright eval:compare', () => {
     const t = io({});
     expect(await compareCommand(['.', '--personas', 'p.yaml', '--candidates', 'inception:mercury-3#fast'], t.io)).toBe(2);
     expect(t.err.join('\n')).toMatch(/effort/);
+  });
+
+  it('takes --publish, and judges with Claude Sonnet 5.5 by default', async () => {
+    const t = io({});
+    expect(await compareCommand(['.', '--personas', 'p.yaml', '--publish', '--candidates', 'inception:mercury-3#fast'], t.io)).toBe(2);
+    expect(t.err.join('\n')).toMatch(/effort/);
+    expect(COMPARE_USAGE).toContain('--publish writes each candidate\'s summary.md as a page to commit');
+    expect(COMPARE_USAGE).toContain('--judge anthropic:claude-sonnet-5-5');
   });
 
   it('is for a converse app', async () => {

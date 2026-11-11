@@ -37,8 +37,9 @@ export interface ReportInfo {
   /** The verdicts were given again from the stored transcripts (eval:rejudge): the spend is the judge's alone. */
   rejudged?: boolean;
   /**
-   * A page to commit: no per-call notes (they retell the call), each material claim by its sentence alone (the
-   * judge's reason may carry the caller's details), and each word of `withheld` (the personas' names) as [name].
+   * A page to commit (`--publish`): no per-call notes (they retell the call), each material claim by its sentence
+   * alone (the judge's reason may carry the caller's details), each word of `withheld` (the personas' names, by
+   * withheldNames) as [name], no em dash, and PUBLISHED_LIMIT last among the limits.
    */
   published?: { withheld: readonly string[] };
 }
@@ -91,12 +92,32 @@ const usd = (x: number | null): string => (x === null ? 'unknown' : `$${x.toFixe
 const pctOrNone = (x: number | null): string => (x === null ? 'not timed' : `${(x * 100).toFixed(1)}%`);
 const seconds = (ms: string): string => `${Number(ms) / 1000} s`;
 
+/** What a page to commit says of itself, last among its limits. */
+export const PUBLISHED_LIMIT = 'A page to commit: each material claim by its sentence alone, with no per-call notes; names and phone numbers withheld.';
+
+/**
+ * The names a page to commit withholds: each persona's name (a truth whose key says name), whole and by its
+ * first word. A last name alone is kept: an invented one is often a word the business uses too ("Example").
+ */
+export function withheldNames(personas: readonly Persona[]): string[] {
+  const names = personas.flatMap((p) => Object.entries(p.truth).filter(([k]) => /name/i.test(k)).map(([, v]) => v.trim()));
+  return [...new Set(names.flatMap((n) => [n, n.split(/\s+/)[0]!]))].filter((n) => n !== '');
+}
+
+/**
+ * A page made fit to commit: each word of `withheld` as [name], and an em dash (a model writes them; the
+ * repository's pages have none) as a comma.
+ */
+export function publishedText(text: string, withheld: readonly string[]): string {
+  const names = [...withheld].filter((w) => w.trim() !== '').sort((a, b) => b.length - a.length);
+  const named = names.reduce((t, w) => t.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), '[name]'), text);
+  return named.replace(/\s*\u2014\s*/g, ', ');
+}
+
 /** The summary page: the figures over every run, then one row per persona. No transcript is in it. */
 export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo): string {
   const text = pageOf(records, info);
-  if (info.published === undefined) return text;
-  const withheld = [...info.published.withheld].filter((w) => w.trim() !== '').sort((a, b) => b.length - a.length);
-  return withheld.reduce((t, w) => t.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), '[name]'), text);
+  return info.published === undefined ? text : publishedText(text, info.published.withheld);
 }
 
 function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
@@ -154,7 +175,8 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
       lines.push('');
     }
   }
-  if (info.limits.length > 0) lines.push('## Limits of this run', '', ...info.limits.map((l) => `- ${l}`), '');
+  const limits = info.published === undefined || info.limits.includes(PUBLISHED_LIMIT) ? info.limits : [...info.limits, PUBLISHED_LIMIT];
+  if (limits.length > 0) lines.push('## Limits of this run', '', ...limits.map((l) => `- ${l}`), '');
   return lines.join('\n');
 }
 

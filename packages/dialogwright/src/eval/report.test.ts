@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { scrubNumbers, summaryMarkdown, type RunRecord } from './report';
+import type { Persona } from './personas';
+import { PUBLISHED_LIMIT, publishedText, scrubNumbers, summaryMarkdown, withheldNames, type RunRecord } from './report';
 
 const record = (notes: string, claims: string[]): RunRecord => ({
   persona: 'p', run: 0, actions: [], failures: [], agentCostUsd: null,
@@ -31,6 +32,26 @@ describe('the summary page', () => {
     expect(text).not.toContain('Visits cost $40');
     expect(text).not.toContain('Pat');
     expect(text).toContain('- p (run 1): "It is $50, [name]."');
+    expect(text).toContain(`- ${PUBLISHED_LIMIT}`);
+  });
+
+  it('a page to publish: a phone number with its area code in brackets is withheld whole, and an em dash is a comma', () => {
+    const r: RunRecord = { ...record('', []), judged: { completed: true, correct: false, unsupportedClaims: ['x'], materialClaims: [{ said: 'Call the shop line (555) 123-4567 — or drop by—any day.', kind: 'policy', why: '' }], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } };
+    const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [PUBLISHED_LIMIT], published: { withheld: [] } });
+    expect(text).toContain('"Call the shop line [number], or drop by, any day."');
+    expect(text).not.toContain('(555)');
+    expect(text).not.toContain('—');
+    // The limit is said once, whether or not the run's limits already had it.
+    expect(text.split(PUBLISHED_LIMIT)).toHaveLength(2);
+  });
+
+  it('withholds each persona\'s name, whole and by its first word, and nothing else of the truth', () => {
+    const personas: Persona[] = [
+      { id: 'a', goal: 'g', truth: { name: 'Dana Example', vehicle: 'a 2019 hatchback' }, manner: 'm', expects: 'request' },
+      { id: 'b', goal: 'g', truth: { contactName: 'Lee Sample', account: 'Northside Auto Sales' }, manner: 'm', expects: 'booking' },
+    ];
+    expect(withheldNames(personas)).toEqual(['Dana Example', 'Dana', 'Lee Sample', 'Lee']);
+    expect(publishedText('Dana Example, Dana and Example Wheel Works.', withheldNames(personas))).toBe('[name], [name] and Example Wheel Works.');
   });
 
   it('gives the material claims (by kind, each listed under its kind with numbers scrubbed) and the benign ones beside them', () => {

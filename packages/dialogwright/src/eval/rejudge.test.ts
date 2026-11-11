@@ -7,7 +7,7 @@ import { fakeModel } from '../converse/model/fake';
 import type { ModelEvent } from '../converse/model/types';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import type { Persona } from './personas';
-import { RUN_FILE, type RunRecord, type StoredRun } from './report';
+import { PUBLISHED_LIMIT, RUN_FILE, type RunRecord, type StoredRun } from './report';
 import { rejudgeCommand } from './rejudge';
 
 /**
@@ -125,6 +125,22 @@ describe('dialogwright eval:rejudge', () => {
     expect(table).toMatch(/\| anthropic:other-test \(low\) \|/);
     expect(table).toMatch(/\| inception:line-test \(minimal\) \|/);
     expect(table).toContain(`Re-judged by ${JUDGE}`);
+  });
+
+  it('--publish writes the page to commit: no per-call notes, each claim by its sentence alone, the personas\' names withheld', async () => {
+    const dir = folder([record('booker', 0)]);
+    const j = judges([verdict({ notes: 'Pat Example was told a price of its own.', materialClaims: [{ said: 'It is $50, Pat, and it is booked.', kind: 'price', why: 'Pat was owed $40.' }] })]);
+    expect(await rejudgeCommand([dir, '--judge', JUDGE, '--publish'], io({ judge: j.judge }).io)).toBe(0);
+    const page = readFileSync(join(dir, 'rejudged', 'summary.md'), 'utf8');
+    expect(page).not.toContain('What the judge noted');
+    expect(page).not.toContain('owed $40');
+    expect(page).not.toContain('Pat');
+    expect(page).toContain('- booker (run 1): "It is $50, [name], and it is booked."');
+    expect(page).toContain(`- ${PUBLISHED_LIMIT}`);
+    // Without it, the author's own page keeps the notes.
+    const own = folder([record('booker', 0)]);
+    await rejudgeCommand([own, '--judge', JUDGE], io({ judge: judges([verdict({ notes: 'Pat Example was told a price of its own.' })]).judge }).io);
+    expect(readFileSync(join(own, 'rejudged', 'summary.md'), 'utf8')).toContain('What the judge noted');
   });
 
   it('a folder with no run.json needs the app and the personas, and the day where its records have none', async () => {

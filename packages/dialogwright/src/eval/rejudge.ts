@@ -13,7 +13,7 @@ import { clears, compareMarkdown, DEFAULT_BARS, type CandidateResult } from './c
 import { JUDGE_FAILED, judgeCall } from './judge';
 import { summarize } from './measures';
 import { loadPersonas } from './personas';
-import { readRunInfo, summaryMarkdown, type RunRecord, type StoredRun } from './report';
+import { readRunInfo, summaryMarkdown, withheldNames, type RunRecord, type StoredRun } from './report';
 
 /**
  * eval:rejudge: a run's stored calls (results.jsonl: each transcript with the actions the gate decided and
@@ -25,12 +25,13 @@ import { readRunInfo, summaryMarkdown, type RunRecord, type StoredRun } from './
  */
 
 export const REJUDGE_USAGE = [
-  'usage: dialogwright eval:rejudge <results dir> [--judge anthropic:<model>] [--budget <usd>] [--parallel N] [--app <dir> --personas <file>] [--today YYYY-MM-DD]',
+  'usage: dialogwright eval:rejudge <results dir> [--judge anthropic:<model>] [--budget <usd>] [--parallel N] [--app <dir> --personas <file>] [--today YYYY-MM-DD] [--publish]',
   '  the calls stored in <results dir>/results.jsonl (or in each folder of a comparison) judged again under the material-claims rubric, with no call made again;',
   '  writes rejudged/results.jsonl and rejudged/summary.md beside each, and for a comparison rejudged/comparison.md, the table under the material-claims bar',
   '  defaults: --judge anthropic:claude-sonnet-5-5, --budget 10 (US dollars; it stops, keeping what it judged, once spent: run it again to go on), --parallel 4',
   '  the budget is checked before each call is judged, so the spend may pass it by up to --parallel judgements already in flight',
   '  a run that wrote no run.json (before the material-claims rubric) needs --app (its business information) and --personas, and --today where its calls have no day',
+  '  --publish writes each rejudged/summary.md as a page to commit: no per-call notes, each material claim by its sentence alone, the personas\' names and phone numbers withheld',
   '  a judge whose price is not known is refused. The keys: from the environment, then the repository\'s .env; never printed. Refused in CI.',
 ].join('\n');
 
@@ -155,6 +156,7 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
         app: { type: 'string' },
         personas: { type: 'string' },
         today: { type: 'string' },
+        publish: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -240,6 +242,7 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
       app: run.app, callerModel: run.callerModel, judgeModel: judge.id, decisionClient: run.decisionClient, runsPerPersona: run.runsPerPersona,
       spentUsd: budget.spent() - before, budgetUsd, stoppedByBudget: out.stoppedByBudget, limits, rejudged: true,
       ...(run.lineModel !== undefined ? { lineModel: run.lineModel } : {}), ...(run.timeoutMs !== undefined ? { timeoutMs: run.timeoutMs } : {}), ...(run.opener !== undefined ? { opener: run.opener } : {}),
+      ...(values.publish ? { published: { withheld: withheldNames(run.personas) } } : {}),
     });
     writeFileSync(join(dir, OUT, 'summary.md'), text);
     const c = candidateOf(run.lineModel);

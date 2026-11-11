@@ -22,7 +22,7 @@ import { driveChat, type SimCall } from './chatDriver';
 import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall, type Judged } from './judge';
 import { summarize, type RunSummary } from './measures';
 import { isCooperative, loadPersonas, type Persona } from './personas';
-import { appendResult, writeRunInfo, writeSummary, type RunRecord } from './report';
+import { appendResult, withheldNames, writeRunInfo, writeSummary, type RunRecord } from './report';
 import { MODEL_EFFORTS, type ModelEffort } from '../converse/model/types';
 import { OPENERS, type Opener } from '../converse/business/schema';
 
@@ -51,14 +51,15 @@ export async function registerFolderApp(dir: string): Promise<HostedApp> {
 }
 
 export const EVAL_USAGE = [
-  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision]',
+  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--publish]',
   '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire,',
   '  a model playing the caller and a model judging the call; writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
   '  writes run.json beside them too (the business text and the personas the calls were judged against), so the calls can be judged again with no call made (dialogwright eval:rejudge)',
-  '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-haiku-5-5, --budget 5 (US dollars, the caller, the judge and the line\'s own model; the run stops, keeping what it has, once it is spent; it is checked before each call, so the spend may pass it by up to --parallel calls already in flight)',
+  '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-sonnet-5-5 (a cheaper one with --judge), --budget 5 (US dollars, the caller, the judge and the line\'s own model; the run stops, keeping what it has, once it is spent; it is checked before each call, so the spend may pass it by up to --parallel calls already in flight)',
   '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
   '  a caller, judge or line model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
   '  the decision model (TYPESAFE_API_KEY) is required, as on a real line; --stub-decision runs with the heuristic stub instead, and the summary says so',
+  '  --publish writes summary.md as a page to commit: no per-call notes, each material claim by its sentence alone, the personas\' names and phone numbers withheld (results.jsonl keeps every verdict whole)',
   '  the keys: from the environment, then the app\'s .env, then the repository\'s .env; never printed. Refused in CI.',
 ].join('\n');
 
@@ -72,7 +73,7 @@ export interface EvalIo {
 }
 
 const DEFAULT_CALLER = 'anthropic:claude-haiku-5-5';
-const DEFAULT_JUDGE = 'anthropic:claude-haiku-5-5';
+const DEFAULT_JUDGE = 'anthropic:claude-sonnet-5-5';
 const CHAT_ORIGIN = 'https://eval.example.com';
 const MAX_TURNS = 14;
 /** How long the harness waits for the line's reply: past the model's own (eval) time, asked twice, and a turn's rounds. */
@@ -106,6 +107,8 @@ export interface EvalRun {
   model?: EvalModel;
   /** A converse app's persona style in place of agent.yaml's (eval --opener). */
   style?: EvalStyle;
+  /** summary.md as a page to commit (--publish): no per-call notes, the personas' names withheld. */
+  publish?: boolean;
 }
 
 export interface EvalOutcome {
@@ -234,6 +237,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     ...(lineWords !== undefined ? { lineModel: lineWords } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(o.style?.opener !== undefined ? { opener: o.style.opener } : {}),
+    ...(o.publish === true ? { published: { withheld: withheldNames(o.personas) } } : {}),
   });
   return { records, planned: plan.length, stoppedByBudget, summary: summarize(records, timeoutMs !== undefined ? { timeoutMs } : {}), text };
 }
@@ -270,6 +274,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
         parallel: { type: 'string', default: '1' },
         'allow-unpriced': { type: 'boolean', default: false },
         'stub-decision': { type: 'boolean', default: false },
+        publish: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -375,6 +380,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
       appDir, app, personas, runs, parallel, port, env, callerModel, judgeModel, decision, spend, outDir,
       ...(values.model !== undefined ? { model: { default: values.model, ...(effort !== undefined ? { effort } : {}) } } : {}),
       ...(opener !== undefined ? { style: { opener } } : {}),
+      ...(values.publish ? { publish: true } : {}),
     });
   } catch (e) {
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);

@@ -13,14 +13,14 @@ import { compareMarkdown, compareModels, DEFAULT_BARS, parseCandidate, type Cand
 import { loadPersonas, type Persona } from './personas';
 
 export const COMPARE_USAGE = [
-  'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--parallel N] [--out <dir>] [--stub-decision]',
+  'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--parallel N] [--out <dir>] [--stub-decision] [--publish]',
   '  a converse app\'s models compared on its simulated callers (pnpm eval for each), cheapest first: --candidates in the order given, then --expensive only if none cleared the bars',
   `  the bars: first sentence median <= ${DEFAULT_BARS.firstWordMsMedian} ms, p95 <= ${DEFAULT_BARS.firstWordMsP95} ms; timeouts <= ${DEFAULT_BARS.timeoutRate * 100}% of turns; cooperative calls done correctly >= ${DEFAULT_BARS.correctRate * 100}%; unsupported material claims (a price, a time, a policy that commits the business, a thing said to be done) <= ${DEFAULT_BARS.unsupportedClaims}`,
   '  once one clears every bar the rest are not run; --reference runs the expensive group at --reference-runs (default 1) per persona if the budget left exceeds its estimate',
   '  #<effort> after a model: minimal, low, medium, high, or none (none sent); without it, agent.yaml\'s. An OpenRouter model may pin its hosts: openrouter:<vendor>/<model>@<host>',
-  '  defaults: --runs 5, --budget 45 (US dollars for the caller, the judge and every candidate, shared; the comparison stops once it is spent), --parallel 1',
+  '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-sonnet-5-5, --budget 45 (US dollars for the caller, the judge and every candidate, shared; the comparison stops once it is spent), --parallel 1',
   '  a candidate whose price is not known (converse/model/price.ts) is skipped, since the budget would under-count it',
-  '  writes each candidate\'s results into <out>/<model>/ and the table into <out>/comparison.md. Refused in CI.',
+  '  writes each candidate\'s results into <out>/<model>/ and the table into <out>/comparison.md; --publish writes each candidate\'s summary.md as a page to commit (no per-call notes, names and numbers withheld). Refused in CI.',
 ].join('\n');
 
 const slug = (model: string): string => model.replace(/[^A-Za-z0-9.-]+/g, '_');
@@ -45,10 +45,11 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
         reference: { type: 'boolean', default: false },
         'reference-runs': { type: 'string', default: '1' },
         caller: { type: 'string', default: 'anthropic:claude-haiku-5-5' },
-        judge: { type: 'string', default: 'anthropic:claude-haiku-5-5' },
+        judge: { type: 'string', default: 'anthropic:claude-sonnet-5-5' },
         parallel: { type: 'string', default: '1' },
         out: { type: 'string' },
         'stub-decision': { type: 'boolean', default: false },
+        publish: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -132,6 +133,7 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
         const out = await runEval({
           appDir, app, personas, runs: c.runs, parallel, port: 0, env, callerModel, judgeModel, decision, spend, outDir: join(outDir, slug(c.model)),
           model: { default: c.model, ...(c.effort !== undefined ? { effort: c.effort } : {}) },
+          ...(values.publish ? { publish: true } : {}),
         });
         return { summary: out.summary, planned: out.planned, stoppedByBudget: out.stoppedByBudget };
       },
