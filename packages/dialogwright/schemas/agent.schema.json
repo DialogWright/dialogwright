@@ -1,0 +1,971 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "business": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The business's name."
+        },
+        "about": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What it does, in a sentence or two."
+        },
+        "where": {
+          "description": "Where it is.",
+          "type": "string",
+          "minLength": 1
+        },
+        "hours": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Its days and hours, as the agent may say them."
+        }
+      },
+      "required": [
+        "name",
+        "about",
+        "hours"
+      ],
+      "additionalProperties": false,
+      "description": "Who the business is."
+    },
+    "services": {
+      "default": [],
+      "description": "What the business does, with a price range where it has one.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The service's name."
+          },
+          "about": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What it is."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "number",
+                "minimum": 0,
+                "description": "The low end."
+              },
+              "to": {
+                "type": "number",
+                "minimum": 0,
+                "description": "The high end."
+              },
+              "per": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What the price is for (a visit, a unit)."
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "per"
+            ],
+            "additionalProperties": false,
+            "description": "A price as a range."
+          }
+        },
+        "required": [
+          "name",
+          "about"
+        ],
+        "additionalProperties": false,
+        "description": "One service."
+      }
+    },
+    "priceCaveat": {
+      "type": "object",
+      "properties": {
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the agent says alongside any price (for example that the final price is confirmed once the work is seen), in English."
+        }
+      },
+      "required": [
+        "en"
+      ],
+      "additionalProperties": false,
+      "description": "What the agent says alongside any price (for example that the final price is confirmed once the work is seen), per language."
+    },
+    "notOffered": {
+      "default": [],
+      "description": "What the business does not do.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "facts": {
+      "default": [],
+      "description": "Anything else the agent may say, one fact each.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "persona": {
+      "type": "object",
+      "properties": {
+        "style": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How the agent speaks."
+        },
+        "voices": {
+          "description": "The voice to use per carrier.",
+          "type": "object",
+          "properties": {
+            "twilio": {
+              "description": "The voice on Twilio.",
+              "type": "string",
+              "minLength": 1
+            },
+            "telnyx": {
+              "description": "The voice on Telnyx.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "style"
+      ],
+      "additionalProperties": false,
+      "description": "How the agent sounds."
+    },
+    "lines": {
+      "type": "object",
+      "properties": {
+        "greeting": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The greeting, in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The greeting, per language."
+        },
+        "closing": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The closing line, in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The closing line, per language."
+        },
+        "recovery": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The short line said when the agent did not catch something, in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The short line said when the agent did not catch something, per language."
+        },
+        "handoff": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said when the call goes to a person, in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said when the call goes to a person, per language."
+        },
+        "notConfirmed": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said when the caller did not confirm a read-back, in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said when the caller did not confirm a read-back, per language."
+        }
+      },
+      "required": [
+        "greeting",
+        "closing",
+        "recovery",
+        "handoff"
+      ],
+      "additionalProperties": false,
+      "description": "The lines said word for word."
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model, as <provider>:<model> (anthropic, inception or openrouter). Claude models go through anthropic only."
+        },
+        "timeoutMs": {
+          "default": 6000,
+          "description": "How long a model reply may take before the turn falls back.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxTokens": {
+          "default": 400,
+          "description": "The most tokens a reply may use.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "default"
+      ],
+      "additionalProperties": false,
+      "description": "The model that leads the conversation."
+    },
+    "limits": {
+      "default": {
+        "failuresPerCall": 4,
+        "refusalsPerAction": 3
+      },
+      "description": "When to stop trying and offer a person.",
+      "type": "object",
+      "properties": {
+        "failuresPerCall": {
+          "default": 4,
+          "description": "Failed turns in a call before it goes to a person.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "refusalsPerAction": {
+          "default": 3,
+          "description": "Refusals of the same action before the agent offers a person.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "default": {},
+      "description": "Where the calendar and the caller accounts come from.",
+      "type": "object",
+      "properties": {
+        "calendar": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "fake",
+                "google"
+              ],
+              "description": "fake: the days and windows below, for a demo. google: reserved for a later release."
+            },
+            "days": {
+              "default": [],
+              "description": "The days the business is open to book, as dates.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "windows": {
+              "default": [],
+              "description": "The windows of a day a visit may be booked into, each with its capacity.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The window's id."
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "How it is said to a caller (for example \"9 to 12\")."
+                  },
+                  "capacity": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "How many visits it holds."
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "capacity"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "description": "Where availability comes from."
+        },
+        "accounts": {
+          "description": "Caller accounts, recognised by the number they call from.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The account's name."
+              },
+              "numbers": {
+                "default": [],
+                "description": "The numbers it calls from: E.164, or env.<NAME>. A variable that is not set is left out.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "(?:^\\+\\d{8,15}$)|(?:^env\\.([A-Z][A-Z0-9_]*)$)"
+                }
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "description": "A caller account, recognised by the numbers it calls from."
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "actions": {
+      "default": {},
+      "description": "Every action the agent may call, by name.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "about": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the action does and when to use it, for the model."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "lookup",
+              "change"
+            ],
+            "description": "lookup: reads and returns a result. change: does something, and so is read back and confirmed by the caller first."
+          },
+          "params": {
+            "default": {},
+            "description": "The parameters the call carries, by name.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "date",
+                    "slot",
+                    "choice",
+                    "number",
+                    "text",
+                    "phone"
+                  ],
+                  "description": "How the value is checked: date (a real date), slot (one the named lookup returned on this call), choice (one of the options), number, text, phone (a phone number)."
+                },
+                "about": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What the value is, in plain words, for the model."
+                },
+                "options": {
+                  "description": "For a choice: the values it may take.",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "from": {
+                  "description": "For a slot: the lookup action whose results the value must come from.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                },
+                "optional": {
+                  "description": "The model may leave the value out. Default: the value is required.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "type",
+                "about"
+              ],
+              "additionalProperties": false,
+              "description": "One parameter of an action."
+            }
+          },
+          "readBack": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter; required for a change, in English."
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false,
+            "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter; required for a change, per language."
+          },
+          "then": {
+            "description": "Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            }
+          },
+          "rules": {
+            "description": "The gate's rules for this action, in the same shape as policy.yaml's.",
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "identity",
+                    "attempts"
+                  ],
+                  "description": "A rule with no parameters: identity (the caller's identity level is at least the action's) or attempts (the identity check has failed fewer times than identity.yaml's attempts)."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "type": "object",
+                      "properties": {
+                        "param": {
+                          "description": "The action's param that is the subject's own id (for example accountId).",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        },
+                        "record": {
+                          "description": "The action's param that is a record id the gate resolves to its owner (for example recordId).",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "scope: the subject the action acts on must be one the caller may see. Exactly one of \"param\" (the param is the subject's own id) or \"record\" (the param is a record id, resolved to its owner)."
+                    }
+                  },
+                  "required": [
+                    "scope"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The scope rule with its parameters, for example \"scope: { param: accountId }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {
+                          "description": "The reason a \"person\" role hands the call over for (its handoff line is handoff_<reason>). Default \"role-person\".",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "refuse",
+                          "person"
+                        ]
+                      },
+                      "description": "role: what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app's subjects passes. The roles are those identity.yaml declares under principals."
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The role rule with its parameters, for example \"role: { viewer: refuse, clerk: person }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "confirmed": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "description": "confirmed: the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over."
+                    }
+                  },
+                  "required": [
+                    "confirmed"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The confirmed rule with its parameters, for example \"confirmed: [accountId, note]\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "description": "fields: the only fields the action may send on (to a downstream service). An empty list sends none."
+                    }
+                  },
+                  "required": [
+                    "fields"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The fields rule with its parameters, for example \"fields: [note, date]\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "dateInRange": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the date (yyyy-mm-dd). A value that is not a date BLOCKs."
+                        },
+                        "notBefore": {
+                          "description": "The earliest date the value may be, inclusive: \"today\", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.",
+                          "type": "string"
+                        },
+                        "notAfter": {
+                          "description": "The latest date the value may be, inclusive: \"today\", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.",
+                          "type": "string"
+                        },
+                        "within": {
+                          "description": "A reference to a lookup that gives a window, { start, end } (end null: open-ended), the value must be inside, ends inclusive. A lookup that gives null has no window: the value is outside it.",
+                          "type": "string"
+                        },
+                        "unscoped": {
+                          "description": "true: the lookups this rule's bounds call are not about the caller's own record (a price list, a calendar), so their params need no scope rule before this one. Without it, every param a reference reads must be held to the caller's own records by a scope rule earlier in the action.",
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "reasons": {
+                          "description": "The reason the gate gives for each way the rule fails, for the app's refusal lines and handoffs.",
+                          "type": "object",
+                          "properties": {
+                            "invalid": {
+                              "description": "The reason a value that is not a date is refused for. Default \"not-a-date\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            "outOfRange": {
+                              "description": "The reason a date before notBefore or after notAfter fails for. Default \"date-range\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            "outsideWindow": {
+                              "description": "The reason a date outside the window fails for. Default \"date-window\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "verdicts": {
+                          "description": "The verdict for a date out of its bounds or outside its window. A value that is not a date, and a bound that cannot be found, always BLOCK.",
+                          "type": "object",
+                          "properties": {
+                            "outOfRange": {
+                              "description": "BLOCK (default) or NEEDS_HUMAN, for a date out of its bounds.",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK",
+                                "NEEDS_HUMAN"
+                              ]
+                            },
+                            "outsideWindow": {
+                              "description": "BLOCK (default) or NEEDS_HUMAN, for a date outside the window.",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK",
+                                "NEEDS_HUMAN"
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "description": "dateInRange: the action's date param is a date within its bounds, each inclusive. At least one of notBefore, notAfter, within."
+                    }
+                  },
+                  "required": [
+                    "dateInRange"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The dateInRange rule with its parameters, for example \"dateInRange: { field: returnDate, notAfter: today }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "limit": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the number: digits, an optional leading minus and an optional point with digits; no units, separators or spaces. Anything else BLOCKs."
+                        },
+                        "min": {
+                          "description": "The smallest the number may be, inclusive: a number, or a reference to a lookup that gives one.",
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        },
+                        "max": {
+                          "description": "The largest the number may be, inclusive: a number, or a reference to a lookup that gives one (for example orderTotal(orderId), or order(orderId).total).",
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        },
+                        "unscoped": {
+                          "description": "true: the lookups this rule's bounds call are not about the caller's own record (a price list, a calendar), so their params need no scope rule before this one. Without it, every param a reference reads must be held to the caller's own records by a scope rule earlier in the action.",
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "reasons": {
+                          "description": "The reason the gate gives for each way the rule fails.",
+                          "type": "object",
+                          "properties": {
+                            "invalid": {
+                              "description": "The reason a value that is not a number is refused for. Default \"not-a-number\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            "outOfRange": {
+                              "description": "The reason a number below min or above max fails for. Default \"limit\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "verdicts": {
+                          "description": "The verdict for a number outside its limits. A value that is not a number, and a bound that cannot be found, always BLOCK.",
+                          "type": "object",
+                          "properties": {
+                            "outOfRange": {
+                              "description": "BLOCK (default) or NEEDS_HUMAN, for a number outside its limits.",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK",
+                                "NEEDS_HUMAN"
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "description": "limit: the action's number param is within its limits, each inclusive. At least one of min, max."
+                    }
+                  },
+                  "required": [
+                    "limit"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The limit rule with its parameters, for example \"limit: { field: amount, max: orderTotal(orderId) }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "oneOf": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the value (for a check, one of the slots its `with` sends). A value that is missing or empty BLOCKs, reason \"value-missing\"."
+                        },
+                        "values": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": "The values the param must be one of, each as the slot holds it (a choice slot's option ids), matched exactly."
+                        },
+                        "reason": {
+                          "description": "The reason a value not listed fails for, for a form check's `on:`, the app's refusal lines and handoffs. Default \"not-one-of\".",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                        },
+                        "verdict": {
+                          "description": "BLOCK (default) or NEEDS_HUMAN, for a value not listed. A missing value always BLOCKs.",
+                          "type": "string",
+                          "enum": [
+                            "BLOCK",
+                            "NEEDS_HUMAN"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "values"
+                      ],
+                      "additionalProperties": false,
+                      "description": "oneOf: the action's param is one of the values listed."
+                    }
+                  },
+                  "required": [
+                    "oneOf"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The oneOf rule with its parameters, for example \"oneOf: { field: town, values: [millbrook, ashford] }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "noneOf": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the value (for a check, one of the slots its `with` sends). A value that is missing or empty BLOCKs, reason \"value-missing\"."
+                        },
+                        "values": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": "The values the param must not be, each as the slot holds it (a choice slot's option ids), matched exactly."
+                        },
+                        "reason": {
+                          "description": "The reason a value listed fails for, for a form check's `on:`, the app's refusal lines and handoffs. Default \"one-of\".",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                        },
+                        "verdict": {
+                          "description": "BLOCK (default) or NEEDS_HUMAN, for a value listed. A missing value always BLOCKs.",
+                          "type": "string",
+                          "enum": [
+                            "BLOCK",
+                            "NEEDS_HUMAN"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "values"
+                      ],
+                      "additionalProperties": false,
+                      "description": "noneOf: the action's param is none of the values listed."
+                    }
+                  },
+                  "required": [
+                    "noneOf"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The noneOf rule with its parameters, for example \"noneOf: { field: howUrgent, values: [emergency], verdict: NEEDS_HUMAN }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "callerNumber": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the number (for a text, the slot a text offer filled: it is compared as that slot holds the caller's number). A value that is missing or empty BLOCKs, reason \"value-missing\"."
+                        },
+                        "else": {
+                          "description": "What a number that is not the caller's gets: \"refuse\" (default), BLOCK \"not-caller-number\" (or \"no-caller-number\" when the call kept none), or \"confirmed\": it passes when the caller heard the call's values read back at the summary and said yes, which needs the field in the action's confirmed rule.",
+                          "type": "string",
+                          "enum": [
+                            "refuse",
+                            "confirmed"
+                          ]
+                        },
+                        "withheld": {
+                          "description": "What the caller's own number gets when they withheld it (*67) and the carrier sent it anyway: \"allow\" (default), it passes as any caller's number; \"refuse\", BLOCK \"caller-number-withheld\" (a number confirmed at the summary, with else: confirmed, still passes). Honouring the caller's privacy is the app's decision; app.yaml's callerNumber.withheld: ignore does it for every feature at once.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "refuse"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "description": "callerNumber: the action's param is the number the caller is calling from, or with else: confirmed one they confirmed at the summary. Caller ID is a hint, never identity: the rule says where a call may send something, never whose record it reads."
+                    }
+                  },
+                  "required": [
+                    "callerNumber"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The callerNumber rule with its parameters, for example \"callerNumber: { field: textTo }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "custom": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                      "description": "custom: one of the app's own rules, by the id its code registers it under (code.customRules)."
+                    }
+                  },
+                  "required": [
+                    "custom"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The custom rule with its parameters, for example \"custom: <the rule's id in code.customRules>\"."
+                }
+              ],
+              "description": "One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, oneOf, noneOf, callerNumber, custom)."
+            }
+          },
+          "audit": {
+            "description": "How each param that needs it is recorded: last4, mask, length, secret or keep. Default: mask.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "last4",
+                "mask",
+                "length",
+                "secret",
+                "keep"
+              ]
+            }
+          }
+        },
+        "required": [
+          "about",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "description": "One action the agent may call."
+      }
+    },
+    "transfer": {
+      "description": "Where a call goes when it is handed to a person.",
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "string",
+          "pattern": "(?:^\\+\\d{8,15}$)|(?:^env\\.([A-Z][A-Z0-9_]*)$)",
+          "description": "The number to hand a call to: E.164, or env.<NAME>."
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "business",
+    "priceCaveat",
+    "persona",
+    "lines",
+    "model"
+  ],
+  "additionalProperties": false,
+  "description": "agent.yaml: the business the converse runtime speaks for.",
+  "title": "DialogWright agent.yaml"
+}

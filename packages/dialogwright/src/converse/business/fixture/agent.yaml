@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../schemas/agent.schema.json
+# A small invented business for the loader's tests: it books a visit into a window.
+business:
+  name: Example Fixers
+  about: We repair small appliances and visit homes in the area.
+  where: Millbrook and Ashford
+  hours: Monday to Friday, 9 to 5.
+services:
+  - name: standard visit
+    about: A technician looks at one item and repairs it on the spot where possible.
+    price: { from: 80, to: 140, per: item }
+  - name: quote
+    about: A free estimate by phone.
+priceCaveat:
+  en: The price is confirmed once the technician has seen the item.
+notOffered:
+  - Repairs outside the area
+  - Same-day visits
+facts:
+  - Every visit is booked into a morning or an afternoon window.
+persona:
+  style: Plain, warm and brief.
+  voices: { twilio: Polly.Joanna }
+lines:
+  greeting: { en: "Thanks for calling Example Fixers. How can I help?" }
+  closing: { en: "Thanks for calling. Goodbye." }
+  recovery: { en: "Sorry, I missed that. Could you say it again?" }
+  handoff: { en: "I'll pass you to a person now." }
+  notConfirmed: { en: "No problem, let's change it." }
+model:
+  default: anthropic:claude-haiku-5-5
+sources:
+  calendar:
+    kind: fake
+    days: ["2026-12-01", "2026-12-02"]
+    windows:
+      - { name: morning, label: "9 to 12", capacity: 2 }
+      - { name: afternoon, label: "1 to 5", capacity: 2 }
+  accounts:
+    - name: Regular Customer
+      numbers: ["+15555550101", env.CUSTOMER_LINE]
+actions:
+  availability:
+    about: List the windows still free on a day.
+    kind: lookup
+    params:
+      day: { type: date, about: The day to look at. }
+  book:
+    about: Book a visit into a free window.
+    kind: change
+    params:
+      day: { type: date, about: The day of the visit. }
+      window: { type: slot, from: availability, about: A window the availability lookup returned. }
+      item: { type: choice, options: [kettle, toaster, lamp], about: What is to be repaired. }
+      details: { type: text, optional: true, about: What is wrong with it. }
+      phone: { type: phone, about: The number to confirm on. }
+    readBack:
+      en: "A visit on {day}, {window}, for the {item}. Is that right?"
+    then: [notify]
+    rules:
+      - oneOf: { field: item, values: [kettle, toaster, lamp], reason: not-offered }
+    audit: { phone: last4, details: keep }
+  notify:
+    about: Tell the office about a booking.
+    kind: change
+    params:
+      item: { type: text, about: The item. }
+    readBack:
+      en: "Tell the office about the {item}."
+transfer:
+  number: env.OFFICE_LINE

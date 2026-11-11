@@ -8,6 +8,7 @@ import { CODE_SLOT_TYPE } from './slots';
 import { FILE_KINDS, SCHEMAS, type FileKind } from './index';
 import { hostSchema } from './host';
 import { businessSchema } from './business';
+import { agentBusinessSchema } from '../../converse/business/schema';
 import { localeIntentsSchema } from './intents';
 import { localeFormsSchema } from './forms';
 
@@ -96,6 +97,11 @@ export function hostJsonSchema(): JsonSchema {
 /** business.yaml's JSON Schema (an app in agent mode): schemas/business.schema.json. */
 export function businessJsonSchema(): JsonSchema {
   return { ...(z.toJSONSchema(businessSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright business.yaml' };
+}
+
+/** agent.yaml's JSON Schema (the converse runtime's business file): schemas/agent.schema.json. */
+export function agentJsonSchema(): JsonSchema {
+  return { ...(z.toJSONSchema(agentBusinessSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright agent.yaml' };
 }
 
 /**

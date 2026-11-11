@@ -376,7 +376,7 @@ const misspeltReason = (key: string, value: unknown): boolean => key !== 'reason
  * One rule entry, checked by the rule it names, so a mistake inside a rule is reported where it is
  * (a union would only say the entry matches none of its shapes).
  */
-const ruleEntry = z
+export const policyRuleEntry = z
   .unknown()
   .check(checkAlways((value, ctx) => {
     const issue = (message: string, fix: string, path: (string | number)[] = []): void => ctx.addIssue({ code: 'custom', path, message, params: { fix } });
@@ -448,7 +448,7 @@ export function ruleKey(entry: unknown): string | null {
 }
 
 const rules = z
-  .array(ruleEntry)
+  .array(policyRuleEntry)
   .check(checkAlways((entries, ctx) => {
     if (!Array.isArray(entries)) return;
     const seen = new Set<string>();

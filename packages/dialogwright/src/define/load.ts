@@ -20,6 +20,8 @@ import { hostSchema, type HostYaml } from './schema/host';
 import { businessSchema, type BusinessYaml } from './schema/business';
 import { BUSINESS_FILE, businessContentProblems } from './business';
 import { businessFiles } from './businessFiles';
+import { AGENT_FILE, agentSchemaLineProblem } from '../converse/business/load';
+import { agentBusinessSchema } from '../converse/business/schema';
 
 /** The host file's name (define/host.ts HOST_FILE_NAME), which an app folder may hold beside its own files. */
 const HOST_FILE = 'host.yaml';
@@ -161,11 +163,12 @@ const STARTS_WITH: Record<Kind, string> = {
   localeIntents: 'the "intents:" map, each intent with its label in this locale, for example "intents: { renew_loan: { label: renovar un libro } }"',
   localeForms: 'the "forms:" map, each internal form with its label in this locale, for example "forms: { book_inspection: { label: reservar su inspección } }"',
   host: '"apps:", the apps the server runs, for example "apps: [apps/clinic, apps/utility]"',
+  agent: '"business:" (its name, what it does, its hours), "persona:", "lines:", "model:" and "actions:"',
   business: '"business:" (its name and voice), "services:", the forms ("request:" or "booking:"), "handoff:" and "closing:"',
 };
 
 /** A kind of file the loader checks: the six, the optional slots.yaml, a locale's optional slots.yaml, and the knowledge base's. */
-type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | 'business' | KbKind;
+type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | 'business' | 'agent' | KbKind;
 const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   ...SCHEMAS,
   slots: slotsSchema,
@@ -174,11 +177,12 @@ const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   localeForms: localeFormsSchema,
   host: hostSchema,
   business: businessSchema,
+  agent: agentBusinessSchema,
   ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.schema])) as unknown as Record<KbKind, z.ZodType>),
 };
 const isKbKind = (kind: Kind): kind is KbKind => Object.hasOwn(KB_KINDS, kind);
 /** A kind that is not one of the folder's own kinds (FILE_KINDS): its JSON Schema is its zod schema's, and no other file shares its keys. */
-const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || kind === 'business' || isKbKind(kind);
+const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || kind === 'business' || kind === 'agent' || isKbKind(kind);
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -256,6 +260,15 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     if (kind === 'app') agent = checked !== undefined ? (checked as AppYaml).mode === 'agent' : top.includes(BUSINESS_FILE);
   }
   strayYamlFiles(top, problems, agent);
+
+  // agent.yaml (the converse runtime's business file): checked wherever the folder has one.
+  const agentFile = readFile(root.real, AGENT_FILE);
+  if (agentFile.kind === 'problem') problems.push(agentFile.problem);
+  else if (agentFile.kind === 'ok') {
+    const line = agentSchemaLineProblem(agentFile.text);
+    if (line) problems.push(line);
+    checkFile(AGENT_FILE, 'agent', agentFile.text, problems, documents, contents);
+  }
 
   // business.yaml: read in agent mode, and only there.
   const businessRead = readFile(root.real, BUSINESS_FILE);
@@ -584,7 +597,7 @@ const TOOLING_YAML: ReadonlySet<string> = new Set(['pnpm-lock.yaml', 'pnpm-works
 function strayYamlFiles(top: readonly string[], problems: Problem[], agent: boolean): void {
   const known = new Set<string>(FOLDER_FILES);
   // The files named to the author: an agent-mode app's own, or a scripted app's (business.yaml is agent mode's alone).
-  const listed = agent ? ['app.yaml', BUSINESS_FILE, 'style.yaml'] : FOLDER_FILES.filter((f) => f !== BUSINESS_FILE);
+  const listed = agent ? ['app.yaml', BUSINESS_FILE, 'style.yaml'] : FOLDER_FILES.filter((f) => f !== BUSINESS_FILE && f !== AGENT_FILE);
   for (const name of top) {
     // A host file (several apps on one server) sits beside the apps: in a project of its own, whose folder
     // is its app's, that is in the app's folder. It is the server's, never read as part of the app. A

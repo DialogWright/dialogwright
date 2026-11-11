@@ -6,14 +6,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { personasJsonSchema } from '../../eval/personas';
-import { businessJsonSchema, hostJsonSchema, jsonSchemas, kbJsonSchemas, localeLabelsJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
+import { agentJsonSchema, businessJsonSchema, hostJsonSchema, jsonSchemas, kbJsonSchemas, localeLabelsJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 
 /** Where the JSON Schemas are committed. */
 export const SCHEMAS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'schemas');
 
 function main(): void {
   mkdirSync(SCHEMAS_DIR, { recursive: true });
-  for (const [kind, schema] of Object.entries({ ...jsonSchemas(), slots: slotsJsonSchema(), 'locale-slots': localeSlotsJsonSchema(), ...localeLabelsJsonSchemas(), host: hostJsonSchema(), business: businessJsonSchema(), ...kbJsonSchemas(), personas: personasJsonSchema() })) {
+  for (const [kind, schema] of Object.entries({ ...jsonSchemas(), slots: slotsJsonSchema(), 'locale-slots': localeSlotsJsonSchema(), ...localeLabelsJsonSchemas(), host: hostJsonSchema(), business: businessJsonSchema(), agent: agentJsonSchema(), ...kbJsonSchemas(), personas: personasJsonSchema() })) {
     const file = join(SCHEMAS_DIR, `${kind}.schema.json`);
     writeFileSync(file, serializeSchema(schema));
     console.log(`wrote ${file}`);
