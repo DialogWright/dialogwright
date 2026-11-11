@@ -74,7 +74,10 @@ export function loadCases(files: readonly string[]): ClaimsCase[] {
       const id = `${folder}/${line.id}`;
       if (seen.has(id)) throw new Error(`${file} line ${i + 1}: the case id ${id} is not unique; the files' folders must have different names`);
       seen.add(id);
-      out.push({ id, state: { business, today: line.today, actions: line.actions as JsonValue, reply: line.reply } });
+      // A case may carry fields of its own beyond the check's (a variant that reads a reply a sentence at a time
+      // is sent `sentence` too); they go into the state after the check's four.
+      const { id: _id, persona: _persona, run: _run, turn: _turn, reading: _reading, today, actions, reply, ...extra } = line;
+      out.push({ id, state: { business, today: today as string, actions: actions as JsonValue, reply: reply as string, ...(extra as Record<string, JsonValue>) } });
     });
   }
   return out;

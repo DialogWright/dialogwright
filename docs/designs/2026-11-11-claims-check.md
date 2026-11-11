@@ -204,3 +204,32 @@ builder's choices:
   reply's score under each rule. A variant is a module whose default export is `{ name, questions, rules }`
   (`src/converse/claimsVariants/current.ts` is the check as it runs, built from `CLAIM_QUESTIONS`). The report
   holds the case ids and the labels' kinds, never the words of a call.
+
+## Measured on its own (2026-11-11)
+
+Two simulated-call runs of the wheel shop (120 calls, Mercury, the check recording only) gave 695 replies with
+what the check was sent for each. Each reply was labelled in the session, every wrong or gap label read again
+for consistency: 28 wrong (20 of severity 2 or more; by kind: 12 a caller's detail misstated, 11 how the
+business works, 3 a price, 3 something said done, 2 a time, 2 other) and 14 gaps. The labelled set and its
+cassette are kept outside the repository, with the runs. Four question sets were compared with
+`converse:claims-eval`, each against all 695 replies (the sentence variant on all 42 wrong or gap replies and
+150 of the rest, each reply read as the highest of its sentences):
+
+| Variant | What it asks | Average precision (chance is 0.04) | Recall at 0.7 |
+| --- | --- | --- | --- |
+| current | the three questions as the check runs them | 0.05 | 0 of 28 |
+| narrow (`claimsVariants/narrow.ts`) | one question each for done, price, time and how the business works | 0.04 | 0 of 28 |
+| severity (`claimsVariants/severity.ts`) | the narrow ones and a five-level score of how far the reply would mislead a caller | 0.05 | 0 of 28 |
+| sentence (`claimsVariants/sentence.ts`) | the three questions of each sentence of a reply alone | about 0.04 | 0 of 28 |
+
+None separates the wrong replies from the right ones better than chance. The decision model is not failing on
+the business text's length: seven short probe replies, against the whole business text, were read right (a
+price far off, a price from another service, a request said sent before the yes, a day the business does not
+open, each read at 0.9 or more; the right ones low). The wrong replies of real calls are not like that: a price
+range of a service close to the one the caller has, "booked" said of a request that only holds a window, a
+callback offered where a callback needs the number the caller has not given. Each needs reasoning across the
+business's rules that a reading of the reply does not do. A caller's detail misstated cannot be seen at all,
+for the check is not sent what the caller said.
+
+The decision model's score answers count from 0 (the lowest level), not from 1 as jev/types.ts said; the
+comment is corrected, and no code read the score.

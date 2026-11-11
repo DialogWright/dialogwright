@@ -21,7 +21,7 @@ export interface ScoreLevel {
 export interface ScoreQuestion {
   type: 'score';
   instructions: string;
-  /** ordered from lowest to highest; index 0 is level 1 */
+  /** ordered from lowest to highest; an answer's `score` counts from 0, the first */
   levels: ScoreLevel[];
 }
 
@@ -43,7 +43,7 @@ export interface ChoiceAnswer {
 
 export interface ScoreAnswer {
   type: 'score';
-  /** expected level, 1-based, may be fractional */
+  /** expected level, counted from 0 (the lowest level) to the number of levels less one, may be fractional (measured 2026-11-11 on jev-1.13.0) */
   score: number;
   /** keyed by level label, not level number */
   probabilities: Record<string, number>;
