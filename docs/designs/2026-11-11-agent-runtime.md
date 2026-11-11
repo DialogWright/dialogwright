@@ -141,6 +141,16 @@ runtime gets plain frames.
   - the runtime stops the line (the carrier's interrupt) and cancels the model's stream;
   - the conversation records what the caller actually heard (the carrier's playback reports tell how far
     it got) and that they cut in.
+- **Bridges** (the maintainer, 2026-11-11: a short "one sec" while waiting is how people talk; staff
+  waiting on a slow system say so):
+  - **Before a lookup:** the model may say a short line itself ("Let me check what we have Friday."),
+    and it is streamed before the tool runs.
+  - **When the model is slow:** the runtime says one short bridge from the business's own lines (for
+    example "One sec.") if no text has come after about 1.2 s. On the phone only, at most once per turn.
+  - **Speech over a bridge:** a caller's "okay" over it is just conversation. Speech that started before a
+    read-back began never confirms it.
+  - **Honesty:** a bridge never pretends anything; no fake typing or background sounds.
+  - This is built with the phone, in plan 2.
 - **End of turn.** The recognizer's final transcript ends the caller's turn (Flux on both carriers). The
   runtime adds no join windows, speech-over-line rules, held replies or filler lines. If a short debounce
   proves necessary, the simulated and live calls must show it.
@@ -292,6 +302,10 @@ Before any tuning, a harness that runs many conversations against the real runti
   - failures by kind;
   - time to the first word;
   - cost per call.
+- **Timing.** In the harness each model request runs to completion, up to a generous cap of about 30 s,
+  and records its true time. Any timeout's effect is then computed from the same data, so the live
+  timeout is chosen from measured tails. Production keeps its timeouts and the traces record every model
+  call's time.
 - **Use.** At least 50 runs per configuration. Results are stored, so any two runs can be compared. Every
   change to the runtime, the prompt or the model reports how these rates moved.
 - **Live calls** find problems. Measured rates accept fixes.
