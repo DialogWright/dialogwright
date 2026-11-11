@@ -179,13 +179,13 @@ const BAR_WORDS: Record<keyof Bars, string> = {
 };
 
 /** The comparison as a page: one row per candidate (every measure, its cost per call, the price used and where it was read), the bars missed, the stop point and the spend. */
-export function compareMarkdown(results: readonly CandidateResult[], info: { app: string; bars: Bars; spentUsd: number; budgetUsd: number; runsPerPersona: number; note?: string }): string {
+export function compareMarkdown(results: readonly CandidateResult[], info: { app: string; bars: Bars; spentUsd: number; budgetUsd: number | null; runsPerPersona: number; note?: string }): string {
   const b = info.bars;
   const name = (r: CandidateResult): string => `${r.model}${r.effort === null ? ' (no effort sent)' : r.effort ? ` (${r.effort})` : ''}${r.reference ? ' (reference)' : ''}`;
   const lines = [
     `# The model comparison on ${info.app}`,
     '',
-    `Bars: first sentence median ≤ ${b.firstWordMsMedian} ms; p95 ≤ ${b.firstWordMsP95} ms; timeouts ≤ ${pct(b.timeoutRate)} of turns; cooperative calls done correctly ≥ ${pct(b.correctRate)}; contradicted material claims ≤ ${b.unsupportedClaims} (gaps in the business information are listed, not counted). ${info.runsPerPersona} runs per persona. Spent: $${info.spentUsd.toFixed(2)} of $${info.budgetUsd.toFixed(2)}.`,
+    `Bars: first sentence median ≤ ${b.firstWordMsMedian} ms; p95 ≤ ${b.firstWordMsP95} ms; timeouts ≤ ${pct(b.timeoutRate)} of turns; cooperative calls done correctly ≥ ${pct(b.correctRate)}; contradicted material claims ≤ ${b.unsupportedClaims} (gaps in the business information are listed, not counted). ${info.runsPerPersona} runs per persona. Spent: $${info.spentUsd.toFixed(2)}${info.budgetUsd === null ? ' (no model was asked)' : ` of $${info.budgetUsd.toFixed(2)}`}.`,
     '',
     ...(info.note !== undefined ? [info.note, ''] : []),
     '| Candidate | Calls | Cooperative done correctly | Completed | Correct | Contradicted claims (gaps, benign beside them) | First sentence median / p90 / p95 / p99 (ms) | Timeouts | Would time out at 1.8 / 3 / 4 / 6 s | Agent cost per call | Run cost per call | Price in / out per M | Price source | Bars missed |',

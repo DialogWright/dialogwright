@@ -12,6 +12,8 @@ export interface RunRecord extends RunResult {
   run: number;
   /** The day the call took place, where the business is, as the judge was told it: kept so the call can be judged again (eval:rejudge). */
   today?: string;
+  /** Who gave the verdict, where it was given again (eval:rejudge): a judge model's id, or the words --judged-by gave ("by hand"). */
+  judgedBy?: string;
 }
 
 export interface ReportInfo {
@@ -22,7 +24,8 @@ export interface ReportInfo {
   judgeModel: string;
   runsPerPersona: number;
   spentUsd: number;
-  budgetUsd: number;
+  /** The budget the run was given; null where no model was asked (verdicts given by hand), so none was needed. */
+  budgetUsd: number | null;
   stoppedByBudget: boolean;
   /** Plain sentences on what the run could not measure or did differently; printed under the table. */
   limits: string[];
@@ -145,7 +148,7 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
   const lines: string[] = [
     `# Simulated callers on ${info.app}`,
     '',
-    `${all.runs} calls over the chat wire, ${info.runsPerPersona} per persona planned.${info.lineModel !== undefined ? ` Line: ${info.lineModel}.` : ''}${info.opener !== undefined ? ` Opener: ${info.opener}.` : ''} Caller: ${info.callerModel}. Judge: ${info.judgeModel}. Decision model: ${info.decisionClient}. Spent: ${usd(info.spentUsd)} of ${usd(info.budgetUsd)}${info.stoppedByBudget ? ' (stopped at the budget; the runs it had are kept)' : ''}.`,
+    `${all.runs} calls over the chat wire, ${info.runsPerPersona} per persona planned.${info.lineModel !== undefined ? ` Line: ${info.lineModel}.` : ''}${info.opener !== undefined ? ` Opener: ${info.opener}.` : ''} Caller: ${info.callerModel}. Judge: ${info.judgeModel}. Decision model: ${info.decisionClient}. Spent: ${usd(info.spentUsd)}${info.budgetUsd === null ? ' (no model was asked)' : ` of ${usd(info.budgetUsd)}`}${info.stoppedByBudget ? ' (stopped at the budget; the runs it had are kept)' : ''}.`,
     ...(info.rejudged ? ['', `Re-judged ${judgedBy(info.judgeModel)} from the stored transcripts, actions and results, under the material-claims rubric: no call was made again, and the spend is the judge's alone. The latencies, timeouts and costs are the original run's.`] : []),
     ...(waiting > 0 ? ['', `${waiting} of ${all.runs} calls wait for verdicts: each one's judge input is in ${JUDGE_INPUTS}/ (dialogwright eval:rejudge <results dir> --inputs writes them again), and dialogwright eval:rejudge <results dir> --verdicts <file> gives the verdicts. The figures below are over the calls judged.`] : []),
     '',
@@ -177,7 +180,10 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
   lines.push('| Persona | Calls | Completed | Correct | Contradicted claims | Gaps | Benign claims | Repeated questions | First sentence, median |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const id of personas) {
     const s = summarize(records.filter((r) => r.persona === id), timing);
-    lines.push(`| ${id} | ${s.runs} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} | ${s.gapClaims} | ${s.benignClaims} | ${s.repeatedQuestionsPerCall.toFixed(1)} | ${ms(s.firstWordMsMedian)} |`);
+    // The rates are over the persona's judged calls: a call waiting for its verdict (or whose judge failed) is not one that fell short.
+    const calls = s.judged < s.runs ? `${s.judged} of ${s.runs} judged` : `${s.runs}`;
+    const rate = (x: number): string => (s.judged === 0 ? '–' : pct(x));
+    lines.push(`| ${id} | ${calls} | ${rate(s.completedRate)} | ${rate(s.correctRate)} | ${s.unsupportedClaims} | ${s.gapClaims} | ${s.benignClaims} | ${s.repeatedQuestionsPerCall.toFixed(1)} | ${ms(s.firstWordMsMedian)} |`);
   }
   lines.push('');
   const judged = records.filter((r) => hasVerdict(r.judged));

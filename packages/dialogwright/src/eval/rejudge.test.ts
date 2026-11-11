@@ -67,6 +67,16 @@ describe('dialogwright eval:rejudge', () => {
     expect(t.err.join('\n')).toMatch(/refused in CI/);
   });
 
+  it('refuses --judge none with a plain message: no model judges then, so the inputs and the verdicts are the way', async () => {
+    const t = io({ judge: noJudge as never });
+    expect(await rejudgeCommand([folder([record('booker', 0)]), '--judge', 'none'], t.io)).toBe(2);
+    const err = t.err.join('\n');
+    expect(err).not.toMatch(/no price/);
+    expect(err).toMatch(/--judge none/);
+    expect(err).toMatch(/--inputs/);
+    expect(err).toMatch(/--verdicts/);
+  });
+
   it('refuses a judge whose price is not known', async () => {
     const t = io();
     expect(await rejudgeCommand([folder([record('booker', 0)]), '--judge', 'anthropic:never-priced-test'], t.io)).toBe(2);
@@ -209,7 +219,11 @@ describe('dialogwright eval:rejudge with no judge model: --inputs and --verdicts
     ]);
     const t = io({ judge: noJudge as never });
     expect(await rejudgeCommand([byHand, '--verdicts', file], t.io)).toBe(0);
-    expect(readJsonl(join(byHand, 'rejudged', 'results.jsonl'))).toEqual(readJsonl(join(byModel, 'rejudged', 'results.jsonl')));
+    // The same records, each naming who judged it.
+    const strip = (rs: RunRecord[]) => rs.map(({ judgedBy: _, ...r }) => r);
+    expect(strip(readJsonl(join(byHand, 'rejudged', 'results.jsonl')))).toEqual(strip(readJsonl(join(byModel, 'rejudged', 'results.jsonl'))));
+    expect(readJsonl(join(byHand, 'rejudged', 'results.jsonl')).map((r) => r.judgedBy)).toEqual(['by hand', 'by hand']);
+    expect(readJsonl(join(byModel, 'rejudged', 'results.jsonl')).map((r) => r.judgedBy)).toEqual([JUDGE, JUDGE]);
     const page = readFileSync(join(byHand, 'rejudged', 'summary.md'), 'utf8');
     expect(page).toContain('Judge: by hand.');
     expect(page).toContain('Re-judged by hand from the stored transcripts');
@@ -237,6 +251,41 @@ describe('dialogwright eval:rejudge with no judge model: --inputs and --verdicts
     const again = readJsonl(join(dir, 'rejudged', 'results.jsonl'));
     expect(again.map((r) => [r.persona, r.judged.notes])).toEqual([['booker', 'It quoted a price of its own.'], ['asker', NOT_JUDGED]]);
     expect(readFileSync(join(dir, 'rejudged', 'summary.md'), 'utf8')).toContain('1 of 2 calls wait for verdicts');
+  });
+
+  it('--verdicts keeps each verdict\'s own judge when it adds to verdicts already in rejudged/, and names every judge in the header', async () => {
+    const dir = folder([record('booker', 0), record('asker', 0)]);
+    expect(await rejudgeCommand([dir, '--verdicts', verdictsFile([{ persona: 'booker', run: 0, verdict: verdictArgs() }]), '--judged-by', 'the first reader'], io({ judge: noJudge as never }).io)).toBe(0);
+    expect(await rejudgeCommand([dir, '--verdicts', verdictsFile([{ persona: 'asker', run: 0, verdict: verdictArgs({ correct: true, materialClaims: [] }) }]), '--judged-by', 'the second reader'], io({ judge: noJudge as never }).io)).toBe(0);
+    expect(readJsonl(join(dir, 'rejudged', 'results.jsonl')).map((r) => [r.persona, r.judgedBy])).toEqual([['booker', 'the first reader'], ['asker', 'the second reader']]);
+    const page = readFileSync(join(dir, 'rejudged', 'summary.md'), 'utf8');
+    expect(page).toContain('Judge: by the first reader and by the second reader.');
+    expect(page).toContain('Re-judged by the first reader and by the second reader from the stored transcripts');
+  });
+
+  it('--verdicts says a call whose line failed kept its earlier verdict, where rejudged/ has one, rather than that it waits', async () => {
+    const dir = folder([record('booker', 0), record('asker', 0)]);
+    expect(await rejudgeCommand([dir, '--verdicts', verdictsFile([{ persona: 'booker', run: 0, verdict: verdictArgs() }, { persona: 'asker', run: 0, verdict: verdictArgs() }])], io({ judge: noJudge as never }).io)).toBe(0);
+    const t = io({ judge: noJudge as never });
+    const file = verdictsFile([
+      { persona: 'booker', run: 0, verdict: verdictArgs({ materialClaims: [{ said: 'x', kind: 'price', why: 'no basis' }] }) },
+      { persona: 'nobody', run: 0, verdict: verdictArgs() },
+    ]);
+    expect(await rejudgeCommand([dir, '--verdicts', file], t.io)).toBe(1);
+    const err = t.err.join('\n');
+    expect(err).toMatch(/line 1 \(booker, run 0\): materialClaims: each claim needs a basis[^\n]*: the call kept its earlier verdict/);
+    expect(err).not.toMatch(/calls? waits?/);
+    expect(readJsonl(join(dir, 'rejudged', 'results.jsonl')).map((r) => r.judged.notes)).toEqual(['It quoted a price of its own.', 'It quoted a price of its own.']);
+  });
+
+  it('--inputs and --verdicts ask no model, so they need no budget and check none', async () => {
+    const dir = folder([record('booker', 0)]);
+    for (const budget of ['0', 'none']) {
+      expect(await rejudgeCommand([dir, '--inputs', '--budget', budget], io({ judge: noJudge as never }).io)).toBe(0);
+      expect(await rejudgeCommand([dir, '--verdicts', verdictsFile([{ persona: 'booker', run: 0, verdict: verdictArgs() }]), '--budget', budget], io({ judge: noJudge as never }).io)).toBe(0);
+    }
+    const page = readFileSync(join(dir, 'rejudged', 'summary.md'), 'utf8');
+    expect(page).toContain('Spent: $0.0000 (no model was asked).');
   });
 
   it('--verdicts builds a comparison\'s table, each verdict naming its folder', async () => {

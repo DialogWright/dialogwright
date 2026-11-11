@@ -10,6 +10,15 @@ const record = (notes: string, claims: string[]): RunRecord => ({
 });
 
 describe('the summary page', () => {
+  it('gives each persona\'s rates over its judged calls alone, with how many wait, never a waiting call as a failure', () => {
+    const judged = (persona: string, run: number): RunRecord => ({ ...record('', []), persona, run, judged: { completed: true, correct: true, unsupportedClaims: [], materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } });
+    const waiting = (persona: string, run: number): RunRecord => ({ ...record(NOT_JUDGED, []), persona, run });
+    const text = summaryMarkdown([judged('a', 0), waiting('a', 1), waiting('a', 2), waiting('b', 0), waiting('b', 1), judged('c', 0)], { app: 'x', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 3, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
+    expect(text).toContain('| a | 1 of 3 judged | 100% | 100% |');
+    expect(text).toContain('| b | 0 of 2 judged | – | – |');
+    expect(text).toContain('| c | 1 | 100% | 100% |');
+  });
+
   it('scrubs phone numbers and long digit runs from the judge\'s words, and names the decision model and the calls judged', () => {
     const text = summaryMarkdown([record('The number +15555550142 and 5555550111 and 555-555-0112 were used.', ['called (555) 555 0113'])], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'the heuristic stub', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
     expect(text).not.toMatch(/\d{7}/);
