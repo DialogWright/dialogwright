@@ -499,7 +499,8 @@ It shares the transport split above, so the split is done once, in a way that se
    - **The judge** is Claude Sonnet 5.5. It lists material and benign claims apart, each with its kind and
      its reason, and only material ones count against the bar.
    - **A call is correct** only when it made no unsupported material claim, beside its recorded details
-     and actions being right.
+     and actions being right. The harness holds the judge to this: a verdict that lists a material claim is
+     never counted correct, whatever the judge said.
    - **The summary** shows both counts (`eval/judge.ts`, `eval/measures.ts`).
    - **Re-judging.** `dialogwright eval:rejudge` judges stored calls again under the rubric, with no call
      made again.

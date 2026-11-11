@@ -29,6 +29,7 @@ export const REJUDGE_USAGE = [
   '  the calls stored in <results dir>/results.jsonl (or in each folder of a comparison) judged again under the material-claims rubric, with no call made again;',
   '  writes rejudged/results.jsonl and rejudged/summary.md beside each, and for a comparison rejudged/comparison.md, the table under the material-claims bar',
   '  defaults: --judge anthropic:claude-sonnet-5-5, --budget 10 (US dollars; it stops, keeping what it judged, once spent: run it again to go on), --parallel 4',
+  '  the budget is checked before each call is judged, so the spend may pass it by up to --parallel judgements already in flight',
   '  a run that wrote no run.json (before the material-claims rubric) needs --app (its business information) and --personas, and --today where its calls have no day',
   '  a judge whose price is not known is refused. The keys: from the environment, then the repository\'s .env; never printed. Refused in CI.',
 ].join('\n');

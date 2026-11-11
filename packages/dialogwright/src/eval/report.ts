@@ -36,6 +36,11 @@ export interface ReportInfo {
   opener?: string;
   /** The verdicts were given again from the stored transcripts (eval:rejudge): the spend is the judge's alone. */
   rejudged?: boolean;
+  /**
+   * A page to commit: no per-call notes (they retell the call), each material claim by its sentence alone (the
+   * judge's reason may carry the caller's details), and each word of `withheld` (the personas' names) as [name].
+   */
+  published?: { withheld: readonly string[] };
 }
 
 /**
@@ -76,14 +81,25 @@ export function appendResult(outDir: string, r: RunRecord): void {
 
 const pct = (x: number): string => `${Math.round(x * 100)}%`;
 const ms = (x: number): string => `${Math.round(x)} ms`;
-/** Numbers of seven digits or more, and phone numbers, are left out of a page that is committed. */
-export const scrubNumbers = (t: string): string => t.replace(/\+?\d(?:[\s().-]?\d){6,}/g, '[number]');
+/**
+ * Numbers of seven digits or more, and phone numbers, are left out of a page that is committed: digits joined by a
+ * space of any kind (a non-breaking one among them), a dot, a bracket or any hyphen or dash (a model writes
+ * U+2011, the non-breaking hyphen); an area code in brackets goes with its brackets.
+ */
+export const scrubNumbers = (t: string): string => t.replace(/(?:\+|\()?\d(?:(?:\)\s?|[\s().\-\u2010-\u2015])?\d){6,}/g, '[number]');
 const usd = (x: number | null): string => (x === null ? 'unknown' : `$${x.toFixed(4)}`);
 const pctOrNone = (x: number | null): string => (x === null ? 'not timed' : `${(x * 100).toFixed(1)}%`);
 const seconds = (ms: string): string => `${Number(ms) / 1000} s`;
 
 /** The summary page: the figures over every run, then one row per persona. No transcript is in it. */
 export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo): string {
+  const text = pageOf(records, info);
+  if (info.published === undefined) return text;
+  const withheld = [...info.published.withheld].filter((w) => w.trim() !== '').sort((a, b) => b.length - a.length);
+  return withheld.reduce((t, w) => t.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), '[name]'), text);
+}
+
+function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
   const timing = info.timeoutMs !== undefined ? { timeoutMs: info.timeoutMs } : {};
   const all: RunSummary = summarize(records, timing);
   const personas = [...new Set(records.map((r) => r.persona))];
@@ -122,7 +138,7 @@ export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo)
   }
   lines.push('');
   const noted = records.filter((r) => r.judged.notes !== '' && !r.judged.notes.startsWith(JUDGE_FAILED_NOTE) && (!r.judged.completed || !r.judged.correct || r.judged.unsupportedClaims.length > 0));
-  if (noted.length > 0) {
+  if (noted.length > 0 && info.published === undefined) {
     lines.push('## What the judge noted on calls that fell short', '');
     for (const r of noted) lines.push(`- ${r.persona} (run ${r.run + 1}): ${scrubNumbers(r.judged.notes)}${r.judged.unsupportedClaims.length > 0 ? ` Unsupported: ${scrubNumbers(r.judged.unsupportedClaims.join('; '))}.` : ''}`);
     lines.push('');
@@ -134,7 +150,7 @@ export function summaryMarkdown(records: readonly RunRecord[], info: ReportInfo)
       const of = judged.flatMap((r) => (r.judged.materialClaims ?? []).filter((c) => c.kind === kind).map((c) => ({ r, c })));
       if (of.length === 0) continue;
       lines.push(`### ${kind}`, '');
-      for (const { r, c } of of) lines.push(`- ${r.persona} (run ${r.run + 1}): "${scrubNumbers(c.said)}"${c.why !== '' ? ` ${scrubNumbers(c.why)}` : ''}`);
+      for (const { r, c } of of) lines.push(`- ${r.persona} (run ${r.run + 1}): "${scrubNumbers(c.said)}"${c.why !== '' && info.published === undefined ? ` ${scrubNumbers(c.why)}` : ''}`);
       lines.push('');
     }
   }

@@ -32,8 +32,9 @@ Claude Haiku 5.5 judge counting every claim.
 | Claude Sonnet 5.5 (low) | 80.0% (75%) | 90.0% (83.1%) | 6 (17) | 0 / 1 / 5 / 0 | 70 | 1453 / 3701 | 2.3% | median 253 ms over; p95 1201 ms over; timeouts 1.3 points over; cooperative 15 points under; material claims 6 over |
 | Muse Spark 1.3 (minimal) | 65.0% (60%) | 85.0% (69.5%) | 11 (25) | 2 / 2 / 6 / 1 | 52 | 1866 / 4439 | 13.3% | median 666 ms over; p95 1939 ms over; timeouts 12.3 points over; cooperative 30 points under; material claims 11 over |
 
-Each model's own page (its figures, each persona's row, the judge's notes and every material claim under its
-kind, with names and numbers scrubbed) is in
+Each model's own page is in the folder below. It gives the model's figures, each persona's row, and every
+material claim under its kind by its sentence alone. The judge's notes and reasons are left out, and names
+and numbers are scrubbed. The folder is
 [2026-11-model-comparison-rejudged/](2026-11-model-comparison-rejudged/inception_mercury-3.md).
 
 ## What it shows

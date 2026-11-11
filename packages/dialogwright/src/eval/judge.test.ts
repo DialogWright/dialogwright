@@ -45,6 +45,14 @@ describe('judgeCall', () => {
     expect(tool.properties).not.toHaveProperty('unsupportedClaims');
   });
 
+  it('never calls a call with a material claim correct, whatever the judge said', async () => {
+    const material = [{ said: 'It is $50.', kind: 'price', why: 'No such price.' }];
+    const j = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ correct: true, materialClaims: material }) }, done]]), new Budget(1), 'b', persona, call, []);
+    expect(j.correct).toBe(false);
+    const benignOnly = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ correct: true, benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: '' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
+    expect(benignOnly.correct).toBe(true);
+  });
+
   it('fails a verdict whose claim has a kind outside its list, or is not a claim', async () => {
     const kind = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ materialClaims: [{ said: 'x', kind: 'friendly', why: 'y' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
     expect(kind.notes).toMatch(/^judge failed: materialClaims/);

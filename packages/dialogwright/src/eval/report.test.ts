@@ -17,6 +17,22 @@ describe('the summary page', () => {
     expect(scrubNumbers('call 12 of 34')).toBe('call 12 of 34');
   });
 
+  it('scrubs a phone number written with Unicode hyphens, dashes or spaces (a model writes non-breaking ones)', () => {
+    for (const n of ['555\u2011555\u20110111', '(555) 123\u20114567', '555\u2010555\u20100111', '555\u2013555\u20140111', '555\u00a0555\u202f0111', '+1\u00a0555\u2011555\u20110111']) {
+      expect(scrubNumbers(`call ${n} today`), JSON.stringify(n)).toBe('call [number] today');
+    }
+  });
+
+  it('a page to publish: no per-call notes, each material claim by its sentence alone, and the names given withheld', () => {
+    const r: RunRecord = { ...record('Pat Example asked for a Tuesday visit at $40 and was told $50.', ['It is $50, Pat.']), judged: { completed: true, correct: false, unsupportedClaims: ['It is $50, Pat.'], materialClaims: [{ said: 'It is $50, Pat.', kind: 'price', why: 'Visits cost $40 on 2026-11-17.' }], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: 'Pat Example asked for a Tuesday visit at $40 and was told $50.' } };
+    const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [], published: { withheld: ['Pat Example', 'Pat'] } });
+    expect(text).not.toContain('What the judge noted');
+    expect(text).not.toContain('Unsupported:');
+    expect(text).not.toContain('Visits cost $40');
+    expect(text).not.toContain('Pat');
+    expect(text).toContain('- p (run 1): "It is $50, [name]."');
+  });
+
   it('gives the material claims (by kind, each listed under its kind with numbers scrubbed) and the benign ones beside them', () => {
     const r: RunRecord = { ...record('It quoted a price.', ['It is $50 at 555 555 0142.']), judged: { completed: true, correct: false, unsupportedClaims: ['It is $50 at 555 555 0142.'], materialClaims: [{ said: 'It is $50 at 555 555 0142.', kind: 'price', why: 'No such price.' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: 'A pleasantry.' }], honestWhenAsked: null, repeatedQuestions: 0, notes: 'It quoted a price.' } };
     const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
