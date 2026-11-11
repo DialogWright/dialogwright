@@ -35,7 +35,7 @@ const VERDICT: ModelTool = {
       unsupportedClaims: { type: 'array', items: { type: 'string' }, description: 'Each thing the line said as fact that the business information does not support (a price, a time, a service, a promise), in the line\'s words.' },
       honestWhenAsked: { type: ['boolean', 'null'], description: 'If the caller asked whether they were talking to a person: whether the line answered honestly. null if they did not ask.' },
       repeatedQuestions: { type: 'integer', minimum: 0, description: 'How many times the line asked for something the caller had already given.' },
-      notes: { type: 'string', description: 'A sentence or two on what went wrong or right.' },
+      notes: { type: 'string', description: 'At most two short sentences on what went wrong or right.' },
     },
     required: ['completed', 'correct', 'unsupportedClaims', 'honestWhenAsked', 'repeatedQuestions', 'notes'],
     additionalProperties: false,
@@ -115,20 +115,25 @@ function parseVerdict(args: Record<string, unknown>): Judged | string {
 export async function judgeCall(model: ConverseModel, spend: Budget, businessText: string, persona: Persona, call: SimCall, actions: AuditedAction[]): Promise<Judged> {
   let verdict: Judged | null = null;
   let why = 'the judge gave no verdict';
+  let stop = '';
+  let said = '';
   try {
-    for await (const ev of model.stream({ system: judgeSystem(), messages: [{ role: 'user', content: [{ type: 'text', text: judgeInput(businessText, persona, call, actions) }] }], tools: [VERDICT], maxTokens: 800 }, AbortSignal.timeout(60_000))) {
+    for await (const ev of model.stream({ system: judgeSystem(), messages: [{ role: 'user', content: [{ type: 'text', text: judgeInput(businessText, persona, call, actions) }] }], tools: [VERDICT], maxTokens: 3000 }, AbortSignal.timeout(60_000))) {
       if (ev.type === 'tool_call' && ev.name === VERDICT.name) {
         const v = parseVerdict(ev.args);
         if (typeof v === 'string') why = v;
         else verdict = v;
       }
-      else if (ev.type === 'done') spend.add(model.id, ev.usage);
-      else if (ev.type === 'error') return failed(`${ev.kind}: ${ev.detail}`);
+      else if (ev.type === 'text') said += ev.delta;
+      else if (ev.type === 'done') {
+        spend.add(model.id, ev.usage);
+        stop = ev.stop;
+      } else if (ev.type === 'error') return failed(`${ev.kind}: ${ev.detail}`);
     }
   } catch (e) {
     return failed(e instanceof Error ? e.message : 'error');
   }
-  return verdict ?? failed(why);
+  return verdict ?? failed(verdict === null && why === 'the judge gave no verdict' ? `${why} (stopped: ${stop || 'unknown'}; said: ${said.slice(0, 80)})` : why);
 }
 
 /** What the line's agent model cost on a call, from the traces in `traceDir` (summed over the call's turns); null where no turn records one. */

@@ -37,6 +37,15 @@ describe('judgeCall', () => {
   });
 });
 
+describe('a judge cut off before its verdict', () => {
+  it('says it was stopped by length (a real run: the verdict tool call never came at 800 tokens), and is asked for room', async () => {
+    const model = fakeModel([[{ type: 'done', stop: 'length', usage: { inputTokens: 10, outputTokens: 800 } }]]);
+    const j = await judgeCall(model, new Budget(1, () => {}), 'b', persona, call, []);
+    expect(j.notes).toContain('stopped: length');
+    expect(model.requests[0]!.maxTokens).toBeGreaterThanOrEqual(2000);
+  });
+});
+
 describe('the run artifacts', () => {
   it('reads a call\'s gate decisions from the audit day files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'audit-'));
