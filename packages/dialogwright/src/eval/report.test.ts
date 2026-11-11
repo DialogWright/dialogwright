@@ -106,8 +106,11 @@ describe('the summary page', () => {
 
   it('gives the replies the check after speaking corrected and could not read, where the run\'s traces have any', () => {
     const info = { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] };
-    const checked = summaryMarkdown([{ ...record('', []), checks: { read: 5, corrected: 2, declined: 1, carried: 1, unread: 1 } }], info);
-    expect(checked).toContain('| Replies the check after speaking read as wrong: corrected on the call / declined by the model / carried to the next message | 2 / 1 / 1 of 5 read (1 could not be read) |');
+    const checked = summaryMarkdown([{ ...record('', []), checks: { read: 7, corrected: 2, declined: 1, carried: 1, unread: 1, wrong: 6, failed: 1 } }], info);
+    expect(checked).toContain('| Replies the check after speaking read as wrong at its bar: corrected on the call / declined by the model / carried to the next message / correction failed / left | 6 of 7 read (1 could not be read): 2 / 1 / 1 / 1 / 1 |');
+    // With mode record, replies read as wrong are all left: the parts still add up to them.
+    const recorded = summaryMarkdown([{ ...record('', []), checks: { read: 4, corrected: 0, declined: 0, carried: 0, unread: 0, wrong: 3, failed: 0 } }], info);
+    expect(recorded).toContain('3 of 4 read (0 could not be read): 0 / 0 / 0 / 0 / 3 |');
     expect(summaryMarkdown([record('', [])], info)).not.toContain('check after speaking');
   });
 

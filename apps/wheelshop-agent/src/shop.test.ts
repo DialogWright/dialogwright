@@ -332,10 +332,10 @@ describe('a drop-off window\'s last time (agent.yaml\'s until, in the shop\'s zo
   it('leaves a later day whole at any hour of today', () => {
     expect(at('2026-11-10T21:00:00Z').free('2026-11-11').map((w) => w.id)).toEqual(['2026-11-11:morning', '2026-11-11:afternoon']);
   });
-  it('refuses a request or a booking into a window that is over, and takes a later day\'s', async () => {
+  it('refuses a request or a booking into a window that is over, saying its drop-off time has passed (never that it is full), and takes a later day\'s', async () => {
     const sys = at('2026-11-10T19:00:00Z');
-    await expect(run(sys, 'send_request', { ...REQUEST, slot: '2026-11-10:morning' }, 'k-late', Date.parse('2026-11-10T19:00:00Z'))).rejects.toThrow(/has room for 0 now/);
-    await expect(run(sys, 'book_dealer', { ...BOOKING, cars: 'one', slot: '2026-11-10:afternoon' }, 'k-late2', Date.parse('2026-11-10T19:00:00Z'))).rejects.toThrow(/has room for 0 now/);
+    await expect(run(sys, 'send_request', { ...REQUEST, slot: '2026-11-10:morning' }, 'k-late', Date.parse('2026-11-10T19:00:00Z'))).rejects.toThrow(/^the drop-off time for 2026-11-10 morning \(until 08:00\) has passed today, so it takes no car now: look again with check_availability and offer another window$/);
+    await expect(run(sys, 'book_dealer', { ...BOOKING, cars: 'one', slot: '2026-11-10:afternoon' }, 'k-late2', Date.parse('2026-11-10T19:00:00Z'))).rejects.toThrow(/the drop-off time for 2026-11-10 afternoon \(until 12:00\) has passed today/);
     await run(sys, 'send_request', { ...REQUEST, slot: '2026-11-11:morning' }, 'k-next', Date.parse('2026-11-10T19:00:00Z'));
   });
 });

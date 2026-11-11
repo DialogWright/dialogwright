@@ -137,6 +137,8 @@ interface Turn {
   correcting: boolean;
   /** A note the check after speaking carried from an earlier turn went with this turn's message to the model. */
   carriedNote: boolean;
+  /** The model answered the message carrying that note with nothing at all: the note was taken out and the model asked again without it. */
+  carriedNoteDropped: boolean;
 }
 
 /** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
@@ -388,7 +390,7 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
  * which nothing at all is a correction declined), a reply cut off at the token limit, or no event within
  * `firstWaitMs` at first and the model's time after.
  */
-async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number, emptyOk: boolean): Promise<Round> {
+async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number, emptyOk: boolean, waitedMs = 0): Promise<Round> {
   const controller = new AbortController();
   const started = Date.now();
   const iter = t.deps.model.stream(req, controller.signal)[Symbol.asyncIterator]();
@@ -436,7 +438,7 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
   } finally {
     const ms = Date.now() - started;
     t.model.ms += ms;
-    (t.model.requests ??= []).push({ firstMs, ms, ...(failed !== undefined ? { error: failed } : {}), ...(t.correcting ? { correction: true as const } : {}) });
+    (t.model.requests ??= []).push({ firstMs, ms, ...(waitedMs > 0 ? { waitedMs } : {}), ...(failed !== undefined ? { error: failed } : {}), ...(t.correcting ? { correction: true as const } : {}) });
   }
   if (text.trim() === '' && calls.length === 0 && !emptyOk) {
     const r = fail('empty: the model said nothing and called nothing');
@@ -469,10 +471,12 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * One round: the request, and again where it failed before saying anything. A request the provider refused
  * for its rate limit is asked again after a wait (its Retry-After where it named one that leaves half the
  * model's time, else RATE_LIMIT_BACKOFF_MS doubling), up to RATE_LIMIT_RETRIES more times, each only while half
- * the model's time is left after the wait; each such answer is counted in the trace (`model.rateLimited`). Any
- * other failure is asked once more with the time left: when it had not begun within half the model's time (it
- * is stopped then), or failed with half or more left. `emptyOk` is streamOnce's, for the round's first request
- * and its asks again alike.
+ * the model's time is left after the wait; each such answer is counted in the trace (`model.rateLimited`), and
+ * the time waited (`model.rateLimitedMs`, and each request's `waitedMs`, the wait before it). Any other failure
+ * is asked once more with the time left, only while half the model's time is left: a request that had not
+ * begun within half the model's time (it is stopped then) is asked again with the rest, as half is left then,
+ * but not after a rate limit's wait, which has spent some of it. `emptyOk` is streamOnce's, for the round's
+ * first request and its asks again alike.
  */
 async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
   const b = t.deps.business;
@@ -496,11 +500,14 @@ async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
       limited += 1;
       sp.abandon();
       t.model.retried = true;
+      t.model.rateLimitedMs = (t.model.rateLimitedMs ?? 0) + wait;
       await sleep(wait);
-      r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk);
+      r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk, wait);
       continue;
     }
-    if (retried || !(r.stalled || deadline - Date.now() >= budget / 2)) break;
+    // Half the model's time left: a stall of the round's first request leaves just that, a stall after a wait less.
+    const halfLeft = deadline - Date.now() >= budget / 2 || (r.stalled && limited === 0);
+    if (retried || !halfLeft) break;
     // Nothing was said: the words of a sentence not yet finished are dropped, and the model asked again.
     retried = true;
     sp.abandon();
@@ -536,20 +543,43 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
   }
 }
 
+/** Takes a carried note out of the conversation: the text block holding it, in the latest message on the caller's side. */
+function dropNote(st: ConverseState, note: string): void {
+  for (let m = st.messages.length - 1; m >= 0; m--) {
+    const msg = st.messages[m]!;
+    if (msg.role !== 'user') continue;
+    const at = msg.content.findIndex((c) => c.type === 'text' && c.text === note);
+    if (at < 0) return;
+    msg.content.splice(at, 1);
+    if (msg.content.length === 0) st.messages.splice(m, 1);
+    return;
+  }
+}
+
 /**
  * The model asked, round after round, until it replies with no call, a change is read back, or it fails.
  * A failure says the recovery line (failed), but `silent` (the check after speaking's correction): then
  * nothing more is said and nothing counted, and the failure is returned. With `silent`, a first answer of
  * nothing at all (no text and no call) is the correction declined: the model read its reply again and found
- * it right, so nothing is said or added to the conversation, and it is no failure (`declined`).
+ * it right, so nothing is said or added to the conversation, and it is no failure (`declined`). With
+ * `carried` (the turn's message carries a note from an earlier turn), a first answer of nothing at all is
+ * the model taking the note's "say nothing of it" for the whole answer: the note is taken out of the
+ * conversation and the model asked once more without it; that answer, empty or not, is taken as any is.
  */
-async function converse(t: Turn, sp: Speaker, silent = false): Promise<{ ok: true; declined?: true } | { ok: false; error: string }> {
+async function converse(t: Turn, sp: Speaker, silent = false, carried?: string): Promise<{ ok: true; declined?: true } | { ok: false; error: string }> {
+  let first = true;
   for (let i = 0; i < MAX_ROUNDS; i++) {
-    const r = await round(t, sp, silent && i === 0);
+    const r = await round(t, sp, first && (silent || carried !== undefined));
+    first = false;
     if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
-      // Only a first answer to the note may be empty (streamOnce's emptyOk): the correction declined.
+      // Only a first answer may be empty (streamOnce's emptyOk).
       sp.abandon();
-      return { ok: true, declined: true };
+      if (silent) return { ok: true, declined: true };
+      // The message's carried note answered with nothing: out with it, and asked again (no round spent).
+      dropNote(t.st, carried!);
+      t.carriedNoteDropped = true;
+      i -= 1;
+      continue;
     }
     if (!r.ok) {
       const said = sp.abandon();
@@ -747,6 +777,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     own: [],
     correcting: false,
     carriedNote: false,
+    carriedNoteDropped: false,
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
@@ -764,14 +795,15 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   } else {
     if (st.pending !== null) await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
-    if (st.carriedNote !== undefined) {
+    const carried = st.carriedNote;
+    if (carried !== undefined) {
       // The check after speaking's note carried from a turn that ended on a read-back: after this message's
       // own content (the caller's words, or what came of the read-back), in the same message, never neutralised.
-      add(st, 'user', [{ type: 'text', text: st.carriedNote }]);
+      add(st, 'user', [{ type: 'text', text: carried }]);
       delete st.carriedNote;
       t.carriedNote = true;
     }
-    await converse(t, sp);
+    await converse(t, sp, false, carried);
     await checkAfterSpeaking(t, sp);
   }
   // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
@@ -791,6 +823,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
     ...(t.check !== undefined ? { check: t.check } : {}),
     ...(t.carriedNote ? { carriedNote: true as const } : {}),
+    ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
   });
   st.turnIndex += 1;
   return st;

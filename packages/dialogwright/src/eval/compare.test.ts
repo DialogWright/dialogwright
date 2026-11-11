@@ -8,7 +8,7 @@ import type { RunSummary } from './measures';
 const atBars = (o: Partial<RunSummary> = {}): RunSummary => ({
   runs: 60, judged: 60, endedBySimulation: 0, completedRate: 1, correctRate: 1, cooperativeJudged: 40, cooperativeCorrectRate: 0.95, unsupportedClaims: 0, materialByKind: { price: 0, time: 0, policy: 0, done: 0 }, gapClaims: 3, gapsByKind: { price: 1, time: 1, policy: 1, done: 0 }, benignClaims: 4, repeatedQuestionsPerCall: 0,
   firstWordMsMedian: 1200, firstWordMsP90: 2000, firstWordMsP95: 2500, firstWordMsP99: 4000, modelTurns: 500, timeoutRate: 0.01,
-  wouldTimeout: { '1800': 0.1, '3000': 0.02, '4000': 0.01, '6000': 0.01 }, agentCostPerCallUsd: 0.004, agentTokensPerCall: { inputTokens: 20000, outputTokens: 500 }, repliesChecked: 0, repliesCorrected: 0, repliesDeclined: 0, repliesCarried: 0, checksUnread: 0, failures: {}, ...o,
+  wouldTimeout: { '1800': 0.1, '3000': 0.02, '4000': 0.01, '6000': 0.01 }, agentCostPerCallUsd: 0.004, agentTokensPerCall: { inputTokens: 20000, outputTokens: 500 }, repliesChecked: 0, repliesCorrected: 0, repliesDeclined: 0, repliesCarried: 0, repliesWrong: 0, repliesFailed: 0, checksUnread: 0, failures: {}, ...o,
 });
 
 for (const id of ['inception:cheap-test', 'openrouter:vendor/mid-test', 'anthropic:dear-test', 'anthropic:dearest-test']) addModelPrice(id, { input: 1, output: 5, source: 'a test, 2026-11-11' });

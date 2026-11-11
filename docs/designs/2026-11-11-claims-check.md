@@ -176,7 +176,11 @@ builder's choices:
   left out. Once per reply: the carried note is that reply's correction, and the next turn's reply is read
   as usual (it may be corrected at once, or carried again). The trace: the turn whose reply was read says
   `check.carried: true`; the turn whose message carried the note says `carriedNote: true` on its record. A
-  call that ends first (the caller leaves) drops the note.
+  call that ends first (the caller leaves) drops the note. The instructions say to answer with nothing at
+  all only to a note that comes on its own; a note that follows other words is always answered. Where the
+  message carrying a note is answered with nothing at all anyway, the note is taken out and the model asked
+  once more without it (no failure; the record says `carriedNoteDropped: true`); that answer is taken as any
+  is, so an empty one fails as an empty answer does.
 - **The correction is not read** (once per reply), so the decision model is asked once a turn.
 - **The stubs:** the heuristic stub reads each of the three questions low (0.04), and the fixture stub
   answers them at its quiet value (0.1), so under a stub nothing is corrected.

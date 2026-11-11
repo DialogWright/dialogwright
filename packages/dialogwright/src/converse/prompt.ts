@@ -2,7 +2,7 @@ import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText } from './business/text';
-import { CHECK_NOTE_MARK, CORRECTION_DECLINE, CORRECTION_GOAL } from './claims';
+import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
 import type { ModelTool } from './model/types';
 import { businessZone, type ConverseState } from './state';
 
@@ -43,7 +43,7 @@ const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgeme
  * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
  * `checks.claims.mode: correct`); with any other mode no note is ever sent, so nothing is said of one.
  */
-const CHECK_NOTE_WORDS = `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that a reply of yours may have been wrong, and why; the caller has not seen it. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Where the reply was wrong, put the slip right for the caller in a sentence or two, naturally, ${CORRECTION_GOAL}. ${CORRECTION_DECLINE} A note that follows the caller's words, or what came of a read-back, is about a reply said earlier: answer what comes before it as you would, and put the earlier reply right in that answer only where it is still wrong.`;
+const CHECK_NOTE_WORDS = `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that a reply of yours may have been wrong, and why; the caller has not seen it. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Where the reply was wrong, put the slip right for the caller in a sentence or two, naturally, ${CORRECTION_GOAL}. A note comes in one of two ways. A note that comes on its own, as a message of its own, is about the reply you have just given: where, read again against the business information and the call's actions and what they returned, that reply was right after all, answer that note with nothing at all: no words and no action. A note that follows the caller's words, or what came of a read-back, is about a reply said earlier: always answer what comes before it as you would, never with nothing; put the earlier reply right in that answer only where it is still wrong, and where it was right, say nothing of it.`;
 
 export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): string {
   const zone = businessZone(b);

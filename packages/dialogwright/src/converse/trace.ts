@@ -20,6 +20,11 @@ export interface ModelRequestTime {
   error?: string;
   /** The request was the check after speaking's correction, not the reply the caller waited for. */
   correction?: true;
+  /**
+   * The wait before this request, after the one before it was refused for the provider's rate limit (turn.ts
+   * `round`): not in `ms`, but within the same round's time as it (the model's `timeoutMs` bounds the two).
+   */
+  waitedMs?: number;
 }
 
 export interface ConverseTraceRecord {
@@ -39,9 +44,11 @@ export interface ConverseTraceRecord {
    * summed over them; and each request on its own (`requests`): ms to its first event (null: none came), ms to
    * its end, and how it failed where it did. `rateLimited`: how many of the turn's answers (the reply's and a
    * correction's alike) were the provider's refusal for its rate limit, each asked again after a wait while
-   * half the model's time was left (turn.ts `round`); absent where none was.
+   * half the model's time was left (turn.ts `round`); absent where none was. `rateLimitedMs`: the time spent
+   * waiting before those asks again, summed over the turn: apart from `ms`, which is the requests' own time
+   * (each request's wait is also its `waitedMs`).
    */
-  model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; rateLimited?: number; requests?: ModelRequestTime[] };
+  model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; rateLimited?: number; rateLimitedMs?: number; requests?: ModelRequestTime[] };
   /** The read-back said, or answered, this turn: the decision model's reading of the answer and whether it confirmed. */
   readBack?: { text: string; yes?: number; no?: number; confirmed?: boolean };
   /**
@@ -63,6 +70,13 @@ export interface ConverseTraceRecord {
    * that note's answer, and is read on its own as usual (`check`).
    */
   carriedNote?: true;
+  /**
+   * The model answered the message carrying that note with nothing at all (taking the note's "say nothing of
+   * it" for its whole answer): the note was taken out of the conversation and the model asked once more
+   * without it, its answer taken as any is (an empty one a failure). The empty request is kept in
+   * `model.requests` with no error.
+   */
+  carriedNoteDropped?: true;
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
 }

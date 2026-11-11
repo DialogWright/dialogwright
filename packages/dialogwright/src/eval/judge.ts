@@ -377,7 +377,7 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
  */
 export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null; checks: CheckCounts; readings: CheckReading[] } {
   const turns: TurnTiming[] = [];
-  const checks: CheckCounts = { read: 0, corrected: 0, declined: 0, carried: 0, unread: 0 };
+  const checks: CheckCounts = { read: 0, corrected: 0, declined: 0, carried: 0, unread: 0, wrong: 0, failed: 0 };
   const readings: CheckReading[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
@@ -414,6 +414,9 @@ export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnT
       if (corrected) checks.corrected += 1;
       if (check.declined === true) checks.declined += 1;
       if (check.carried === true) checks.carried += 1;
+      // Read as wrong at the bar: contradicted or not done flagged (a gap is recorded, never corrected).
+      if (Array.isArray(check.flagged) && (check.flagged.includes('contradicted') || check.flagged.includes('notDone'))) checks.wrong! += 1;
+      if (check.correctionFailed === true) checks.failed! += 1;
     }
   }
   return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null, checks, readings };

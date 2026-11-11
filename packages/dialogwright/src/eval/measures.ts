@@ -57,18 +57,29 @@ export interface RunSummary {
   repliesDeclined: number;
   /** Of those, the replies it read as wrong while a read-back waited for the caller's yes: the note was kept for the next message the model is sent. */
   repliesCarried: number;
+  /** Of those, the replies it read as wrong at its bar (contradicted or not done, at or over `correctAt`), acted on or not. */
+  repliesWrong: number;
+  /** Of those, the replies whose correction failed (the model erred, was late or kept calling actions): nothing more said. */
+  repliesFailed: number;
   /** Of those, the replies it could not read (the decision model failed or was late), so nothing was corrected. */
   checksUnread: number;
   failures: Record<string, number>;
 }
 
-/** A call's replies by the check after speaking, from its traces: read, corrected on the call, declined by the model, carried to the next message, and not read. */
+/**
+ * A call's replies by the check after speaking, from its traces: read, read as wrong at its bar (`wrong`), and of
+ * those corrected on the call, declined by the model, carried to the next message and failed (the rest left:
+ * mode record, or a correction the runtime could not ask for); and not read. A run's results written before
+ * `wrong` and `failed` were kept have neither (read as 0).
+ */
 export interface CheckCounts {
   read: number;
   corrected: number;
   declined: number;
   carried: number;
   unread: number;
+  wrong?: number;
+  failed?: number;
 }
 
 /**
@@ -128,6 +139,23 @@ export function wouldTimeOut(r: ModelRequestTime, ms: number): boolean {
 
 const timedOut = (r: ModelRequestTime): boolean => r.error?.startsWith('timeout') === true;
 
+/**
+ * Whether a turn's requests would have reached a timeout of `ms`, by their true time. A request asked again
+ * after the provider's rate limit (converse/turn.ts `round`) shares its round's time with the requests refused
+ * before it and the waits between them (each request's `waitedMs`), so its time is counted from the first of
+ * them: the refused requests' own time and the waits are added to its own. Its first event is still its own,
+ * as the runtime gives each such request half the model's time to begin. Any other request is timed alone.
+ */
+export function turnWouldTimeOut(t: TurnTiming, ms: number): boolean {
+  let before = 0;
+  for (const r of t.requests) {
+    const spent = before + (r.waitedMs ?? 0);
+    if (wouldTimeOut({ ...r, ms: r.ms + spent }, ms)) return true;
+    before = r.error?.startsWith('rate_limited') === true ? spent + r.ms : 0;
+  }
+  return false;
+}
+
 /** The measures of a run. `timeoutMs`: the line's own model timeout (agent.yaml model.timeoutMs), for the timeout rate. */
 export function summarize(results: readonly RunResult[], o: { timeoutMs?: number } = {}): RunSummary {
   const n = results.length;
@@ -167,14 +195,16 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     firstWordMsP95: percentile(firstWords, 0.95),
     firstWordMsP99: percentile(firstWords, 0.99),
     modelTurns: turns.length,
-    timeoutRate: turns.length === 0 ? null : share((t) => t.requests.some((r) => timedOut(r) || (o.timeoutMs !== undefined && wouldTimeOut(r, o.timeoutMs)))),
-    wouldTimeout: Object.fromEntries(WOULD_TIMEOUT_MS.map((ms) => [String(ms), share((t) => t.requests.some((r) => wouldTimeOut(r, ms)))])),
+    timeoutRate: turns.length === 0 ? null : share((t) => t.requests.some(timedOut) || (o.timeoutMs !== undefined && turnWouldTimeOut(t, o.timeoutMs))),
+    wouldTimeout: Object.fromEntries(WOULD_TIMEOUT_MS.map((ms) => [String(ms), share((t) => turnWouldTimeOut(t, ms))])),
     agentCostPerCallUsd: costs.length === 0 ? null : costs.reduce((s, c) => s + c, 0) / costs.length,
     agentTokensPerCall: tokens.length === 0 ? null : { inputTokens: tokens.reduce((s, t) => s + t.inputTokens, 0) / tokens.length, outputTokens: tokens.reduce((s, t) => s + t.outputTokens, 0) / tokens.length },
     repliesChecked: results.reduce((s, r) => s + (r.checks ? r.checks.read + r.checks.unread : 0), 0),
     repliesCorrected: results.reduce((s, r) => s + (r.checks?.corrected ?? 0), 0),
     repliesDeclined: results.reduce((s, r) => s + (r.checks?.declined ?? 0), 0),
     repliesCarried: results.reduce((s, r) => s + (r.checks?.carried ?? 0), 0),
+    repliesWrong: results.reduce((s, r) => s + (r.checks?.wrong ?? 0), 0),
+    repliesFailed: results.reduce((s, r) => s + (r.checks?.failed ?? 0), 0),
     checksUnread: results.reduce((s, r) => s + (r.checks?.unread ?? 0), 0),
     failures,
   };

@@ -172,7 +172,9 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     `| Agent cost per call | ${usd(all.agentCostPerCallUsd)} |`,
     ...(all.agentTokensPerCall !== null ? [`| Agent tokens per call (in / out) | ${Math.round(all.agentTokensPerCall.inputTokens)} / ${Math.round(all.agentTokensPerCall.outputTokens)} |`] : []),
     // The check after speaking, where the run's traces have it (a run before it has none).
-    ...(all.repliesChecked > 0 ? [`| Replies the check after speaking read as wrong: corrected on the call / declined by the model / carried to the next message | ${all.repliesCorrected} / ${all.repliesDeclined} / ${all.repliesCarried} of ${all.repliesChecked - all.checksUnread} read (${all.checksUnread} could not be read) |`] : []),
+    // Of the replies read as wrong at the bar, each is corrected, declined, carried, failed or left (mode record,
+    // or not acted on), so the five add up to it.
+    ...(all.repliesChecked > 0 ? [`| Replies the check after speaking read as wrong at its bar: corrected on the call / declined by the model / carried to the next message / correction failed / left | ${all.repliesWrong} of ${all.repliesChecked - all.checksUnread} read (${all.checksUnread} could not be read): ${all.repliesCorrected} / ${all.repliesDeclined} / ${all.repliesCarried} / ${all.repliesFailed} / ${Math.max(0, all.repliesWrong - all.repliesCorrected - all.repliesDeclined - all.repliesCarried - all.repliesFailed)} |`] : []),
     '',
   ];
   if (Object.keys(all.failures).length > 0) {

@@ -253,13 +253,13 @@ describe('the run artifacts', () => {
     expect(modelUseOfCall(traces, 'c1')).toEqual({
       turns: [{ requests: [{ firstMs: 200, ms: 600 }] }, { requests: [{ firstMs: 100, ms: 300 }, { firstMs: 400, ms: 900, error: 'x' }] }],
       tokens: { inputTokens: 3000, outputTokens: 130 },
-      checks: { read: 2, corrected: 1, declined: 0, carried: 0, unread: 1 },
+      checks: { read: 2, corrected: 1, declined: 0, carried: 0, unread: 1, wrong: 1, failed: 0 },
       readings: [
         { turn: 3, contradicted: 0.9, notDone: 0.1, gap: 0.1, flagged: ['contradicted'], corrected: true },
         { turn: 5, contradicted: 0.1, notDone: 0.1, gap: 0.8, flagged: ['gap'], corrected: false },
       ],
     });
-    expect(modelUseOfCall(traces, 'c9')).toEqual({ turns: [], tokens: null, checks: { read: 0, corrected: 0, declined: 0, carried: 0, unread: 0 }, readings: [] });
+    expect(modelUseOfCall(traces, 'c9')).toEqual({ turns: [], tokens: null, checks: { read: 0, corrected: 0, declined: 0, carried: 0, unread: 0, wrong: 0, failed: 0 }, readings: [] });
   });
 
   it('counts a correction that failed or that the model declined as not corrected, and keeps a correction\'s requests out of the turn\'s timing', () => {
@@ -273,7 +273,7 @@ describe('the run artifacts', () => {
     ].join('\n'));
     expect(modelUseOfCall(traces, 'c1')).toMatchObject({
       turns: [{ requests: [{ firstMs: 100, ms: 300 }] }, { requests: [{ firstMs: 100, ms: 300 }] }, { requests: [{ firstMs: 100, ms: 300 }] }],
-      checks: { read: 3, corrected: 1, declined: 1, carried: 0, unread: 0 },
+      checks: { read: 3, corrected: 1, declined: 1, carried: 0, unread: 0, wrong: 3, failed: 1 },
     });
   });
 
@@ -289,7 +289,9 @@ describe('the run artifacts', () => {
       rec(5, 'thanks', check({ contradicted: null, notDone: null, gap: null, flagged: [], corrected: false, correction: 0 })),
     ].join('\n'));
     const use = modelUseOfCall(traces, 'c1');
-    expect(use.checks).toEqual({ read: 3, corrected: 1, declined: 1, carried: 1, unread: 1 });
+    expect(use.checks).toEqual({ read: 3, corrected: 1, declined: 1, carried: 1, unread: 1, wrong: 3, failed: 0 });
+    // The three read as wrong are each corrected, declined or carried: the parts add up.
+    expect(use.checks.corrected + use.checks.declined + use.checks.carried).toBe(use.checks.wrong);
     expect(use.readings).toEqual([
       { turn: 2, contradicted: 0.9, notDone: 0.2, gap: 0.3, flagged: ['contradicted'], corrected: true },
       { turn: 3, contradicted: 0.9, notDone: 0.2, gap: 0.3, flagged: ['contradicted'], corrected: false, declined: true },

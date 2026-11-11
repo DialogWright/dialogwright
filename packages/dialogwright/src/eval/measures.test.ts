@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { percentile, summarize, type RunResult } from './measures';
+import { percentile, summarize, turnWouldTimeOut, type RunResult } from './measures';
 import { NOT_JUDGED, type Judged } from './judge';
 
 const judged = (o: Partial<Judged>): Judged => ({ completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '', ...o });
@@ -57,7 +57,7 @@ describe('summarize', () => {
 
   it('counts, from the traces, the replies the check after speaking read, corrected on the call and could not read', () => {
     const s = summarize([
-      { ...result({}, [1], null), checks: { read: 4, corrected: 1, declined: 1, carried: 0, unread: 1 } },
+      { ...result({}, [1], null), checks: { read: 4, corrected: 1, declined: 1, carried: 0, unread: 1, wrong: 3, failed: 1 } },
       { ...result({}, [1], null), checks: { read: 2, corrected: 2, declined: 0, carried: 1, unread: 0 } },
       result({}, [1], null),
     ]);
@@ -66,7 +66,10 @@ describe('summarize', () => {
     expect(s.repliesDeclined).toBe(1);
     expect(s.repliesCarried).toBe(1);
     expect(s.checksUnread).toBe(1);
-    expect(summarize([result({}, [1], null)])).toMatchObject({ repliesChecked: 0, repliesCorrected: 0, repliesDeclined: 0, repliesCarried: 0, checksUnread: 0 });
+    // A result written before wrong and failed were kept counts them as none.
+    expect(s.repliesWrong).toBe(3);
+    expect(s.repliesFailed).toBe(1);
+    expect(summarize([result({}, [1], null)])).toMatchObject({ repliesChecked: 0, repliesCorrected: 0, repliesDeclined: 0, repliesCarried: 0, repliesWrong: 0, repliesFailed: 0, checksUnread: 0 });
   });
 
   it('has no agent cost where none is known', () => {
@@ -136,6 +139,19 @@ describe('summarize: the tails, the timeouts and the cooperative calls', () => {
     expect(s.modelTurns).toBe(4);
     expect(s.wouldTimeout).toEqual({ '1800': 0.75, '3000': 0.5, '4000': 0.25, '6000': 0 });
     expect(s.timeoutRate).toBe(0);
+  });
+
+  it('counts a request asked again after a rate limit from the first refused one: their time and the waits between are the round\'s', () => {
+    const limited = { requests: [{ firstMs: 10, ms: 20, error: 'rate_limited: HTTP 429' }, { firstMs: 100, ms: 2000, waitedMs: 1500 }] };
+    // 20 + 1500 + 2000 = 3520: past 3 s, within 4 s; alone the last request is within both.
+    expect(turnWouldTimeOut(limited, 3000)).toBe(true);
+    expect(turnWouldTimeOut(limited, 4000)).toBe(false);
+    expect(turnWouldTimeOut({ requests: [{ firstMs: 100, ms: 2000 }] }, 3000)).toBe(false);
+    // A request that was not refused for its rate limit starts a round's time again.
+    expect(turnWouldTimeOut({ requests: [{ firstMs: 100, ms: 2000, error: 'timeout: x' }, { firstMs: 100, ms: 2000 }] }, 3000)).toBe(false);
+    const s = summarize([timed([limited.requests])], { timeoutMs: 3000 });
+    expect(s.timeoutRate).toBe(1);
+    expect(s.wouldTimeout['4000']).toBe(0);
   });
 
   it('takes the timeout rate as the turns that timed out on the run, or would have at the line\'s own timeout', () => {

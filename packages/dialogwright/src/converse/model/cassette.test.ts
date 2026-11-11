@@ -47,4 +47,14 @@ describe('cassetteModel', () => {
     expect(await collect(rec.stream(req('a'), ctl()))).toEqual(turn('ok'));
     expect(await collect(cassetteModel({ path: p, inner: null }).stream(req('a'), ctl()))).toEqual(turn('ok'));
   });
+
+  it('does not record the provider\'s rate limit (an HTTP 429), so the request is asked again', async () => {
+    const p = path();
+    const limited: ModelEvent[] = [{ type: 'error', kind: 'rate_limited', detail: 'HTTP 429', retryAfterMs: 1000 }];
+    const rec = cassetteModel({ path: p, inner: fakeModel([limited, turn('ok')]) });
+    expect(await collect(rec.stream(req('a'), ctl()))).toEqual(limited);
+    expect(await collect(cassetteModel({ path: p, inner: null }).stream(req('a'), ctl()))).toEqual([{ type: 'error', kind: 'http', detail: 'cassette miss' }]);
+    expect(await collect(rec.stream(req('a'), ctl()))).toEqual(turn('ok'));
+    expect(await collect(cassetteModel({ path: p, inner: null }).stream(req('a'), ctl()))).toEqual(turn('ok'));
+  });
 });

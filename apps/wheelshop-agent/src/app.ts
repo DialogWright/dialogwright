@@ -47,7 +47,7 @@ function requestDetails(p: Readonly<Record<string, string>>): string {
   return `${p.vehicle ?? ''}, ${p.damage ?? ''}, ${p.wheels ?? ''} wheel${p.wheels === 'one' ? '' : 's'}${diamond}${(p.notes ?? '') === '' ? '' : `; note: ${p.notes}`}`;
 }
 
-/** A request or a booking that takes room the window has not got: the calendar refuses it, as a real one would. */
+/** A request or a booking that takes room the window has not got (or a window whose drop-off time has passed today): the calendar refuses it, as a real one would. */
 class NoRoom extends Error {}
 
 /** The actions' code, on the shop's systems. Each write is done once for its key (ctx.key). */
@@ -55,6 +55,11 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
   /** A window's room checked for `cars` before a write, unless the write was done already under its key (a repeat). */
   const room = (key: string, prefix: string, slot: string, cars: number): { day: string; window: string } => {
     const at = slotParts(slot);
+    // A window whose drop-off time has passed today has no room for that reason, not because it filled up: said so.
+    if (!sys.written.has(`${prefix} ${key}`) && sys.windowOver(at.day, at.window)) {
+      const until = sys.config.windows.find((w) => w.name === at.window)?.until;
+      throw new NoRoom(`the drop-off time for ${at.day} ${at.window}${until !== undefined ? ` (until ${until})` : ''} has passed today, so it takes no car now: look again with check_availability and offer another window`);
+    }
     if (!sys.written.has(`${prefix} ${key}`) && sys.roomIn(at.day, at.window) < cars) {
       throw new NoRoom(`${at.day} ${at.window} has room for ${Math.max(0, sys.roomIn(at.day, at.window))} now, not ${cars}: look again with check_availability and offer another window`);
     }

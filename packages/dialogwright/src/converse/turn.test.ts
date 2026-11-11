@@ -761,8 +761,32 @@ describe('converseTurn: the model\'s failures', () => {
     expect(h.said).toEqual([['Hello there.', true]]);
     expect(s.failures).toBe(0);
     expect(h.model.requests).toHaveLength(2);
-    expect(h.traces[0]!.model).toMatchObject({ rateLimited: 1, retried: true, error: 'rate_limited: HTTP 429' });
+    expect(h.traces[0]!.model).toMatchObject({ rateLimited: 1, rateLimitedMs: 30, retried: true, error: 'rate_limited: HTTP 429' });
     expect(h.traces[0]!.model.requests!.map((r) => r.error ?? null)).toEqual(['rate_limited: HTTP 429', null]);
+    // The wait is apart from the requests' time: on the request it came before, and summed on the model.
+    expect(h.traces[0]!.model.requests!.map((r) => r.waitedMs ?? null)).toEqual([null, 30]);
+  });
+
+  it('asks a request that stalls after a rate limit\'s wait again only with half the model\'s time left, as before any wait', async () => {
+    let n = 0;
+    const model: ConverseModel = {
+      id: 'limited-then-stalls',
+      async *stream(_req, signal) {
+        if (n++ === 0) {
+          yield rateLimited(60);
+          return;
+        }
+        // Never answers: only the runtime's own abort ends it.
+        await new Promise((resolve) => signal.addEventListener('abort', resolve));
+      },
+    };
+    const h = harness([], { model, edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  timeoutMs: 300') });
+    const s = await h.run(fresh(), { kind: 'text', text: 'hi' });
+    // The wait (60) and the stall (150) leave under half of 300: no third request.
+    expect(n).toBe(2);
+    expect(h.said).toEqual([['Sorry, could you say that again?', true]]);
+    expect(s.failures).toBe(1);
+    expect(h.traces[0]!.model).toMatchObject({ rateLimited: 1, rateLimitedMs: 60, error: expect.stringMatching(/^timeout: no answer began/) });
   });
 
   it('asks again after a rate limit as often as twice more, with a backoff where the wait named would leave less than half the model\'s time, and never a fourth time', async () => {
@@ -1178,6 +1202,37 @@ describe('converseTurn: the check after speaking', () => {
     expect(s.carriedNote).toBeUndefined();
   });
 
+  it('where the message carrying a note is answered with nothing at all, takes the note out and asks once more without it: the answer is said, nothing failed', async () => {
+    const h = harness([...lookupThenBook, [done()], [text('You are booked for Friday by noon.'), done()]], { jev: claimsJev([WRONG, FINE]), edit: (t) => t.replace('failuresPerCall: 2', 'failuresPerCall: 1') });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(h.said.at(-1)).toEqual(['You are booked for Friday by noon.', true]);
+    expect(s.failures).toBe(0);
+    expect(s.ended).toBeUndefined();
+    const [withNote, without] = h.model.requests.slice(-2).map((r) => JSON.stringify(r.messages));
+    expect(withNote).toContain(CHECK_NOTE_MARK);
+    expect(without).not.toContain(CHECK_NOTE_MARK);
+    expect(JSON.stringify(s.messages)).not.toContain(CHECK_NOTE_MARK);
+    // What came of the read-back stays: only the note is taken out.
+    expect(without).toContain('The caller confirmed');
+    const trace = h.traces.at(-1)!;
+    expect(trace).toMatchObject({ carriedNote: true, carriedNoteDropped: true });
+    expect(trace.model.error).toBeUndefined();
+    expect(trace.model.requests!.every((r) => r.error === undefined)).toBe(true);
+  });
+
+  it('takes an empty answer after the note is taken out as any empty answer: asked once more, then the done line and a failure counted', async () => {
+    const h = harness([...lookupThenBook, [done()], [done()], [done()]], { jev: claimsJev(WRONG) });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(h.model.requests).toHaveLength(5);
+    expect(h.said.at(-1)).toEqual(["That's done.", true]);
+    expect(s.failures).toBe(1);
+    expect(h.traces.at(-1)).toMatchObject({ carriedNote: true, carriedNoteDropped: true, model: { retried: true, error: expect.stringMatching(/^empty: /) } });
+  });
+
   it('carries the note again where the reply to it is read as wrong while another read-back waits, and drops it when the caller leaves', async () => {
     const h = harness([...lookupThenBook, [text('Done. Shall I also leave a note?'), call('c3', 'leave_note', { note: 'fragile' }), done('tool')]], { jev: claimsJev(WRONG) });
     let s = await upToReadBack(h);
@@ -1264,8 +1319,14 @@ describe('systemPrompt', () => {
 
   it('tells the model a correction speaks as the business would, never of the line\'s workings, that it may decline by answering nothing at all, and what a note after the caller\'s words is', () => {
     expect(prompt).toContain(CORRECTION_GOAL);
-    expect(prompt).toContain(CORRECTION_DECLINE);
     expect(prompt).toMatch(/A note that follows the caller's words, or what came of a read-back, is about a reply said earlier/);
+  });
+
+  it('says to answer with nothing at all only to a note that comes on its own, and always to answer what comes before a note that follows other words', () => {
+    // The bare decline sentence is the immediate note's own, never the instructions' for every turn.
+    expect(prompt).not.toContain(CORRECTION_DECLINE);
+    expect(prompt).toMatch(/A note that comes on its own, as a message of its own, is about the reply you have just given: where, read again .*, that reply was right after all, answer that note with nothing at all/);
+    expect(prompt).toMatch(/always answer what comes before it as you would, never with nothing/);
   });
 
   it('says nothing is told as noted unless the params of an action the caller confirms carry it', () => {

@@ -48,9 +48,9 @@ export function cassetteModel(o: { path: string; inner: ConverseModel | null; id
         events.push(e);
         yield e;
       }
-      // A transient failure is not an answer: it is not kept, so it never replays.
+      // A transient failure (a timeout, an HTTP failure, the provider's rate limit) is not an answer: it is not kept, so it never replays.
       const last = events.at(-1);
-      if (last?.type === 'error' && (last.kind === 'timeout' || last.kind === 'http')) {
+      if (last?.type === 'error' && (last.kind === 'timeout' || last.kind === 'http' || last.kind === 'rate_limited')) {
         attempts.set(key, attempt);
         return;
       }
