@@ -112,7 +112,7 @@ export function configHashOf(app: App, dir: string, file: string): string | null
  * Fails, with a line diff, when `file` is not `text`, the page the app generates today ("-" the file,
  * "+" what the app generates). `regenerate` is the command that writes it. Never writes the file.
  */
-export function expectGeneratedPage(app: App, file: string, text: string, regenerate: string, what: string): void {
+export function expectGeneratedPage(app: Pick<App, 'id'>, file: string, text: string, regenerate: string, what: string): void {
   if (!existsSync(file)) throw new Error(`there is no ${what} at ${file}: write it with \`${regenerate}\`, then review it and commit it`);
   const expected = readFileSync(file, 'utf8');
   if (expected === text) return;

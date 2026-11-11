@@ -1,4 +1,6 @@
 import { dirname, relative } from 'node:path';
+import { isConverseApp, type ConverseApp } from '../converse/app';
+import { converseAppMapText } from './conversePages';
 import { gateOf } from '../core/app/lookup';
 import { reachOf, unreachedActions } from '../core/app/reach';
 import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, slotOutcomesOf } from '../core/app/next';
@@ -446,13 +448,13 @@ export function appMapText(app: App): string {
 }
 
 /** Fails, with a readable diff, when `file` (an app's APP-MAP.md) is not the map the app generates today. Never writes the file. */
-export function expectAppMap(app: App, file: string, regenerate = `pnpm app:diagram ${relativeFolder(file)}`): void {
-  expectGeneratedPage(app, file, appMapText(app), regenerate, 'app map');
+export function expectAppMap(app: App | ConverseApp, file: string, regenerate = `pnpm app:diagram ${relativeFolder(file)}`): void {
+  expectGeneratedPage(app, file, isConverseApp(app) ? converseAppMapText(app) : appMapText(app), regenerate, 'app map');
 }
 
 /** Writes `app`'s map to `file`; whether it changed. For the app:diagram command, never a test. */
-export function writeAppMap(app: App, file: string): { changed: boolean; lines: number } {
-  return writeGeneratedPage(file, appMapText(app));
+export function writeAppMap(app: App | ConverseApp, file: string): { changed: boolean; lines: number } {
+  return writeGeneratedPage(file, isConverseApp(app) ? converseAppMapText(app) : appMapText(app));
 }
 
 function relativeFolder(file: string): string {

@@ -3,6 +3,8 @@ import { dirname, relative } from 'node:path';
 import type { App, ToolName } from '../core/app/types';
 import { gateOf } from '../core/app/lookup';
 import type { PolicyAction, PolicySource, Rule } from '../gate/compiled';
+import { isConverseApp, type ConverseApp } from '../converse/app';
+import { conversePolicyMatrixText } from './conversePages';
 import { isDefinedRule } from '../gate/defineRule';
 import { confirmationHash } from '../gate/lines';
 import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type Principal, type ToolCall } from '../gate/types';
@@ -392,8 +394,8 @@ export function lineDiff(expected: string, actual: string, context = 2, limit = 
  * decides today. `regenerate` is the command the message tells the reader to run when the change is
  * meant (default: `pnpm policy:matrix <the file's folder, from the working directory>`). Never writes the file.
  */
-export function expectPolicyMatrix(app: App, file: string, regenerate = `pnpm policy:matrix ${relative(process.cwd(), dirname(file)) || '.'}`): void {
-  const actual = policyMatrixText(app);
+export function expectPolicyMatrix(app: App | ConverseApp, file: string, regenerate = `pnpm policy:matrix ${relative(process.cwd(), dirname(file)) || '.'}`): void {
+  const actual = isConverseApp(app) ? conversePolicyMatrixText(app) : policyMatrixText(app);
   if (!existsSync(file)) throw new Error(`there is no policy matrix at ${file}: write it with \`${regenerate}\`, then review it and commit it`);
   const expected = readFileSync(file, 'utf8');
   if (expected === actual) return;
@@ -405,8 +407,8 @@ export function expectPolicyMatrix(app: App, file: string, regenerate = `pnpm po
 }
 
 /** Writes `app`'s policy matrix to `file`; whether it changed. For the policy:matrix command, never a test. */
-export function writePolicyMatrix(app: App, file: string): { changed: boolean; lines: number } {
-  const text = policyMatrixText(app);
+export function writePolicyMatrix(app: App | ConverseApp, file: string): { changed: boolean; lines: number } {
+  const text = isConverseApp(app) ? conversePolicyMatrixText(app) : policyMatrixText(app);
   const changed = !existsSync(file) || readFileSync(file, 'utf8') !== text;
   if (changed) writeFileSync(file, text);
   return { changed, lines: text.split('\n').length - 1 };

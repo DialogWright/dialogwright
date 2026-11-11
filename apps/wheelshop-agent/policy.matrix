@@ -1,0 +1,46 @@
+# policy.matrix: what the gate of "wheelshop-agent" decides, for every action.
+# Written by `pnpm policy:matrix` from agent.yaml's actions (their rules as written, and, for a change,
+# `confirmed` over all its params last); a test fails when it differs. Never edit it by hand: a difference
+# here is a change in what the agent may do, to be reviewed as the policy is.
+#
+# Every call is made by a caller nobody has proven (level 0): agent.yaml has no identity. Under each
+# action (its level and its rules in the order they run), one line per kind of call, where a|b means
+# either value.
+# what a call carries
+#   confirmed   none; match (the caller said yes to a read-back of exactly these values); mismatch
+#   a param     for a param a oneOf or noneOf rule lists: the first value listed, and another value
+# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>
+
+recognise_caller · level 0 · no rules
+  every caller  ALLOW
+
+check_availability · level 0 · no rules
+  every caller  ALLOW
+
+send_request · level 0 · confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk)
+  every caller  confirmed none|mismatch  BLOCK confirmation
+                confirmed match          ALLOW
+
+send_photo_request · level 0 · oneOf(textOk: yes), confirmed(callbackNumber, textOk)
+  every caller  textOk yes, confirmed none|mismatch  BLOCK confirmation
+                textOk yes, confirmed match          ALLOW
+                textOk another value                 BLOCK no-consent
+
+notify_shop_request · level 0 · confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk)
+  every caller  confirmed none|mismatch  BLOCK confirmation
+                confirmed match          ALLOW
+
+book_dealer · level 0 · confirmed(account, cars, vehicles, slot)
+  every caller  confirmed none|mismatch  BLOCK confirmation
+                confirmed match          ALLOW
+
+notify_shop_booking · level 0 · confirmed(account, cars, vehicles, slot)
+  every caller  confirmed none|mismatch  BLOCK confirmation
+                confirmed match          ALLOW
+
+leave_callback · level 0 · confirmed(name, callbackNumber, about)
+  every caller  confirmed none|mismatch  BLOCK confirmation
+                confirmed match          ALLOW
+
+(unlisted) · an action agent.yaml does not list
+  every caller  BLOCK unknown-tool

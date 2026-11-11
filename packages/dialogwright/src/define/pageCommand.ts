@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isConverseApp, type ConverseApp } from '../converse/app';
 import type { App } from '../core/app/types';
 import { isTemplatePage, MATRIX_APP_MODULES, SKIPPED_FOLDERS, workspaceRootOf } from './matrixCommand';
 
@@ -25,7 +26,7 @@ export interface PageCommand {
   /** The page's file name, beside the app's policy.yaml. */
   readonly file: string;
   /** Writes the app's page to `file`, when it changed. */
-  write(app: App, file: string): Promise<{ changed: boolean; lines: number }>;
+  write(app: App | ConverseApp, file: string): Promise<{ changed: boolean; lines: number }>;
 }
 
 export interface PageIo {
@@ -73,6 +74,18 @@ export async function loadFolderApp(dir: string): Promise<App> {
   throw new Error(`${dir}: no module (${MATRIX_APP_MODULES.join(', ')}) exports an App`);
 }
 
+/** What a page is written from: a folder's scripted App (loadFolderApp), or, where its module exports one, its converse app. */
+export async function loadPageApp(dir: string): Promise<App | ConverseApp> {
+  for (const file of MATRIX_APP_MODULES) {
+    if (!existsSync(join(dir, file))) continue;
+    const module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
+    const converse = [...new Set(Object.values(module).filter(isConverseApp))];
+    if (converse.length === 1) return converse[0]!;
+    if (converse.length > 1) throw new Error(`${join(dir, file)} exports more than one converse app (${converse.map((a) => a.id).join(', ')}): give each its own folder`);
+  }
+  return loadFolderApp(dir);
+}
+
 /** Runs a page command with its arguments; returns the exit code. */
 export async function pageCommand(command: PageCommand, args: readonly string[], io: PageIo): Promise<number> {
   const option = args.find((a) => a.startsWith('-'));
@@ -97,7 +110,7 @@ export async function pageCommand(command: PageCommand, args: readonly string[],
       continue;
     }
     try {
-      const app = await loadFolderApp(dir);
+      const app = await loadPageApp(dir);
       const { changed, lines } = await command.write(app, join(dir, command.file));
       io.out(changed ? `wrote ${shown} (${lines} lines): review the diff before you commit it` : `${shown}: unchanged`);
     } catch (error) {

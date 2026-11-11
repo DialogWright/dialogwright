@@ -34,10 +34,13 @@ export function workspaceCopy(workspaceRoot: string, folders: readonly string[])
     for (const entry of readdirSync(from, { withFileTypes: true })) {
       if (entry.isFile() && !CODE.test(entry.name)) copyFileSync(join(from, entry.name), join(to, entry.name));
     }
-    const module = MATRIX_APP_MODULES.find((path) => existsSync(join(from, path)));
-    if (module === undefined) throw new Error(`${from}: no module (${MATRIX_APP_MODULES.join(', ')}) exports an App`);
-    mkdirSync(dirname(join(to, module)), { recursive: true });
-    writeFileSync(join(to, module), `export * from ${JSON.stringify(join(from, module))};\n`);
+    // Every module the commands look in (the one with the app may not be the first: a converse app's is src/index.ts, beside src/app.ts).
+    const modules = MATRIX_APP_MODULES.filter((path) => existsSync(join(from, path)));
+    if (modules.length === 0) throw new Error(`${from}: no module (${MATRIX_APP_MODULES.join(', ')}) exports an App`);
+    for (const module of modules) {
+      mkdirSync(dirname(join(to, module)), { recursive: true });
+      writeFileSync(join(to, module), `export * from ${JSON.stringify(join(from, module))};\n`);
+    }
   }
   return { root, remove: () => rmSync(root, { recursive: true, force: true }) };
 }

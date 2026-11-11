@@ -1,4 +1,6 @@
 import { accountSettingsOf } from '../define/accountNumbers';
+import { isConverseApp, type ConverseApp } from '../converse/app';
+import { conversePolicyCardText } from './conversePages';
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
@@ -867,13 +869,13 @@ export function policyCardText(app: App, dir: string): string {
  * today. `regenerate` is the command to tell the reader to run (default: `pnpm policy:card <the
  * file's folder, from the working directory>`). Never writes the file.
  */
-export function expectPolicyCard(app: App, file: string, regenerate = `pnpm policy:card ${relativeFolder(file)}`): void {
-  expectGeneratedPage(app, file, policyCardText(app, dirname(file)), regenerate, 'policy card');
+export function expectPolicyCard(app: App | ConverseApp, file: string, regenerate = `pnpm policy:card ${relativeFolder(file)}`): void {
+  expectGeneratedPage(app, file, isConverseApp(app) ? conversePolicyCardText(app) : policyCardText(app, dirname(file)), regenerate, 'policy card');
 }
 
 /** Writes `app`'s policy card to `file`; whether it changed. For the policy:card command, never a test. */
-export function writePolicyCard(app: App, file: string): { changed: boolean; lines: number } {
-  return writeGeneratedPage(file, policyCardText(app, dirname(file)));
+export function writePolicyCard(app: App | ConverseApp, file: string): { changed: boolean; lines: number } {
+  return writeGeneratedPage(file, isConverseApp(app) ? conversePolicyCardText(app) : policyCardText(app, dirname(file)));
 }
 
 function relativeFolder(file: string): string {

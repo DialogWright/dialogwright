@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isConverseApp, type ConverseApp } from '../converse/app';
 import type { App } from '../core/app/types';
 import { APP_MODULE_PATHS } from './check';
 
@@ -73,11 +74,17 @@ function isApp(x: unknown): x is App {
   return typeof a.id === 'string' && typeof a.policy === 'object' && a.policy !== null && typeof a.tools === 'object' && typeof a.systems === 'function';
 }
 
-/** The App a folder's module exports: the one with a policy matrix (TestingHooks.policyMatrix). */
-export async function loadMatrixApp(dir: string): Promise<App> {
+/**
+ * The App a folder's module exports: the one with a policy matrix (TestingHooks.policyMatrix). A converse
+ * app (app.yaml `mode: converse`) has no matrix of its own to name: the module's one converse app is taken.
+ */
+export async function loadMatrixApp(dir: string): Promise<App | ConverseApp> {
   for (const file of MATRIX_APP_MODULES) {
     if (!existsSync(join(dir, file))) continue;
     const module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
+    const converse = [...new Set(Object.values(module).filter(isConverseApp))];
+    if (converse.length === 1) return converse[0]!;
+    if (converse.length > 1) throw new Error(`${join(dir, file)} exports more than one converse app (${converse.map((a) => a.id).join(', ')}): give each its own folder`);
     const apps = [...new Set(Object.values(module).filter(isApp))];
     const withMatrix = apps.filter((a) => typeof a.testing?.policyMatrix === 'function');
     if (withMatrix.length === 1) return withMatrix[0]!;
