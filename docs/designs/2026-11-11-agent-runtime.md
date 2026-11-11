@@ -519,3 +519,20 @@ It shares the transport split above, so the split is done once, in a way that se
    - Its purpose: the caller hears a reply a sentence at a time, so the first whole sentence arrives almost
      as soon as the first word.
    - The runtime's own bridge (plan 2) stays the fallback when the model is slow to begin at all.
+6. **Gaps are not errors** (after his hand-check of the judge,
+   [2026-11-judge-check.md](eval/2026-11-judge-check.md)). Most material claims the models made up were a
+   reasonable answer where the business information was silent. The judge now gives each material claim
+   its basis:
+   - **contradicted:** the business information or the call's actions and results say otherwise, or the
+     line says something was done that the actions do not show. These count against the bar and make a
+     call incorrect.
+   - **gap:** the business information says nothing on it. These are listed for the owner to answer in
+     agent.yaml's `questions`, and count against nothing.
+7. **The check after speaking.** No check holds a reply (item 1), but each reply is read once it has been
+   said, and a wrong claim is sent back to the model to correct itself to the caller:
+   [the design](2026-11-11-claims-check.md).
+8. **Development work is judged in the session.** Judging the simulated calls is development work, done by
+   the assistant reading the stored calls (`pnpm eval --judge none`, then `eval:rejudge --verdicts`), on the
+   maintainer's subscription rather than an API judge; API calls are kept for what the app does on a call.
+   The simulated callers stay Claude Haiku 5.5 through the API, since they answer as the call happens. The
+   API judge stays in the tool for an adopter who wants it.
