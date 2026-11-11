@@ -128,6 +128,13 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
         if (typeof t !== 'string') return;
         if (t === name) issue(ctx, ['actions', name, 'then', i], `"${name}" follows itself`, 'delete it from "then"');
         else if (!Object.hasOwn(actions, t)) issue(ctx, ['actions', name, 'then', i], `"${t}" is no action`, `name one of the actions (${Object.keys(actions).join(', ')}), or add "${t}" under actions`);
+        else {
+          // A follow-on runs with the params of its parent's yes, by name: one it takes that the parent has not would run with a value the caller never heard read back.
+          const follow = actions[t];
+          const takes = isMap(follow) && isMap(follow.params) ? Object.keys(follow.params) : [];
+          const missing = takes.filter((p) => !Object.hasOwn(params, p));
+          if (missing.length > 0) issue(ctx, ['actions', name, 'then', i], `the follow-on "${t}" takes ${missing.join(', ')}, which "${name}" has not`, `give "${t}" only params of "${name}" (${Object.keys(params).join(', ') || 'it has none'}): a follow-on runs with the values the caller said yes to, by name`);
+        }
       });
     }
     for (const [pname, p] of Object.entries(params)) {

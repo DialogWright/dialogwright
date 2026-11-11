@@ -57,9 +57,10 @@ function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: See
     }
     case 'slot': {
       const from = spec.from ?? '';
-      const returned = seen[from]?.results.map(resultId) ?? [];
+      const looked = Object.hasOwn(seen, from) ? seen[from] : undefined;
+      const returned = looked?.results.map(resultId) ?? [];
       if (returned.includes(text)) return { value: text };
-      return { reason: seen[from] ? `${name} "${text}" is not one ${from} returned on this call: pick a time from ${from}'s results` : `${from} has not been called on this call: call it, then pick a time from ${from}'s results` };
+      return { reason: looked ? `${name} "${text}" is not one ${from} returned on this call: pick a time from ${from}'s results` : `${from} has not been called on this call: call it, then pick a time from ${from}'s results` };
     }
     case 'number':
       return text !== '' && Number.isFinite(Number(text)) ? { value: String(Number(text)) } : { reason: `${name} must be a number; "${text}" is not one` };

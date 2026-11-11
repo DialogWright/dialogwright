@@ -83,6 +83,14 @@ describe('what is refused', () => {
     expect(p!.message).toMatch(/"notifyy" is no action/);
   });
 
+  it('a follow-on taking a param its parent has not, which would run with a value never read back', () => {
+    const [p, ...rest] = problemsOf(changed('      item: { type: text, about: The item. }', '      item: { type: text, about: The item. }\n      note: { type: text, about: A note. }'));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.book.then[0]' });
+    expect(p!.message).toMatch(/"notify" takes note, which "book" has not/);
+    expect(p!.fix).toMatch(/day, window, item, details, phone/);
+  });
+
   it('a slot param without from', () => {
     const [p] = problemsOf(changed('window: { type: slot, from: availability, about:', 'window: { type: slot, about:'));
     expect(p).toMatchObject({ path: 'actions.book.params.window' });

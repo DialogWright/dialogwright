@@ -57,6 +57,13 @@ describe('checkArgs', () => {
     expect(reasonOf({ ...good, window: 'w-1' }, { other: seen.check_availability! })).toContain('check_availability');
   });
 
+  it('reads no lookup from the prototype of what was seen', () => {
+    const fromProto: ActionSpec = { ...book, params: { window: { type: 'slot', from: 'constructor', about: 'A window.' } } };
+    const r = checkArgs(fromProto, { window: 'w-1' }, {}, TODAY);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.reason).toContain('constructor has not been called on this call');
+  });
+
   it('takes a slot by the id of a result, whether a result is an object or a bare id', () => {
     expect(checkArgs(book, { ...good, window: 'w-2' }, seen, TODAY).ok).toBe(true);
     expect(checkArgs(book, { ...good, window: 'w-9' }, { check_availability: { results: ['w-9'], atMs: 1 } }, TODAY).ok).toBe(true);

@@ -31,7 +31,8 @@ function dayShown(iso: string, lang: Lang): string {
 
 /** A slot as it is said: its label among the lookup's results, else the label of the calendar window it names, else its id. */
 function slotShown(b: AgentBusiness, spec: ParamSpec, id: string, seen: Seen): string {
-  const result = seen[spec.from ?? '']?.results.find((r) => resultId(r) === id);
+  const from = spec.from ?? '';
+  const result = Object.hasOwn(seen, from) ? seen[from]!.results.find((r) => resultId(r) === id) : undefined;
   const label = typeof result === 'object' && result !== null ? (result as { label?: unknown }).label : undefined;
   if (typeof label === 'string' && label.trim() !== '') return label;
   return b.sources.calendar?.windows.find((w) => w.name === id)?.label ?? id;
@@ -51,10 +52,10 @@ function shown(b: AgentBusiness, spec: ParamSpec | undefined, value: string, lan
 /**
  * The read-back of `action` in `lang`, each {placeholder} filled with its param as the type displays
  * it (an optional param left out as nothing). `seen` holds the lookups' results a slot's label is read
- * from. Throws for an action with no read-back: only a change has one, and agent.yaml's check makes
+ * from (required, so a caller never reads a slot back without this call's lookups). Throws for an action with no read-back: only a change has one, and agent.yaml's check makes
  * every change have one.
  */
-export function readBackText(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen = {}): string {
+export function readBackText(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen): string {
   const spec = b.actions[action];
   const frame = spec?.readBack?.[lang];
   if (spec === undefined || frame === undefined) throw new Error(`"${action}" has no read-back in ${lang}`);

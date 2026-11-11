@@ -36,7 +36,12 @@ describe('readBackText', () => {
   });
 
   it('says a slot the lookup did not label by the calendar window it names', () => {
-    expect(readBackText(b, 'book', { ...params, window: 'morning' }, 'en')).toContain('Friday, November 13, 9 to 12, for');
+    expect(readBackText(b, 'book', { ...params, window: 'morning' }, 'en', {})).toContain('Friday, November 13, 9 to 12, for');
+  });
+
+  it('reads no label from the prototype of what was seen', () => {
+    const proto = { ...b, actions: { ...b.actions, book: { ...b.actions.book!, params: { ...b.actions.book!.params, window: { type: 'slot' as const, from: 'toString', about: 'A window.' } } } } };
+    expect(readBackText(proto, 'book', { ...params, window: 'w-9' }, 'en', {})).toContain('Friday, November 13, w-9, for');
   });
 
   it('says an optional param left out as nothing', () => {
@@ -44,7 +49,7 @@ describe('readBackText', () => {
   });
 
   it('throws for an action that has no read-back', () => {
-    expect(() => readBackText(b, 'availability', { day: '2026-11-13' }, 'en')).toThrow(/availability/);
+    expect(() => readBackText(b, 'availability', { day: '2026-11-13' }, 'en', {})).toThrow(/availability/);
   });
 });
 
