@@ -24,6 +24,11 @@
           "type": "string",
           "minLength": 1,
           "description": "Its days and hours, as the agent may say them."
+        },
+        "timezone": {
+          "description": "The business's IANA time zone (for example America/New_York): what \"today\" means for its calendar. Default: UTC.",
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [

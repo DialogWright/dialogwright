@@ -157,6 +157,10 @@ export const agentBusinessSchema = z
         about: text().describe('What it does, in a sentence or two.'),
         where: text().optional().describe('Where it is.'),
         hours: text().describe('Its days and hours, as the agent may say them.'),
+        timezone: text()
+          .refine((z) => { try { new Intl.DateTimeFormat('en-CA', { timeZone: z }); return true; } catch { return false; } }, 'not an IANA time zone name')
+          .optional()
+          .describe('The business\'s IANA time zone (for example America/New_York): what "today" means for its calendar. Default: UTC.'),
       })
       .describe('Who the business is.'),
     services: z

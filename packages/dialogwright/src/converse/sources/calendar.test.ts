@@ -41,4 +41,17 @@ describe('fakeCalendar', () => {
     await expect(c.book('2026-11-13:night', {}, 'k')).rejects.toBeInstanceOf(UnknownSlot);
     await expect(c.book('nonsense', {}, 'k')).rejects.toBeInstanceOf(UnknownSlot);
   });
+  it('throws for a past day', async () => {
+    await expect(make().book('2026-11-09:morning', {}, 'k')).rejects.toBeInstanceOf(UnknownSlot);
+  });
+  it('takes today in the business\'s zone', async () => {
+    const c = fakeCalendar({
+      days: ['monday', 'tuesday', 'wednesday'],
+      windows: [{ name: 'morning', label: 'drop off by noon', capacity: 1 }],
+      now: () => new Date('2026-11-12T02:00:00Z'),
+      timeZone: 'America/New_York',
+    });
+    expect((await c.free('2026-11-11')).map((s) => s.id)).toEqual(['2026-11-11:morning']);
+    expect(await c.free('2026-11-10')).toEqual([]);
+  });
 });

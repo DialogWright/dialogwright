@@ -5,6 +5,7 @@ business:
   about: We repair small appliances and visit homes in the area.
   where: Millbrook and Ashford
   hours: Monday to Friday, 9 to 5.
+  timezone: America/New_York
 services:
   - name: standard visit
     about: A technician looks at one item and repairs it on the spot where possible.

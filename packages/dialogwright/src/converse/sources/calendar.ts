@@ -1,3 +1,5 @@
+import { localDateIso } from '../../core/localDate';
+
 /** A fake calendar for the converse runtime: free places per day by window and capacity, booked with a key. */
 
 export interface Slot {
@@ -45,6 +47,8 @@ export function fakeCalendar(o: {
   days: string[];
   windows: { name: string; label: string; capacity: number }[];
   now: () => Date;
+  /** The business's IANA zone, what "today" means; default UTC. */
+  timeZone?: string;
 }): Calendar & { bookings: { slotId: string; details: Record<string, string>; key: string }[] } {
   const open = new Set(o.days.map((d) => d.trim().toLowerCase()));
   const bookings: { slotId: string; details: Record<string, string>; key: string }[] = [];
@@ -54,7 +58,7 @@ export function fakeCalendar(o: {
     return { id: `${dayIso}:${w.name}`, dayIso, window: w.name, label: `${dayWords(d)}, ${w.label}` };
   };
   const taken = (slotId: string): number => bookings.filter((b) => b.slotId === slotId).length;
-  const openDay = (d: Date | null): d is Date => d !== null && open.has(WEEKDAYS[d.getUTCDay()]!) && d.toISOString().slice(0, 10) >= o.now().toISOString().slice(0, 10);
+  const openDay = (d: Date | null): d is Date => d !== null && open.has(WEEKDAYS[d.getUTCDay()]!) && d.toISOString().slice(0, 10) >= localDateIso(o.now().getTime(), o.timeZone ?? 'UTC');
   return {
     bookings,
     async free(dayIso) {
@@ -66,9 +70,10 @@ export function fakeCalendar(o: {
       const before = byKey.get(key);
       if (before !== undefined) return { id: before, repeat: true };
       const at = slotId.indexOf(':');
+      if (at < 0) throw new UnknownSlot(slotId);
       const dayIso = slotId.slice(0, at);
       const w = o.windows.find((x) => x.name === slotId.slice(at + 1));
-      const d = at < 0 ? null : parseDay(dayIso);
+      const d = parseDay(dayIso);
       if (w === undefined || !openDay(d)) throw new UnknownSlot(slotId);
       if (taken(slotId) >= w.capacity) throw new SlotFull(slotId);
       bookings.push({ slotId, details: { ...details }, key });
