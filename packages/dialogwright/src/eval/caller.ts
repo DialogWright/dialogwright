@@ -42,7 +42,7 @@ export function modelCaller(model: ConverseModel, spend: Budget): CallerFn {
   return async (persona, turns) => {
     let text = '';
     let hungUp = false;
-    for await (const ev of model.stream({ system: callerSystem(persona), messages: messagesOf(turns), tools: [HANG_UP], maxTokens: 300, temperature: 0.8 }, AbortSignal.timeout(30_000))) {
+    for await (const ev of model.stream({ system: callerSystem(persona), messages: messagesOf(turns), tools: [HANG_UP], maxTokens: 300 }, AbortSignal.timeout(30_000))) {
       if (ev.type === 'text') text += ev.delta;
       else if (ev.type === 'tool_call' && ev.name === HANG_UP.name) hungUp = true;
       else if (ev.type === 'done') spend.add(model.id, ev.usage);

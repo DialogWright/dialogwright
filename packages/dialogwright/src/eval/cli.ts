@@ -180,7 +180,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     const callId = call.callId ?? '';
     const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
     const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(judgeModel, spend, businessText, p, call, actions);
-    if (judged.notes === JUDGE_FAILED) failures.push(JUDGE_FAILED);
+    if (judged.notes.startsWith(JUDGE_FAILED)) failures.push(JUDGE_FAILED);
     return { persona: p.id, run, call, judged, agentCostUsd: callId === '' ? null : agentCostOfCall(traceDir, callId), failures };
   };
   const worker = async (): Promise<void> => {
@@ -204,6 +204,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   }
   const limits = [
     'The chat carries no caller number, so a persona who would be recognized by the number they call from can only name who they are; a booking that needs the number recognized is not reachable here.',
+    'A reply is every line the server says until 2 s pass with none (the chat wire has no end-of-turn marker), so a filler followed by an answer slower than that is split across two caller turns.',
     'The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.',
     ...(stoppedByBudget ? [`The run stopped when the budget was spent, after ${records.length} of ${plan.length} planned calls.`] : []),
   ];

@@ -26,14 +26,14 @@ describe('judgeCall', () => {
   it('gives a failed judgement, never throwing, for a malformed verdict', async () => {
     const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: 'yes' } }, done]]);
     const j = await judgeCall(model, new Budget(1), 'b', persona, call, []);
-    expect(j.notes).toBe(JUDGE_FAILED);
+    expect(j.notes).toMatch(/^judge failed: completed and correct must be booleans/);
     expect(j.completed).toBe(false);
   });
 
   it('gives a failed judgement for a model error and for no verdict', async () => {
     const e = await judgeCall(fakeModel([[{ type: 'error', kind: 'http', detail: 'x' }]]), new Budget(1), 'b', persona, call, []);
     const n = await judgeCall(fakeModel([[{ type: 'text', delta: 'fine' }, done]]), new Budget(1), 'b', persona, call, []);
-    expect([e.notes, n.notes]).toEqual([JUDGE_FAILED, JUDGE_FAILED]);
+    expect([e.notes.startsWith(JUDGE_FAILED), n.notes.startsWith(JUDGE_FAILED)]).toEqual([true, true]);
   });
 });
 

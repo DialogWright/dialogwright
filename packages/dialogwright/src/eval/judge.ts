@@ -88,31 +88,47 @@ function judgeInput(businessText: string, p: Persona, call: SimCall, actions: re
   ].join('\n\n');
 }
 
-const failed = (): Judged => ({ completed: false, correct: false, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: JUDGE_FAILED });
+const failed = (why = ''): Judged => ({ completed: false, correct: false, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: why === '' ? JUDGE_FAILED : `${JUDGE_FAILED}: ${why.slice(0, 160)}` });
 
-function parseVerdict(args: Record<string, unknown>): Judged | null {
-  const { completed, correct, unsupportedClaims, honestWhenAsked, repeatedQuestions, notes } = args;
-  if (typeof completed !== 'boolean' || typeof correct !== 'boolean') return null;
-  if (!Array.isArray(unsupportedClaims) || !unsupportedClaims.every((c) => typeof c === 'string')) return null;
-  if (honestWhenAsked !== null && typeof honestWhenAsked !== 'boolean') return null;
-  if (typeof repeatedQuestions !== 'number' || !Number.isInteger(repeatedQuestions) || repeatedQuestions < 0) return null;
-  if (typeof notes !== 'string') return null;
-  return { completed, correct, unsupportedClaims: unsupportedClaims as string[], honestWhenAsked, repeatedQuestions, notes };
+function parseVerdict(args: Record<string, unknown>): Judged | string {
+  const { completed, correct, notes } = args;
+  // A model may give a list or a number as text, or leave a null out: read those as what they plainly are.
+  let claims = args.unsupportedClaims;
+  if (typeof claims === 'string') {
+    const text: string = claims;
+    try {
+      claims = JSON.parse(text);
+    } catch {
+      claims = text.trim() === '' ? [] : [text];
+    }
+  }
+  const honest = args.honestWhenAsked === undefined || args.honestWhenAsked === 'null' ? null : args.honestWhenAsked;
+  const repeated = typeof args.repeatedQuestions === 'string' ? Number(args.repeatedQuestions) : args.repeatedQuestions;
+  if (typeof completed !== 'boolean' || typeof correct !== 'boolean') return `completed and correct must be booleans (got ${typeof completed}, ${typeof correct})`;
+  if (!Array.isArray(claims) || !claims.every((c) => typeof c === 'string')) return 'unsupportedClaims must be a list of strings';
+  if (honest !== null && typeof honest !== 'boolean') return 'honestWhenAsked must be a boolean or null';
+  if (typeof repeated !== 'number' || !Number.isInteger(repeated) || repeated < 0) return 'repeatedQuestions must be a whole number';
+  return { completed, correct, unsupportedClaims: claims as string[], honestWhenAsked: honest, repeatedQuestions: repeated, notes: typeof notes === 'string' ? notes : '' };
 }
 
 /** The judge's verdict on a call; a verdict it did not give in its shape is `notes: 'judge failed'`, never thrown. */
 export async function judgeCall(model: ConverseModel, spend: Budget, businessText: string, persona: Persona, call: SimCall, actions: AuditedAction[]): Promise<Judged> {
   let verdict: Judged | null = null;
+  let why = 'the judge gave no verdict';
   try {
-    for await (const ev of model.stream({ system: judgeSystem(), messages: [{ role: 'user', content: [{ type: 'text', text: judgeInput(businessText, persona, call, actions) }] }], tools: [VERDICT], maxTokens: 800, temperature: 0 }, AbortSignal.timeout(60_000))) {
-      if (ev.type === 'tool_call' && ev.name === VERDICT.name) verdict = parseVerdict(ev.args);
+    for await (const ev of model.stream({ system: judgeSystem(), messages: [{ role: 'user', content: [{ type: 'text', text: judgeInput(businessText, persona, call, actions) }] }], tools: [VERDICT], maxTokens: 800 }, AbortSignal.timeout(60_000))) {
+      if (ev.type === 'tool_call' && ev.name === VERDICT.name) {
+        const v = parseVerdict(ev.args);
+        if (typeof v === 'string') why = v;
+        else verdict = v;
+      }
       else if (ev.type === 'done') spend.add(model.id, ev.usage);
-      else if (ev.type === 'error') return failed();
+      else if (ev.type === 'error') return failed(`${ev.kind}: ${ev.detail}`);
     }
-  } catch {
-    return failed();
+  } catch (e) {
+    return failed(e instanceof Error ? e.message : 'error');
   }
-  return verdict ?? failed();
+  return verdict ?? failed(why);
 }
 
 /** What the line's agent model cost on a call, from the traces in `traceDir` (summed over the call's turns); null where no turn records one. */
