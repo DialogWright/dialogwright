@@ -1,4 +1,5 @@
 import type { App } from './types';
+import type { ConverseApp } from '../../converse/app';
 import { validateApp } from './validate';
 import { requireEmbedder } from '../../kb/fallback';
 
@@ -9,8 +10,11 @@ import { requireEmbedder } from '../../kb/fallback';
  */
 const apps = new Map<string, App>();
 let first: string | null = null;
+/** The converse apps this process serves (registerConverseApp), in the order registered. */
+const converseApps = new Map<string, ConverseApp>();
 
 export function registerApp(app: App): void {
+  if (converseApps.has(app.id)) throw new Error(`app "${app.id}" is already registered`);
   validateApp(app);
   // The engine's default retriever fell back to keywords although kb.yaml names an embedder: a
   // warning, or under NODE_ENV=production (or DIALOGWRIGHT_REQUIRE_EMBEDDER=1) an error (../../kb/fallback.ts).
@@ -40,8 +44,25 @@ export function appOf(session: { readonly appId?: string }): App {
   return getApp(session.appId ?? defaultAppId());
 }
 
+/**
+ * A converse app this process serves (defineConverseApp), as an app package's launcher registers it before
+ * serverMain: a server started with no host serves the converse apps registered, as a host of them (the
+ * first the default), where no scripted app is registered. A session never names one: its chats are the
+ * converse runtime's.
+ */
+export function registerConverseApp(app: ConverseApp): void {
+  if (apps.has(app.id) || converseApps.has(app.id)) throw new Error(`app "${app.id}" is already registered`);
+  converseApps.set(app.id, app);
+}
+
+/** The converse apps registered, in the order registered. */
+export function registeredConverseApps(): ConverseApp[] {
+  return [...converseApps.values()];
+}
+
 /** Tests only: forget every registered app. */
 export function resetAppsForTest(): void {
   apps.clear();
+  converseApps.clear();
   first = null;
 }

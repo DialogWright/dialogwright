@@ -1,3 +1,4 @@
+import type { App } from '../core/app/types';
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { appEnvironment, describeHost, hostRouting, loadHost, ownSettingsLines, splitOwnSettings, type HostApp } from './host';
@@ -101,7 +102,7 @@ describe('loadHost', () => {
   it('imports and registers each app the fixture lists, each with its own MAIN_LINE, and routes its numbers', async () => {
     const host = await loadHost(FIXTURE, { ...HOST_NUMBERS });
     expect(host.apps.map((a) => a.id)).toEqual(['callback', 'routed']);
-    expect(host.get('callback').app.brand?.name).toBe('Example Callbacks');
+    expect((host.get('callback').app as App).brand?.name).toBe('Example Callbacks');
     expect(host.get('callback').env.MAIN_LINE).toBe('+15555550101');
     expect(host.get('routed').env.MAIN_LINE).toBe('+15555550201');
     // One app's own variable never reaches another.

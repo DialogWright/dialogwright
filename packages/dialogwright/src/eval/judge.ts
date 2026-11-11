@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ConverseModel, ModelTool } from '../converse/model/types';
 import type { AuditEntry } from '../audit/types';
@@ -64,21 +64,32 @@ export function paramsOfCall(call: string): Record<string, string> {
 const shortly = (x: unknown): string => String(x).slice(0, 200);
 
 /**
- * The call's actions, in order, from the audit day files in `auditDir`: each action asked of the gate with its
- * params as audited, the verdict and reason, and what came back when it ran; and a handoff to a person or a
- * form the caller cancelled, with the reason.
+ * The audit day files under `dir`: its own, then each folder's in it (a host's audit is a folder per app,
+ * AUDIT_DIR/<app id>, beside the server's own), in order by name.
  */
-export function actionsOfCall(auditDir: string, callId: string): AuditedAction[] {
-  let files: string[];
+function auditFiles(dir: string): string[] {
+  let names: string[];
   try {
-    files = readdirSync(auditDir).filter((f) => f.endsWith('.jsonl')).sort();
+    names = readdirSync(dir).sort();
   } catch {
     return [];
   }
+  const own = names.filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f));
+  const below = names.filter((f) => !f.includes('.') && statSync(join(dir, f), { throwIfNoEntry: false })?.isDirectory() === true).flatMap((f) => auditFiles(join(dir, f)));
+  return [...own, ...below];
+}
+
+/**
+ * The call's actions, in order, from the audit day files in `auditDir` (and its folders: a host's audit is
+ * one per app): each action asked of the gate with its params as audited, the verdict and reason, and what
+ * came back when it ran; and a handoff to a person or a form the caller cancelled, with the reason.
+ */
+export function actionsOfCall(auditDir: string, callId: string): AuditedAction[] {
+  const files = auditFiles(auditDir);
   const out: AuditedAction[] = [];
   let last: AuditedAction | null = null;
   for (const f of files) {
-    for (const line of readFileSync(join(auditDir, f), 'utf8').split('\n')) {
+    for (const line of readFileSync(f, 'utf8').split('\n')) {
       if (line.trim() === '' || !line.includes(callId)) continue;
       let e: AuditEntry;
       try {
@@ -171,7 +182,7 @@ export async function judgeCall(model: ConverseModel, spend: Budget, businessTex
   return verdict ?? failed(verdict === null && why === 'the judge gave no verdict' ? `${why} (stopped: ${stop || 'unknown'}; said: ${said.slice(0, 80)})` : why);
 }
 
-/** What the line's agent model cost on a call, from the traces in `traceDir` (summed over the call's turns); null where no turn records one. */
+/** What the line's agent model cost on a call (an agent-mode app's, or a converse app's), from the traces in `traceDir` and its folders (summed over the call's turns); null where no turn records one. */
 export function agentCostOfCall(traceDir: string, callId: string): number | null {
   let total = 0;
   let found = false;
@@ -188,9 +199,11 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
         for (const line of readFileSync(path, 'utf8').split('\n')) {
           if (!line.includes(callId)) continue;
           try {
-            const r = JSON.parse(line) as { sessionId?: string; agent?: { costUsd?: number } };
-            if (r.sessionId === callId && typeof r.agent?.costUsd === 'number') {
-              total += r.agent.costUsd;
+            const r = JSON.parse(line) as { sessionId?: string; kind?: string; agent?: { costUsd?: number }; model?: { costUsd?: number | null } };
+            // An agent-mode turn's agent model, or a converse turn's model (kind 'converse').
+            const cost = r.kind === 'converse' ? r.model?.costUsd : r.agent?.costUsd;
+            if (r.sessionId === callId && typeof cost === 'number') {
+              total += cost;
               found = true;
             }
           } catch {

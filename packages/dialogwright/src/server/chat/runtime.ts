@@ -74,6 +74,11 @@ export interface ChatRuntime {
   create(id: string, io: ChatIo): void;
   /** A new chat's opening: `ready`, then its first lines, through `io`. */
   open(id: string, start: ChatStart, io: ChatIo): Promise<void>;
+  /**
+   * The chat is taken up again by a client (a resume on this server, or one restored from the store):
+   * what its `start` asks now, the resuming client's own (`stream`), over what the chat started with.
+   */
+  resumed(id: string, start: Pick<ChatStart, 'stream'>): void;
   /** What the person typed: the turn, its lines sent through `io`; `ended` when the chat ended with it. */
   text(id: string, text: string, io: ChatIo): Promise<{ ended: boolean }>;
   /**

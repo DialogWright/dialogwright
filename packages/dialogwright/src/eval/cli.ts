@@ -2,7 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { getApp, registerApp } from '../core/app/registry';
+import { parse } from 'yaml';
+import { getApp, registerApp, registerConverseApp, registeredConverseApps } from '../core/app/registry';
+import { isConverseApp } from '../converse/app';
+import { importApp, type HostedApp } from '../server/host';
 import { costUsd } from '../converse/model/price';
 import { resolveConverseModel } from '../converse/model/resolve';
 import type { ConverseModel } from '../converse/model/types';
@@ -19,6 +22,30 @@ import { driveChat, type SimCall } from './chatDriver';
 import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, type Judged } from './judge';
 import { loadPersonas, type Persona } from './personas';
 import { appendResult, writeSummary, type RunRecord } from './report';
+
+/**
+ * The app of a folder, registered for the server this process starts: a converse app (app.yaml's mode:
+ * converse), the ConverseApp its module exports for app.yaml's id, served as a host of one (its audit and
+ * traces in folders of its own, which the readers below walk); else the App its module exports, as a
+ * server of one serves it.
+ */
+export async function registerFolderApp(dir: string): Promise<HostedApp> {
+  const yaml = parse(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { id?: unknown; mode?: unknown } | null;
+  if (yaml?.mode === 'converse') {
+    if (typeof yaml.id !== 'string') throw new Error(`${dir}/app.yaml names no id`);
+    const app = await importApp(dir, yaml.id);
+    if (!isConverseApp(app)) throw new Error(`${dir}: app.yaml says mode: converse, but its module exports the scripted app "${app.id}"`);
+    if (!registeredConverseApps().some((a) => a.id === app.id)) registerConverseApp(app);
+    return app;
+  }
+  const app = await loadFolderApp(dir);
+  try {
+    return getApp(app.id);
+  } catch {
+    registerApp(app);
+    return app;
+  }
+}
 
 export const EVAL_USAGE = [
   'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision]',
@@ -137,17 +164,12 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
   }
-  let app;
+  let app: HostedApp;
   try {
-    app = await loadFolderApp(appDir);
+    app = await registerFolderApp(appDir);
   } catch (e) {
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
-  }
-  try {
-    getApp(app.id);
-  } catch {
-    registerApp(app);
   }
   const decision = values['stub-decision'] ? 'stub' : 'jev';
   if (decision === 'jev' && !env.TYPESAFE_API_KEY) {
@@ -173,8 +195,9 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     io.err(`dialogwright eval: the app's server did not start: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
   }
-  const businessFile = join(appDir, 'business.yaml');
-  const businessText = existsSync(businessFile) ? readFileSync(businessFile, 'utf8') : '(this app has no business.yaml: judge by what its own answers say)';
+  // The business the judge holds the line to: an agent-mode app's business.yaml, or a converse app's agent.yaml.
+  const businessFile = [join(appDir, 'business.yaml'), join(appDir, 'agent.yaml')].find((f) => existsSync(f));
+  const businessText = businessFile !== undefined ? readFileSync(businessFile, 'utf8') : '(this app has no business.yaml or agent.yaml: judge by what its own answers say)';
   const spend = new Budget(budgetUsd, (l) => io.err(l));
   const caller = modelCaller(callerModel, spend);
   const url = `ws://127.0.0.1:${running.port}/chat`;

@@ -1,9 +1,9 @@
-import type { ConverseApp } from '../converse/app';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { App } from '../core/app/types';
-import { getApp, registerApp } from '../core/app/registry';
+import { getApp, registerApp, registerConverseApp, registeredConverseApps } from '../core/app/registry';
+import { isConverseApp, type ConverseApp } from '../converse/app';
 import { digitsOf, sameNumber } from '../core/conditions';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { resolveHostFile, type HostAppRef, type ResolvedHost } from '../define/host';
@@ -30,7 +30,6 @@ import { serverSettingNames } from './serverSettings';
  * over the server's settings; `process.env` is the server's alone.
  */
 
-/** One app a host runs. */
 /**
  * An app a server runs: a scripted app (App, the engine's turn) or a converse app (ConverseApp, whose
  * model holds the conversation: src/converse). The server dispatches by it: a converse app's chat runs on
@@ -38,8 +37,8 @@ import { serverSettingNames } from './serverSettings';
  */
 export type HostedApp = App | ConverseApp;
 
-/** One app of a host: `A`, a scripted app (App) as host.yaml loads them, or any hosted app a server takes (ServerOverrides.apps). */
-export interface HostApp<A extends HostedApp = App> {
+/** One app a host runs. `A`: any app a server runs (HostedApp, the default: what loadHost and ServerOverrides.apps carry), or a scripted app (App) where a caller knows it is one. */
+export interface HostApp<A extends HostedApp = HostedApp> {
   readonly id: string;
   readonly app: A;
   /** The app's folder, when it has one (a host file's apps all do). */
@@ -100,7 +99,7 @@ export interface HostNumber {
 }
 
 /** The apps a host runs and how a call finds its app. */
-export interface HostRouting<A extends HostedApp = App> {
+export interface HostRouting<A extends HostedApp = HostedApp> {
   /** The apps, the default first, then in the order host.yaml lists them. */
   readonly apps: readonly HostApp<A>[];
   readonly defaultApp: string;
@@ -125,7 +124,7 @@ export interface HostRouting<A extends HostedApp = App> {
  * value read from `env` (the server's settings). Throws, with the fix, for a number unset or not E.164,
  * and for two variables holding one number: a call to it could reach either app.
  */
-export function hostRouting<A extends HostedApp = App>(o: { apps: readonly HostApp<A>[]; numbers: readonly { variable: string; app: string }[]; defaultApp: string; env: Env }): HostRouting<A> {
+export function hostRouting<A extends HostedApp = HostedApp>(o: { apps: readonly HostApp<A>[]; numbers: readonly { variable: string; app: string }[]; defaultApp: string; env: Env }): HostRouting<A> {
   const byId = new Map(o.apps.map((a) => [a.id, a]));
   if (!byId.has(o.defaultApp)) throw new Error(`host: the default app "${o.defaultApp}" is not one of the apps (${[...byId.keys()].join(', ')})`);
   const numbers = hostNumbers(o.numbers, [...byId.keys()], o.env);
@@ -235,19 +234,21 @@ function isApp(x: unknown): x is App {
 }
 
 /**
- * The App of id `id` an app folder's module exports: app.ts or src/app.ts (what `pnpm check` reads), else
- * index.ts or src/index.ts. Its module is imported as the app's own code is anywhere else.
+ * The app of id `id` an app folder's module exports: app.ts or src/app.ts (what `pnpm check` reads), else
+ * index.ts or src/index.ts. A scripted app (the App defineApp builds), or a converse app (the ConverseApp
+ * defineConverseApp builds, for a folder whose app.yaml says mode: converse). Its module is imported as
+ * the app's own code is anywhere else.
  */
-export async function importApp(dir: string, id: string): Promise<App> {
+export async function importApp(dir: string, id: string): Promise<HostedApp> {
   const tried: string[] = [];
   for (const file of APP_MODULE_FILES) {
     if (!existsSync(join(dir, file))) continue;
     tried.push(file);
     const module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
-    const found = Object.values(module).filter(isApp).find((a) => a.id === id);
+    const found = Object.values(module).find((a): a is HostedApp => (isApp(a) || isConverseApp(a)) && a.id === id);
     if (found) return found;
   }
-  throw new Error(`${dir}: ${tried.length === 0 ? `no module (${APP_MODULE_FILES.join(', ')})` : tried.join(' or ')} exports the app "${id}" (its app.yaml's id): export the App defineApp builds (export const app = defineApp(...))`);
+  throw new Error(`${dir}: ${tried.length === 0 ? `no module (${APP_MODULE_FILES.join(', ')})` : tried.join(' or ')} exports the app "${id}" (its app.yaml's id): export the App defineApp builds (export const app = defineApp(...)), or for a converse app the one defineConverseApp builds`);
 }
 
 /**
@@ -264,7 +265,13 @@ export function variablesOf(dir: string): string[] {
 }
 
 /** Registers `app`, unless an app of its id is registered already (the same one, or a test's). */
-function ensureRegistered(app: App): App {
+function ensureRegistered(app: HostedApp): HostedApp {
+  if (isConverseApp(app)) {
+    const known = registeredConverseApps().find((a) => a.id === app.id);
+    if (known) return known;
+    registerConverseApp(app);
+    return app;
+  }
   try {
     return getApp(app.id);
   } catch {
@@ -279,11 +286,11 @@ function ensureRegistered(app: App): App {
  * own file's values of its variables), and the numbers read from `server`. Throws with every problem
  * the file has, one line each with its fix, or the first a setting has.
  */
-export async function loadHost(file: string, server: Env): Promise<HostRouting & { readonly file: string }> {
+export async function loadHost(file: string, server: Env): Promise<HostRouting<HostedApp> & { readonly file: string }> {
   const { host, problems } = resolveHostFile(file);
   if (host === null) throw new Error(`${file} has ${problems.length} problem${problems.length === 1 ? '' : 's'}:\n${problems.map((p) => `  ${formatProblem(p)}`).join('\n')}`);
   const refs = [host.apps.find((a) => a.id === host.defaultApp)!, ...host.apps.filter((a) => a.id !== host.defaultApp)];
-  const apps: HostApp[] = [];
+  const apps: HostApp<HostedApp>[] = [];
   for (const ref of refs) apps.push(await hostApp(ref, server));
   // In the order host.yaml lists them, the default first (hostRouting's order).
   const routing = hostRouting({ apps: host.apps.map((r) => apps.find((a) => a.id === r.id)!), numbers: host.numbers, defaultApp: host.defaultApp, env: server });
@@ -291,7 +298,7 @@ export async function loadHost(file: string, server: Env): Promise<HostRouting &
 }
 
 /** One app of a resolved host file: its code, registered, and its environment. */
-async function hostApp(ref: HostAppRef, server: Env): Promise<HostApp> {
+async function hostApp(ref: HostAppRef, server: Env): Promise<HostApp<HostedApp>> {
   const app = ensureRegistered(await importApp(ref.dir, ref.id));
   const own = existsSync(ref.envFile) ? readEnvFile(ref.envFile) : null;
   const env = appEnvironment(server, own, ownVariablesOf(ref));

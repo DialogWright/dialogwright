@@ -3,6 +3,7 @@ import type { App } from '../core/app/types';
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
+import { DEFAULT_CONTINUE_WITHIN_MS } from '../core/continueWithin';
 
 /**
  * A caller who had not finished (App.voice.continueWithinMs).
@@ -44,10 +45,9 @@ import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
  * The state lives with the call in memory: a server restarted mid-answer runs the next prompt alone.
  */
 
-/** voice.continueWithinMs when the app does not set it. */
-export const DEFAULT_CONTINUE_WITHIN_MS = 300;
-/** The largest voice.continueWithinMs an app may set: past two seconds, an interrupt can be a reply. */
-export const MAX_CONTINUE_WITHIN_MS = 2000;
+// voice.continueWithinMs's default and largest value: in a leaf module, so app.yaml's schema reads them
+// without the turn runner (core/continueWithin.ts).
+export { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../core/continueWithin';
 /** The most final prompts one turn joins. */
 export const CONTINUE_MAX_FRAGMENTS = 3;
 /** The longest joined words: as long as the relay wire takes one prompt (channel/relay/wire.ts MAX_TEXT_LENGTH). */

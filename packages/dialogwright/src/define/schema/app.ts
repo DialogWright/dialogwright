@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, localeTag, matching, name, text, textMap, unique } from './common';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
 import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../channel/pronounce';
-import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
+import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../core/continueWithin';
 import { ATTESTATION_PARAMETER, callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
 import { CALL_DATA_SENDS, CALLER_WITHHELD_USES } from '../../core/app/types';
 import { ENV_REFERENCE } from '../../core/app/envReference';
@@ -11,8 +11,8 @@ import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
 
-/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, or agent (business.yaml). */
-export const APP_MODES = ['scripted', 'agent'] as const;
+/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, agent (business.yaml), or converse (agent.yaml, the converse runtime). */
+export const APP_MODES = ['scripted', 'agent', 'converse'] as const;
 export type AppMode = (typeof APP_MODES)[number];
 
 /** A key of voice.numbers: a number written out (E.164) or env.<NAME>. */
@@ -560,7 +560,7 @@ export const appSchema = z
     mode: z
       .enum(APP_MODES)
       .optional()
-      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": a model leads the conversation from the business\'s facts (business.yaml, from which the engine builds the intents, forms, slots, prompts, policy and identity), every value it understands is checked by its slot type and confirmed by the caller at the read-back, and every action still goes through the gate. An agent-mode folder holds app.yaml, business.yaml, style.yaml and its code, and none of intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, routes.yaml or slots.yaml.'),
+      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": a model leads the conversation from the business\'s facts (business.yaml, from which the engine builds the intents, forms, slots, prompts, policy and identity), every value it understands is checked by its slot type and confirmed by the caller at the read-back, and every action still goes through the gate. An agent-mode folder holds app.yaml, business.yaml, style.yaml and its code, and none of intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, routes.yaml or slots.yaml. "converse": the converse runtime, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.'),
     locale: localeTag()
       .optional()
       .describe('The default locale of prompts.yaml, as a language tag ("en-US"). Other locales\' prompts go in locale/<tag>/prompts.yaml. Default "en-US".'),
@@ -610,7 +610,7 @@ export const appSchema = z
         callerNumberFromContext: z
           .boolean({ error: 'must be true or false' })
           .optional()
-          .describe('A converse app only (agent.yaml): a chat has no calling number, so with true a chat whose start\'s context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the "caller" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.'),
+          .describe('A converse app only (mode: converse): a chat has no calling number, so with true a chat whose start\'s context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the "caller" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.'),
         page: z
           .strictObject({
             serve: z

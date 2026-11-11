@@ -368,6 +368,8 @@ export function chatTransport(deps: ChatTransportDeps, runtime: ChatRuntime): Ch
     conn.id = e.id;
     // A resume's context is the page's again, and changes nothing: the chat keeps what it started with.
     record(e.frames, 'in', loggedIn(m, undefined, runtime.callData(e.id)));
+    // How this client takes a reply (stream) is its own.
+    runtime.resumed(e.id, { stream: m.stream === true });
     // Saved with its new token, so the one just used opens nothing after a restart either.
     save(e);
     // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the

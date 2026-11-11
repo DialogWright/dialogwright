@@ -193,6 +193,7 @@ export interface DefineAppOptions {
 export function defineApp(dir: string, code: AppCode, options: DefineAppOptions = {}): App {
   const codeFile = options.codeFile ?? CODE_FILE;
   const loaded = loadAppFolder(dir);
+  if (loaded.converse === true && loaded.problems.length === 0) throw new Error(`${dir}: app.yaml says mode: converse, so the app is built with defineConverseApp (its agent.yaml and its actions' code), not defineApp`);
   if (!loaded.config) throw new AppDefinitionError(dir, loaded.problems);
   // An app in agent mode: the code holds its tools, and the engine writes the rest from business.yaml (./businessApp.ts).
   const business = loaded.config.business;

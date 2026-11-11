@@ -33,6 +33,7 @@ import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
  *   recognised as, and the "caller" token of a phone param.
  * - The state is saved after every turn under the schema 'converse-1', so a restart resumes the chat
  *   where it was (a read-back waiting for its answer included); a reply still streaming is not resumed.
+ *   A resume streams where the resuming client's start says `stream: true`, whatever the first said.
  * - No sign-in: a token on a start or a sign_in is refused, as on a chat whose sign-in is off.
  */
 
@@ -64,7 +65,7 @@ export interface ConverseChatDeps {
 interface ConverseChat {
   state: ConverseState;
   trace: TraceSink;
-  /** The client takes say_delta (its start said stream: true); a resumed chat does not stream. */
+  /** The client takes say_delta: what the start of the client now on the chat said (its open, or its resume). */
   stream: boolean;
 }
 
@@ -150,10 +151,12 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       return false;
     }
     if (pieces.length > 0) {
-      // The frame log keeps the line as the trace does: each value the records mask, masked.
+      // The frame log keeps the line as the trace does: each value the records mask, masked. A turn with no
+      // trace record of what it said (none is expected) keeps the line by its length alone, never whole.
+      const text = joined(pieces);
       const recorded = (record as ConverseTraceRecord | null)?.replies;
-      const shown = recorded !== undefined && recorded.length > 0 ? joined(recorded) : null;
-      io.send({ type: 'say', text: joined(pieces), lang: LANG }, shown === null ? null : () => shown);
+      const shown = recorded !== undefined && recorded.length > 0 ? joined(recorded) : `<${text.length} chars>`;
+      io.send({ type: 'say', text, lang: LANG }, () => shown);
     }
     const ended = c.state.ended;
     if (ended === 'closing' || ended === 'handoff') {
@@ -189,6 +192,10 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       io.send(io.ready(LANG));
       await run(id, c, { kind: 'start' }, io);
       if (start.token !== undefined && !io.ended) io.send(NO_SIGN_IN);
+    },
+
+    resumed(id, start) {
+      held(id).stream = start.stream;
     },
 
     async text(id, text, io) {

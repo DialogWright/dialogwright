@@ -159,10 +159,6 @@ const gapContexts = new WeakMap<App, CollectContext>();
 const readsHours = (subjects: readonly string[] | undefined): boolean => (subjects ?? []).some((s) => s === 'hours' || s.startsWith('hours.'));
 
 /**
- * What a call adds to the figures, from its records as on disk (the writer's masks already on them):
- * nothing here keeps a value, only what was asked and counts.
- */
-/**
  * What a converse call (records of kind 'converse') adds to Insights: the actions its caller confirmed as
  * its tasks, finished, and the gate's refusals by action. It has no slots, routes or knowledge base, so
  * nothing else; where it stood is "between".
@@ -180,6 +176,10 @@ export function converseFacts(records: readonly unknown[]): CallFacts {
   return facts;
 }
 
+/**
+ * What a call adds to the figures, from its records as on disk (the writer's masks already on them):
+ * nothing here keeps a value, only what was asked and counts.
+ */
 export function factsOfTrace(records: readonly TraceRecord[], app: App): CallFacts {
   const facts: CallFacts = { tasks: {}, asked: {}, stopped: 'greeting', screenHits: 0, refusals: {}, stepUps: 0, hours: {}, gaps: {}, gapTopics: {} };
   const firstOn = new Map<string, number | null>();

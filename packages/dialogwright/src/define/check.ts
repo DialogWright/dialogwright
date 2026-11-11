@@ -295,6 +295,8 @@ export interface CheckResult {
   problems: Problem[];
   /** Whether the folder was checked against the app's code: false when there was none to check. */
   codeChecked: boolean;
+  /** A converse app's folder: its app.yaml and agent.yaml checked together; its code is checked as defineConverseApp joins it to them. */
+  converse?: boolean;
   /**
    * What is not wrong but likely a mistake: printed, never counted as a problem (the exit code is
    * the problems'). Absent when there is none. A form's checks (./formChecks.ts checkWarnings): an
@@ -317,7 +319,7 @@ export async function checkApp(dir: string, options: CheckOptions = {}): Promise
 /** checkApp, and whether the app's code was part of it. */
 export async function checkAppFully(dir: string, options: CheckOptions = {}): Promise<CheckResult> {
   const loaded = loadAppFolder(dir);
-  if (!loaded.config) return { problems: loaded.problems, codeChecked: false };
+  if (!loaded.config) return { problems: loaded.problems, codeChecked: false, ...(loaded.converse === true ? { converse: true } : {}) };
   const { config, locate } = loaded;
 
   const found = options.code ? { code: options.code } : await loadCode(dir);

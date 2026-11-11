@@ -270,6 +270,9 @@ export function scriptedChatRuntime(deps: ScriptedChatDeps): ChatRuntime {
       if (subject !== null && !s.io.ended) await signInTurn(s, subject);
     },
 
+    // A scripted chat sends each reply's lines whole: nothing a resume asks changes it.
+    resumed() {},
+
     async text(id, text) {
       const e = held(id);
       await turn(e, textEvent(text));

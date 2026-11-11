@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -99,5 +99,19 @@ describe('the run artifacts', () => {
     writeFileSync(join(dir, 'a.jsonl'), [JSON.stringify({ sessionId: 'c1', agent: { costUsd: 0.01 } }), JSON.stringify({ sessionId: 'c1', agent: { costUsd: 0.02 } }), JSON.stringify({ sessionId: 'c2', agent: { costUsd: 5 } })].join('\n'));
     expect(agentCostOfCall(dir, 'c1')).toBeCloseTo(0.03);
     expect(agentCostOfCall(dir, 'c3')).toBeNull();
+  });
+
+  it('reads a host\'s audit, a folder per app beside the server\'s own, and a converse call\'s model cost', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'audit-host-'));
+    const row = (callId: string, detail: object) => JSON.stringify({ type: 'gate', detail, seq: 1, at: 't', callId, channel: 'chat', prevHash: '0', hash: 'h' });
+    mkdirSync(join(dir, 'example'));
+    mkdirSync(join(dir, '_server'));
+    writeFileSync(join(dir, 'example', '2026-11-11.jsonl'), `${row('c1', { tool: 'book', call: 'book(phone=...0123)', verdict: 'BLOCK' })}\n${row('c1', { tool: 'book', call: 'book(phone=...0123)', verdict: 'ALLOW' })}\n`);
+    writeFileSync(join(dir, '_server', '2026-11-11.jsonl'), `${row('c2', { tool: 'other', call: 'other()', verdict: 'ALLOW' })}\n`);
+    expect(actionsOfCall(dir, 'c1').map((a) => `${a.tool} ${a.verdict}`)).toEqual(['book BLOCK', 'book ALLOW']);
+    const traces = mkdtempSync(join(tmpdir(), 'traces-host-'));
+    mkdirSync(join(traces, 'example'));
+    writeFileSync(join(traces, 'example', 'c1.jsonl'), [JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', model: { costUsd: 0.004 } }), JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', model: { costUsd: null } }), JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', model: { costUsd: 0.001 } })].join('\n'));
+    expect(agentCostOfCall(traces, 'c1')).toBeCloseTo(0.005);
   });
 });

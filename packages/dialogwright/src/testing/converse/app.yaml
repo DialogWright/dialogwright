@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../schemas/app.schema.json
 # The converse fixture's chat settings: a chat may name the number it is "calling" from in its context (tests only).
 id: converse
+mode: converse
 chat:
   callerNumberFromContext: true

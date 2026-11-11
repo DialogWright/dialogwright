@@ -40,3 +40,6 @@ export function converseFixture(now: () => Date = () => new Date()): { app: Conv
   calendar = businessCalendar(app.business, now);
   return { app, calendar: calendar!, booked };
 }
+
+/** The fixture app as its folder's module exports it (what host.yaml and the eval CLI import, by app.yaml's id), with a calendar of its own. */
+export const converseApp: ConverseApp = converseFixture().app;

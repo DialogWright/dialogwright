@@ -204,7 +204,7 @@ describe('an app\'s own pages on a host of several apps', () => {
     const loaded = await loadHost(FIXTURE, { ...NUMBERS });
     // Both apps with the same pages; the switch on in the callback app's own settings alone.
     host = hostRouting({
-      apps: loaded.apps.map((a) => ({ ...a, app: withPages(a.app), settings: { ...(a.settings ?? a.env), ...(a.id === 'callback' ? { DEMO_PAGES: 'on' } : {}) } })),
+      apps: loaded.apps.map((a) => ({ ...a, app: withPages(a.app as App), settings: { ...(a.settings ?? a.env), ...(a.id === 'callback' ? { DEMO_PAGES: 'on' } : {}) } })),
       numbers: loaded.numbers.map((n) => ({ variable: n.variable, app: n.app })),
       defaultApp: loaded.defaultApp,
       env: { ...NUMBERS },

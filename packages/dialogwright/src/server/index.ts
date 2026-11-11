@@ -29,11 +29,11 @@ import { buildHints } from './hints';
 import { DashboardBus } from './dashboard/bus';
 import type { DashboardEvent } from './dashboard/events';
 import { makeObserver } from './dashboard/observer';
-import { defaultAppId, getApp } from '../core/app/registry';
+import { defaultAppId, defaultAppOrNull, getApp, registeredConverseApps } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { newSession, type Session } from '../core/session';
 import { ANONYMOUS } from '../gate/principal';
-import { appOfSetup, describeHost, ownSettingsLines, OWN_SERVER_SETTING_FIX, type HostedApp, type HostRouting } from './host';
+import { appOfSetup, describeHost, hostRouting, ownSettingsLines, OWN_SERVER_SETTING_FIX, type HostedApp, type HostRouting } from './host';
 import type { AuditDraft } from '../audit/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
@@ -349,6 +349,22 @@ function pageTexts(t: TurnTexts, sink: AuditSink): Texts {
   };
 }
 
+/**
+ * The host a server started with no host serves where its launcher registered converse apps
+ * (registerConverseApp): each of them, the first the default, reached by no number, on the server's
+ * environment. Null with none registered. A process that registers a scripted app beside them runs them
+ * as a host of its own (host.yaml), so the start says so.
+ */
+function converseHostOf(env: Env): HostRouting<HostedApp> | null {
+  const converse = registeredConverseApps();
+  if (converse.length === 0) return null;
+  const scripted = defaultAppOrNull();
+  if (scripted !== null) {
+    throw new Error(`this process registered the scripted app "${scripted.id}" and the converse app${converse.length === 1 ? '' : 's'} ${converse.map((a) => `"${a.id}"`).join(', ')}: serve them together as a host (host.yaml: pnpm start --host), or register one kind`);
+  }
+  return hostRouting<HostedApp>({ apps: converse.map((app) => ({ id: app.id, app, dir: app.dir, env, own: [], ignored: [] })), numbers: [], defaultApp: converse[0]!.id, env });
+}
+
 /** One app the server runs, with its environment (the references its YAML names) and its settings (what its code reads). */
 interface AppRun<A extends HostedApp> {
   readonly id: string;
@@ -384,7 +400,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // The apps this server runs: its one (the default, its references read from `env`, as always), or a
   // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
   // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
-  const host = overrides.apps ?? null;
+  // A launcher that registered converse apps (registerConverseApp) and no scripted app: a host of them.
+  const host = overrides.apps ?? converseHostOf(overrides.env ?? process.env);
   // `settings` is what each app's code reads by name (AppContext.env): on a host, its own settings file over
   // the server's; on a server of one, its environment.
   const hosted: readonly AppRun<HostedApp>[] = host
@@ -1075,8 +1092,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
    * no app texts from or is reached by (no default: a text is not a call to the main line).
    */
   const textAppOf = (to: string): string | null => {
-    if (!host) return appsRun[0]!.id;
-    const byFrom = appsRun.find((a) => {
+    if (!host) return hosted[0]!.id;
+    // Any app of the host, a converse app's too: a text is its own app's, never another's.
+    const byFrom = hosted.find((a) => {
       const t = textSenders.get(a.id);
       return t !== undefined && sameNumber(to, t.from);
     });
@@ -1099,7 +1117,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       await audit.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped, unrouted: true })));
       return;
     }
-    const a = appRun(appId);
+    const a = hostedOf(appId);
     const seen = seenTexts.get(a.id) ?? [];
     if (seen.includes(m.id)) {
       log(`${MESSAGES_PATH} ${m.id}${host ? ` (app ${a.id})` : ''}: sent again by the provider; handed on once already`);
@@ -1117,7 +1135,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped })));
     try {
       const decide = textDecider(clientOf(a.id), thresholds.JEV_TIMEOUT_MS, m, (row) => rows.push(row), now);
-      if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys: toolsOf(a.id).sys, nowMs: now(), decide });
+      // A converse app's hook has no systems: its code is its actions' (TextContext.sys undefined).
+      const sys = isConverseApp(a.app) ? undefined : toolsOf(a.id).sys;
+      if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys, nowMs: now(), decide });
     } catch (err) {
       log(`${MESSAGES_PATH} ${m.id}: the app's onText failed (${err instanceof Error ? err.name : 'error'})`);
     } finally {
@@ -1128,7 +1148,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // A server of converse apps alone answers no carrier's webhook (voiceRefused).
     config: voiceRefused ? { ...config, voiceProviders: [] } : config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     // The incoming-message webhook, only where some app takes texts in or sends them.
-    ...(textSenders.size > 0 || appsRun.some((a) => a.app.onText !== undefined) ? { messages: { secret: textSecret, receive: receiveText } } : {}),
+    ...(textSenders.size > 0 || hosted.some((a) => a.app.onText !== undefined) ? { messages: { secret: textSecret, receive: receiveText } } : {}),
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
     ...(transfer ? { transfer } : {}),
     ...(numbers.length > 0 ? { numbers } : {}),

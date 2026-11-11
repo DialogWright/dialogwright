@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import WebSocket from 'ws';
 import { startServer, type RunningServer } from './index';
 import { loadConfig, type Env } from './config';
 import { hostRouting } from './host';
 import { verifyChain } from '../audit/verify';
 import type { JevClient } from '../jev/types';
+import { auditRowsIn, BOOKING, CALLER, Chat, CHAT_ORIGIN as ORIGIN, DAY, done, says, SLOT, text, yesJev } from '../testing/converse/chat';
 import type { ServerMessage } from '../channel/chat/protocol';
 import type { ConverseModel, ModelEvent } from '../converse/model/types';
 import { fakeModel } from '../converse/model/fake';
@@ -26,10 +26,6 @@ import type { HostedApp } from './host';
  * restart in the middle of a read-back resumes the chat on the new server, where the yes books it once.
  */
 
-const ORIGIN = 'https://www.example.com';
-const CALLER = '+15555550123';
-const DAY = '2030-01-15';
-const SLOT = `${DAY}:morning`;
 const READ_BACK = 'A visit Tuesday, January 15, 9 to 12 for Sam Example, on ending in 0123. Is that right?';
 
 const servers: RunningServer[] = [];
@@ -56,23 +52,6 @@ function settings(dir: string, extra: Record<string, string> = {}): Env {
   };
 }
 
-/** A decision model that reads a yes where the caller's words say "yes", and keeps what it was asked. */
-function yesJev(): JevClient & { asked: unknown[] } {
-  const asked: unknown[] = [];
-  return {
-    asked,
-    async ask(req) {
-      asked.push(req.state);
-      const said = String((req.state as { said?: unknown }).said ?? '').toLowerCase();
-      const yes = /\byes\b/.test(said);
-      return {
-        answers: { confirmsYes: { type: 'noul', noul: yes ? 0.95 : 0.05 }, confirmsNo: { type: 'noul', noul: yes ? 0.05 : 0.9 } },
-        model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev',
-      };
-    },
-  };
-}
-
 async function boot(app: ConverseApp, model: ConverseModel, env: Env, jev: JevClient = yesJev()): Promise<{ server: RunningServer; base: string; logs: string[] }> {
   const logs: string[] = [];
   const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env });
@@ -81,85 +60,13 @@ async function boot(app: ConverseApp, model: ConverseModel, env: Env, jev: JevCl
   return { server, base: `http://127.0.0.1:${server.port}`, logs };
 }
 
-const text = (delta: string): ModelEvent => ({ type: 'text', delta });
-const call = (id: string, name: string, args: Record<string, unknown>): ModelEvent => ({ type: 'tool_call', id, name, args });
-const done = (stop: 'end' | 'tool' = 'end'): ModelEvent => ({ type: 'done', stop, usage: { inputTokens: 120, outputTokens: 12 } });
-
-/** The model's side of a booking: a lookup, a question, the booking read back, its confirmation, and the end. */
-const BOOKING: ModelEvent[][] = [
-  [text('Let me look. '), call('c1', 'availability', { day: DAY }), done('tool')],
-  [text('We have the morning, 9 to 12, '), text('or the afternoon. Which would suit you?'), done()],
-  [call('c2', 'book', { window: SLOT, name: 'Sam Example', phone: 'caller' }), done('tool')],
-  [text('You are booked for Tuesday morning.'), done()],
-  [call('c3', 'end_call', {}), done('tool')],
-];
-
-class Chat {
-  readonly received: ServerMessage[] = [];
-  readonly closed: Promise<number>;
-  private waiters: (() => void)[] = [];
-  private constructor(private readonly ws: WebSocket) {
-    this.closed = new Promise((resolve) => ws.on('close', (code) => resolve(code)));
-    ws.on('message', (data) => {
-      this.received.push(JSON.parse(data.toString()) as ServerMessage);
-      for (const w of this.waiters.splice(0)) w();
-    });
-  }
-
-  static open(base: string): Promise<Chat> {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`${base.replace('http', 'ws')}/chat`, { origin: ORIGIN });
-      ws.once('open', () => {
-        const c = new Chat(ws);
-        sockets.push(c);
-        resolve(c);
-      });
-      ws.once('error', reject);
-    });
-  }
-
-  send(m: unknown): void {
-    this.ws.send(JSON.stringify(m));
-  }
-
-  async until(pred: (r: ServerMessage[]) => boolean, ms = 4000): Promise<ServerMessage[]> {
-    const deadline = Date.now() + ms;
-    while (!pred(this.received)) {
-      const left = deadline - Date.now();
-      if (left <= 0) throw new Error(`timed out; received ${JSON.stringify(this.received)}`);
-      await new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, left);
-        this.waiters.push(() => (clearTimeout(t), resolve()));
-      });
-    }
-    return this.received;
-  }
-
-  /** Sends `words` and waits for the line's next `say`; returns every message that came after the send. */
-  async say(words: string): Promise<ServerMessage[]> {
-    const before = this.received.length;
-    this.send({ type: 'text', text: words });
-    await this.until((r) => r.slice(before).some((m) => m.type === 'say'));
-    return this.received.slice(before);
-  }
-
-  close(): void {
-    this.ws.close();
-  }
-}
-
-const says = (ms: ServerMessage[]): string[] => ms.flatMap((m) => (m.type === 'say' ? [m.text] : []));
-
-function auditRows(dir: string): { type: string; callId: string; detail: Record<string, unknown> }[] {
-  const d = join(dir, 'audit', 'converse');
-  return readdirSync(d).filter((f) => f.endsWith('.jsonl')).flatMap((f) => readFileSync(join(d, f), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { type: string; callId: string; detail: Record<string, unknown> }));
-}
+const auditRows = (dir: string): { type: string; callId: string; detail: Record<string, unknown> }[] => auditRowsIn(join(dir, 'audit', 'converse'));
 
 describe('the web chat on the converse runtime', () => {
   it('sends ready, then the greeting', async () => {
     const { app } = converseFixture();
     const { base } = await boot(app, fakeModel([]), settings(folder()));
-    const c = await Chat.open(base);
+    const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
     expect(c.received[0]).toMatchObject({ type: 'ready', locale: 'en' });
@@ -171,14 +78,14 @@ describe('the web chat on the converse runtime', () => {
     const { app } = converseFixture();
     const script: ModelEvent[][] = [BOOKING[0]!, BOOKING[1]!, BOOKING[0]!, BOOKING[1]!];
     const { base } = await boot(app, fakeModel(script), settings(folder()));
-    const plain = await Chat.open(base);
+    const plain = await Chat.open(base, sockets);
     plain.send({ type: 'start', v: 1 });
     await plain.until((r) => r.some((m) => m.type === 'say'));
     const reply = await plain.say(`Is there a visit free on ${DAY}?`);
     await new Promise((r) => setTimeout(r, 50));
     expect(plain.received.slice(-reply.length)).toEqual([{ type: 'say', text: 'Let me look. We have the morning, 9 to 12, or the afternoon. Which would suit you?', lang: 'en' }]);
 
-    const streaming = await Chat.open(base);
+    const streaming = await Chat.open(base, sockets);
     streaming.send({ type: 'start', v: 1, stream: true });
     await streaming.until((r) => r.some((m) => m.type === 'say'));
     const streamed = await streaming.say(`Is there a visit free on ${DAY}?`);
@@ -191,7 +98,7 @@ describe('the web chat on the converse runtime', () => {
     const dir = folder();
     const { app, booked } = converseFixture();
     const { base } = await boot(app, fakeModel(BOOKING), settings(dir));
-    const c = await Chat.open(base);
+    const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
     await c.until((r) => r.some((m) => m.type === 'say'));
     const session = (c.received[0] as Extract<ServerMessage, { type: 'ready' }>).session;
@@ -226,7 +133,7 @@ describe('the web chat on the converse runtime', () => {
     const dir = folder();
     const { app } = converseFixture();
     const { base } = await boot(app, fakeModel(BOOKING), settings(dir, { DASHBOARD: 'on' }));
-    const c = await Chat.open(base);
+    const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
     await c.until((r) => r.some((m) => m.type === 'say'));
     const session = (c.received[0] as Extract<ServerMessage, { type: 'ready' }>).session;
@@ -249,17 +156,18 @@ describe('the web chat on the converse runtime', () => {
 
   it('takes no caller number from a chat\'s context unless app.yaml says so', async () => {
     const dir = folder();
-    // The fixture's agent.yaml alone: no app.yaml, so chat.callerNumberFromContext is false.
+    // The fixture's agent.yaml with an app.yaml that does not say chat.callerNumberFromContext: false.
     const own = join(dir, 'converse');
     rmSync(own, { recursive: true, force: true });
     const { mkdirSync } = await import('node:fs');
     mkdirSync(own);
     copyFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), join(own, 'agent.yaml'));
+    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\n');
     const app = defineConverseApp(own, { tools: { availability: async () => [{ id: SLOT, label: 'Tuesday, January 15, 9 to 12' }], book: async () => 'booked' } });
     expect(app.chat.callerNumberFromContext).toBe(false);
     const model = fakeModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('What number should we use?'), done()]]);
     const { base } = await boot(app, model, settings(dir));
-    const c = await Chat.open(base);
+    const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
     await c.until((r) => r.some((m) => m.type === 'say'));
     await c.say(`Is there a visit free on ${DAY}?`);
@@ -275,7 +183,7 @@ describe('the web chat on the converse runtime', () => {
     // One script across both servers: the model is asked where the chat left off.
     const model = fakeModel(BOOKING);
     const first = await boot(app, model, env);
-    const c = await Chat.open(first.base);
+    const c = await Chat.open(first.base, sockets);
     c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
     await c.until((r) => r.some((m) => m.type === 'say'));
     const ready = c.received[0] as Extract<ServerMessage, { type: 'ready' }>;
@@ -292,7 +200,7 @@ describe('the web chat on the converse runtime', () => {
     expect(saved.session).toMatchObject({ kind: 'converse', pending: { action: 'book' } });
 
     const second = await boot(app, model, env);
-    const d = await Chat.open(second.base);
+    const d = await Chat.open(second.base, sockets);
     d.send({ type: 'start', v: 1, resume: ready.resume });
     const [back] = await d.until((r) => r.length >= 1);
     expect(back).toMatchObject({ type: 'ready', session: ready.session, locale: 'en' });
@@ -312,6 +220,7 @@ describe('the web chat on the converse runtime', () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(own);
     copyFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), join(own, 'agent.yaml'));
+    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\n');
     const page = {
       label: 'a page', path: '/hello', localOnly: false,
       handle: async (_req: unknown, res: import('node:http').ServerResponse) => {
@@ -330,7 +239,7 @@ describe('the web chat on the converse runtime', () => {
     const dir = folder();
     const { app, booked } = converseFixture();
     const { base } = await boot(app, fakeModel(BOOKING), settings(dir));
-    const c = await Chat.open(base);
+    const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
     await c.until((r) => r.some((m) => m.type === 'say'));
     const session = (c.received[0] as Extract<ServerMessage, { type: 'ready' }>).session;
@@ -347,6 +256,59 @@ describe('the web chat on the converse runtime', () => {
     expect(trace.at(-1)).toMatchObject({ kind: 'converse', said: null, replies: [] });
   });
 
+  it('streams a resumed chat as the resuming client\'s start says, whatever the first said', async () => {
+    const { app } = converseFixture();
+    const { base } = await boot(app, fakeModel([BOOKING[0]!, BOOKING[1]!, BOOKING[0]!, BOOKING[1]!]), settings(folder()));
+    const first = await Chat.open(base, sockets);
+    first.send({ type: 'start', v: 1, stream: true });
+    await first.until((r) => r.some((m) => m.type === 'say'));
+    const ready = first.received[0] as Extract<ServerMessage, { type: 'ready' }>;
+    expect((await first.say(`Is there a visit free on ${DAY}?`)).filter((m) => m.type === 'say_delta')).toHaveLength(3);
+    first.close();
+    await first.closed;
+    const again = await Chat.open(base, sockets);
+    again.send({ type: 'start', v: 1, resume: ready.resume });
+    await again.until((r) => r.some((m) => m.type === 'ready'));
+    const reply = await again.say(`Is there a visit free on ${DAY}?`);
+    expect(reply.map((m) => m.type)).toEqual(['say']);
+  });
+
+  it('books once where the server stopped after the booking ran and before the chat was saved: the resumed yes runs it again under the same key', async () => {
+    const dir = folder();
+    const env = settings(dir, { SESSION_STORE: `file:${join(dir, 'sessions')}` });
+    const { app, booked, calendar } = converseFixture();
+    const model = fakeModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, BOOKING[3]!, [text('You are booked for Tuesday morning.'), done()]]);
+    const first = await boot(app, model, env);
+    const c = await Chat.open(first.base, sockets);
+    c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const ready = c.received[0] as Extract<ServerMessage, { type: 'ready' }>;
+    await c.say(`Is there a visit free on ${DAY}?`);
+    expect(says(await c.say('The morning please, for Sam Example, on this number.'))).toEqual([READ_BACK]);
+    await new Promise((r) => setTimeout(r, 50));
+    // The chat as saved before the yes: what the store would hold had the server stopped before its next save.
+    const chats = join(dir, 'sessions', 'chats');
+    const file = join(chats, readdirSync(chats)[0]!);
+    const beforeYes = readFileSync(file, 'utf8');
+    expect(says(await c.say('yes'))).toEqual(['You are booked for Tuesday morning.']);
+    await new Promise((r) => setTimeout(r, 50));
+    await first.server.close();
+    servers.splice(servers.indexOf(first.server), 1);
+    writeFileSync(file, beforeYes);
+
+    const second = await boot(app, model, env);
+    const d = await Chat.open(second.base, sockets);
+    d.send({ type: 'start', v: 1, resume: ready.resume });
+    await d.until((r) => r.some((m) => m.type === 'ready'));
+    expect(says(await d.say('yes'))).toEqual(['You are booked for Tuesday morning.']);
+    // The tool ran twice, under one key; the calendar took the second as a repeat.
+    expect(booked).toHaveLength(2);
+    expect(booked[1]!.key).toBe(booked[0]!.key);
+    expect((calendar as unknown as { bookings: unknown[] }).bookings).toHaveLength(1);
+    const results = model.requests.at(-1)!.messages.flatMap((m) => m.content).filter((x) => x.type === 'tool_result');
+    expect(results.at(-1)).toMatchObject({ content: expect.stringContaining('book: already booked (bk-1)') });
+  }, 20_000);
+
   it('refuses a converse app\'s calls as the server starts, and still serves its chat', async () => {
     const dir = folder();
     const { app } = converseFixture();
@@ -354,7 +316,7 @@ describe('the web chat on the converse runtime', () => {
     const { base, logs } = await boot(app, fakeModel([]), env);
     expect(logs.some((l) => l.includes('app converse') && l.includes('converse') && l.includes('takes no calls'))).toBe(true);
     expect((await fetch(`${base}/voice/twilio`, { method: 'POST' })).status).toBe(404);
-    const c = await Chat.open(base);
+    const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
     expect(says(c.received)).toEqual(['Example Visits, how can I help?']);

@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,19 +11,22 @@ import type { ToolImpl } from './turn';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'business', 'fixture', 'agent.yaml');
 const noop: ToolImpl = async () => 'ok';
+const APP_YAML = '# yaml-language-server: $schema=../schemas/app.schema.json\nid: example\nmode: converse\n';
 
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'converse-app-'));
   copyFileSync(FIXTURE, join(dir, 'agent.yaml'));
+  writeFileSync(join(dir, 'app.yaml'), APP_YAML);
   vi.stubEnv('OFFICE_LINE', '+15555550100');
 });
 afterEach(() => vi.unstubAllEnvs());
 
 describe('defineConverseApp', () => {
-  it('joins the business with the code of every action, named by its folder', () => {
+  it('joins the business with the code of every action, named by its app.yaml', () => {
     const app = defineConverseApp(dir, { tools: { availability: noop, book: noop, notify: noop } });
-    expect(app).toMatchObject({ mode: 'converse', id: basename(dir), dir });
+    expect(app).toMatchObject({ mode: 'converse', id: 'example', dir });
+    expect(app.id).not.toBe(basename(dir));
     expect(Object.keys(app.business.actions)).toEqual(['availability', 'book', 'notify']);
     expect(Object.keys(app.tools)).toEqual(['availability', 'book', 'notify']);
   });
@@ -52,23 +55,34 @@ describe('defineConverseApp', () => {
   });
 });
 
-describe('the chat settings of a converse app (app.yaml chat)', () => {
-  it('takes no caller number from a chat\'s context by default: with no app.yaml, or one that does not say', () => {
-    const tools = { availability: noop, book: noop, notify: noop };
-    expect(defineConverseApp(dir, { tools }).chat).toEqual({ callerNumberFromContext: false });
+describe('a converse app\'s app.yaml', () => {
+  const tools = { availability: noop, book: noop, notify: noop };
+
+  it('is required, says mode: converse, and is read by app.yaml\'s own schema', () => {
+    rmSync(join(dir, 'app.yaml'));
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml cannot be read/);
     writeFileSync(join(dir, 'app.yaml'), 'id: example\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:1  mode  a converse app's app\.yaml says "mode: converse", and this one names no mode/);
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: agent\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/this one says "agent"/);
+    writeFileSync(join(dir, 'app.yaml'), 'id: Example App\nmode: converse\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:5  id  /);
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: converse\nchats: {}\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:3:1  chats/);
+  });
+
+  it('takes no caller number from a chat\'s context by default', () => {
     expect(defineConverseApp(dir, { tools }).chat).toEqual({ callerNumberFromContext: false });
   });
 
-  it('takes one where app.yaml says chat.callerNumberFromContext: true, and refuses a value that is not true or false', () => {
-    const tools = { availability: noop, book: noop, notify: noop };
-    writeFileSync(join(dir, 'app.yaml'), 'id: example\nchat:\n  callerNumberFromContext: true\n');
+  it('takes one where it says chat.callerNumberFromContext: true, and refuses a value that is not true or false', () => {
+    writeFileSync(join(dir, 'app.yaml'), `${APP_YAML}chat:\n  callerNumberFromContext: true\n`);
     const app = defineConverseApp(dir, { tools });
     expect(app.chat).toEqual({ callerNumberFromContext: true });
     expect(isConverseApp(app)).toBe(true);
     expect(isConverseApp({ id: 'scripted' })).toBe(false);
-    writeFileSync(join(dir, 'app.yaml'), 'id: example\nchat:\n  callerNumberFromContext: sometimes\n');
-    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:1  chat\.callerNumberFromContext  must be true or false/);
+    writeFileSync(join(dir, 'app.yaml'), `${APP_YAML}chat:\n  callerNumberFromContext: sometimes\n`);
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:5:28  chat\.callerNumberFromContext  "callerNumberFromContext" must be true or false/);
   });
 });
 
