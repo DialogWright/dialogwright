@@ -320,7 +320,7 @@ export const businessSchema = z
           .int({ error: 'must be a whole number of ms' })
           .min(AGENT_TIMEOUT_RANGE.min, { error: `must be at least ${AGENT_TIMEOUT_RANGE.min}` })
           .max(AGENT_TIMEOUT_RANGE.max, { error: `must be at most ${AGENT_TIMEOUT_RANGE.max}` })
-          .describe(`How long in all, ms, the turn then waits for the answer (and for the same request asked again after an answer not in its shape), in place of AGENT_TIMEOUT_VOICE_MS where that is shorter; past it, the turn's fallback (the question it was waiting on). ${AGENT_TIMEOUT_RANGE.min} to ${AGENT_TIMEOUT_RANGE.max}, more than afterMs.`),
+          .describe(`How long, ms from the model first asked, the turn then waits for its answers (the first, an asking again after one not in its shape, a second shown a tool's result), in place of AGENT_TIMEOUT_VOICE_MS where that is shorter; past it, the turn's fallback (the question it was waiting on). The reply's checks and wording come after. ${AGENT_TIMEOUT_RANGE.min} to ${AGENT_TIMEOUT_RANGE.max}, more than afterMs.`),
         lines: z
           .array(text())
           .min(1, { error: 'must list at least one line' })
@@ -332,7 +332,7 @@ export const businessSchema = z
         if (typeof w.afterMs === 'number' && typeof w.upToMs === 'number' && w.afterMs >= w.upToMs) ctx.addIssue({ code: 'custom', path: ['afterMs'], message: `is ${w.afterMs}, not less than upToMs (${w.upToMs}), so no line could be said before the wait ends`, params: { fix: 'make afterMs less than upToMs (1200 and 4000, say)' } });
       }))
       .optional()
-      .describe('On a call, what the caller hears while the agent model is slow: past `afterMs` into a turn with its answer not in, one of `lines` is said at once, and the turn waits for it up to `upToMs` in all; past that, its fallback. Voice only (a chat\'s own budget, AGENT_TIMEOUT_CHAT_MS, is already long). Default: none, the turn waiting AGENT_TIMEOUT_VOICE_MS and saying nothing meanwhile.'),
+      .describe('On a call, what the caller hears while the agent model is slow: past `afterMs` into a turn with its answer not in, one of `lines` is said at once (once the decision model\'s reading is in, and never over a caller it reads as not finished), and the turn waits for the model up to `upToMs`; past that, its fallback. Not on a turn decided without the answer (a read-back, a turn the decision model settles). What the caller says over a line, before the turn\'s own, answers nothing. Voice only (a chat\'s own budget, AGENT_TIMEOUT_CHAT_MS, is already long). Default: none, the turn waiting AGENT_TIMEOUT_VOICE_MS and saying nothing meanwhile.'),
     lines: z
       .record(identifier(), text())
       .optional()

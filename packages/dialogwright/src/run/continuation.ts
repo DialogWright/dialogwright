@@ -162,7 +162,9 @@ export class Continuation {
         if (fragments.length <= CONTINUE_MAX_FRAGMENTS && text.length <= CONTINUE_MAX_CHARS) {
           // The session before the first fragment, with the turn count as it is now: a turn number is
           // never given twice (the trace, a service request's idempotency key).
-          const base: Session = { ...state.base, turnIndex: session.turnIndex };
+          // The line said last while the agent model was slow is the call's, not the fragment's: the next is another (Session.agent.waitLine).
+          const waitLine = session.agent?.waitLine;
+          const base: Session = { ...state.base, turnIndex: session.turnIndex, ...(waitLine !== undefined && state.base.agent !== undefined ? { agent: { ...state.base.agent, waitLine } } : {}) };
           // Over a line where its own prompt was; set aside, the session it was given (TurnContext.setAsideAs).
           const joined: UserSpeech = { ...event, text };
           const run = await runTurn(base, joined, opts, arrival, fragments, undefined, session);

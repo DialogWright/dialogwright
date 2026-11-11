@@ -121,10 +121,15 @@ function showWaiting(session: Session, event: SessionEvent, provisional: TurnRes
 /**
  * The line said while the agent model is slow on a call (business.yaml's `waiting`, AgentApp.waiting; the
  * agent-mode design, call 60): `afterMs` after `startedAt` (when the model was first asked), with its answer
- * not in, the next of `lines` after the one this call said last (Session.agent.waitLine), said at once through
- * the channel's early lines, as the hold line of a tool that waits is (showWaiting): one at most a turn. The
- * channel says the turn's own lines after it, once it has played. Where the channel has no early lines (a
- * test's harness, a chat), the line is recorded as due and not said. Stopped once the answer is in.
+ * not in, the next of `lines` after the one this call said last (Session.agent.waitLine), said at once through the channel's early lines, as the hold line of a tool that waits is
+ * (showWaiting): one at most a turn. The channel says the turn's own lines after it, once it has played.
+ *
+ * Only once the decision model's reading of the words is in (`readingIn`): the channel is handed it as a reply
+ * that only speaks with that reading's `utteranceComplete`, so a channel that would hold the turn's reply for a
+ * caller not finished (INCOMPLETE_WAIT_MS, server/adapter.ts holdsReply) says no line over them either. A turn the
+ * reading shows will be decided without the model's answer says none (the runner stops it). Where the channel has
+ * no early lines (a test's harness, a chat), or will not say it, the line is recorded as due and not said.
+ * Stopped once the answer is in.
  */
 export interface AgentFiller {
   stop(): void;
@@ -135,6 +140,8 @@ export interface AgentFiller {
    */
   pause(): void;
   resume(): void;
+  /** The decision model's reading is in: its utteranceComplete, or null where it gave none (or was not asked). */
+  readingIn(utteranceComplete: number | null): void;
   /** The line due, its index among the lines, when (ms from the model first asked), and whether the channel said it; null where none came due. */
   record(): { promptId: string; index: number; atMs: number; said: boolean } | null;
 }
@@ -146,11 +153,16 @@ export function agentFiller(session: Session, waiting: { afterMs: number; lines:
   const lineId = waiting.lines[index]!;
   let said: { promptId: string; index: number; atMs: number; said: boolean } | null = null;
   let stopped = false;
-  const due = (): void => {
-    if (stopped) return;
+  let paused = false;
+  let due = false;
+  let reading: { utteranceComplete: number | null } | null = null;
+  const say = (): void => {
+    if (stopped || paused || said !== null || !due || reading === null) return;
     const line = promptSay(app, lineId, {}, false, channel.render ?? null, session.locale, undefined, { shown: false });
-    // What the channel's early lines read of the turn: nothing decided yet (as showWaiting's pass that threw).
-    const result = { session, decision: { kind: 'ignore' }, actions: [line], rows: [], gateEvents: [], effects: [], audit: [], kb: null, screen: null, quarantined: false, turnState: null, verdict: null, fillEvents: [] } as unknown as TurnResult;
+    // What the channel's early lines read of the turn: a reply that only speaks, with the decision model's reading
+    // of whether the caller finished, so a channel that would hold such a reply says no line over them either.
+    const rows = reading.utteranceComplete === null ? [] : [{ gate: 'utteranceComplete', value: reading.utteranceComplete, threshold: 0, passed: false, outcome: 'noted', decided: false }];
+    const result = { session, decision: { kind: 'prompt', promptId: lineId, vars: {} }, actions: [line], rows, gateEvents: [], effects: [], audit: [], kb: null, screen: null, quarantined: false, turnState: null, verdict: null, fillEvents: [] } as unknown as TurnResult;
     let ok = false;
     try {
       ok = channel.early !== undefined && channel.early([line], result);
@@ -162,9 +174,14 @@ export function agentFiller(session: Session, waiting: { afterMs: number; lines:
   let timer: ReturnType<typeof setTimeout> | undefined;
   const arm = (): void => {
     if (stopped || said !== null || timer !== undefined) return;
+    if (due) {
+      say();
+      return;
+    }
     timer = setTimeout(() => {
       timer = undefined;
-      due();
+      due = true;
+      say();
     }, Math.max(0, waiting.afterMs - (performance.now() - startedAt)));
   };
   const disarm = (): void => {
@@ -177,9 +194,18 @@ export function agentFiller(session: Session, waiting: { afterMs: number; lines:
       stopped = true;
       disarm();
     },
-    pause: disarm,
-    resume: arm,
+    pause: () => {
+      paused = true;
+      disarm();
+    },
+    resume: () => {
+      paused = false;
+      arm();
+    },
+    readingIn: (utteranceComplete) => {
+      reading = { utteranceComplete };
+      say();
+    },
     record: () => said,
   };
 }
-

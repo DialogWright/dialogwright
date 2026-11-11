@@ -205,7 +205,8 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   if (b.prices !== undefined) prompts[PRICE_PROMPT] = line(b.prices.say);
   // The lines said while the agent model is slow on a call (waiting.lines), each its own prompt (agentWaitPromptOf).
   (b.waiting?.lines ?? []).forEach((text, i) => {
-    prompts[agentWaitPromptOf(i)] = line(text);
+    // Never cut by the caller's speech (the carrier's barge-in): what they say over it answers nothing (server/adapter.ts waitWindows).
+    prompts[agentWaitPromptOf(i)] = { ...line(text), interruptible: false };
   });
   // The account is recognized by the number calling, never asked: it has no question. A caller the
   // number does not recognize is told so where an action needs it, and offered the request.

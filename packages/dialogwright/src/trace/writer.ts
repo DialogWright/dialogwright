@@ -70,6 +70,8 @@ export interface TraceInput {
   render?: RenderRecord | null;
   /** What the turn made of the agent model's answer, and what it was sent (TraceRecord.agent); absent on every other turn. */
   agent?: TraceRecord['agent'];
+  /** The line said while the agent model was slow on a call (TraceRecord.filler); absent where none came due. */
+  filler?: TraceRecord['filler'];
   /** The decision model's usage on the drift checks of generated lines, added into the record's usage; null or absent when none was asked. */
   driftUsage?: JevUsage | null;
   /** The turn's second request (TraceRecord.followUp), its usage added into the record's; null or absent when it made none. */
@@ -154,6 +156,7 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...(input.render ? { render: input.render } : {}),
     // Only on a turn of an app in agent mode that asked its agent model: every other record is as it was.
     ...(input.agent ? { agent: input.agent } : {}),
+    ...(input.filler ? { filler: input.filler } : {}),
     timing,
     usage: {
       inputTokens,

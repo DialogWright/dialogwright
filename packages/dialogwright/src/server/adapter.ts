@@ -1214,6 +1214,22 @@ interface LineSpan {
   held: boolean;
 }
 
+/**
+ * A turn's lines said before it ended (a line while the agent model is slow, a tool's hold line, a knowledge
+ * answer's hold line: RunOptions.early), from when the first went out (`fromMs`) to when the turn's own lines did
+ * (`toMs`, null while the turn runs). A final prompt whose speech began in it is not an answer to the turn's own
+ * line, which the caller had not heard yet (an "okay" to "One sec." would be the yes to the read-back after it,
+ * the agent-mode design's call 60 review): no turn runs for it, nothing is counted, nothing is joined, and the
+ * frame log notes it (`overWaitLine`), where replay skips it too.
+ */
+const waitWindows = new Map<string, { fromMs: number; toMs: number | null }>();
+
+/** The turn's own lines went out at `atMs`: its window of early lines closes there. */
+function closeWaitWindow(callSid: string, atMs: number): void {
+  const w = waitWindows.get(callSid);
+  if (w !== undefined && w.toMs === null) w.toMs = atMs;
+}
+
 /** Each call's lines, as sent and estimated, the latest last (LineSpan): what a prompt's speech is placed against. */
 const linesOut = new Map<string, LineSpan[]>();
 /** The most lines kept per call, and for how long after their end: a run of speech is placed against the lines it began over. */
@@ -1233,6 +1249,7 @@ const partialRuns = new Map<string, { firstMs: number; lastMs: number }>();
 /** Drop what is known of a call's lines and its caller's speech (a reconnect, a close, a call gone). */
 function forgetLines(callSid: string): void {
   linesOut.delete(callSid);
+  waitWindows.delete(callSid);
   speechRuns.delete(callSid);
   partialRuns.delete(callSid);
 }
@@ -2221,10 +2238,16 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // went out, so a report that comes before the rest is ready counts): with two replies in flight its
     // report of the first named the second's text, and the turn was said again whole (a live call, 2026-10-18).
     const earlyPlayback: { played: Promise<{ after: EndAfter; heldMs: number; expectedMs: number }> | null } = { played: null };
+    let waitOpened = false;
     const early: EarlyLines = (lines, result) => {
       if (entry.socket === null) return false;
       const wait = deps.incompleteWait;
       if (wait && wait.waitMs > 0 && event.type === 'user.speech' && event.final && holdsReply(result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE) !== null) return false;
+      // From the first such line until the turn's own lines go out, what the caller says answers none of them (waitWindows).
+      if (!waitOpened) {
+        waitOpened = true;
+        waitWindows.set(entry.callSid, { fromMs: Date.now(), toMs: null });
+      }
       // A second batch (the second hold line) goes after the first, in order.
       const batch = actionsToFrames([...lines]);
       earlyFrames = [...earlyFrames, ...batch];
@@ -2307,6 +2330,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     const summaries = summaryTexts(run.record.render, appOf(entry.session));
     if (summaries.length > 0) SUMMARIES.set(entry, [...(SUMMARIES.get(entry) ?? []), ...summaries]);
     const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames, run.result.decision);
+    // The turn's own lines are out: what the caller says from now answers them.
+    if (waitOpened) closeWaitWindow(entry.callSid, sentAtMs);
     // A caller may come back in over the reply to a final prompt (a caller who had not finished).
     if (sent.some((f) => f.type === 'text' || f.type === 'play')) noteReply(entry, event, sentAtMs);
     if (at >= 0) {
@@ -2357,6 +2382,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     }
     return false;
   } finally {
+    // A turn that sent no lines of its own (it threw, or said nothing): the window its early lines opened closes now.
+    if (waitWindows.get(entry.callSid)?.toMs === null) closeWaitWindow(entry.callSid, Date.now());
     // Runs even when sending the decision failed: the call is over either way.
     if (ending && holds(deps, entry)) {
       // Kept for the next socket, whose token (minted by the carrier's callback meanwhile) stays live.
@@ -2732,7 +2759,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   if (frame.type === 'prompt' && frame.last) countSpeaking(deps, ctx.callSid);
   const started = frame.type === 'prompt' && frame.last ? speechStartOf(deps, ctx.callSid, Date.now()) : null;
   // A prompt the caller came back in with is the rest of what they began before: never dropped under `ignore`.
-  const read0 = started !== null && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry, started) : null;
+  // Speech begun while a turn's early lines played, before its own (waitWindows): an answer to none of them.
+  const window = started !== null && !entry.ended && !joinsHeld ? waitWindows.get(ctx.callSid) : undefined;
+  const overWait = window !== undefined && started!.atMs >= window.fromMs && (window.toMs === null || started!.atMs < window.toMs)
+    ? { afterMs: Math.round(started!.atMs - window.fromMs), start: started!.start }
+    : null;
+  const read0 = started !== null && overWait === null && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry, started) : null;
   const over = read0?.mode === 'ignore' && resumesPrompt(deps, entry) ? null : read0;
   // The core's event for it: everything below that is not about the wire itself reads this. Under
   // `unless-miss`, speech over a line is marked so, and a turn on it that would be a miss is set aside.
@@ -2767,8 +2799,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     deps.log(`${ctx.callSid}: speech ${seconds(over.afterMs, 2)} into lines it could not interrupt (~${seconds(over.expectedMs, 1)})${over.mode === 'ignore' ? ': no turn' : ''}`);
     logDelivery(deps, entry, { speechOverLine: over });
   }
-  // Under `ignore` no turn runs for it, and it is as if it never came: nothing else is told of it.
-  const ignored = over?.mode === 'ignore';
+  if (overWait) {
+    deps.log(`${ctx.callSid}: speech ${seconds(overWait.afterMs, 2)} into a line said while the turn waited: no turn`);
+    logDelivery(deps, entry, { overWaitLine: overWait });
+  }
+  // Under `ignore` no turn runs for it, and it is as if it never came: nothing else is told of it. Nor for speech over a wait line.
+  const ignored = over?.mode === 'ignore' || overWait !== null;
   // A final prompt from a caller who came back in over the last reply continues the one before it;
   // logged ahead of the prompt's own line, where replay reads it. Then this prompt's speech is the one followed.
   if (frame.type === 'prompt' && frame.last && !entry.ended && !ignored) {
@@ -2785,7 +2821,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // wait runs from the lines' end that speech was judged against (held while a caller speaks, as ever);
     // keys held at a yes-or-no offer keep their own wait, and a service's answer arms its own.
     callerHeard(ctx.callSid);
-    if (entry.session.pendingService === null && entry.session.promptedFor !== null && !keyBurstPending(entry.session)) armNoInput(deps, entry, [], { fromLines: true });
+    // A turn still running arms the wait itself once its lines are out.
+    const running = overWait !== null && waitWindows.get(ctx.callSid)?.toMs === null;
+    if (!running && entry.session.pendingService === null && entry.session.promptedFor !== null && !keyBurstPending(entry.session)) armNoInput(deps, entry, [], { fromLines: true });
     return;
   }
   // The caller is audibly there, so the no-input wait is over - before any of the early returns

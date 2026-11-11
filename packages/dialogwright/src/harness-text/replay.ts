@@ -271,6 +271,8 @@ function spuriousAt(lines: readonly ReadFrameLogLine[], index: number): boolean 
  */
 function overLineNoted(line: ReadFrameLogLine): 'unless-miss' | 'ignore' | null {
   if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return null;
+  // Speech over a line said while a turn waited, before its own (server/adapter.ts waitWindows): no turn ran.
+  if (typeof (line.msg as { overWaitLine?: unknown }).overWaitLine === 'object') return 'ignore';
   const o = (line.msg as { speechOverLine?: unknown }).speechOverLine;
   if (typeof o !== 'object' || o === null) return null;
   const mode = (o as { mode?: unknown }).mode;

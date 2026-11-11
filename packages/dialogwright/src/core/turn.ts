@@ -47,7 +47,7 @@ import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
 import { cancelPromptOf, type AgentResult, type SeenResult } from '../agent/types';
-import { agentDropped, agentLed, agentWords, fullAskAgain, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
+import { SCRIPTED_VERDICTS, agentDropped, agentLed, agentWords, fullAskAgain, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
   /**
@@ -3694,6 +3694,27 @@ export interface FollowUp {
   readonly reason: 'aside-topic' | 'agent-failed';
   /** The slot whose question it asks: the aside's topic slot; for `agent-failed`, the form at its read-back. */
   readonly slot: SlotId;
+}
+
+/**
+ * Whether an agent-mode turn whose decision model's answers are in will be decided without the agent's answer,
+ * as the turn will read them (agentWords' scripted turn): the screen quarantined the words, the decision model
+ * failed, its gates settled the turn (SCRIPTED_VERDICTS), routed it to a form the agent does not run, or the turn
+ * answers a question of the core's own. The runner reads it to say no line while the model is slow, and wait no
+ * longer than the runner's own budget, on a turn that will not use the answer (run/turn.ts, business.yaml's
+ * `waiting`). Pure: nothing is decided or changed. False for every other turn, and where it cannot tell.
+ */
+export function agentSettledWithout(session: Session, event: SessionEvent, answers: AnswerMap | null, turnContext: TurnContext, screen: ScreenResult | null): boolean {
+  if (event.type !== 'user.speech' && event.type !== 'user.text') return false;
+  if (screen?.fired === true || answers === null) return true;
+  const pc = session.pendingConfirmation;
+  if (pc !== null && pc.target !== 'form') return true;
+  const app = appOf(session);
+  const tc = appTurnContext(app, turnContext);
+  const turnState = buildTurnState(session, heard(session, event), tc.nowMs);
+  const ctx = slotContext(session, event.text, tc);
+  const { verdict } = evaluateGates(session, turnState, answers, tc.thresholds, summaryValuesGiven(session, answers, ctx));
+  return SCRIPTED_VERDICTS.has(verdict.kind) || (verdict.kind === 'route' && !isFormIntent(app, verdict.intent));
 }
 
 /**

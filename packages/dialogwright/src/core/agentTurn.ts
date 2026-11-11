@@ -231,12 +231,6 @@ export interface AgentTurnRecord {
    */
   retried?: { invalid: string; ms: number; fallback?: AgentFailure; detail?: string };
   /**
-   * The line said while the model was slow on a call (business.yaml's `waiting`; run/waiting.ts agentFiller),
-   * set by the runner: its prompt, when it came due (ms from the model first asked), and whether the channel
-   * said it (false where it has no early lines). Absent where no answer was that late, or the app has none.
-   */
-  filler?: { promptId: string; atMs: number; said: boolean };
-  /**
    * At a form's read-back, the scripted reading: the decision model asked the form's own questions in the
    * turn's own request, beside the agent's ask (run/turn.ts readBackReading; the agent-mode design's calls 38
    * and 54). `read`: the agent's answer failed, and the turn was decided from the reading (a yes completes, a
@@ -512,7 +506,7 @@ export interface ScriptedSteps {
 }
 
 /** The gates' verdicts the turn is the scripted one on, whatever the agent answered. */
-const SCRIPTED_VERDICTS: ReadonlySet<Verdict['kind']> = new Set(['ignore', 'hold', 'nomatch', 'handoff', 'replay', 'inform']);
+export const SCRIPTED_VERDICTS: ReadonlySet<Verdict['kind']> = new Set(['ignore', 'hold', 'nomatch', 'handoff', 'replay', 'inform']);
 
 /** A record of an answer the turn did not read, for the reason given. */
 function droppedRecord(agent: AgentResult, dropped: string): AgentTurnRecord {

@@ -235,6 +235,13 @@ export interface TraceRecord {
    */
   agent?: AgentTurnRecord & { sent?: AgentSentRecord };
   /**
+   * The line said while the agent model was slow on a call (business.yaml's `waiting`; run/waiting.ts agentFiller):
+   * its prompt, when it came due (ms from the model first asked), and whether the channel said it (false where it
+   * has no early lines, or would hold the turn's reply for a caller not finished). On the turn's record whatever
+   * became of the turn (a turn whose words a later prompt continued keeps it too). Absent where none came due.
+   */
+  filler?: { promptId: string; atMs: number; said: boolean };
+  /**
    * The texts the turn's tools sent (texts/types.ts TextRecord): each number by its last four, the body by
    * its length, the media by their count, the provider's id and status. Only on a turn that sent one.
    */

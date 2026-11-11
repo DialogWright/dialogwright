@@ -191,10 +191,10 @@ export function oneAnswerPerRequest(client: AgentClient): AgentClient {
   };
 }
 
-/** Whether a turn's agent answer (either asking) was a cassette's miss. */
+/** Whether a turn's agent answer (any asking: the first, the asking again after one not in its shape, a second shown a tool's result) was a cassette's miss. */
 export function agentCassetteMissed(run: Pick<TurnRun, 'record'>): boolean {
   const a = run.record.agent;
-  return a !== undefined && (a.detail === AGENT_CASSETTE_MISS || a.again?.detail === AGENT_CASSETTE_MISS);
+  return a !== undefined && (a.detail === AGENT_CASSETTE_MISS || a.retried?.detail === AGENT_CASSETTE_MISS || a.again?.detail === AGENT_CASSETTE_MISS);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -267,6 +267,8 @@ export const DELIVERY_NOTES = {
   // Speech that began over a line the caller could not interrupt (SPEECH_OVER_LINE): under unless-miss a
   // turn on it that would be a miss is set aside (its gate row says so); under ignore no turn runs.
   speechOverLine: { on: 'agent', text: (f) => `speech heard ${secs(f.afterMs)} into this, which it could not interrupt${f.mode === 'ignore' ? ': no turn run' : ''}` },
+  // Speech that began while a line said as the turn waited played (a line while the model was slow, a hold line), before the turn's own: no turn ran.
+  overWaitLine: { on: 'agent', text: (f) => `speech heard ${secs(f.afterMs)} into this, before the turn's own line: no turn run` },
   // The caller came back in over the reply to their last answer: `joined` reads its pause.
   callerResumed: { on: null },
   // The caller's words held for the rest of a value (a digits slot's waitForRestMs): `joined` reads it.
@@ -1032,7 +1034,8 @@ export function reduce(events, opts) {
         if (consulted && r.error) v.lines.push({ kind: 'marker', text: `model error · ${r.error.name}`, turn: r.turnIndex });
         // Generated wording: each line the app generates, said generated or fixed (and why), with its fixed line beside.
         // An agent turn (an app in agent mode): what the agent understood, proposed and replied, and what became of each.
-        const agent = r.agent ? agentOf(r.agent) : null;
+        // The line said while the model was slow (TraceRecord.filler) is shown with what the agent did, or alone.
+        const agent = r.agent ? agentOf(r.filler ? { ...r.agent, filler: r.filler } : r.agent) : r.filler ? agentOf({ use: 'none', values: [], action: 'none', filler: r.filler }) : null;
         if (e.spoken) v.lines.push({ kind: 'system', text: e.spoken, promptId: r.decision.promptId ?? r.decision.kind, turn: r.turnIndex, ...(r.render && r.render.lines.length ? { wording: wordingOf(r.render) } : {}), ...(agent ? { agent } : {}) });
         else if (agent) v.lines.push({ kind: 'marker', text: agent.why ?? 'the agent\'s answer: nothing said', turn: r.turnIndex, agent });
         if (!consulted && !acted) break;
