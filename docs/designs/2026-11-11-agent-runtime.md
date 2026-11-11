@@ -264,6 +264,14 @@ Measured on the simulated callers below:
 
 The comparison picks the default, and the business information may name another model.
 
+**Only models a real client could use** (the maintainer, 2026-11-11):
+- No tier whose terms let the provider train on the conversations (for example Muse Spark's
+  "contributor" tier).
+- OpenRouter requests ask for providers that don't collect data (`data_collection: "deny"`).
+- **Two more candidates:**
+  - **Muse Ember** (Meta, `META_API_KEY`, reasoning effort minimal) runs second, after Mercury;
+  - **Muse Spark** (standard tier) runs with the expensive group, beside Sonnet.
+
 ### Evaluation: simulated callers
 
 Before any tuning, a harness that runs many conversations against the real runtime and reports rates:
