@@ -3,8 +3,8 @@ import type { AgentAnswer, AgentClient, AgentContext, AgentFailure, AgentResult 
 /**
  * An agent client that asks no model (the engine's tests, an app's stub regression, the bake-off's
  * own test): a script answers each turn from its context. The script may answer with a failure
- * instead (`{ fail: 'timeout' | 'invalid' | 'error' }`), so a test can make an agent that is slow,
- * malformed or down. `ms` is the time it reports, without waiting; `delayMs` makes it wait for real.
+ * instead (`{ fail: 'timeout' | 'invalid' | 'filtered' | 'error' }`), so a test can make an agent that is slow,
+ * malformed, refused by a content filter or down. `ms` is the time it reports, without waiting; `delayMs` makes it wait for real.
  */
 
 /** A scripted failure. */

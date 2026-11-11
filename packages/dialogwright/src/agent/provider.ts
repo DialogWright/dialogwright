@@ -10,8 +10,8 @@ import type { AgentClient, AgentContext, AgentModelChoice, AgentRequest, AgentRe
  * Mercury Voice, which only Inception's API serves). Both get the same request: the agent's messages
  * (agent/prompt.ts), structured output with the answer's JSON Schema (`strict: true`), temperature
  * 0.6. A client never rejects: a reply past its budget (or a gateway's 504) is `timeout`, a body that
- * is not the shape `invalid`, and any other failure `error`, with the API's own words made safe (never
- * the key). Each request is built without the key (AgentRequest), so a cassette keys answers by
+ * is not the shape `invalid`, a turn the provider's content filter refused `filtered` (filteredBy), and any
+ * other failure `error`, with the API's own words made safe (never the key). Each request is built without the key (AgentRequest), so a cassette keys answers by
  * everything sent but the key, and a replay builds the same request with no key at all.
  */
 
@@ -90,6 +90,23 @@ export function inceptionRequest(p: InceptionRequestOptions): AgentRequest {
   });
 }
 
+/**
+ * Whether a provider's answer is its content filter refusing the turn, where the shape is known:
+ * - **Inception** answers HTTP 400 with the error's type `content_filter_error` (seen live on call 61,
+ *   2026-11-10, on "Oh, it's a, uh, ..." naming a car: a false positive on a harmless turn, its message the
+ *   model declining to say how it was built). Any error type naming a content filter is read so.
+ * - **OpenAI-compatible APIs** (OpenRouter passes a provider's through) end a choice with `finish_reason`
+ *   `content_filter`.
+ * - **OpenRouter's moderation** answers HTTP 403 with `error.metadata.reasons`, the categories flagged.
+ * Every other failure is not: an error stays `error`.
+ */
+export function filteredBy(status: number, json: unknown, told: { type?: string }, finish?: unknown): boolean {
+  if (finish === 'content_filter') return true;
+  if (told.type !== undefined && /content[_ -]?filter/i.test(told.type)) return true;
+  const metadata = (json as { error?: { metadata?: { reasons?: unknown } } } | null)?.error?.metadata;
+  return status === 403 && Array.isArray(metadata?.reasons);
+}
+
 /** The answer of an OpenAI-compatible chat completion: the assistant's text, the tokens, and the provider's cost where it gives one. */
 function completionOf(json: unknown): { text: string | null; finish: unknown; usage: RenderUsage; costUsd?: number } {
   const b = json as { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: unknown } } | null;
@@ -139,10 +156,13 @@ function chatAgent(e: ChatEndpoint, fetchFn: typeof fetch): AgentClient {
           return { ok: false, reason: 'error', detail: `${e.provider}: ${err instanceof Error ? err.name : 'request failed'}`, ms: ms() };
         }
         if (!res.ok) {
-          const told = apiError(await res.json().catch(() => null), e.apiKey);
+          const body = await res.json().catch(() => null);
+          const told = apiError(body, e.apiKey);
           const detail = `${e.provider}: HTTP ${res.status}${told.type !== undefined ? ` ${told.type}` : ''}${told.message !== undefined ? `: ${told.message}` : ''}`;
           // A gateway that gave up waiting for the model: the model was slow, as a timeout is.
           if (res.status === 504) return { ok: false, reason: 'timeout', detail, ms: ms() };
+          // The provider's content filter refused the turn: asked again once, as an answer not in its shape is (call 61).
+          if (filteredBy(res.status, body, told)) return { ok: false, reason: 'filtered', detail, ms: ms() };
           return { ok: false, reason: 'error', detail, ms: ms() };
         }
         let json: unknown;
@@ -154,6 +174,8 @@ function chatAgent(e: ChatEndpoint, fetchFn: typeof fetch): AgentClient {
         }
         const c = completionOf(json);
         const paid = { usage: c.usage, ...(c.costUsd !== undefined ? { costUsd: c.costUsd } : {}) };
+        // A choice the provider's content filter ended (OpenAI's shape): not an answer, whatever it holds (call 61).
+        if (filteredBy(res.status, json, {}, c.finish)) return { ok: false, reason: 'filtered', detail: `${e.provider}: the answer was stopped by the provider's content filter`, ms: ms(), ...paid };
         if (c.text === null) return { ok: false, reason: 'invalid', detail: `${e.provider}: the response had no message`, ms: ms(), ...paid };
         // An answer cut off at the token limit is not an answer, whatever it parses to.
         if (c.finish === 'length') return { ok: false, reason: 'invalid', detail: `${e.provider}: the answer was cut off at the token limit`, ms: ms(), raw: c.text, cutOff: true, ...paid };

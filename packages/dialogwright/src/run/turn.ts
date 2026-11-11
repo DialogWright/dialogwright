@@ -34,7 +34,7 @@ import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { agentFiller, resolveWaiting } from './waiting';
 import { agentAsks, agentContextOf, agentSentRecord, fullLeftOut, narrowedFields, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
 import { isYesNoField } from '../core/questions';
-import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
+import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentFailure, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
 
 export interface TurnObserver {
   /**
@@ -426,17 +426,21 @@ async function askAgain(runner: AgentRunner, first: AgentContext, seen: readonly
   return { result: await askAgent(runner, ctx, speech, left), ctx };
 }
 
+/** The failures asked again once (retryAgent): an answer not in its shape, and a turn the provider's content filter refused (call 61). */
+const retriable = (reason: AgentFailure): boolean => reason === 'invalid' || reason === 'filtered';
+
 /**
  * The agent model asked once more, the same request, after an answer not in its shape on a turn that needed it
- * (AgentRunner.retry, AGENT_RETRY; the maintainer's decision, 2026-11-10, call 60): only an `invalid` answer,
- * never one cut off at the token limit (a runaway, which tends to run away again, and has spent the most time),
+ * (AgentRunner.retry, AGENT_RETRY; the maintainer's decision, 2026-11-10, call 60), or one the provider's content
+ * filter refused (`filtered`, call 61: a false positive on a harmless turn, which a fresh sample at temperature 0.6
+ * may not meet): only an `invalid` or `filtered` answer, never one cut off at the token limit (a runaway, which tends to run away again, and has spent the most time),
  * a timeout (no time is left) or an error; and only where the time left of the turn's budget, counted from when
  * the model was first asked, is at least what the first answer took (the second, the same request, is taken to
  * take about as long; asked with less, it would most likely time out, the caller hearing nothing the while).
  * Asked within what is left. Null where it is not asked.
  */
 async function retryAgent(runner: AgentRunner, ctx: AgentContext, budgetMs: number, askedAt: number, first: AgentResult): Promise<AgentResult | null> {
-  if (runner.retry === false || first.ok || first.reason !== 'invalid' || first.cutOff === true) return null;
+  if (runner.retry === false || first.ok || !retriable(first.reason) || first.cutOff === true) return null;
   // The first answer's own time, or the time since it was asked where that is longer (a client that reports less).
   const spent = Math.max(first.ms, performance.now() - askedAt);
   const left = Math.floor(budgetMs - spent);
@@ -469,9 +473,10 @@ function agentRecord(record: AgentTurnRecord, first: AgentResult | null, again: 
   const spent = again === null ? firstSpent : bothSpent(firstSpent, agentSpent(again.result, runner));
   const firstMs = (first?.ms ?? 0) + (retry?.ms ?? 0);
   // Asked once more after an answer not in its shape: why the first was not, the second's own time, and why it failed too where it did.
+  // Its first failure by its reason: `invalid`, or `filtered` (the provider's content filter refused it, call 61).
   const retried = retry === null || first === null || first.ok ? {} : {
     ms: firstMs,
-    retried: { invalid: first.detail, ms: retry.ms, ...(retry.ok ? {} : { fallback: retry.reason, detail: retry.detail }) },
+    retried: { ...(first.reason === 'filtered' ? { filtered: first.detail } : { invalid: first.detail }), ms: retry.ms, ...(retry.ok ? {} : { fallback: retry.reason, detail: retry.detail }) },
   };
   const asked = again === null ? {} : {
     ms: firstMs + again.result.ms,
@@ -726,7 +731,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     // from the start with its answer, used as any answer (the calls already made kept). Where it fails too, the turn
     // as it first stood: the fallback.
     let retry: AgentResult | null = null;
-    if (agentCtx !== null && opts.agent != null && agentResult !== null && !atReadBack && resolved.agent?.use === 'failed' && resolved.agent.fallback === 'invalid') {
+    if (agentCtx !== null && opts.agent != null && agentResult !== null && !atReadBack && resolved.agent?.use === 'failed' && resolved.agent.fallback !== undefined && retriable(resolved.agent.fallback)) {
       filler?.resume();
       retry = await retryAgent(opts.agent, agentCtx, agentBudgetMs, agentAskedAt, agentResult);
       filler?.pause();

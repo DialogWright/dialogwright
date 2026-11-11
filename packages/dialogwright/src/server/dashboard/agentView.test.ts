@@ -112,6 +112,9 @@ describe('the console\'s call view of an agent turn', () => {
     expect(agentOf({ ms: 800, use: 'failed', fallback: 'invalid', detail: 'x', action: 'none', replySaid: false, values: [], retried: { invalid: 'x', ms: 400, fallback: 'timeout', detail: 'no answer within 967 ms' } }))
       .toMatchObject({ retried: 'asked again once, the first answer not in its shape (x): the second failed too: timeout (no answer within 967 ms), in 400 ms' });
     expect(agentOf({ ms: 500, use: 'used', action: 'none', replySaid: false, values: [] })!.retried).toBeUndefined();
+    // A turn the provider's content filter refused, asked again once (call 61).
+    expect(agentOf({ ms: 1180, use: 'used', action: 'none', replySaid: true, values: [], retried: { filtered: 'inception: HTTP 400 content_filter_error', ms: 550 } }))
+      .toMatchObject({ retried: "asked again once, the first answer refused by the provider's content filter (inception: HTTP 400 content_filter_error): the second used, in 550 ms" });
     // A line said while the model was slow on a call (business.yaml's waiting).
     expect(agentOf({ ms: 2100, use: 'used', action: 'none', replySaid: false, values: [], filler: { promptId: 'agent_wait_1', atMs: 1203, said: true } })!.filler)
       .toBe('agent_wait_1 said 1203 ms in, the model\'s answer not in');

@@ -57,7 +57,7 @@ export function isScriptedAgentStep(v: unknown): v is ScriptedAgentStep {
   const one = (a: unknown): boolean => {
     if (typeof a !== 'object' || a === null || Array.isArray(a)) return false;
     const x = a as Record<string, unknown>;
-    if ('fail' in x) return x.fail === 'timeout' || x.fail === 'invalid' || x.fail === 'error';
+    if ('fail' in x) return x.fail === 'timeout' || x.fail === 'invalid' || x.fail === 'filtered' || x.fail === 'error';
     const values = x.values === undefined || (Array.isArray(x.values) && x.values.every((y) => typeof y === 'object' && y !== null && ['field', 'value', 'words'].every((k) => typeof (y as Record<string, unknown>)[k] === 'string')));
     return values && ['reply', 'action', 'fixedLine', 'asks'].every((k) => x[k] === undefined || typeof x[k] === 'string') && ['fromFacts', 'closes'].every((k) => x[k] === undefined || typeof x[k] === 'boolean');
   };

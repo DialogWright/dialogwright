@@ -476,7 +476,7 @@ export async function runAgentBakeoff(models: readonly { entry: string; client: 
                   if (r.invalidWhy.length < 3) r.invalidWhy.push(res.detail);
                 }
                 r.values.missed += Object.keys(t.turn.values ?? {}).length;
-                r.mistakes.push({ call: call.id, turn: t.index + 1, what: res.reason === 'timeout' ? `no answer within ${budget} ms` : `invalid: ${res.detail}` });
+                r.mistakes.push({ call: call.id, turn: t.index + 1, what: res.reason === 'timeout' ? `no answer within ${budget} ms` : `${res.reason}: ${res.detail}` });
                 continue;
               }
               r.valid += 1;

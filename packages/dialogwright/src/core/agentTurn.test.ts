@@ -1035,6 +1035,29 @@ describe('the agent turn: a slow or failed model', () => {
     expect(c.last.result.session.agent!.failures).toBe(0);
   });
 
+  /** Call 61, turn 3: the provider's content filter refused a harmless turn (a car's make and model), 630 ms in. */
+  const FILTERED = { fail: 'filtered' as const, detail: 'inception: HTTP 400 content_filter_error: the model declined' };
+
+  it('a turn the provider\'s content filter refused is asked again once, as one not in its shape is (call 61)', async () => {
+    const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [FILTERED, NAME] }, [HOLD, 'Avery Lane'], { ms: (w, attempt) => (w === 'Avery Lane' ? (attempt === 1 ? 630 : 540) : 500) });
+    const asked = c.contexts.filter((x) => x.conversation.at(-1)!.text === 'Avery Lane');
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toEqual(asked[0]);
+    expect(value(c.last, 'request_patronName')).toBe('avery lane');
+    expect(c.last.record.agent).toMatchObject({ use: 'used', ms: 1_170, retried: { filtered: FILTERED.detail, ms: 540 } });
+    expect(c.last.record.agent!.retried!.invalid).toBeUndefined();
+    expect(c.last.result.session.agent!.failures).toBe(0);
+    // Refused again: the fallback, the question the line was waiting on, both failures on the record.
+    const twice = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [FILTERED, FILTERED] }, [HOLD, 'Avery Lane'], { ms: () => 400 });
+    expect(promptOf(twice.last)).toBe('ask_request_patronName');
+    expect(twice.last.record.agent).toMatchObject({ use: 'failed', fallback: 'filtered', retried: { filtered: FILTERED.detail, ms: 400, fallback: 'filtered' } });
+    expect(twice.last.result.session.agent!.failures).toBe(1);
+    // AGENT_RETRY=off: the fallback at once.
+    const off = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [FILTERED, NAME] }, [HOLD, 'Avery Lane'], { retry: false });
+    expect(off.contexts.filter((x) => x.conversation.at(-1)!.text === 'Avery Lane')).toHaveLength(1);
+    expect(off.last.record.agent).toMatchObject({ use: 'failed', fallback: 'filtered' });
+  });
+
   it('not in its shape twice: the fallback, as before, the second failure on the record', async () => {
     const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [NOT_THE_SHAPE, { fail: 'invalid', detail: 'the answer is not JSON' }] }, [HOLD, 'Avery Lane'], { ms: () => 400 });
     expect(promptOf(c.last)).toBe('ask_request_patronName');

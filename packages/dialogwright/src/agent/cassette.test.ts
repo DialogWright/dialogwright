@@ -107,6 +107,21 @@ describe('cassetteAgent', () => {
     expect(await cassetteAgent(before, { oneAnswer: true }).answer(ctx, 967, 2)).toMatchObject({ ok: false, reason: 'error', detail: AGENT_CASSETTE_MISS });
   });
 
+  it('a turn the content filter refused is recorded so, replays so, and its retry (attempt 2) replays the answer recorded second (call 61)', async () => {
+    const path = scratch();
+    const live: AgentClient = {
+      model: 'raw',
+      answer: async (_c, _t, attempt = 1) => (attempt === 1 ? { ok: false, reason: 'filtered', detail: 'inception: HTTP 400 content_filter_error', ms: 630 } : { ok: true, answer, ms: 540, raw: JSON.stringify(answer) }),
+    };
+    const recording = cassetteAgent(path, { record: live, oneAnswer: true });
+    await recording.answer(ctx, 1800);
+    await recording.answer(ctx, 1170, 2);
+    expect(loadAgentCassette(path).get(agentKey(ctx))![0]).toMatchObject({ failed: { reason: 'filtered', detail: 'inception: HTTP 400 content_filter_error' }, ms: 630 });
+    const replay = cassetteAgent(path, { oneAnswer: true });
+    expect(await replay.answer(ctx, 1800)).toMatchObject({ ok: false, reason: 'filtered', detail: 'inception: HTTP 400 content_filter_error', ms: 630 });
+    expect(await replay.answer(ctx, 1170, 2)).toMatchObject({ ok: true, answer, ms: 540 });
+  });
+
   it('an answer cut off at the token limit is recorded so, and replays so, never parsed (a runaway is never asked again)', async () => {
     const path = scratch();
     await cassetteAgent(path, { record: { model: 'raw', answer: async () => ({ ok: false, reason: 'invalid', detail: 'inception: the answer was cut off at the token limit', ms: 833, raw: '{"reply":"Goodbye. Goodbye. Goodbye.', cutOff: true }) } }).answer(ctx, 1800);

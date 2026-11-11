@@ -224,12 +224,13 @@ export interface AgentTurnRecord {
   again?: { tools: string[]; ms: number; fallback?: AgentFailure; detail?: string };
   /**
    * The agent model asked once more, the same request, after an answer not in its shape on a turn that needed
-   * it (AgentRunner.retry, AGENT_RETRY; call 60), set by the runner: why the first answer was not in its shape
-   * (`invalid`, its failure's detail), how long the second took, ms, and why it failed too where it did. Where
+   * it (AgentRunner.retry, AGENT_RETRY; call 60), or after one the provider's content filter refused (call 61), set by
+   * the runner: why the first answer could not be used (`invalid` or `filtered`, its failure's detail, one of the
+   * two), how long the second took, ms, and why it failed too where it did. Where
    * the second came, this record is of it (the turn resolved again with it, as with any answer); where it
    * failed, of the first (its fallback said). `ms` is then both answers' time.
    */
-  retried?: { invalid: string; ms: number; fallback?: AgentFailure; detail?: string };
+  retried?: { invalid?: string; filtered?: string; ms: number; fallback?: AgentFailure; detail?: string };
   /**
    * At a form's read-back, the scripted reading: the decision model asked the form's own questions in the
    * turn's own request, beside the agent's ask (run/turn.ts readBackReading; the agent-mode design's calls 38

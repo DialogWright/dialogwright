@@ -191,8 +191,12 @@ export interface SeenResult {
   result: unknown;
 }
 
-/** Why an answer could not be used. */
-export type AgentFailure = 'timeout' | 'invalid' | 'error';
+/**
+ * Why an answer could not be used. `filtered`: the provider's content filter refused the turn (agent/provider.ts
+ * filteredBy; call 61, 2026-11-10: Inception's filter refused "Oh, it's a, uh, ..." with a car's make and model, a
+ * false positive on a harmless turn), asked again once as an answer not in its shape is (AgentRunner.retry).
+ */
+export type AgentFailure = 'timeout' | 'invalid' | 'filtered' | 'error';
 
 /**
  * What asking the agent model came to. `raw` is the model's text as given (an answer valid or not),
@@ -347,7 +351,8 @@ export interface AgentRunner {
   checkTimeoutMs?: { voice: number; chat: number };
   /**
    * AGENT_RETRY (the maintainer's decision, 2026-11-10, call 60): an answer not in its shape (`invalid`, not
-   * one cut off at the token limit) on a turn that needed it is asked again once, the same request, where the
+   * one cut off at the token limit), or one the provider's content filter refused (`filtered`, call 61), on a turn
+   * that needed it is asked again once, the same request, where the
    * time left of the turn's budget is at least what the first answer took (run/turn.ts retryAgent). Absent:
    * on. false: never, the fallback said at once, as before.
    */

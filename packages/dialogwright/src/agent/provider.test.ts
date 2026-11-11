@@ -76,6 +76,20 @@ describe('openRouterAgent', () => {
     expect(JSON.stringify(r)).not.toContain(KEY);
   });
 
+  it('a turn the provider\'s content filter refused is filtered, in each shape known (call 61), and no other error is', async () => {
+    // OpenRouter's moderation: HTTP 403 with the categories flagged (the flagged words never recorded).
+    const moderated = fakeFetch(null, { status: 403, error: { code: 403, message: 'Input flagged', metadata: { reasons: ['harassment'], flagged_input: 'the words', provider_name: 'Example' } } });
+    const r = await openRouterAgent(openRouter(), moderated.fetchFn).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'filtered' });
+    expect(JSON.stringify(r)).not.toContain('the words');
+    // A choice the provider ended for its filter (OpenAI's shape).
+    const stopped = (async () => new Response(JSON.stringify({ choices: [{ message: { content: '' }, finish_reason: 'content_filter' }], usage: { prompt_tokens: 900, completion_tokens: 0 } }), { status: 200 })) as unknown as typeof fetch;
+    expect(await openRouterAgent(openRouter(), stopped).answer(ctx, 5000)).toMatchObject({ ok: false, reason: 'filtered', usage: { inputTokens: 900, outputTokens: 0 } });
+    // A 403 that is not moderation, and a 400 of another type: error, as before.
+    expect(await openRouterAgent(openRouter(), fakeFetch(null, { status: 403, error: { code: 403, message: 'forbidden' } }).fetchFn).answer(ctx, 5000)).toMatchObject({ ok: false, reason: 'error' });
+    expect(await openRouterAgent(openRouter(), fakeFetch(null, { status: 400, error: { type: 'invalid_request_error', message: 'bad' } }).fetchFn).answer(ctx, 5000)).toMatchObject({ ok: false, reason: 'error' });
+  });
+
   it('the request names json_schema strict, temperature 0.6 and the model', async () => {
     const { fetchFn, sent } = fakeFetch(answer);
     await openRouterAgent(openRouter(), fetchFn).answer(ctx, 5000);
@@ -162,6 +176,13 @@ describe('inceptionAgent', () => {
     expect(req!.body).toMatchObject({ max_tokens: AGENT_MAX_TOKENS });
     expect(AGENT_MAX_TOKENS).toBe(400);
     expect(req!.body).not.toHaveProperty('reasoning');
+  });
+
+  it('Inception\'s content filter refusing a harmless turn is filtered, its words kept as the detail (call 61)', async () => {
+    const { fetchFn } = fakeFetch(null, { status: 400, error: { type: 'content_filter_error', message: "I'm Mercury, built by Inception. I'm not able to get into that." } });
+    const r = await inceptionAgent({ model: 'mercury-3', apiKey: KEY, realtime: true }, fetchFn).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: false, reason: 'filtered' });
+    expect(!r.ok && r.detail).toBe("inception: HTTP 400 content_filter_error: I'm Mercury, built by Inception. I'm not able to get into that.");
   });
 
   it('leaves out what is not asked for: no effort, no realtime', async () => {

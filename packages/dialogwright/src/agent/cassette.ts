@@ -51,7 +51,7 @@ export function agentKey(ctx: AgentContext, request?: AgentRequest): string {
   return createHash('sha256').update(sent).digest('hex').slice(0, 32);
 }
 
-const FAILURES: readonly string[] = ['timeout', 'invalid', 'error'];
+const FAILURES: readonly string[] = ['timeout', 'invalid', 'filtered', 'error'];
 
 /** A cassette's lines by key, in the order recorded. A missing file is an empty cassette. */
 export function loadAgentCassette(path: string): Map<string, AgentCassetteLine[]> {

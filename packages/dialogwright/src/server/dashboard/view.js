@@ -171,10 +171,12 @@ export function agentOf(a) {
   const why = a.use === 'dropped'
     ? `answer set aside: ${AGENT_DROPPED[a.dropped] ?? String(a.dropped ?? '')}`
     : a.use === 'failed' ? `no answer: ${String(a.fallback ?? 'none')}${typeof a.detail === 'string' && a.detail !== '' ? ` (${a.detail})` : ''}, the fixed line said` : null;
-  // Asked again once after an answer not in its shape (AGENT_RETRY, call 60): why the first was not, and what the second came to.
+  // Asked again once after an answer not in its shape (AGENT_RETRY, call 60), or one the provider's content filter
+  // refused (call 61): why the first could not be used, and what the second came to.
   const r = a.retried;
-  const retried = r !== null && typeof r === 'object' && typeof r.invalid === 'string'
-    ? `asked again once, the first answer not in its shape${r.invalid !== '' ? ` (${r.invalid})` : ''}: ${typeof r.fallback === 'string' ? `the second failed too: ${r.fallback}${typeof r.detail === 'string' && r.detail !== '' ? ` (${r.detail})` : ''}` : 'the second used'}${typeof r.ms === 'number' && Number.isFinite(r.ms) ? `, in ${Math.round(r.ms)} ms` : ''}`
+  const first = r !== null && typeof r === 'object' ? (typeof r.invalid === 'string' ? { why: 'not in its shape', detail: r.invalid } : typeof r.filtered === 'string' ? { why: "refused by the provider's content filter", detail: r.filtered } : null) : null;
+  const retried = first !== null
+    ? `asked again once, the first answer ${first.why}${first.detail !== '' ? ` (${first.detail})` : ''}: ${typeof r.fallback === 'string' ? `the second failed too: ${r.fallback}${typeof r.detail === 'string' && r.detail !== '' ? ` (${r.detail})` : ''}` : 'the second used'}${typeof r.ms === 'number' && Number.isFinite(r.ms) ? `, in ${Math.round(r.ms)} ms` : ''}`
     : null;
   // A line said while the model was slow on a call (business.yaml's waiting, call 60).
   const f = a.filler;
