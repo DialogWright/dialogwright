@@ -1130,6 +1130,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(config.keyWaitMs !== undefined ? { keyWaitMs: config.keyWaitMs } : {}),
       ...(config.resumeAfterPauseMs !== undefined ? { resumeAfterPauseMs: config.resumeAfterPauseMs } : {}),
       ...(config.resumeIntoReplyMs !== undefined ? { resumeIntoReplyMs: config.resumeIntoReplyMs } : {}),
+      ...(config.minSpeechMs !== undefined ? { minSpeechMs: config.minSpeechMs } : {}),
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       ...(transfer ? { transfer } : {}),
       // On a host, a new call starts in the app its number reached, with that app's transfer targets.

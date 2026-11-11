@@ -349,6 +349,104 @@ describe('a caller who came back in and cut the re-ask off late, BARGE_IN=speech
   });
 });
 
+/**
+ * Call 60 (Telnyx, 2026-11-10), made on speakerphone with a television on, BARGE_IN=none: the caller said a
+ * fragment, stopped, and the reply went out 608 ms later. Over it the television gave clientSpeaking blips of
+ * 57 to 240 ms, the first 281 ms into the reply, none of the pauses between them longer than
+ * RESUME_AFTER_PAUSE_MS; after the line, the caller's answer came as more of them (none 300 ms long), and its
+ * prompt 363 ms after the last. Each blip below is [on, off] in milliseconds from the reply's send, as the
+ * call's frame log has them; the words are the test app's.
+ */
+const CALL_60_BLIPS: readonly (readonly [number, number])[] = [
+  [281, 519], [1_973, 2_148], [2_272, 2_329], [2_452, 2_571], [3_218, 3_336], [3_881, 3_939], [4_364, 4_482],
+  [4_787, 4_844], [4_966, 5_145], [5_389, 5_447],
+  // The question ends (tokensPlayed at 5983); the answer, said after it.
+  [6_295, 6_412], [6_638, 6_695], [7_180, 7_419], [7_482, 7_600], [7_723, 8_022],
+];
+const CALL_60_PROMPT_MS = 8_385;
+
+/** Call 60's turn: the fragment (661 ms, its reply 608 ms after its stop), the blips, and the answer's prompt. */
+async function call60(call: ReturnType<typeof liveCall>): Promise<void> {
+  await toReask(call, 661, 608);
+  let at = 0;
+  for (const [on, off] of CALL_60_BLIPS) {
+    await vi.advanceTimersByTimeAsync(on - at);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(off - on);
+    await call.caller(false);
+    at = off;
+  }
+  await vi.advanceTimersByTimeAsync(CALL_60_PROMPT_MS - at);
+  await call.say('22 Alder Street.');
+}
+
+describe('blips of noise over a reply are not the caller coming back in (MIN_SPEECH_MS, call 60)', () => {
+  it('call 60\'s blips: the answer said after the line is its own, not joined to the words before it', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call60(call);
+    expect(call.place()).toBe('22 Alder Street.');
+    expect(call.records().at(-1)!.joined).toBeUndefined();
+    expect(call.logs().some((l) => l.msg.callerResumed !== undefined)).toBe(false);
+    await sameOnReplay(call);
+  });
+
+  it('with MIN_SPEECH_MS=0, as before: the first blip brought the caller back in, and the answer was joined', async () => {
+    const call = liveCall('telnyx', 'none', { minSpeechMs: 0 });
+    await call60(call);
+    expect(call.place()).toBe('at 22 Alder Street.');
+    expect(resumedLine(call)).toEqual({ callerResumed: { pauseMs: 889, intoReplyMs: 281 } });
+    await sameOnReplay(call);
+  });
+
+  it('a blip, then real speech within the windows: back in from the real speech\'s start, which the blip did not use up', async () => {
+    const call = liveCall('telnyx', 'none');
+    await toReask(call, 400, 300);
+    await vi.advanceTimersByTimeAsync(100);
+    await call.speak(150);
+    // Back in 500 ms into the reply, for 343 ms, then more after a breath.
+    await vi.advanceTimersByTimeAsync(250);
+    await call.speak(343, 130, 410);
+    await vi.advanceTimersByTimeAsync(496);
+    await call.say('22 Alder Street.');
+    expect(call.place()).toBe('at 22 Alder Street.');
+    expect(resumedLine(call)).toEqual({ callerResumed: { pauseMs: 800, intoReplyMs: 500 } });
+    await sameOnReplay(call);
+  });
+
+  it('back in for real, then a pause longer than RESUME_AFTER_PAUSE_MS broken only by blips: the next words are new', async () => {
+    const call = liveCall('telnyx', 'none');
+    await toReask(call, 400, 300);
+    await vi.advanceTimersByTimeAsync(100);
+    await call.speak(400);
+    // Blips every 0.6 s keep no caller back in: the pause runs from the end of the speech that counted.
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(600);
+      await call.speak(100);
+    }
+    await vi.advanceTimersByTimeAsync(300);
+    await call.speak(500);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.say('22 Alder Street.');
+    expect(call.place()).toBe('22 Alder Street.');
+    expect(call.logs().some((l) => l.msg.callerResumed !== undefined)).toBe(false);
+    await sameOnReplay(call);
+  });
+
+  it('a short run still going as the prompt comes counts, as before', async () => {
+    const call = liveCall('telnyx', 'none');
+    await toReask(call, 400, 300);
+    await vi.advanceTimersByTimeAsync(100);
+    // A blip, then a run of 100 ms still going as the prompt comes, 380 ms into the reply.
+    await call.speak(150, 130);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(100);
+    await call.say('22 Alder Street.');
+    await call.caller(false);
+    expect(call.place()).toBe('at 22 Alder Street.');
+    await sameOnReplay(call);
+  });
+});
+
 describe('RESUME_AFTER_PAUSE_MS and RESUME_INTO_REPLY_MS', () => {
   it('are the adapter\'s bounds: the second live call is not joined with either set below its timings', async () => {
     for (const more of [{ resumeAfterPauseMs: 1_600 }, { resumeIntoReplyMs: 600 }]) {
@@ -375,6 +473,16 @@ describe('RESUME_AFTER_PAUSE_MS and RESUME_INTO_REPLY_MS', () => {
   it('refuse a value out of range', () => {
     for (const bad of ['10001', '-1', 'soon', '1.5']) expect(() => loadConfig({ ...telnyx, RESUME_AFTER_PAUSE_MS: bad })).toThrow(/RESUME_AFTER_PAUSE_MS must be/);
     for (const bad of ['5001', '-1', 'x']) expect(() => loadConfig({ ...telnyx, RESUME_INTO_REPLY_MS: bad })).toThrow(/RESUME_INTO_REPLY_MS must be/);
+  });
+
+  it('MIN_SPEECH_MS defaults to 300 (2026-11-10), is read when set, 0 for every start as before, and refuses a value out of range', () => {
+    expect(loadConfig(telnyx).minSpeechMs).toBe(300);
+    expect(loadConfig({ ...telnyx, MIN_SPEECH_MS: '0' }).minSpeechMs).toBe(0);
+    expect(loadConfig({ ...telnyx, MIN_SPEECH_MS: '450' }).minSpeechMs).toBe(450);
+    for (const bad of ['2001', '-1', 'short']) expect(() => loadConfig({ ...telnyx, MIN_SPEECH_MS: bad })).toThrow(/MIN_SPEECH_MS must be/);
+    expect(describeConfig(loadConfig({ ...telnyx, TELNYX_EVENTS: 'speaker-events' }))).toContain('caller speech counted from 300 ms (shorter: a blip)');
+    expect(describeConfig(loadConfig(telnyx))).toContain('caller speech counted from 300 ms (shorter: a blip); inactive without TELNYX_EVENTS speaker-events');
+    expect(describeConfig(loadConfig({ ...telnyx, MIN_SPEECH_MS: '0' }))).toContain('every report of the caller speaking taken as speech');
   });
 
   it('are said at startup where a carrier reports the caller\'s voice', () => {

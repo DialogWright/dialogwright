@@ -389,7 +389,7 @@ The core speaks its own channel event model. Every provider is an adapter that m
 
 Server-made events never come off a wire.
 
-A caller who had not finished is the engine's, not a carrier's (`run/continuation.ts`, app.yaml's `voice.continueWithinMs`, default 300 ms): when the reply to a final `user.speech` is cut off by a `user.interrupt` within that window, the next final prompt continues it, and the turn runs on the words joined, on the session as it was before the first fragment. Only a turn that did nothing but speak is undone; the voice server and the frame-log replay run every turn through it, so a replayed call joins where the live one did.
+A caller who had not finished is the engine's, not a carrier's (`run/continuation.ts`, app.yaml's `voice.continueWithinMs`, default 300 ms): when the reply to a final `user.speech` is cut off by a `user.interrupt` within that window, the next final prompt continues it, and the turn runs on the words joined, on the session as it was before the first fragment. Only a turn that did nothing but speak is undone; the voice server and the frame-log replay run every turn through it, so a replayed call joins where the live one did. On a carrier whose barge-in is off, a caller who comes back in soon after their own pause and the reply going out stands in for the interrupt (`RESUME_AFTER_PAUSE_MS`, `RESUME_INTO_REPLY_MS`, `server/adapter.ts`), counting only speech that runs `MIN_SPEECH_MS` (default 300 since 2026-11-10): shorter reports of the caller speaking are blips of noise ([the guide's 13.8](guide/13-channels.md#138-a-caller-who-had-not-finished-and-how-a-word-is-said)).
 
 **Actions out of the core** (`Action`):
 

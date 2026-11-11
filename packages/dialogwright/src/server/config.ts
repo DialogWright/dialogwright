@@ -9,7 +9,7 @@ import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { describeNoiseSuppression, noiseSuppressionOf, type NoiseSuppression } from './voice/noiseSuppression';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
-  BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, DEFAULT_MIN_SPEECH_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   TWILIO_DEFAULT_RECOGNIZER, VOICE_PROVIDER_IDS, DEFAULT_SPEECH_OVER_LINE, SPEECH_OVER_LINE_MODES, type BargeIn, type EndAfterPlayback, type SpeechOverLine, type VoiceProviderId,
 } from '../channel/voiceProviders';
 import type { Recognition, RecordsConfig } from '../core/app/types';
@@ -252,6 +252,14 @@ export interface ServerConfig {
    */
   resumeAfterPauseMs?: number;
   resumeIntoReplyMs?: number;
+  /**
+   * MIN_SPEECH_MS, 0 to 2000, default 300 (DEFAULT_MIN_SPEECH_MS, the maintainer's decision, 2026-11-10): on a
+   * carrier that reports the caller's voice, how long a run of their reported speech must last to count as
+   * their coming back in (above) and as the start of the speech a final prompt carries (SPEECH_OVER_LINE); a
+   * shorter one is a blip of noise. 0 counts every start, as before. Optional in the type only (absent reads
+   * as the default).
+   */
+  minSpeechMs?: number;
   /**
    * RESAY_SPURIOUS_INTERRUPTS=on|off, default on, and SPURIOUS_INTERRUPT_WINDOW_MS, 0 to 5000, default 700
    * (DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS). On a carrier that reports the caller's voice (Telnyx with
@@ -538,12 +546,14 @@ function keyWaitOf(env: Env): number {
 }
 
 /** RESUME_AFTER_PAUSE_MS and RESUME_INTO_REPLY_MS, checked; read on every carrier, so a typo is caught before it matters. */
-function resumeOf(env: Env): { resumeAfterPauseMs: number; resumeIntoReplyMs: number } {
+function resumeOf(env: Env): { resumeAfterPauseMs: number; resumeIntoReplyMs: number; minSpeechMs: number } {
   const pauseMs = integer(env, 'RESUME_AFTER_PAUSE_MS', DEFAULT_RESUME_AFTER_PAUSE_MS);
   if (pauseMs > 10_000) throw new Error(`RESUME_AFTER_PAUSE_MS must be from 0 to 10000 milliseconds, got "${env.RESUME_AFTER_PAUSE_MS}"`);
   const intoMs = integer(env, 'RESUME_INTO_REPLY_MS', DEFAULT_RESUME_INTO_REPLY_MS);
   if (intoMs > 5_000) throw new Error(`RESUME_INTO_REPLY_MS must be from 0 to 5000 milliseconds, got "${env.RESUME_INTO_REPLY_MS}"`);
-  return { resumeAfterPauseMs: pauseMs, resumeIntoReplyMs: intoMs };
+  const minMs = integer(env, 'MIN_SPEECH_MS', DEFAULT_MIN_SPEECH_MS);
+  if (minMs > 2_000) throw new Error(`MIN_SPEECH_MS must be from 0 to 2000 milliseconds, got "${env.MIN_SPEECH_MS}"`);
+  return { resumeAfterPauseMs: pauseMs, resumeIntoReplyMs: intoMs, minSpeechMs: minMs };
 }
 
 /** RESAY_SPURIOUS_INTERRUPTS and SPURIOUS_INTERRUPT_WINDOW_MS, checked; read on every carrier, so a typo is caught before it matters. */
@@ -1177,6 +1187,12 @@ export function describeTelnyxNoiseSuppression(c: Pick<ServerConfig, 'voiceProvi
     : `telnyx noise suppression ${n.engine} not sent (a Telnyx setting, and VOICE_PROVIDERS lists no Telnyx line)`;
 }
 
+/** MIN_SPEECH_MS as the startup line says it, on a deployment with a carrier that reports its events. */
+function describeMinSpeech(c: ServerConfig): string {
+  const ms = c.minSpeechMs ?? DEFAULT_MIN_SPEECH_MS;
+  return ms === 0 ? 'every report of the caller speaking taken as speech' : `caller speech counted from ${ms} ms (shorter: a blip)${inactiveWithoutVoice(c)}`;
+}
+
 /** Bytes as gigabytes, as the startup line and diagnose say them. */
 export const gb = (bytes: number): string => `${Number((bytes / 1024 ** 3).toFixed(2))} GB`;
 
@@ -1207,7 +1223,7 @@ export function describeConfig(c: ServerConfig): string {
       : []),
     // A caller coming back in is heard only on a carrier that reports their voice (server/adapter.ts).
     ...(c.voiceProviders.some(readsPlaybackEvents)
-      ? [`caller resumes within ${c.resumeAfterPauseMs ?? DEFAULT_RESUME_AFTER_PAUSE_MS} ms of a pause, ${c.resumeIntoReplyMs ?? DEFAULT_RESUME_INTO_REPLY_MS} ms into the reply`]
+      ? [`caller resumes within ${c.resumeAfterPauseMs ?? DEFAULT_RESUME_AFTER_PAUSE_MS} ms of a pause, ${c.resumeIntoReplyMs ?? DEFAULT_RESUME_INTO_REPLY_MS} ms into the reply`, describeMinSpeech(c)]
       : []),
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,

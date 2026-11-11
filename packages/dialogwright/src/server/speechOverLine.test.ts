@@ -313,6 +313,63 @@ describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN
   });
 });
 
+/**
+ * Call 60 (Telnyx, 2026-11-10, speakerphone with a television on): blips of 57 to 240 ms over a question,
+ * the first 281 ms into it, none of the pauses between them longer than RESUME_AFTER_PAUSE_MS, and after the
+ * line the caller's answer, itself heard only as blips under MIN_SPEECH_MS. [on, off] in ms from the question's send.
+ */
+const CALL_60_BLIPS: readonly (readonly [number, number])[] = [
+  [281, 519], [1_973, 2_148], [2_272, 2_329], [2_452, 2_571], [3_218, 3_336], [3_881, 3_939], [4_364, 4_482],
+  [4_787, 4_844], [4_966, 5_145], [5_389, 5_447], [6_295, 6_412], [6_638, 6_695], [7_180, 7_419], [7_482, 7_600], [7_723, 8_022],
+];
+
+describe('blips of noise over a question are not the start of the answer after it (MIN_SPEECH_MS, call 60)', () => {
+  async function call60(call: Call): Promise<void> {
+    await toPlace(call);
+    let at = 0;
+    for (const [on, off] of CALL_60_BLIPS) {
+      await vi.advanceTimersByTimeAsync(on - at);
+      await call.caller(true);
+      await vi.advanceTimersByTimeAsync(off - on);
+      await call.caller(false);
+      at = off;
+    }
+    await vi.advanceTimersByTimeAsync(8_385 - at);
+    await call.say('22 Alder Street.');
+  }
+
+  it('the answer said after the question is not speech over it: no note, a turn as after any line', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call60(call);
+    expect(noteBefore(call, '22 Alder Street.')).toBeUndefined();
+    expect(call.session().slots.place?.value).toBe('22 Alder Street.');
+    await sameOnReplay(call);
+  });
+
+  it('with MIN_SPEECH_MS=0, as before: the first blip began the run, and the answer was noted as over the question', async () => {
+    const call = liveCall('telnyx', 'none', { minSpeechMs: 0 });
+    await call60(call);
+    expect(noteBefore(call, '22 Alder Street.')).toMatchObject({ mode: 'unless-miss', afterMs: 281, start: 'speaking' });
+    await sameOnReplay(call);
+  });
+
+  it('speech of MIN_SPEECH_MS or more over the question after the blips is its start, as before', async () => {
+    const call = liveCall('telnyx', 'none');
+    await toPlace(call);
+    await vi.advanceTimersByTimeAsync(281);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(238);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toMatchObject({ mode: 'unless-miss', afterMs: 919, start: 'speaking' });
+  });
+});
+
 describe('the lines\' end the no-input wait reads', () => {
   it('a reply of two lines on Twilio: speech over the second is placed against both, and the wait after it runs from their end', async () => {
     const call = liveCall('twilio', 'none');

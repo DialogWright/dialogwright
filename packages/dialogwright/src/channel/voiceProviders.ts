@@ -205,6 +205,18 @@ export const DEFAULT_RESUME_AFTER_PAUSE_MS = 2_000;
 export const DEFAULT_RESUME_INTO_REPLY_MS = 1_000;
 
 /**
+ * MIN_SPEECH_MS unless set (the maintainer's decision, 2026-11-10): on a carrier that reports the caller's
+ * voice, how long a run of their reported speech (a start to its stop) must last to count as the caller
+ * coming back in over a reply (RESUME_AFTER_PAUSE_MS, RESUME_INTO_REPLY_MS) and as the start of the speech a
+ * final prompt carries (SPEECH_OVER_LINE). A shorter run is a blip: noise the recognizer drops. On a live
+ * Telnyx call made on speakerphone with a television on (call 60), the television gave about 25 blips of 57
+ * to 240 ms over a 6 s question, and the first, 280 ms into it, joined the answer said after the question to
+ * the words before it. The callers who came back in on 2026-10-05 spoke 343 ms and more before their first
+ * pause. 0 counts every start, as before.
+ */
+export const DEFAULT_MIN_SPEECH_MS = 300;
+
+/**
  * SPURIOUS_INTERRUPT_WINDOW_MS unless set: on a carrier that reports the caller's voice, how recently
  * before a carrier's `interrupt` the caller must have been heard (starting or stopping speaking) for it to
  * be their barge-in (server/adapter.ts, a spurious interrupt). Telnyx's interrupt came 0.30 s after the

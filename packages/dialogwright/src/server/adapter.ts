@@ -5,7 +5,7 @@ import { callerNumberScrub, maskCallerValue, recordsOf, type NumberRecords } fro
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame, SetupFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_SPEECH_OVER_LINE, END_PLAYBACK_LEAD_MS, bargeInOfCarrier, type BargeIn, type EndAfterPlayback, type SpeechOverLine } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_SPEECH_OVER_LINE, END_PLAYBACK_LEAD_MS, bargeInOfCarrier, type BargeIn, type EndAfterPlayback, type SpeechOverLine } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerAttestation, withCallerNumber, withCallerWithheld, type SessionEvent } from '../channel/events';
@@ -405,9 +405,8 @@ function armDue(deps: AdapterDeps, entry: CallEntry): void {
  */
 function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
   const callSid = entry.callSid;
-  // The run of speech a final prompt may carry, from its start (speech over a line).
-  if (speaking) followSpeechRun(deps, callSid);
-  // Whether this is a caller coming back in over the reply to their last final prompt.
+  // Whether this is a caller coming back in over the reply to their last final prompt, and the run of speech a
+  // final prompt may carry, from its start (speech over a line): each from speech that runs MIN_SPEECH_MS.
   followResumed(deps, entry, speaking);
   // Held words wait while the caller speaks, and the whole wait again once they stop (holdWords).
   wordsClock(callSid, !speaking);
@@ -481,8 +480,22 @@ const callerSpeaking = new Set<string>();
  *   speech that gave their last final prompt stopped, and no later than RESUME_INTO_REPLY_MS after the
  *   reply to that prompt went out (or before it went out): an answer to the reply cannot start before
  *   the caller has heard some of it. A caller speaking as the prompt comes is back in already.
+ * - **Speech, not a blip.** Only speech that runs MIN_SPEECH_MS counts as coming back in (a run from a
+ *   start to its stop that long or longer, or one still going when the next final prompt comes), and the
+ *   windows are measured from its start. A start the carrier reports stopped sooner is a blip: it neither
+ *   brings the caller back in nor uses up the windows, so a real start after it still can. Seen on Telnyx
+ *   (call 60, 2026-11-10, speakerphone with a television on): about 25 clientSpeaking blips of 57 to
+ *   240 ms over a 6 s question, the first 280 ms into it, set the caller back in, no pause between them was
+ *   longer than RESUME_AFTER_PAUSE_MS, and the answer said after the question was joined to the words
+ *   before it, so the turn before ran again and the question was asked again, twice. MIN_SPEECH_MS=0
+ *   counts every start, as before.
  * - **To the next final prompt.** From there their speech runs on across pauses no longer than
  *   RESUME_AFTER_PAUSE_MS; a longer one ends it (an "mm", a listen, then an answer is a new utterance).
+ *   A pause is measured from the end of the last speech that counted (the run that brought them back in,
+ *   or one after it of MIN_SPEECH_MS or more): a blip never extends it, so noise does not keep a caller
+ *   back in; any start after a longer pause, a blip included, ends it, as the next words of a caller who
+ *   has finished would (the cautious side: a missed join leaves an utterance split, a wrong one runs the
+ *   turn before again).
  *   When the next final prompt comes with them speaking, or no later than NO_INPUT_AFTER_SPEECH_MS (the
  *   carrier's transcript time) after they stopped, they had not finished: the Continuation is told
  *   (Continuation.resumed), as an interrupt within the window would tell it, and the prompt continues the
@@ -515,6 +528,15 @@ const lastStart = new Map<string, number>();
 const lastStop = new Map<string, number>();
 /** Calls whose caller has stopped speaking since their last final prompt came. */
 const stoppedSincePrompt = new Set<string>();
+/** When the last run of the caller's speech that counted (MIN_SPEECH_MS, countRun) stopped. */
+const countedStop = new Map<string, number>();
+/** Calls whose caller's current run of speech (since its start) has counted already. */
+const runCounted = new Set<string>();
+
+/** MIN_SPEECH_MS: how long a run of the caller's reported speech must last to count as speech, not a blip. */
+function minSpeechOf(deps: AdapterDeps): number {
+  return deps.minSpeechMs ?? DEFAULT_MIN_SPEECH_MS;
+}
 
 /** RESUME_AFTER_PAUSE_MS: the longest pause that leaves a caller not finished. */
 function resumeAfterPauseOf(deps: AdapterDeps): number {
@@ -527,31 +549,74 @@ function forgetResumed(callSid: string): void {
   lastStart.delete(callSid);
   lastStop.delete(callSid);
   stoppedSincePrompt.delete(callSid);
+  countedStop.delete(callSid);
+  runCounted.delete(callSid);
 }
 
-/** The caller started or stopped speaking: whether they are coming back in over the reply to their last final prompt. */
+/**
+ * The caller started or stopped speaking: whether they are coming back in over the reply to their last final
+ * prompt, and the run of speech the next final prompt carries (followSpeechRun). A run of speech counts once
+ * it has lasted MIN_SPEECH_MS (countRun): at its stop, or, still going, when the next final prompt comes
+ * (countSpeaking); with MIN_SPEECH_MS 0, at its start, as before. A start that does not count decides only
+ * what any start decides: a caller back in already who paused longer than RESUME_AFTER_PAUSE_MS since the
+ * speech that last counted is no longer, and one not back in yet who starts past the windows will not be.
+ */
 function followResumed(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
   const callSid = entry.callSid;
   const now = Date.now();
   if (!speaking) {
     lastStop.set(callSid, now);
     stoppedSincePrompt.add(callSid);
+    const start = lastStart.get(callSid);
+    if (!runCounted.has(callSid) && callerSpeaking.has(callSid) && start !== undefined && now - start >= minSpeechOf(deps)) countRun(deps, callSid, start);
+    if (runCounted.has(callSid)) countedStop.set(callSid, now);
+    runCounted.delete(callSid);
     return;
   }
+  // A second report of a start with no stop between is the same run.
+  if (callerSpeaking.has(callSid)) return;
   lastStart.set(callSid, now);
+  runCounted.delete(callSid);
   const r = afterPrompts.get(callSid);
-  if (!r) return;
-  const pauseMs = resumeAfterPauseOf(deps);
-  if (r.resumedAtMs === null) {
-    const soonAfterPause = now - r.speechEndMs <= pauseMs;
-    const soonIntoReply = r.sentAtMs === null || now - r.sentAtMs <= (deps.resumeIntoReplyMs ?? DEFAULT_RESUME_INTO_REPLY_MS);
-    if (soonAfterPause && soonIntoReply) r.resumedAtMs = now;
-    else afterPrompts.delete(callSid);
-    return;
+  if (r) {
+    const pauseMs = resumeAfterPauseOf(deps);
+    if (r.resumedAtMs === null) {
+      // Past the windows now, past them for any later start: what they say is an answer to the reply.
+      if (!withinResumeWindows(deps, r, now)) afterPrompts.delete(callSid);
+    } else {
+      // Back in already: a pause longer than the limit since the speech that last counted ends it, and what they say now is new.
+      const stop = countedStop.get(callSid);
+      if (stop !== undefined && stop >= r.resumedAtMs && now - stop > pauseMs) afterPrompts.delete(callSid);
+    }
   }
-  // Back in already: a pause longer than the limit since then ends it, and what they say now is new.
-  const stop = lastStop.get(callSid);
-  if (stop !== undefined && stop >= r.resumedAtMs && now - stop > pauseMs) afterPrompts.delete(callSid);
+  if (minSpeechOf(deps) === 0) countRun(deps, callSid, now);
+}
+
+/** Whether a caller starting at `atMs` comes back in over the reply to `r`'s prompt: soon after their pause, and soon into the reply (or before it). */
+function withinResumeWindows(deps: AdapterDeps, r: AfterPrompt, atMs: number): boolean {
+  const soonAfterPause = atMs - r.speechEndMs <= resumeAfterPauseOf(deps);
+  const soonIntoReply = r.sentAtMs === null || atMs - r.sentAtMs <= (deps.resumeIntoReplyMs ?? DEFAULT_RESUME_INTO_REPLY_MS);
+  return soonAfterPause && soonIntoReply;
+}
+
+/**
+ * The caller's current run of speech, begun at `startMs`, counts as speech (MIN_SPEECH_MS): the run a final
+ * prompt carries may begin there (followSpeechRun), and a caller not back in yet is back in from there, when
+ * it is within the windows of the reply to their last final prompt.
+ */
+function countRun(deps: AdapterDeps, callSid: string, startMs: number): void {
+  runCounted.add(callSid);
+  followSpeechRun(deps, callSid, startMs);
+  const r = afterPrompts.get(callSid);
+  if (!r || r.resumedAtMs !== null) return;
+  if (withinResumeWindows(deps, r, startMs)) r.resumedAtMs = startMs;
+  else afterPrompts.delete(callSid);
+}
+
+/** A final prompt came with the caller speaking: their run counts however long it has lasted (a caller speaking as it comes). */
+function countSpeaking(deps: AdapterDeps, callSid: string): void {
+  const start = lastStart.get(callSid);
+  if (callerSpeaking.has(callSid) && !runCounted.has(callSid) && start !== undefined) countRun(deps, callSid, start);
 }
 
 /**
@@ -1035,9 +1100,11 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   Telnyx's agentSpeaking and tokensPlayed follow its speech synthesis, not the audio (on that call
  *   agentSpeaking went off 2.1 s into the 8 s greeting, as the no-match line was sent).
  * - **The speech's start** is when the carrier reported the caller starting the run of speech the prompt
- *   carries (Telnyx with TELNYX_EVENTS speaker-events: followSpeechRun, across pauses no longer than
- *   RESUME_AFTER_PAUSE_MS, the prompt arriving while they speak or no later than NO_INPUT_AFTER_SPEECH_MS
- *   after they stop); else, on a carrier that sends partial prompts (Twilio), the first of the run of
+ *   carries (Telnyx with TELNYX_EVENTS speaker-events: followSpeechRun, from speech that ran MIN_SPEECH_MS or
+ *   was still going as the prompt came, across pauses no longer than RESUME_AFTER_PAUSE_MS after speech that
+ *   counted, the prompt arriving while they speak or no later than NO_INPUT_AFTER_SPEECH_MS after such speech
+ *   stopped; blips shorter than MIN_SPEECH_MS are noise, never the start: on call 60, 2026-11-10, a 238 ms
+ *   blip 280 ms into a question marked the answer said after it as over it); else, on a carrier that sends partial prompts (Twilio), the first of the run of
  *   partials before it (followPartials, the same pauses); else the prompt's arrival. A pause across the end
  *   of the lines a run began over ends the run (pauseAcrossEnd): noise near a line's end does not carry the
  *   answer after it into the line. Approximate: a "yes" said just before a question ends may count as over it. Only a
@@ -1152,17 +1219,16 @@ function pauseAcrossEnd(callSid: string, begunMs: number, stoppedMs: number, now
 }
 
 /**
- * The carrier reported the caller starting to speak: the start of a run of speech, unless they are speaking
- * already, or stopped no longer than RESUME_AFTER_PAUSE_MS ago since the run began (the same run, a breath),
- * and not across the end of the lines the run began over (pauseAcrossEnd).
+ * A run of the caller's speech that counts (countRun), begun at `startMs`: the start of a run of speech,
+ * unless the caller stopped no longer than RESUME_AFTER_PAUSE_MS before it, after the speech that last counted
+ * since the run began (the same run, a breath), and not across the end of the lines the run began over
+ * (pauseAcrossEnd). A blip (a start stopped sooner than MIN_SPEECH_MS) neither begins a run nor carries one on.
  */
-function followSpeechRun(deps: AdapterDeps, callSid: string): void {
+function followSpeechRun(deps: AdapterDeps, callSid: string, startMs: number): void {
   const begun = speechRuns.get(callSid);
-  if (begun !== undefined && callerSpeaking.has(callSid)) return;
-  const stop = lastStop.get(callSid);
-  const now = Date.now();
-  const same = begun !== undefined && stop !== undefined && stop >= begun && now - stop <= resumeAfterPauseOf(deps) && !pauseAcrossEnd(callSid, begun, stop, now);
-  if (!same) speechRuns.set(callSid, now);
+  const stop = countedStop.get(callSid);
+  const same = begun !== undefined && stop !== undefined && stop >= begun && startMs - stop <= resumeAfterPauseOf(deps) && !pauseAcrossEnd(callSid, begun, stop, startMs);
+  if (!same) speechRuns.set(callSid, startMs);
 }
 
 /** A partial prompt came: the start of a run of them, or more of the one going on (as followSpeechRun). */
@@ -1183,7 +1249,7 @@ function followPartials(deps: AdapterDeps, callSid: string): void {
 function speechStartOf(deps: AdapterDeps, callSid: string, now: number): { atMs: number; start: SpeechStart } {
   const begun = speechRuns.get(callSid);
   const speaking = callerSpeaking.has(callSid);
-  const stop = lastStop.get(callSid);
+  const stop = countedStop.get(callSid);
   const partials = partialRuns.get(callSid);
   const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
   const reported = begun !== undefined && (speaking || (stop !== undefined && stop >= begun && now - stop <= settle));
@@ -1638,6 +1704,13 @@ export interface AdapterDeps {
    */
   resumeAfterPauseMs?: number;
   resumeIntoReplyMs?: number;
+  /**
+   * MIN_SPEECH_MS: on a carrier that reports the caller's voice, how long a run of their reported speech must
+   * last to count as their coming back in (followResumed) and as the start of the speech a final prompt
+   * carries (followSpeechRun, speech over a line); a shorter one is a blip. Absent: DEFAULT_MIN_SPEECH_MS; 0
+   * counts every start, as before.
+   */
+  minSpeechMs?: number;
   /** wav filename -> ms, from clipDurations(audioDir); how long a `play` frame is assumed to take. */
   clipDurations?: ReadonlyMap<string, number>;
   /** The dashboard's event bus; absent when the dashboard is off. */
@@ -2587,6 +2660,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   const joinsHeld = frame.type === 'prompt' && frame.last && heldWords.has(ctx.callSid);
   // Speech over a line the caller could not interrupt (SPEECH_OVER_LINE), decided as the prompt comes.
   // Every final prompt ends the run of speech (and of partials) it carries, whatever is made of it.
+  // A caller speaking as a final prompt comes: their run of speech counts, however long it has lasted (MIN_SPEECH_MS).
+  if (frame.type === 'prompt' && frame.last) countSpeaking(deps, ctx.callSid);
   const started = frame.type === 'prompt' && frame.last ? speechStartOf(deps, ctx.callSid, Date.now()) : null;
   // A prompt the caller came back in with is the rest of what they began before: never dropped under `ignore`.
   const read0 = started !== null && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry, started) : null;
