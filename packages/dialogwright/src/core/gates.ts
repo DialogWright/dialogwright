@@ -596,7 +596,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
  * engine's or the app's own), and whether the probability reaches it. Null when the intent answer
  * ranks none of them.
  */
-function priorityReading(app: App, ranked: readonly { label: string; p: number }[], t: Thresholds): { intent: Intent; p: number; threshold: number | null; reached: boolean } | null {
+export function priorityReading(app: App, ranked: readonly { label: string; p: number }[], t: Thresholds): { intent: Intent; p: number; threshold: number | null; reached: boolean } | null {
   for (const { label, p } of ranked) {
     const name = priorityThresholdOf(app, label);
     if (name === null) continue;

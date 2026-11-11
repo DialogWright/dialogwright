@@ -966,6 +966,19 @@ describe('the agent turn: speech over a line', () => {
     expect(over!.record.agent).toMatchObject({ dropped: 'speech-over-line' });
   });
 
+  it('over a line, the caller done (the decision model\'s `done` at INTENT_ROUTE or more) is never set aside as a miss, though the form\'s question took it as an answer (call 61)', async () => {
+    // "No. That's it." read done at 0.98 in a form; the agent's answer a goodbye that is never said (closes): a miss
+    // for the form's question, and before this, set aside with nothing said, the caller left in silence.
+    const BYE = "No, that's all.";
+    const c = await call({ [HOLD]: HOLD_ANSWER, [BYE]: { ...said('Thanks for calling Example Library. Goodbye.'), closes: true } }, [HOLD, { text: BYE, overLine: true }]);
+    expect(c.last.result.setAside).toBeUndefined();
+    expect(c.last.result.rows.some((r) => r.gate === 'speechOverLine')).toBe(false);
+    expect(c.last.record.agent).toMatchObject({ use: 'used', closes: true, replySaid: false });
+    // The turn as it is not over a line: the same.
+    const plain = await call({ [HOLD]: HOLD_ANSWER, [BYE]: { ...said('Thanks for calling Example Library. Goodbye.'), closes: true } }, [HOLD, BYE]);
+    expect(heard(c.last)).toBe(heard(plain.last));
+  });
+
   it('over a line, an answer with a value is a turn', async () => {
     const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': said('Thanks, Avery.', [['patronName', 'Avery Lane', 'Avery Lane']]) }, [HOLD, { text: 'Avery Lane', overLine: true }]);
     expect(c.last.result.setAside).toBeUndefined();

@@ -20,7 +20,7 @@ import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, unparkTask, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked, isYesNoField } from './questions';
-import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
+import { changeSlotNamed, evaluateGates, frustrationOf, priorityReading, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, sensitiveAt, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
@@ -3298,15 +3298,36 @@ const OVER_LINE_ROW: GateRow = { gate: 'speechOverLine', value: null, threshold:
  * through the gate or handed to a service (a tool that ran cannot be taken back, so such a turn runs as
  * it is). A request, a yes or a no, a correction, a repeat, a person, a moment, a priority switch, a
  * summary hook's own lines in answer (TurnIO.replied) and a code said aloud at the code prompt (which is
- * replaced, or ends with a person, as ever) are never misses. The count before the turn is not read: a third such miss after two real ones is set aside
- * too, and no one is put through.
+ * replaced, or ends with a person, as ever) are never misses. Nor is a turn the decision model reads as a request
+ * that routes wherever the call is (routesAnyway: the caller done, a person asked for, a priority intent), though
+ * the question open takes it as an answer (call 61: "No. That's it." read `done` at 0.98 in a form, the agent's
+ * answer understanding nothing for the form's question, and set aside). The count before the turn is not read: a
+ * third such miss after two real ones is set aside too, and no one is put through.
  */
-function overLineMiss(before: Session, after: Session, event: SessionEvent, verdict: Verdict, events: readonly FillEvent[], io: TurnIO): boolean {
+function overLineMiss(before: Session, after: Session, event: SessionEvent, verdict: Verdict, events: readonly FillEvent[], io: TurnIO, answers: AnswerMap): boolean {
   if (event.type !== 'user.speech' || event.overLine !== true || io.missed !== true || io.replied === true || !MISS_VERDICTS.has(verdict.kind)) return false;
+  if (routesAnyway(io.app, answers, io.tc.thresholds)) return false;
   // A code said aloud at the code prompt is a code said: it is replaced, or the call goes to a person, as ever.
   if (before.promptedFor === 'otp' && saidCode(event.text)) return false;
   if (io.out.gateEvents.length > 0 || io.out.effects.length > 0 || io.out.kb !== null || io.prefix.length > 0 || after.locale !== before.locale) return false;
   return events.every((e) => e.outcome.kind === 'invalid' || e.outcome.kind === 'absent');
+}
+
+/**
+ * Whether the decision model read the turn as a request that routes whatever question is open, at the bar it
+ * routes at with no form open: the caller done (the `done` intent at INTENT_ROUTE or more, doneRead), a person
+ * asked for (wantsHuman at GATE_WANTS_HUMAN, or the `agent` intent at INTENT_ROUTE), or a priority intent at its
+ * own bar (IntentDef.priority). Such a turn is never a miss to set aside over a line (overLineMiss).
+ */
+function routesAnyway(app: App, answers: AnswerMap, t: Thresholds): boolean {
+  if (doneRead(app, answers, t)) return true;
+  if (atLeast(noulValue(answers, 'wantsHuman') ?? 0, t.GATE_WANTS_HUMAN)) return true;
+  const intent = answers.intent;
+  if (!isChoice(intent)) return false;
+  const ranked = rankProbabilities(intent.probabilities);
+  const [top] = ranked;
+  if (top?.label === 'agent' && Object.hasOwn(app.intents, 'agent') && atLeast(top.p, t.INTENT_ROUTE)) return true;
+  return priorityReading(app, ranked, t)?.reached === true;
 }
 
 /**
@@ -3647,7 +3668,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
         : handleVerdict(s, verdict, answers, ctx, io);
       // Speech over a line the caller could not interrupt that would be a miss is set aside, as side speech
       // is: nothing said, nothing counted, the session as it was (overLineMiss). The rows say what was read.
-      if (overLineMiss(session, s, event, verdict, events, io)) {
+      if (overLineMiss(session, s, event, verdict, events, io, answers)) {
         const read = [...rows, ...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined)];
         // As side speech does, the barge-in marker goes: it would be reported to the model on a turn it is not about.
         const kept = cloneSession(tc.setAsideAs ?? session);
