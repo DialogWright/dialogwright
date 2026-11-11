@@ -18,6 +18,8 @@ const TELNYX_KEY = generateKeyPairSync('ed25519').publicKey.export({ format: 'de
 const MODEL_KEY = 'or-test-key-made-up-for-this-test';
 /** The engine's own agent-mode fixture (an invented library): an app folder in agent mode. */
 const BUSINESS_FIXTURE = fileURLToPath(new URL('../define/__fixtures__/business', import.meta.url));
+/** The engine's converse fixture: app.yaml (mode: converse) and agent.yaml, its model anthropic:claude-haiku-5-5. */
+const CONVERSE_FIXTURE = fileURLToPath(new URL('../testing/converse', import.meta.url));
 const TWILIO_TOKEN = 'abcdef0123456789abcdef0123456789';
 
 const dirs: string[] = [];
@@ -214,6 +216,30 @@ describe('pnpm configure, a decision model and no phone line (to record the app)
     for (const f of ['app.yaml', 'business.yaml', 'style.yaml']) copyFileSync(join(BUSINESS_FIXTURE, f), join(fresh.dir('alpha'), f));
     expect(await runSetup(flags, io(fresh.root, null, { TYPESAFE_API_KEY: MODEL_KEY }))).toBe(0);
     expect(settings(join(fresh.dir('alpha'), '.env')).INCEPTION_API_KEY).toBeUndefined();
+  });
+
+  it('asks a converse app for its conversation model\'s key (ANTHROPIC_API_KEY) with the echo off, takes it from its variable, and allows none', async () => {
+    const w = workspace();
+    for (const f of ['app.yaml', 'agent.yaml']) copyFileSync(join(CONVERSE_FIXTURE, f), join(w.dir('alpha'), f));
+    const CONVERSE_KEY = 'an-test-key-made-up-for-this-test';
+    // a model, no phone line; TypeSafe and its key; the conversation model's key; the handoff number's default
+    const prompt = scripted(['3', '1', MODEL_KEY, CONVERSE_KEY, '']);
+    const o = io(w.root, prompt);
+    expect(await runSetup([], o)).toBe(0);
+    const file = join(w.dir('alpha'), '.env');
+    expect(settings(file)).toMatchObject({ TYPESAFE_API_KEY: MODEL_KEY, ANTHROPIC_API_KEY: CONVERSE_KEY });
+    expect(prompt.asked.filter((a) => a.secret).map((a) => a.question)).toEqual([expect.stringContaining('TypeSafe key'), expect.stringContaining("ANTHROPIC_API_KEY (anthropic:claude-haiku-5-5, agent.yaml's model.default")]);
+    expect(o.lines.join('\n')).not.toContain(CONVERSE_KEY);
+    expect(readFileSync(file, 'utf8')).toContain("A caller's answer to a read-back is read by the decision model");
+    // A laptop with no keys: asked too, from its variable, and left unset (commented) where none is given.
+    const flags = ['--app', 'alpha', '--mode', 'try', '--non-interactive', '--force'];
+    expect(await runSetup(flags, io(w.root, null, { ANTHROPIC_API_KEY: CONVERSE_KEY }))).toBe(0);
+    expect(settings(file).ANTHROPIC_API_KEY).toBe(CONVERSE_KEY);
+    const fresh = workspace();
+    for (const f of ['app.yaml', 'agent.yaml']) copyFileSync(join(CONVERSE_FIXTURE, f), join(fresh.dir('alpha'), f));
+    expect(await runSetup(flags, io(fresh.root, null))).toBe(0);
+    expect(settings(join(fresh.dir('alpha'), '.env')).ANTHROPIC_API_KEY).toBeUndefined();
+    expect(readFileSync(join(fresh.dir('alpha'), '.env'), 'utf8')).toContain('Unset: the server will not start until it is set.');
   });
 
   it('takes --mode model with flags alone, the key from its variable, and refuses --model none', async () => {

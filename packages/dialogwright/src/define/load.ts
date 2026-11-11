@@ -244,9 +244,18 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
   let agent = false;
   // A converse app (app.yaml's mode: converse): app.yaml and agent.yaml, and none of the scripted files.
   let converse = false;
+  // app.yaml unreadable by its schema beside an agent.yaml: whether the folder is a converse app is not
+  // guessed; app.yaml's problems are the folder's (the rest is read once app.yaml says its mode).
+  let undecided = false;
   for (const kind of [...(Object.keys(FILE_NAMES) as FileKind[]), 'slots' as const]) {
     const file = kind === 'slots' ? SLOTS_FILE : FILE_NAMES[kind];
+    if (undecided) continue;
     const read = readFile(root.real, file);
+    // A converse app reads agent.yaml alone: a style.yaml is not read either.
+    if (kind === 'style' && converse) {
+      if (read.kind !== 'missing') problems.push(converseHasNo(file));
+      continue;
+    }
     if (kind !== 'app' && AGENT_BUILT.includes(kind)) {
       if (agent || converse) {
         if (read.kind !== 'missing') problems.push(agent ? agentBuilt(file, kind) : converseHasNo(file));
@@ -265,9 +274,11 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     if (checked !== undefined) (valid as Record<string, unknown>)[kind] = checked;
     if (kind === 'app') {
       agent = checked !== undefined ? (checked as AppYaml).mode === 'agent' : top.includes(BUSINESS_FILE);
-      converse = checked !== undefined ? (checked as AppYaml).mode === 'converse' : !agent && top.includes(AGENT_FILE);
+      converse = checked !== undefined && (checked as AppYaml).mode === 'converse';
+      undecided = checked === undefined && !agent && top.includes(AGENT_FILE);
     }
   }
+  if (undecided) return null;
   strayYamlFiles(top, problems, agent, converse);
 
   // agent.yaml (the converse runtime's business file): a converse app's, read with its app.yaml; refused

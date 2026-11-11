@@ -14,6 +14,9 @@ import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
+import { AGENT_FILE, agentBusinessProblems } from '../converse/business/load';
+import { converseModelKeyVar } from '../converse/model/resolve';
+import { APP_FILE, converseAppYamlProblems } from '../converse/app';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
 import { agentKeyVar } from '../agent/provider';
@@ -72,7 +75,7 @@ import type { App } from '../core/app/types';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'agent' | 'texts' | 'languages' | 'records';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'agent' | 'texts' | 'languages' | 'records' | 'converse';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -322,6 +325,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
   // Agent mode: the agent model's key and budgets, from the settings alone.
   if (o.appDir !== undefined) results.push(...agentChecks(o.appDir, o.env));
+  // A converse app: its files, its model's key, the read-back's decision model, its chat; from the settings alone.
+  if (o.appDir !== undefined) results.push(...converseChecks(o.appDir, o.env, config));
   // Texts: the number they are sent from and the Twilio account, from the settings alone (nothing is sent).
   results.push(...textChecks(o.env));
   if (o.appDir !== undefined) results.push(...recordsChecks(o.appDir, config));
@@ -425,6 +430,52 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
   } catch (e) {
     return [{ id: 'records', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'set CONSOLE_AUTH=token (or DASHBOARD=off) in the settings file, or let app.yaml\'s records keep the defaults' }];
   }
+}
+
+/**
+ * A converse app (app.yaml's mode: converse), read from its folder's app.yaml and agent.yaml as the server
+ * reads them: their problems (pnpm check lists them; the server will not start); the conversation's model
+ * (agent.yaml's model.default) with its key's variable, never the key (unset, the server will not start);
+ * the decision model that reads a caller's answer to a read-back (JEV_CLIENT=jev with its key: under a stub,
+ * or with no key, no read-back is ever confirmed); its chat settings (a chat's number from its context);
+ * and that it takes no calls yet where VOICE_PROVIDERS lists a carrier. Nothing for any other app. No model
+ * is asked.
+ */
+export function converseChecks(appDir: string, env: Env, config: Pick<ServerConfig, 'jevClient' | 'jevProvider' | 'voiceProviders'> | null): CheckResult[] {
+  const loaded = loadAppFolder(appDir);
+  if (loaded.converse !== true) return [];
+  if (loaded.problems.length > 0) {
+    return [{ id: 'converse', status: 'fail', message: `a converse app whose ${APP_FILE} and ${AGENT_FILE} have ${loaded.problems.length} problem${loaded.problems.length === 1 ? '' : 's'}: the server will not start`, fix: 'run pnpm check on the app folder, and fix each line it prints' }];
+  }
+  let business: ReturnType<typeof agentBusinessProblems>['value'];
+  let chat = false;
+  try {
+    business = agentBusinessProblems(readFileSync(join(appDir, AGENT_FILE), 'utf8')).value;
+    chat = converseAppYamlProblems(readFileSync(join(appDir, APP_FILE), 'utf8')).value?.chat?.callerNumberFromContext === true;
+  } catch (e) {
+    return [{ id: 'converse', status: 'fail', message: `a converse app whose files cannot be read (${messageOf(e)})`, fix: 'run pnpm check on the app folder' }];
+  }
+  if (business === undefined) return [{ id: 'converse', status: 'fail', message: `a converse app whose ${AGENT_FILE} does not load: the server will not start`, fix: 'run pnpm check on the app folder' }];
+  const out: CheckResult[] = [];
+  const spec = business.model.default;
+  const keyVar = converseModelKeyVar(spec);
+  const said = `a converse app: the conversation's model ${spec} (agent.yaml's model.default)`;
+  if (keyVar === null) out.push({ id: 'converse', status: 'fail', message: `${said} names no provider the runtime takes: the server will not start`, fix: 'write the model as anthropic:<model>, inception:<model> or openrouter:<model>' });
+  else if (!env[keyVar]?.trim()) out.push({ id: 'converse', status: 'fail', message: `${said}, but ${keyVar} is unset: the server will not start`, fix: `set ${keyVar} in the settings file (the model's key)` });
+  else out.push({ id: 'converse', status: 'ok', message: `${said}, key in ${keyVar}, within ${business.model.timeoutMs} ms a reply` });
+  if (config !== null) {
+    const p = config.jevProvider;
+    if (config.jevClient !== 'jev' || p === null) {
+      out.push({ id: 'converse', status: 'fail', message: `a converse app's read-backs are read by the decision model, and JEV_CLIENT is ${config.jevClient}: no caller's yes is read, so no change is ever made`, fix: 'set JEV_CLIENT=jev and its key, TYPESAFE_API_KEY (pnpm configure asks)' });
+    } else if (p.apiKey === null) {
+      out.push({ id: 'converse', status: 'fail', message: `a converse app's read-backs are read by the decision model, and ${p.keyVar} is unset: no caller's yes is read`, fix: `set ${p.keyVar} in the settings file` });
+    } else {
+      out.push({ id: 'converse', status: 'ok', message: `a converse app's read-backs are read by ${p.model} from ${p.provider}, key in ${p.keyVar}` });
+    }
+    if (config.voiceProviders.length > 0) out.push({ id: 'converse', status: 'warn', message: `a converse app takes no calls yet: its chat only, and VOICE_PROVIDERS (${config.voiceProviders.join(', ')}) is set aside for it`, fix: 'set VOICE_PROVIDERS=none, or serve it on a host whose default app is a scripted app that takes the calls' });
+  }
+  out.push({ id: 'converse', status: chat ? 'warn' : 'ok', message: chat ? 'a chat may name the number it calls from in its context (app.yaml chat.callerNumberFromContext: true): a site could claim an account' : 'a chat calls from no number (app.yaml chat.callerNumberFromContext is off)', ...(chat ? { fix: 'turn it off (delete chat.callerNumberFromContext) outside tests and the simulated callers' } : {}) });
+  return out;
 }
 
 /**
@@ -956,6 +1007,8 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     out.push(...agentChecks(app.dir, read.env).map(tag));
     out.push(...textChecks(read.env).map(tag));
     const server = serverConfigOf(env);
+    // On a host the start itself refuses a number that would put a call through to a converse app.
+    out.push(...converseChecks(app.dir, read.env, server === null ? null : { ...server, voiceProviders: [] }).map(tag));
     if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.
     for (const [name, variable] of Object.entries(app.services)) {

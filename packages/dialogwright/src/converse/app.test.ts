@@ -64,7 +64,7 @@ describe('a converse app\'s app.yaml', () => {
     writeFileSync(join(dir, 'app.yaml'), 'id: example\n');
     expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:1  mode  a converse app's app\.yaml says "mode: converse", and this one names no mode/);
     writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: agent\n');
-    expect(() => defineConverseApp(dir, { tools })).toThrow(/this one says "agent"/);
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:2:7  mode  a converse app's app\.yaml says "mode: converse", and this one says "agent"/);
     writeFileSync(join(dir, 'app.yaml'), 'id: Example App\nmode: converse\n');
     expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:5  id  /);
     writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: converse\nchats: {}\n');

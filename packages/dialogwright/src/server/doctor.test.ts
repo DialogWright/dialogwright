@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { agentChecks, formatResult, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { agentChecks, converseChecks, formatResult, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { BUSINESS_FIXTURE_DIR } from '../define/__fixtures__/business/app';
+import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
+import { loadConfig } from './config';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
 import { openPostgresAudit } from '../audit/postgres';
@@ -965,6 +967,48 @@ describe('agent mode (pnpm diagnose)', () => {
 
   it('says nothing for a scripted app', () => {
     expect(agentChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {})).toEqual([]);
+  });
+});
+
+describe('a converse app (pnpm diagnose)', () => {
+  const server = (env: Record<string, string>) => loadConfig({ PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com', ...env });
+
+  it('names its model\'s key by its variable and fails without it; fails a decision model that reads no yes; warns of a chat that names its number', () => {
+    expect(converseChecks(CONVERSE_FIXTURE_DIR, {}, server({ JEV_CLIENT: 'stub' }))).toEqual([
+      { id: 'converse', status: 'fail', message: "a converse app: the conversation's model anthropic:claude-haiku-5-5 (agent.yaml's model.default), but ANTHROPIC_API_KEY is unset: the server will not start", fix: "set ANTHROPIC_API_KEY in the settings file (the model's key)" },
+      { id: 'converse', status: 'fail', message: "a converse app's read-backs are read by the decision model, and JEV_CLIENT is stub: no caller's yes is read, so no change is ever made", fix: 'set JEV_CLIENT=jev and its key, TYPESAFE_API_KEY (pnpm configure asks)' },
+      { id: 'converse', status: 'warn', message: 'a chat may name the number it calls from in its context (app.yaml chat.callerNumberFromContext: true): a site could claim an account', fix: 'turn it off (delete chat.callerNumberFromContext) outside tests and the simulated callers' },
+    ]);
+  });
+
+  it('is ok with both keys, and warns that it takes no calls where a carrier is listed', () => {
+    const keys = { ANTHROPIC_API_KEY: 'x', TYPESAFE_API_KEY: 'y' };
+    const found = converseChecks(CONVERSE_FIXTURE_DIR, keys, server({ ...keys, JEV_CLIENT: 'jev', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199' }));
+    expect(found.map((r) => r.status)).toEqual(['ok', 'ok', 'warn', 'warn']);
+    expect(found[0]!.message).toBe("a converse app: the conversation's model anthropic:claude-haiku-5-5 (agent.yaml's model.default), key in ANTHROPIC_API_KEY, within 6000 ms a reply");
+    expect(found[1]!.message).toMatch(/^a converse app's read-backs are read by .+, key in TYPESAFE_API_KEY$/);
+    expect(found[2]!.message).toMatch(/^a converse app takes no calls yet/);
+    expect(JSON.stringify(found)).not.toMatch(/"x"|"y"/);
+  });
+
+  it('runs with the app\'s other checks when diagnose is given a converse app\'s folder', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'converse-run-'));
+    try {
+      const results = (await runDoctor({ env: { ...goodEnv(dir), ANTHROPIC_API_KEY: 'x' }, cwd: dir, appDir: CONVERSE_FIXTURE_DIR, offline: true }, deps())).filter((r) => r.id === 'converse');
+      expect(results.map((r) => r.status)).toEqual(['ok', 'ok', 'warn', 'warn']);
+      expect(results[1]!.message).toMatch(/key in OPENROUTER_API_KEY$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a converse folder with problems, and says nothing of a scripted app', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'converse-diagnose-'));
+    writeFileSync(join(dir, 'app.yaml'), readFileSync(join(CONVERSE_FIXTURE_DIR, 'app.yaml'), 'utf8'));
+    writeFileSync(join(dir, 'agent.yaml'), readFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8').replace('model:\n  default: anthropic:claude-haiku-5-5\n', ''));
+    expect(converseChecks(dir, {}, null)).toEqual([{ id: 'converse', status: 'fail', message: 'a converse app whose app.yaml and agent.yaml have 1 problem: the server will not start', fix: 'run pnpm check on the app folder, and fix each line it prints' }]);
+    rmSync(dir, { recursive: true, force: true });
+    expect(converseChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {}, null)).toEqual([]);
   });
 });
 

@@ -12,6 +12,8 @@ import { targetValueProblem } from './transfer';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { resolveJevProvider } from '../jev/provider';
 import { loadAppFolder } from '../define/load';
+import { AGENT_FILE, agentBusinessProblems } from '../converse/business/load';
+import { converseModelKeyVar } from '../converse/model/resolve';
 import { agentKeyVar } from '../agent/provider';
 import { DEFAULT_AGENT_MODEL } from '../define/schema/style';
 import { commandHints, findApp, runCommand, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
@@ -435,6 +437,33 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     }];
   };
 
+  /**
+   * A converse app (app.yaml's mode: converse): the key of the model its conversations run on, the variable
+   * agent.yaml's model.default names (ANTHROPIC_API_KEY for anthropic:<model>, say), read as every key is,
+   * from the environment or with the echo off, the one being replaced kept. Enter for none: the server will
+   * not start until it is set. Its read-backs are read by the decision model, which the file says. Nothing
+   * for any other app, or a converse folder whose agent.yaml does not load (pnpm check says why).
+   */
+  const askConverseKey = async (): Promise<Section[]> => {
+    if (loadAppFolder(app.dir).converse !== true) return [];
+    let spec: string | undefined;
+    try {
+      spec = agentBusinessProblems(readFileSync(join(app.dir, AGENT_FILE), 'utf8')).value?.model.default;
+    } catch {
+      spec = undefined;
+    }
+    const variable = spec === undefined ? null : converseModelKeyVar(spec);
+    if (spec === undefined || variable === null) return [];
+    const key = await secret(variable, `The key of the model this converse app's conversations run on, ${variable} (${spec}, agent.yaml's model.default; Enter for none, and the server will not start; not shown as you type):`, () => null, true, true);
+    return [{
+      comment: [
+        `The model this converse app's conversations run on (${spec}, agent.yaml's model.default).${key ? '' : ' Unset: the server will not start until it is set.'}`,
+        "A caller's answer to a read-back is read by the decision model (JEV_CLIENT=jev and its key): with the app's examples alone, no change is ever confirmed.",
+      ],
+      lines: [key ? { name: variable, value: key, secret: true } : { name: variable, value: '', commented: true }],
+    }];
+  };
+
   /** The decision model and its key, as settings lines; `allowNone` offers none (the app's examples). */
   const askModel = async (allowNone: boolean): Promise<Section['lines']> => {
     const model: Model = flags.model ?? (!interactive ? (() => { throw need('--model', (allowNone ? MODELS : MODELS.filter((m) => m !== 'none')).join(', ')); })() : await choose('Which decision model understands the callers?', [
@@ -519,7 +548,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     // With a model (to record the app against it): its key, and the model understands the chat and the console too.
     const modelLines: Section['lines'] = mode === 'model' ? await askModel(false) : [{ name: 'JEV_CLIENT', value: 'heuristic' }];
     // Recording an app in agent mode records its agent model too: its key with the decision model's.
-    const agentSections = mode === 'model' ? await askAgentKey() : [];
+    const agentSections = [...(mode === 'model' ? await askAgentKey() : []), ...(await askConverseKey())];
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', `The number a call goes to for a person (E.164; Enter for ${TRY_HANDOFF}, which goes nowhere):`, checkHandoff, TRY_HANDOFF);
     const numberSections = await askNumbers(true);
     // This repository's widget build, or, in a project of its own, the installed package's.
@@ -568,7 +597,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     const c = CARRIER_SECRET[carrier];
     const carrierSecret = await secret(c.variable, c.question, c.check);
     const modelLines = await askModel(true);
-    const agentSections = await askAgentKey();
+    const agentSections = [...(await askAgentKey()), ...(await askConverseKey())];
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', 'The number a call goes to when the caller wants a person (E.164, like +15551234567):', checkHandoff);
     const numberSections = await askNumbers(false);
     sections.push(

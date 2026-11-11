@@ -45,6 +45,23 @@ describe('pnpm check on a converse app', () => {
     expect(found[0]!.line).toBe(text.split('\n').findIndex((l) => l.includes('colour')) + 1);
   });
 
+  it('refuses a style.yaml beside them, as it is not read', async () => {
+    const d = folder();
+    writeFileSync(join(d, 'style.yaml'), 'model: { provider: inception, id: mercury-3 }\n');
+    expect(lines(await checkApp(d))).toEqual([expect.stringContaining('style.yaml:1 (file) style.yaml is not read by a converse app')]);
+  });
+
+  it('says only what is wrong with an app.yaml its schema refuses, guessing no mode from an agent.yaml beside it', async () => {
+    const d = folder();
+    writeFileSync(join(d, 'app.yaml'), 'id: converse\nmode: converse\nchat:\n  callerNumberFromContext: sometimes\n');
+    // Neither a scripted file nor a broken agent.yaml is read while app.yaml does not say what the folder is.
+    writeFileSync(join(d, 'intents.yaml'), 'intents: {}\n');
+    writeFileSync(join(d, 'agent.yaml'), readFileSync(join(d, 'agent.yaml'), 'utf8').replace('business:', 'businesses:'));
+    const found = lines(await checkApp(d));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatch(/^app\.yaml:4 chat\.callerNumberFromContext /);
+  });
+
   it('is not an app defineApp builds', () => {
     expect(() => defineApp(folder(), {} as never)).toThrow(/app\.yaml says mode: converse, so the app is built with defineConverseApp/);
   });

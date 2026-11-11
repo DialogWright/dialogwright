@@ -90,6 +90,18 @@ describe('a launcher that registers a converse app', () => {
     expect(actionsOfCall(join(dir, 'audit'), session).map((a) => `${a.tool} ${a.verdict}`)).toEqual(['availability ALLOW']);
   });
 
+  it('starts under JEV_CLIENT=stub (the eval\'s --stub-decision), its decision model the heuristics, which it warns confirm no read-back', async () => {
+    await registerFolderApp(CONVERSE_FIXTURE_DIR);
+    const dir = folder();
+    const env = settings(dir, { JEV_CLIENT: 'stub' });
+    const logs: string[] = [];
+    const server = await startServer(loadConfig(env), { host: '127.0.0.1', log: (l) => logs.push(l), env, converseModel: () => fakeModel(BOOKING) });
+    servers.push(server);
+    expect(logs.some((l) => l.startsWith('WARNING: app converse: JEV_CLIENT=stub: a converse app\'s read-backs are read by the decision model'))).toBe(true);
+    const { chat } = await greeted(`http://127.0.0.1:${server.port}`);
+    expect(says(chat.received)).toEqual(['Example Visits, how can I help?']);
+  });
+
   it('beside a scripted app registered in the same process, is refused as the server starts: they are served as a host', async () => {
     registerApp(callbackApp);
     await registerFolderApp(CONVERSE_FIXTURE_DIR);

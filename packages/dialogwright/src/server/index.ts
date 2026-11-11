@@ -388,20 +388,21 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // The one threshold the phone line sets from its environment: the ask budget is a property of the
   // deployment's network and the day's question count, not of the dialogue policy.
   const thresholds = { ...DEFAULT_THRESHOLDS, JEV_TIMEOUT_MS: config.jevTimeoutMs };
+  // The apps this server runs: its one (the default, its references read from `env`, as always), or a
+  // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
+  // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
+  // A launcher that registered converse apps (registerConverseApp) and no scripted app: a host of them.
+  const host = overrides.apps ?? converseHostOf(overrides.env ?? process.env);
   // A client that answers by an app's own heuristics (JEV_CLIENT=heuristic or stub) is one per app on a
-  // host (below); every other client asks a model, which knows no app, and is shared.
-  const perAppClient = overrides.apps !== undefined && overrides.client === undefined && (config.jevClient === 'heuristic' || config.jevClient === 'stub');
+  // host (below), a launcher's host of converse apps included; every other client asks a model, which
+  // knows no app, and is shared.
+  const perAppClient = host !== null && overrides.client === undefined && (config.jevClient === 'heuristic' || config.jevClient === 'stub');
   const client: JevClient | null = overrides.client ?? (perAppClient ? null : buildClient(config.jevClient, undefined, thresholds, undefined, config.jevProvider ?? undefined));
   // Which model answers, and once, for a model that is not Jev, that the thresholds were measured on Jev.
   for (const line of modelHeader(config.jevClient, config.jevProvider)) log(line);
   // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
   const todayIso = () => config.todayOverride ?? localDateIso(now(), config.timezone);
 
-  // The apps this server runs: its one (the default, its references read from `env`, as always), or a
-  // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
-  // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
-  // A launcher that registered converse apps (registerConverseApp) and no scripted app: a host of them.
-  const host = overrides.apps ?? converseHostOf(overrides.env ?? process.env);
   // `settings` is what each app's code reads by name (AppContext.env): on a host, its own settings file over
   // the server's; on a server of one, its environment.
   const hosted: readonly AppRun<HostedApp>[] = host

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { LineCounter, parseDocument } from 'yaml';
 import { z } from 'zod';
 import type { App } from '../core/app/types';
-import { problemsOfIssues, type Problem } from '../define/problems';
+import { positionOf, problemsOfIssues, type Problem } from '../define/problems';
 import { appSchema } from '../define/schema/app';
 import type { JsonSchema } from '../define/schema/json';
 import type { AppRoutes } from '../server/appRoutes';
@@ -67,7 +67,9 @@ export function converseAppYamlProblems(text: string, file: string = APP_FILE): 
     return { problems: problemsOfIssues(parsed.error.issues, { file, doc, lines, value: raw ?? {}, schema: appJsonSchema }) };
   }
   if (parsed.data.mode !== 'converse') {
-    return { problems: [{ file, line: 1, column: 1, path: 'mode', message: `a converse app's app.yaml says "mode: converse"${parsed.data.mode === undefined ? ', and this one names no mode' : `, and this one says "${parsed.data.mode}"`}`, fix: 'write "mode: converse" in app.yaml' }] };
+    // At the mode key's value where it has one; at the file's start where it names none.
+    const at = parsed.data.mode === undefined ? { line: 1, column: 1 } : positionOf(doc, lines, ['mode']);
+    return { problems: [{ file, line: at.line, column: at.column, path: 'mode', message: `a converse app's app.yaml says "mode: converse"${parsed.data.mode === undefined ? ', and this one names no mode' : `, and this one says "${parsed.data.mode}"`}`, fix: 'write "mode: converse" in app.yaml' }] };
   }
   return { problems: [], value: parsed.data };
 }
