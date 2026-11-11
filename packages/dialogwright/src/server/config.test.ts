@@ -580,17 +580,23 @@ describe("the console's daily figures' own retention (FIGURES_RETENTION_DAYS)", 
 
 describe('the agent model\'s budgets (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS)', () => {
   it('default to 1200 ms on a call and 3000 in a chat', () => {
-    expect(agentSettings({})).toEqual({ timeoutMs: { voice: 1800, chat: 4000 } });
+    expect(agentSettings({})).toEqual({ timeoutMs: { voice: 1800, chat: 4000 }, retry: true });
   });
 
   it('are each set on their own', () => {
-    expect(agentSettings({ AGENT_TIMEOUT_VOICE_MS: '900' })).toEqual({ timeoutMs: { voice: 900, chat: 4000 } });
-    expect(agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15000' })).toEqual({ timeoutMs: { voice: 1800, chat: 15000 } });
+    expect(agentSettings({ AGENT_TIMEOUT_VOICE_MS: '900' })).toEqual({ timeoutMs: { voice: 900, chat: 4000 }, retry: true });
+    expect(agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15000' })).toEqual({ timeoutMs: { voice: 1800, chat: 15000 }, retry: true });
   });
 
   it('refuse a value outside 300 to 15000, or not a whole number', () => {
     expect(() => agentSettings({ AGENT_TIMEOUT_VOICE_MS: '299' })).toThrow('AGENT_TIMEOUT_VOICE_MS must be a whole number of ms from 300 to 15000, got "299"');
     expect(() => agentSettings({ AGENT_TIMEOUT_CHAT_MS: '15001' })).toThrow('AGENT_TIMEOUT_CHAT_MS must be a whole number of ms from 300 to 15000');
     expect(() => agentSettings({ AGENT_TIMEOUT_VOICE_MS: '1.5' })).toThrow('AGENT_TIMEOUT_VOICE_MS');
+  });
+
+  it('AGENT_RETRY: on unless off (2026-11-10, call 60), any case; anything else refused', () => {
+    expect(agentSettings({ AGENT_RETRY: 'OFF' }).retry).toBe(false);
+    expect(agentSettings({ AGENT_RETRY: ' on ' }).retry).toBe(true);
+    expect(() => agentSettings({ AGENT_RETRY: 'twice' })).toThrow('AGENT_RETRY must be on or off, got "twice"');
   });
 });

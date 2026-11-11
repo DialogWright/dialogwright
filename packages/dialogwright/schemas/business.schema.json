@@ -1151,6 +1151,40 @@
       },
       "additionalProperties": false
     },
+    "waiting": {
+      "description": "On a call, what the caller hears while the agent model is slow: past `afterMs` into a turn with its answer not in, one of `lines` is said at once, and the turn waits for it up to `upToMs` in all; past that, its fallback. Voice only (a chat's own budget, AGENT_TIMEOUT_CHAT_MS, is already long). Default: none, the turn waiting AGENT_TIMEOUT_VOICE_MS and saying nothing meanwhile.",
+      "type": "object",
+      "properties": {
+        "afterMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 9007199254740991,
+          "description": "How long into a turn, ms, with the agent model's answer not in, one of `lines` is said."
+        },
+        "upToMs": {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 15000,
+          "description": "How long in all, ms, the turn then waits for the answer (and for the same request asked again after an answer not in its shape), in place of AGENT_TIMEOUT_VOICE_MS where that is shorter; past it, the turn's fallback (the question it was waiting on). 300 to 15000, more than afterMs."
+        },
+        "lines": {
+          "minItems": 1,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "The short lines said while the model is slow, in fixed words, each a statement (\"One sec.\"): one at most a turn, in turn, so the same one is never said twice in a row on a call (with two or more)."
+        }
+      },
+      "required": [
+        "afterMs",
+        "upToMs",
+        "lines"
+      ],
+      "additionalProperties": false
+    },
     "lines": {
       "description": "The engine's own lines in the business's words, by id (nomatch_open, no_input, anything_else, goodbye_chat, ...), in place of their defaults. Default: the engine's words.",
       "type": "object",

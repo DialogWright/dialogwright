@@ -1,7 +1,7 @@
 import { buildSlot } from '../slots/defineSlot';
 import { ACCOUNT_SLOT, businessForms, fullLinesOf, closingsOf, greetingsOf, optionKey, readsThroughHook, slotIdOf, stepTool, thenTools, whenOf } from './business';
 export { optionKey };
-import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
+import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE, agentWaitPromptOf } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
 import { AGENT_CANCEL_LINE, cancelPromptOf, fullAskPromptOf, fullNonePromptOf, fullPromptOf } from '../agent/types';
 import { WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml } from './schema/business';
@@ -203,6 +203,10 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   prompts.goodbye_chat = { text: closing.chat.trim(), interruptible: false };
   for (const [id, text] of Object.entries(b.lines ?? {})) prompts[id] = { ...line(text), ...(AGENT_CLOSING_LINES.includes(id) ? { interruptible: false } : {}) };
   if (b.prices !== undefined) prompts[PRICE_PROMPT] = line(b.prices.say);
+  // The lines said while the agent model is slow on a call (waiting.lines), each its own prompt (agentWaitPromptOf).
+  (b.waiting?.lines ?? []).forEach((text, i) => {
+    prompts[agentWaitPromptOf(i)] = line(text);
+  });
   // The account is recognized by the number calling, never asked: it has no question. A caller the
   // number does not recognize is told so where an action needs it, and offered the request.
   if (accounts) {

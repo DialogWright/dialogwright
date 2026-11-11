@@ -117,3 +117,48 @@ function showWaiting(session: Session, event: SessionEvent, provisional: TurnRes
     record: () => ({ ...(hold !== undefined ? { hold } : {}), ...(sounds > 0 ? { sounds } : {}) }),
   };
 }
+
+/**
+ * The line said while the agent model is slow on a call (business.yaml's `waiting`, AgentApp.waiting; the
+ * agent-mode design, call 60): `afterMs` after `startedAt` (when the model was first asked), with its answer
+ * not in, the next of `lines` after the one this call said last (Session.agent.waitLine), said at once through
+ * the channel's early lines, as the hold line of a tool that waits is (showWaiting): one at most a turn. The
+ * channel says the turn's own lines after it, once it has played. Where the channel has no early lines (a
+ * test's harness, a chat), the line is recorded as due and not said. Stopped once the answer is in.
+ */
+export interface AgentFiller {
+  stop(): void;
+  /** The line due, its index among the lines, when (ms from the model first asked), and whether the channel said it; null where none came due. */
+  record(): { promptId: string; index: number; atMs: number; said: boolean } | null;
+}
+
+export function agentFiller(session: Session, waiting: { afterMs: number; lines: readonly string[] }, channel: WaitingChannel, startedAt: number): AgentFiller {
+  const app = appOf(session);
+  const last = session.agent?.waitLine;
+  const index = last === undefined ? 0 : (last + 1) % waiting.lines.length;
+  const lineId = waiting.lines[index]!;
+  let said: { promptId: string; index: number; atMs: number; said: boolean } | null = null;
+  let stopped = false;
+  const due = (): void => {
+    if (stopped) return;
+    const line = promptSay(app, lineId, {}, false, channel.render ?? null, session.locale, undefined, { shown: false });
+    // What the channel's early lines read of the turn: nothing decided yet (as showWaiting's pass that threw).
+    const result = { session, decision: { kind: 'ignore' }, actions: [line], rows: [], gateEvents: [], effects: [], audit: [], kb: null, screen: null, quarantined: false, turnState: null, verdict: null, fillEvents: [] } as unknown as TurnResult;
+    let ok = false;
+    try {
+      ok = channel.early !== undefined && channel.early([line], result);
+    } catch {
+      ok = false;
+    }
+    said = { promptId: lineId, index, atMs: Math.round(performance.now() - startedAt), said: ok };
+  };
+  const timer = setTimeout(due, Math.max(0, waiting.afterMs - (performance.now() - startedAt)));
+  return {
+    stop: () => {
+      stopped = true;
+      clearTimeout(timer);
+    },
+    record: () => said,
+  };
+}
+

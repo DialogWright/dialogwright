@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `196748ec6bfdbefb05e5595ef80874f0b1c52dff09213f34d896860ddeb5a672` |
+| `business.yaml` | `1422cadc3dd032963870108c85b05a80d3a3e6d497e0e3fe450dc83d5192c7c6` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -70,6 +70,9 @@ Said in fixed words, never worded by a model:
 | `booking_for_accounts` | Bookings are for our dealership accounts, but we can take a request instead. |
 | `identity_not_recognized` | That's for our dealership accounts, recognized by the number they call from. |
 | `price` | We quote every job from a photo, because the price depends on the damage. Once your request is in, we'll ask you for one. |
+| `agent_wait_1` | One sec. |
+| `agent_wait_2` | Okay, one moment. |
+| `agent_wait_3` | Let me see. |
 | `full_request_window` | {request_day} in the {request_window} is full, but we have room in the {free}. |
 | `full_request_window_none` | We're full on {request_day}. |
 | `full_request_window_ask` | Does the {free} work for you? |

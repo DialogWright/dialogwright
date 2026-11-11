@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, matching, name, text, unique } from './common';
 import { E164 } from '../../core/numberLocales';
 import { ENV_REFERENCE } from '../../core/app/envReference';
+import { AGENT_TIMEOUT_RANGE } from '../../agent/types';
 
 /**
  * business.yaml: the facts of an app in agent mode (app.yaml's `mode: agent`;
@@ -309,6 +310,29 @@ export const businessSchema = z
       })
       .optional()
       .describe('How the values the agent model gives are held to the caller\'s words, and what a refusal costs the caller. Default: { refusedUncounted: 2, earlierWords: true }.'),
+    waiting: z
+      .strictObject({
+        afterMs: z
+          .int({ error: 'must be a whole number of ms' })
+          .min(100, { error: 'must be at least 100' })
+          .describe('How long into a turn, ms, with the agent model\'s answer not in, one of `lines` is said.'),
+        upToMs: z
+          .int({ error: 'must be a whole number of ms' })
+          .min(AGENT_TIMEOUT_RANGE.min, { error: `must be at least ${AGENT_TIMEOUT_RANGE.min}` })
+          .max(AGENT_TIMEOUT_RANGE.max, { error: `must be at most ${AGENT_TIMEOUT_RANGE.max}` })
+          .describe(`How long in all, ms, the turn then waits for the answer (and for the same request asked again after an answer not in its shape), in place of AGENT_TIMEOUT_VOICE_MS where that is shorter; past it, the turn's fallback (the question it was waiting on). ${AGENT_TIMEOUT_RANGE.min} to ${AGENT_TIMEOUT_RANGE.max}, more than afterMs.`),
+        lines: z
+          .array(text())
+          .min(1, { error: 'must list at least one line' })
+          .max(6, { error: 'must list at most six lines' })
+          .describe('The short lines said while the model is slow, in fixed words, each a statement ("One sec."): one at most a turn, in turn, so the same one is never said twice in a row on a call (with two or more).'),
+      })
+      .check(checkAlways((value, ctx) => {
+        const w = value as { afterMs?: unknown; upToMs?: unknown };
+        if (typeof w.afterMs === 'number' && typeof w.upToMs === 'number' && w.afterMs >= w.upToMs) ctx.addIssue({ code: 'custom', path: ['afterMs'], message: `is ${w.afterMs}, not less than upToMs (${w.upToMs}), so no line could be said before the wait ends`, params: { fix: 'make afterMs less than upToMs (1200 and 4000, say)' } });
+      }))
+      .optional()
+      .describe('On a call, what the caller hears while the agent model is slow: past `afterMs` into a turn with its answer not in, one of `lines` is said at once, and the turn waits for it up to `upToMs` in all; past that, its fallback. Voice only (a chat\'s own budget, AGENT_TIMEOUT_CHAT_MS, is already long). Default: none, the turn waiting AGENT_TIMEOUT_VOICE_MS and saying nothing meanwhile.'),
     lines: z
       .record(identifier(), text())
       .optional()

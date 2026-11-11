@@ -80,6 +80,40 @@ describe('cassetteAgent', () => {
     expect((await cassetteAgent(repeated).answer(ctx, 1000))).toMatchObject({ ok: true, answer: { reply: 'answer 2' } });
   });
 
+  it('a regression\'s cassette answers a retry (attempt 2, after an answer not in its shape) with the answer recorded second for the request, recording it where it has none', async () => {
+    const path = scratch();
+    let n = 0;
+    const live: AgentClient = {
+      model: 'raw',
+      answer: async (_c, _t, attempt = 1) => {
+        n += 1;
+        return attempt === 1 ? { ok: false, reason: 'invalid', detail: 'x', ms: 833, raw: '{"reply":"Sure","values":[],"action":"later"}' } : { ok: true, answer, ms: 610, raw: JSON.stringify(answer) };
+      },
+    };
+    const recording = cassetteAgent(path, { record: live, oneAnswer: true });
+    expect(await recording.answer(ctx, 1800)).toMatchObject({ ok: false, reason: 'invalid', ms: 833 });
+    expect(await recording.answer(ctx, 967, 2)).toMatchObject({ ok: true, answer, ms: 610 });
+    // Asked again, either attempt: what was recorded for it, no new asking.
+    expect(await recording.answer(ctx, 1800)).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(await recording.answer(ctx, 967, 2)).toMatchObject({ ok: true, answer });
+    expect(n).toBe(2);
+    expect(loadAgentCassette(path).get(agentKey(ctx))).toHaveLength(2);
+    const replay = cassetteAgent(path, { oneAnswer: true });
+    expect(await replay.answer(ctx, 1800)).toMatchObject({ ok: false, reason: 'invalid', ms: 833 });
+    expect(await replay.answer(ctx, 967, 2)).toMatchObject({ ok: true, answer, ms: 610 });
+    // A cassette with no retry recorded: a miss, as any request it lacks.
+    const before = scratch();
+    await cassetteAgent(before, { record: live, oneAnswer: true }).answer(ctx, 1800);
+    expect(await cassetteAgent(before, { oneAnswer: true }).answer(ctx, 967, 2)).toMatchObject({ ok: false, reason: 'error', detail: AGENT_CASSETTE_MISS });
+  });
+
+  it('an answer cut off at the token limit is recorded so, and replays so, never parsed (a runaway is never asked again)', async () => {
+    const path = scratch();
+    await cassetteAgent(path, { record: { model: 'raw', answer: async () => ({ ok: false, reason: 'invalid', detail: 'inception: the answer was cut off at the token limit', ms: 833, raw: '{"reply":"Goodbye. Goodbye. Goodbye.', cutOff: true }) } }).answer(ctx, 1800);
+    expect(loadAgentCassette(path).get(agentKey(ctx))![0]).toMatchObject({ cutOff: true, ms: 833 });
+    expect(await cassetteAgent(path).answer(ctx, 1800)).toMatchObject({ ok: false, reason: 'invalid', cutOff: true, detail: 'the answer was cut off at the token limit (recorded)' });
+  });
+
   it('a recorded answer slower than the budget replays as a timeout', async () => {
     const path = scratch();
     await cassetteAgent(path, { record: fakeAgent(() => answer, { ms: 1200 }) }).answer(ctx, 5000);

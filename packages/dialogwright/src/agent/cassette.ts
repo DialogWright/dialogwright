@@ -20,8 +20,10 @@ import type { AgentClient, AgentContext, AgentFailure, AgentRequest, AgentResult
  * so a recording and its replay table alike. The same request asked more than once (the bake-off's
  * `--repeat`) takes the recorded answers in turn; asked more often than they were recorded, a replay is
  * a miss, unless `repeatLast`. A regression's cassette (`oneAnswer`) answers every asking of a request as
- * first recorded. Recording is the author's step, with their own key; no test and no CI run
- * records.
+ * first recorded, and the same request asked once more after an answer not in its shape (AgentClient.answer's
+ * `attempt` 2, AgentRunner.retry) with the answer recorded second for it: so a recording whose first answer
+ * was malformed replays its retry's answer, and the retry is recorded where none is. Recording is the
+ * author's step, with their own key; no test and no CI run records.
  */
 
 export interface AgentCassetteLine {
@@ -32,6 +34,8 @@ export interface AgentCassetteLine {
   raw?: string;
   /** An attempt with no text: a timeout, an answer with no message, or a failed request. */
   failed?: { reason: AgentFailure; detail: string };
+  /** The text was cut off at the token limit (AgentResult.cutOff): replayed as that, never parsed. */
+  cutOff?: true;
   ms: number;
   usage?: { inputTokens: number; outputTokens: number };
   costUsd?: number;
@@ -99,6 +103,7 @@ function replayed(line: AgentCassetteLine, ctx: AgentContext, timeoutMs: number)
   const paid = { ...(line.usage !== undefined ? { usage: { ...line.usage } } : {}), ...(line.costUsd !== undefined ? { costUsd: line.costUsd } : {}) };
   if (line.raw === undefined) return { ok: false, reason: line.failed?.reason ?? 'timeout', detail: line.failed?.detail ?? 'timeout (recorded)', ms: line.ms, ...paid };
   if (line.ms > timeoutMs) return { ok: false, reason: 'timeout', detail: `no answer within ${timeoutMs} ms (recorded at ${line.ms} ms)`, ms: timeoutMs, ...paid };
+  if (line.cutOff === true) return { ok: false, reason: 'invalid', detail: 'the answer was cut off at the token limit (recorded)', ms: line.ms, raw: line.raw, cutOff: true, ...paid };
   const parsed = parseAgentAnswer(line.raw, ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name), ctx.lines);
   return parsed.ok ? { ok: true, answer: parsed.answer, ms: line.ms, raw: line.raw, ...paid } : { ok: false, reason: 'invalid', detail: parsed.detail, ms: line.ms, raw: line.raw, ...paid };
 }
@@ -124,14 +129,15 @@ export function cassetteAgent(path: string, opts: AgentCassetteOptions = {}): Ag
     preload(): void {
       load();
     },
-    async answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult> {
+    async answer(ctx: AgentContext, timeoutMs: number, attempt = 1): Promise<AgentResult> {
       let key: string;
       try {
         key = agentKey(ctx, request);
       } catch (e) {
         return { ok: false, reason: 'error', detail: `the turn could not be put into a request (${e instanceof Error ? e.name : 'error'})`, ms: 0 };
       }
-      const n = opts.oneAnswer === true ? 0 : (asked.get(key) ?? 0);
+      // A regression's: the answer recorded for this attempt (the first, or the retry's); the bake-off's: the next in turn.
+      const n = opts.oneAnswer === true ? Math.max(0, attempt - 1) : (asked.get(key) ?? 0);
       asked.set(key, n + 1);
       const recorded = load().get(key) ?? [];
       const answers = recorded.filter((l) => !isFailedRequest(l));
@@ -148,11 +154,12 @@ export function cassetteAgent(path: string, opts: AgentCassetteOptions = {}): Ag
         if (opts.repeatLast === true && answers.length > 0) return replayed(answers.at(-1)!, ctx, timeoutMs);
         return { ok: false, reason: 'error', detail: AGENT_CASSETTE_MISS, ms: 0 };
       }
-      const r = await opts.record.answer(ctx, timeoutMs);
+      const r = await opts.record.answer(ctx, timeoutMs, attempt);
       const text = r.raw ?? (r.ok ? JSON.stringify(r.answer) : undefined);
       const line: AgentCassetteLine = {
         v: 1, key, model: opts.record.model,
         ...(text !== undefined ? { raw: text } : { failed: { reason: r.ok ? 'error' : r.reason, detail: r.ok ? '' : r.detail } }),
+        ...(!r.ok && r.cutOff === true ? { cutOff: true as const } : {}),
         ms: r.ms,
         ...(r.usage !== undefined ? { usage: { inputTokens: r.usage.inputTokens, outputTokens: r.usage.outputTokens } } : {}),
         ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}),

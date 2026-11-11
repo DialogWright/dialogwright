@@ -67,6 +67,10 @@ export interface AgentView {
   use: string;
   /** Why the turn did not read the answer, in words: what decided it, or why no answer came. */
   why?: string;
+  /** The agent model asked again once after an answer not in its shape (AGENT_RETRY), in words: why the first was not, and what the second came to. */
+  retried?: string;
+  /** The line said while the model was slow on a call (business.yaml's waiting), in words: its prompt, when, and whether it was said. */
+  filler?: string;
   /** Each value it understood, with the caller's words it cited, and what its check came to, in words. */
   values: { field: string; value: string; words: string; outcome: string; accepted: boolean; shown?: string }[];
   /** The action it proposed (`none` for none), and whether the turn took it. */

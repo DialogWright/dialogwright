@@ -465,7 +465,7 @@ export function agentChecks(appDir: string, env: Env): CheckResult[] {
   if (!env[keyVar]?.trim()) {
     return [{ id: 'agent', status: 'fail', message: `${said}, but ${keyVar} is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding`, fix: `set ${keyVar} in the settings file (the agent model's key)` }];
   }
-  return [{ id: 'agent', status: 'ok', message: `${said}, key in ${keyVar}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat` }];
+  return [{ id: 'agent', status: 'ok', message: `${said}, key in ${keyVar}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat${settings.retry ? '' : ', an answer not in its shape not asked again (AGENT_RETRY=off)'}` }];
 }
 
 /**

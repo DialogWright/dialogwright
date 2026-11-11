@@ -339,6 +339,7 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
     ...(['greeting', 'closing'] as const).flatMap((key) => Object.entries(byChannel(b[key])).map(([channel, text]): [DataPath, string, readonly string[]] => [typeof b[key] === 'string' ? [key] : [key, channel], text, []])),
     ...(b.prices !== undefined ? [[['prices', 'say'], b.prices.say, []] as [DataPath, string, readonly string[]]] : []),
     ...forms.flatMap(({ name, form }) => form.fields.map((f, i): [DataPath, string, readonly string[]] => [[name, 'fields', i, 'question'], f.question, []])),
+    ...(b.waiting?.lines ?? []).map((text, i): [DataPath, string, readonly string[]] => [['waiting', 'lines', i], text, []]),
   ];
   for (const [id, text] of Object.entries(b.lines ?? {})) {
     if (!AGENT_LINE_IDS.includes(id)) {
@@ -354,6 +355,10 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
       report(path, `the line names {${v}}, which it is never given, so it would be said with the braces in it`, vars.length > 0 ? `name only ${vars.map((x) => `{${x}}`).join(', ')}` : 'write it without {placeholders}: it is said word for word');
     }
   }
+  // A line said while the model is slow is said with nothing waiting on it: the turn's own line follows.
+  (b.waiting?.lines ?? []).forEach((text, i) => {
+    if (text.includes('?')) report(['waiting', 'lines', i], 'the line asks a question, but it is said while the line waits on the model, and the turn\'s own line follows it', 'make it a short statement ("One sec.")');
+  });
   // The handoff is said where nothing waits for an answer (the callback form, where there is one, asks for the number).
   if (b.handoff.includes('?')) report(['handoff'], 'the handoff asks a question, but it is said where nothing waits for an answer', `make it a statement ("I'll have someone call you back.")${b.callback !== undefined ? '; the callback form asks for the number' : ', and add a callback form to collect the number'}`);
 

@@ -673,9 +673,12 @@ export function integer(env: Env, name: string, fallback: number): number {
  * An app in agent mode's settings (core/agentTurn.ts; guide 14.12): how long a turn waits for the agent
  * model's answer, AGENT_TIMEOUT_VOICE_MS on a call (default 1800) and AGENT_TIMEOUT_CHAT_MS in a chat
  * (default 4000), each a whole number of ms from 300 to 15000, each channel set on its own. Past it the
- * turn says its fixed fallback (the next field's question). Read per app, as the renderer's settings are.
+ * turn says its fixed fallback (the next field's question). AGENT_RETRY, on (default, the maintainer's decision
+ * of 2026-11-10, call 60) or off: an answer not in its shape on a turn that needed it is asked again once, where
+ * the turn's budget leaves time for it (run/turn.ts retryAgent); off says the fallback at once, as before. Read
+ * per app, as the renderer's settings are.
  */
-export function agentSettings(env: Env): { timeoutMs: { voice: number; chat: number } } {
+export function agentSettings(env: Env): { timeoutMs: { voice: number; chat: number }; retry: boolean } {
   const one = (name: string, fallback: number): number => {
     const raw = env[name]?.trim();
     if (raw === undefined || raw === '') return fallback;
@@ -683,7 +686,9 @@ export function agentSettings(env: Env): { timeoutMs: { voice: number; chat: num
     if (!/^\d+$/.test(raw) || n < AGENT_TIMEOUT_RANGE.min || n > AGENT_TIMEOUT_RANGE.max) throw new Error(`${name} must be a whole number of ms from ${AGENT_TIMEOUT_RANGE.min} to ${AGENT_TIMEOUT_RANGE.max}, got "${raw}"`);
     return n;
   };
-  return { timeoutMs: { voice: one('AGENT_TIMEOUT_VOICE_MS', DEFAULT_AGENT_TIMEOUT_MS.voice), chat: one('AGENT_TIMEOUT_CHAT_MS', DEFAULT_AGENT_TIMEOUT_MS.chat) } };
+  const retry = (env.AGENT_RETRY?.trim() || 'on').toLowerCase();
+  if (retry !== 'on' && retry !== 'off') throw new Error(`AGENT_RETRY must be on or off, got "${env.AGENT_RETRY}"`);
+  return { timeoutMs: { voice: one('AGENT_TIMEOUT_VOICE_MS', DEFAULT_AGENT_TIMEOUT_MS.voice), chat: one('AGENT_TIMEOUT_CHAT_MS', DEFAULT_AGENT_TIMEOUT_MS.chat) }, retry: retry === 'on' };
 }
 
 /** An IANA zone name the runtime actually knows; `Intl` is the only authority worth asking. */

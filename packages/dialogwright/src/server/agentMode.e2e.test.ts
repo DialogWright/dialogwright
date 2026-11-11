@@ -38,13 +38,13 @@ async function start(env: Record<string, string>): Promise<string[]> {
 describe('an app in agent mode on the server', () => {
   it('builds its agent model from style.yaml with its own settings, and says so, never the key', async () => {
     const logs = await start({ INCEPTION_API_KEY: 'in-test-not-real', AGENT_TIMEOUT_VOICE_MS: '1500' });
-    expect(logs).toContain('agent mode: mercury-3 on inception at instant, within 1500 ms on a call and 4000 ms in a chat, its judge 500 and 1000 ms');
+    expect(logs).toContain('agent mode: mercury-3 on inception at instant, within 1500 ms on a call and 4000 ms in a chat, its judge 500 and 1000 ms, an answer not in its shape asked again once where time allows');
     expect(logs.join('\n')).not.toContain('in-test-not-real');
   });
 
   it('holds the agent reply\'s judge to RENDER_CHECK_TIMEOUT_MS, as a generated line\'s (the review of Task 7)', async () => {
     const logs = await start({ INCEPTION_API_KEY: 'in-test-not-real', RENDER_CHECK_TIMEOUT_MS: '700' });
-    expect(logs).toContain('agent mode: mercury-3 on inception at instant, within 1800 ms on a call and 4000 ms in a chat, its judge 700 and 700 ms');
+    expect(logs).toContain('agent mode: mercury-3 on inception at instant, within 1800 ms on a call and 4000 ms in a chat, its judge 700 and 700 ms, an answer not in its shape asked again once where time allows');
   });
 
   it('without the key, starts and warns: the app runs as a scripted app', async () => {

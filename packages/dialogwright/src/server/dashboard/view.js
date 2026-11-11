@@ -171,9 +171,21 @@ export function agentOf(a) {
   const why = a.use === 'dropped'
     ? `answer set aside: ${AGENT_DROPPED[a.dropped] ?? String(a.dropped ?? '')}`
     : a.use === 'failed' ? `no answer: ${String(a.fallback ?? 'none')}${typeof a.detail === 'string' && a.detail !== '' ? ` (${a.detail})` : ''}, the fixed line said` : null;
+  // Asked again once after an answer not in its shape (AGENT_RETRY, call 60): why the first was not, and what the second came to.
+  const r = a.retried;
+  const retried = r !== null && typeof r === 'object' && typeof r.invalid === 'string'
+    ? `asked again once, the first answer not in its shape${r.invalid !== '' ? ` (${r.invalid})` : ''}: ${typeof r.fallback === 'string' ? `the second failed too: ${r.fallback}${typeof r.detail === 'string' && r.detail !== '' ? ` (${r.detail})` : ''}` : 'the second used'}${typeof r.ms === 'number' && Number.isFinite(r.ms) ? `, in ${Math.round(r.ms)} ms` : ''}`
+    : null;
+  // A line said while the model was slow on a call (business.yaml's waiting, call 60).
+  const f = a.filler;
+  const filler = f !== null && typeof f === 'object' && typeof f.promptId === 'string' && typeof f.atMs === 'number'
+    ? `${f.promptId} ${f.said === true ? 'said' : 'due, not said'} ${Math.round(f.atMs)} ms in, the model's answer not in`
+    : null;
   return {
     use: String(a.use),
     ...(why !== null ? { why } : {}),
+    ...(retried !== null ? { retried } : {}),
+    ...(filler !== null ? { filler } : {}),
     values,
     action: String(a.action ?? 'none'),
     ...(typeof a.actionOutcome === 'string' ? { actionOutcome: a.actionOutcome } : {}),

@@ -106,6 +106,17 @@ describe('the console\'s call view of an agent turn', () => {
     expect(a.values.map((v) => v.outcome)).toEqual(['refused: the caller never said its words; no attempt counted', 'accepted, its words from an earlier turn']);
   });
 
+  it('agentOf: an answer asked again after one not in its shape (AGENT_RETRY, call 60), used or failed too', () => {
+    expect(agentOf({ ms: 1443, use: 'used', action: 'none', replySaid: false, values: [], retried: { invalid: 'the answer is not the shape', ms: 610 } }))
+      .toMatchObject({ use: 'used', retried: 'asked again once, the first answer not in its shape (the answer is not the shape): the second used, in 610 ms' });
+    expect(agentOf({ ms: 800, use: 'failed', fallback: 'invalid', detail: 'x', action: 'none', replySaid: false, values: [], retried: { invalid: 'x', ms: 400, fallback: 'timeout', detail: 'no answer within 967 ms' } }))
+      .toMatchObject({ retried: 'asked again once, the first answer not in its shape (x): the second failed too: timeout (no answer within 967 ms), in 400 ms' });
+    expect(agentOf({ ms: 500, use: 'used', action: 'none', replySaid: false, values: [] })!.retried).toBeUndefined();
+    // A line said while the model was slow on a call (business.yaml's waiting).
+    expect(agentOf({ ms: 2100, use: 'used', action: 'none', replySaid: false, values: [], filler: { promptId: 'agent_wait_1', atMs: 1203, said: true } })!.filler)
+      .toBe('agent_wait_1 said 1203 ms in, the model\'s answer not in');
+  });
+
   it('agentOf: an answer that never came, one set aside, and the price line said in a reply\'s place', () => {
     expect(agentOf({ ms: 1200, use: 'failed', fallback: 'timeout', detail: 'no answer within 1200 ms', values: [], action: 'none', replySaid: false })).toMatchObject({ use: 'failed', why: 'no answer: timeout (no answer within 1200 ms), the fixed line said' });
     expect(agentOf({ ms: 300, use: 'dropped', dropped: 'ignore', values: [], action: 'none', reply: 'Sure.', replySaid: false })).toMatchObject({ why: 'answer set aside: side speech', reply: { said: false, why: 'the turn was decided without it' } });

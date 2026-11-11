@@ -4,7 +4,7 @@ import type { Session, SessionFacts } from '../core/session';
 import { openPart, replyShape, shapeOf } from '../core/replyShape';
 import { isAnonymous, passed, type Principal } from '../gate/types';
 import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, optionKey, readsThroughHook, saysFor, slotIdOf, stepTool, thenTools, whenOf } from './business';
-import { ACCOUNTS_ONLY_PROMPT } from './businessLines';
+import { ACCOUNTS_ONLY_PROMPT, agentWaitPromptOf } from './businessLines';
 import { accountByNumber } from './accountNumbers';
 import { envVariableOf } from '../core/app/envReference';
 import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, fieldSlotConfig, formParams, PRICE_PROMPT, wordsOf } from './businessFiles';
@@ -98,6 +98,8 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
     // How the values are held to the caller's words (values.refusedUncounted, values.earlierWords), where the business sets it.
     ...(b.values?.refusedUncounted !== undefined ? { refusalsUncounted: b.values.refusedUncounted } : {}),
     ...(b.values?.earlierWords !== undefined ? { earlierWords: b.values.earlierWords } : {}),
+    // What a call hears while the model is slow (waiting), where the business sets it: its lines by their prompts.
+    ...(b.waiting !== undefined ? { waiting: { afterMs: b.waiting.afterMs, upToMs: b.waiting.upToMs, lines: b.waiting.lines.map((_, i) => agentWaitPromptOf(i)) } } : {}),
   };
 }
 

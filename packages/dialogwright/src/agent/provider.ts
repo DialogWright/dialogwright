@@ -156,7 +156,7 @@ function chatAgent(e: ChatEndpoint, fetchFn: typeof fetch): AgentClient {
         const paid = { usage: c.usage, ...(c.costUsd !== undefined ? { costUsd: c.costUsd } : {}) };
         if (c.text === null) return { ok: false, reason: 'invalid', detail: `${e.provider}: the response had no message`, ms: ms(), ...paid };
         // An answer cut off at the token limit is not an answer, whatever it parses to.
-        if (c.finish === 'length') return { ok: false, reason: 'invalid', detail: `${e.provider}: the answer was cut off at the token limit`, ms: ms(), raw: c.text, ...paid };
+        if (c.finish === 'length') return { ok: false, reason: 'invalid', detail: `${e.provider}: the answer was cut off at the token limit`, ms: ms(), raw: c.text, cutOff: true, ...paid };
         const parsed = parseAgentAnswer(c.text, ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name), ctx.lines);
         if (!parsed.ok) return { ok: false, reason: 'invalid', detail: safeErrorText(parsed.detail, e.apiKey), ms: ms(), raw: c.text, ...paid };
         return { ok: true, answer: parsed.answer, ms: ms(), raw: c.text, ...paid };

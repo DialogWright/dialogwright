@@ -59,7 +59,8 @@ function jev(delayMs = 0): JevClient & { asked: JevRequest[] } {
   };
 }
 
-type Scripted = AgentAnswer | FakeAgentFailure;
+/** An answer, or one per attempt (the second for the same request asked again after an answer not in its shape: AgentRunner.retry). */
+type Scripted = AgentAnswer | FakeAgentFailure | readonly (AgentAnswer | FakeAgentFailure)[];
 
 /** An answer: the reply, the values (field, value, words), the action. */
 const said = (reply: string, values: [string, string, string][] = [], action = 'none', fromFacts = false): AgentAnswer => ({
@@ -84,16 +85,26 @@ interface Call {
 }
 
 /** A call: its start (from `number`), then each step's words, the agent answering each by its script (the caller's words to the answer). */
-async function call(script: Record<string, Scripted>, steps: (string | Step)[], opts: { number?: string; chat?: boolean; jev?: JevClient; delayMs?: number; noAgent?: boolean; budgetMs?: number; lateOn?: string } = {}): Promise<Call> {
+async function call(
+  script: Record<string, Scripted>, steps: (string | Step)[],
+  opts: { number?: string; chat?: boolean; jev?: JevClient; delayMs?: number; noAgent?: boolean; budgetMs?: number; lateOn?: string; ms?: (words: string, attempt: number) => number; retry?: false; usage?: { inputTokens: number; outputTokens: number } } = {},
+): Promise<Call> {
   const tools = { ...app.systems(), codes: mockCodeVerifier };
   const contexts: AgentContext[] = [];
-  const scripted = fakeAgent((ctx) => {
+  const scripted = fakeAgent((ctx, attempt) => {
     contexts.push(ctx);
     const words = ctx.conversation.at(-1)!.text;
     const out = script[words];
     if (out === undefined) throw new Error(`no answer scripted for "${words}"`);
-    return out;
-  }, opts.delayMs !== undefined ? { delayMs: opts.delayMs } : {});
+    if (!Array.isArray(out)) return out as AgentAnswer | FakeAgentFailure;
+    const one = (out as readonly (AgentAnswer | FakeAgentFailure)[])[attempt - 1];
+    if (one === undefined) throw new Error(`no answer scripted for "${words}", attempt ${attempt}`);
+    return one;
+  }, {
+    ...(opts.delayMs !== undefined ? { delayMs: opts.delayMs } : {}),
+    ...(opts.ms !== undefined ? { ms: (ctx: AgentContext, attempt: number) => opts.ms!(ctx.conversation.at(-1)!.text, attempt) } : {}),
+    ...(opts.usage !== undefined ? { usage: opts.usage } : {}),
+  });
   // `lateOn`: on those words the model answers nothing within its whole budget (a timeout at the budget's end).
   const agent: typeof scripted = opts.lateOn === undefined ? scripted : {
     ...scripted,
@@ -105,7 +116,7 @@ async function call(script: Record<string, Scripted>, steps: (string | Step)[], 
     },
   };
   const budget = opts.budgetMs !== undefined ? { timeoutMs: { voice: opts.budgetMs, chat: opts.budgetMs } } : {};
-  const runOpts = { client: opts.jev ?? jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, ...(opts.noAgent ? {} : { agent: { client: agent, ...budget } }) };
+  const runOpts = { client: opts.jev ?? jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, ...(opts.noAgent ? {} : { agent: { client: agent, ...budget, ...(opts.retry === false ? { retry: false } : {}) } }) };
   let session: Session = newSession('S-agent', 0, opts.chat ? WEB_CHAT : VOICE_RELAY, ANONYMOUS, app.id);
   const runs: TurnRun[] = [];
   const run = async (event: SessionEvent): Promise<void> => {
@@ -1003,6 +1014,50 @@ describe('the agent turn: a slow or failed model', () => {
     const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': { fail: 'invalid', detail: 'the answer is not JSON' } }, [HOLD, 'Avery Lane']);
     expect(promptOf(c.last)).toBe('ask_request_patronName');
     expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid', detail: 'the answer is not JSON' });
+  });
+
+  /** Call 60, turn 8: the answer not in its shape, 833 ms into the call's 1800 ms budget. */
+  const NOT_THE_SHAPE = { fail: 'invalid' as const, detail: 'the answer is not the shape: action: Invalid option: expected one of "submit"|"callback"|"none"' };
+  const NAME = said('Thanks, Avery.', [['patronName', 'Avery Lane', 'Avery Lane']]);
+
+  it('an answer not in its shape is asked again once (AGENT_RETRY, call 60): the second answer used as any, the first\'s failure on the record', async () => {
+    const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [NOT_THE_SHAPE, NAME] }, [HOLD, 'Avery Lane'], { ms: (w, attempt) => (w === 'Avery Lane' ? (attempt === 1 ? 833 : 610) : 500), usage: { inputTokens: 100, outputTokens: 20 } });
+    // The same request, asked twice.
+    const asked = c.contexts.filter((x) => x.conversation.at(-1)!.text === 'Avery Lane');
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toEqual(asked[0]);
+    expect(value(c.last, 'request_patronName')).toBe('avery lane');
+    expect(c.last.record.agent).toMatchObject({ use: 'used', ms: 1_443, retried: { invalid: NOT_THE_SHAPE.detail, ms: 610 }, usage: { inputTokens: 200, outputTokens: 40 } });
+    expect(c.last.record.agent!.fallback).toBeUndefined();
+    expect(c.last.record.agent!.retried!.fallback).toBeUndefined();
+    expect(c.last.record.timing.agentMs).toBe(1_443);
+    // No failure counted: the turn was decided on the second answer.
+    expect(c.last.result.session.agent!.failures).toBe(0);
+  });
+
+  it('not in its shape twice: the fallback, as before, the second failure on the record', async () => {
+    const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [NOT_THE_SHAPE, { fail: 'invalid', detail: 'the answer is not JSON' }] }, [HOLD, 'Avery Lane'], { ms: () => 400 });
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+    expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid', detail: NOT_THE_SHAPE.detail, ms: 800, retried: { invalid: NOT_THE_SHAPE.detail, ms: 400, fallback: 'invalid', detail: 'the answer is not JSON' } });
+    expect(c.last.result.session.agent!.failures).toBe(1);
+  });
+
+  it('not asked again with less of the budget left than the first answer took, nor after a timeout, a runaway cut off at the token limit, or an error, nor with AGENT_RETRY=off', async () => {
+    const once = (c: Call) => c.contexts.filter((x) => x.conversation.at(-1)!.text === 'Avery Lane').length;
+    // 1000 ms of 1800: 800 left, under the first answer's 1000.
+    const late = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [NOT_THE_SHAPE, NAME] }, [HOLD, 'Avery Lane'], { ms: (w) => (w === 'Avery Lane' ? 1_000 : 500) });
+    expect(once(late)).toBe(1);
+    expect(late.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid' });
+    expect(late.last.record.agent!.retried).toBeUndefined();
+    for (const first of [{ fail: 'timeout' as const }, { fail: 'invalid' as const, detail: 'inception: the answer was cut off at the token limit', cutOff: true as const }, { fail: 'error' as const }]) {
+      const c = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [first, NAME] }, [HOLD, 'Avery Lane']);
+      expect(once(c), first.fail).toBe(1);
+      expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: first.fail });
+      expect(c.last.record.agent!.retried).toBeUndefined();
+    }
+    const off = await call({ [HOLD]: HOLD_ANSWER, 'Avery Lane': [NOT_THE_SHAPE, NAME] }, [HOLD, 'Avery Lane'], { retry: false });
+    expect(once(off)).toBe(1);
+    expect(off.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid' });
   });
 
   it('two failures in a row end with the handoff line, then the callback note; one answer between resets the count', async () => {

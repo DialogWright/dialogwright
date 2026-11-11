@@ -359,10 +359,12 @@ export interface Session {
    * value held since (call 55), so a second counts an attempt. `refused`: by slot, how many times a value the
    * agent model gave for the field was refused by its slot type's check (its shape, its words), since the field
    * was last filled, while its form is open (core/agentTurn.ts refusedByCheck; calls 57 to 59): the first
-   * business.yaml's `values.refusedUncounted` (default 2) count no attempt, the rest do. Absent for every other app,
-   * and until the first such refusal, so every other session, and one saved before it, is as it was.
+   * business.yaml's `values.refusedUncounted` (default 2) count no attempt, the rest do. `waitLine`: the index of
+   * the line (business.yaml's `waiting.lines`) said last on the call while the model was slow (run/waiting.ts
+   * agentFiller), so the next is another. Absent for every other app, and until the first such refusal or line,
+   * so every other session, and one saved before it, is as it was.
    */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[]; fullAsked?: SlotId[]; refused?: Record<SlotId, number> };
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[]; fullAsked?: SlotId[]; refused?: Record<SlotId, number>; waitLine?: number };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];

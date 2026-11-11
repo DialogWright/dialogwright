@@ -197,11 +197,12 @@ export type AgentFailure = 'timeout' | 'invalid' | 'error';
 /**
  * What asking the agent model came to. `raw` is the model's text as given (an answer valid or not),
  * kept so a cassette replays it through the same parse; `costUsd` is the provider's own account of
- * the cost where it gives one.
+ * the cost where it gives one. `cutOff`: an `invalid` answer cut off at the token limit (a runaway),
+ * never asked again (AgentRunner.retry).
  */
 export type AgentResult =
   | { ok: true; answer: AgentAnswer; ms: number; usage?: RenderUsage; raw?: string; costUsd?: number }
-  | { ok: false; reason: AgentFailure; detail: string; ms: number; usage?: RenderUsage; raw?: string; costUsd?: number };
+  | { ok: false; reason: AgentFailure; detail: string; ms: number; usage?: RenderUsage; raw?: string; costUsd?: number; cutOff?: true };
 
 /** What a client sends for a turn: the request's body, never its key (agent/provider.ts). A cassette keys its answers by it. */
 export interface AgentRequest {
@@ -215,7 +216,12 @@ export interface AgentClient {
   readonly model: string;
   /** The request it sends for a turn, where it sends one (a provider's client, not a fake). */
   readonly request?: AgentRequest;
-  answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult>;
+  /**
+   * `attempt`: 1 (absent) for the turn's asking, 2 for the same request asked once more after an answer not
+   * in its shape (AgentRunner.retry). A provider sends the same request either way; a cassette replays the
+   * answer recorded for that attempt, so a recording's retry replays as it came.
+   */
+  answer(ctx: AgentContext, timeoutMs: number, attempt?: number): Promise<AgentResult>;
 }
 
 /** A field of a form in an app in agent mode (App.agent), as the agent model is told of it and the core checks it. */
@@ -311,6 +317,15 @@ export interface AgentApp {
    * turn's words only, as before 2026-11-10.
    */
   earlierWords?: boolean;
+  /**
+   * On a call, what the caller hears while the model is slow (business.yaml's `waiting`; the maintainer's
+   * decision of 2026-11-10, call 60): past `afterMs` into a turn with the answer not in, one of `lines` (their
+   * prompts, said word for word, in turn) is said at once through the channel's early lines, and the turn
+   * waits for the answer up to `upToMs` in all (or the runner's voice budget where that is longer), the same
+   * request asked again after an answer not in its shape within it (run/turn.ts agentWaitOf). Absent: none,
+   * the runner's budget alone, as before.
+   */
+  waiting?: { afterMs: number; upToMs: number; lines: readonly string[] };
 }
 
 /**
@@ -330,6 +345,13 @@ export interface AgentRunner {
    * to one that generates lines. Absent, the renderer's where the run has one, else DEFAULT_RENDER_CHECK_TIMEOUT_MS.
    */
   checkTimeoutMs?: { voice: number; chat: number };
+  /**
+   * AGENT_RETRY (the maintainer's decision, 2026-11-10, call 60): an answer not in its shape (`invalid`, not
+   * one cut off at the token limit) on a turn that needed it is asked again once, the same request, where the
+   * time left of the turn's budget is at least what the first answer took (run/turn.ts retryAgent). Absent:
+   * on. false: never, the fallback said at once, as before.
+   */
+  retry?: boolean;
 }
 
 /**

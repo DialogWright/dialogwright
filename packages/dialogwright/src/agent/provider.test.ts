@@ -112,7 +112,7 @@ describe('openRouterAgent', () => {
   it('an answer cut off at the token limit is invalid, whatever it parses to', async () => {
     const cut = (async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) }, finish_reason: 'length' }], usage: { prompt_tokens: 10, completion_tokens: 1000 } }), { status: 200 })) as unknown as typeof fetch;
     const r = await openRouterAgent(openRouter(), cut).answer(ctx, 5000);
-    expect(r).toMatchObject({ ok: false, reason: 'invalid', usage: { outputTokens: 1000 } });
+    expect(r).toMatchObject({ ok: false, reason: 'invalid', usage: { outputTokens: 1000 }, cutOff: true });
     expect(!r.ok && r.detail).toContain('cut off');
   });
 

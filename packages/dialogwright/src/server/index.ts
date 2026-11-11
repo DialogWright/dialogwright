@@ -497,7 +497,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // The drift judge's budget on an agent reply, RENDER_CHECK_TIMEOUT_MS, as on a generated line.
     const checkTimeoutMs = forApp(a.id, () => renderSettings(a.env).checkTimeoutMs);
     if (overrides.agent) {
-      agents.set(a.id, { ...overrides.agent, timeoutMs: overrides.agent.timeoutMs ?? settings.timeoutMs, checkTimeoutMs: overrides.agent.checkTimeoutMs ?? checkTimeoutMs });
+      agents.set(a.id, { ...overrides.agent, timeoutMs: overrides.agent.timeoutMs ?? settings.timeoutMs, checkTimeoutMs: overrides.agent.checkTimeoutMs ?? checkTimeoutMs, retry: overrides.agent.retry ?? settings.retry });
       continue;
     }
     const model = a.app.agent.model;
@@ -506,8 +506,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding (pnpm diagnose fails)`);
       continue;
     }
-    agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs, checkTimeoutMs, price: defaultRenderPrice(model.model) });
-    log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its judge ${checkTimeoutMs.voice} and ${checkTimeoutMs.chat} ms`);
+    agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs, checkTimeoutMs, price: defaultRenderPrice(model.model), retry: settings.retry });
+    log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its judge ${checkTimeoutMs.voice} and ${checkTimeoutMs.chat} ms, ${settings.retry ? 'an answer not in its shape asked again once where time allows' : 'an answer not in its shape not asked again (AGENT_RETRY=off)'}`);
   }
   const agentOf = (id: string): AgentRunner | null => agents.get(appRun(id).id) ?? null;
 

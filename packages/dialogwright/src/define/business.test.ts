@@ -253,6 +253,19 @@ describe('business.yaml', () => {
     expect(problemsOf(dir)).toMatchObject([{ path: 'handoff', message: expect.stringContaining('asks a question'), fix: expect.stringContaining('callback form asks for the number') }]);
   });
 
+  it('waiting (call 60): statements in fixed words, afterMs under upToMs, upToMs within the agent budget\'s range; built as one prompt each', () => {
+    const add = (block: string) => copy({ 'business.yaml': (t) => `${t}\nwaiting:\n${block}` });
+    const ok = add('  afterMs: 1200\n  upToMs: 4000\n  lines: ["One sec.", "Okay, one moment."]\n');
+    expect(problemsOf(ok)).toEqual([]);
+    const loaded = loadAppFolder(ok).config!;
+    expect(loaded.prompts[loaded.defaultLocale]!.agent_wait_2).toMatchObject({ text: 'Okay, one moment.' });
+    expect(problemsOf(add('  afterMs: 4000\n  upToMs: 4000\n  lines: ["One sec."]\n'))).toMatchObject([{ path: 'waiting.afterMs', message: expect.stringContaining('not less than upToMs') }]);
+    expect(problemsOf(add('  afterMs: 1200\n  upToMs: 20000\n  lines: ["One sec."]\n'))).toMatchObject([{ path: 'waiting.upToMs', message: expect.stringContaining('at most 15000') }]);
+    expect(problemsOf(add('  afterMs: 1200\n  upToMs: 4000\n  lines: []\n'))).toMatchObject([{ path: 'waiting.lines' }]);
+    expect(problemsOf(add('  afterMs: 1200\n  upToMs: 4000\n  lines: ["Still there?"]\n'))).toMatchObject([{ path: 'waiting.lines[0]', message: expect.stringContaining('asks a question') }]);
+    expect(problemsOf(add('  afterMs: 1200\n  upToMs: 4000\n  lines: ["One sec, {name}."]\n'))).toMatchObject([{ path: 'waiting.lines[0]', message: expect.stringContaining('{name}') }]);
+  });
+
   it('every fixed line names only what it is given: the business\'s lines nothing, an engine line its own', () => {
     const dir = copy({
       'business.yaml': (t) => `${replacing('closing: Thanks for calling Example Library.', 'closing: Thanks for calling, {patronName}.')(replacing('What day would you like the room?', 'What day would you like the room, {account}?')(t))}greeting: Hello from {name}.\nlines:\n  ack_intent: Glad to {intentLabel}.\n  anything_else: Anything else, {first}?\n`,

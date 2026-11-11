@@ -252,6 +252,13 @@ callback:
 handoff: Someone from the shop will call you back as soon as they can.
 closing: Thanks for calling Example Wheel Works.
 
+# On a call, while the agent model is slow (call 60): 1.2 s into a turn with its answer not in, one of these is
+# said at once, in turn, and the turn waits for the answer up to 4 s in all; past that, the question it was on.
+waiting:
+  afterMs: 1200
+  upToMs: 4000
+  lines: ["One sec.", "Okay, one moment.", "Let me see."]
+
 lines:
   booking_for_accounts: Bookings are for our dealership accounts, but we can take a request instead.
   identity_not_recognized: That's for our dealership accounts, recognized by the number they call from.

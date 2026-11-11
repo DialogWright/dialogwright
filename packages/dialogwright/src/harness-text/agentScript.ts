@@ -162,8 +162,8 @@ export function harnessAgent(kind: string, app: App, recordedDir: string, env: R
 }
 
 /**
- * A live agent model asked once per request in a run, as a regression's cassette answers (AgentCassetteOptions
- * .oneAnswer): a request asked again (an adversarial variant of a call, asking what its clean call asked)
+ * A live agent model asked once per request in a run (and once more for a retry after an answer not in its
+ * shape, AgentRunner.retry), as a regression's cassette answers (AgentCassetteOptions.oneAnswer): a request asked again (an adversarial variant of a call, asking what its clean call asked)
  * hears the answer the first asking got, so a variant differs from its clean call by what was changed in
  * it, never by the model sampled twice.
  */
@@ -174,16 +174,17 @@ export function oneAnswerPerRequest(client: AgentClient): AgentClient {
     get model() {
       return client.model;
     },
-    answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult> {
+    answer(ctx: AgentContext, timeoutMs: number, attempt = 1): Promise<AgentResult> {
       let key: string;
       try {
-        key = agentKey(ctx, client.request);
+        // The same request asked once more after an answer not in its shape (AgentRunner.retry) is asked again.
+        key = `${agentKey(ctx, client.request)}#${attempt}`;
       } catch {
-        return client.answer(ctx, timeoutMs);
+        return client.answer(ctx, timeoutMs, attempt);
       }
       const known = answered.get(key);
       if (known !== undefined) return known;
-      const asked = client.answer(ctx, timeoutMs);
+      const asked = client.answer(ctx, timeoutMs, attempt);
       answered.set(key, asked);
       return asked;
     },

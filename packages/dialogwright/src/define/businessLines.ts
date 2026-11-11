@@ -51,6 +51,11 @@ export const AGENT_CLOSING_LINES: readonly string[] = ['goodbye', 'goodbye_chat'
 /** Every engine line business.yaml's `lines` may give in the business's words. */
 export const AGENT_LINE_IDS: readonly string[] = [...Object.keys(AGENT_DEFAULT_LINES), ...AGENT_HANDOFF_LINES, ...AGENT_CLOSING_LINES, 'booking_for_accounts', 'identity_not_recognized'];
 
+/** The prompt of business.yaml's `waiting.lines[i]`, a line said while the agent model is slow on a call: agent_wait_1, agent_wait_2, ... */
+export function agentWaitPromptOf(i: number): string {
+  return `agent_wait_${i + 1}`;
+}
+
 /** The line a digits field that offers the number the caller is calling from (`offer: callerNumber`) offers it with: its offer_<slot>. */
 export const AGENT_OFFER_LINE = "Is the number you're calling from, ending in {last4}, the best one to reach you?";
 

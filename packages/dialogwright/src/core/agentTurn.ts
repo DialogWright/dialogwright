@@ -110,7 +110,10 @@ import type { RenderLine } from '../render/types';
  *    is said (lineDue; the agent-mode design, call 43 and its amendment).
  *    At a read-back it is an aside, under the same bound as any other.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
- *    says why (`fallback`): the question the line was waiting on (Session.promptedFor as the turn began; a
+ *    says why (`fallback`). An answer not in its shape (not one cut off at the token limit) is first asked
+ *    again once, the same request, where the turn's budget leaves time for it (run/turn.ts retryAgent,
+ *    AGENT_RETRY, call 60), and the turn resolved again with the second answer, used as any; the trace's
+ *    `retried` says so. The fallback is the question the line was waiting on (Session.promptedFor as the turn began; a
  *    reply's `asks` taken is it), where that is a field of the form open still empty, asked by its plain
  *    question and not a choice of yes and no; else the form's next field (calls 57 to 59); at a read-back the turn is decided the scripted way, from the reading asked beside
  *    the agent (run/turn.ts scriptedReading). The second such turn in a row hands off: the handoff line, then the person form,
@@ -219,6 +222,20 @@ export interface AgentTurnRecord {
    * record is then of the second answer where it came, and `ms` is both answers' time.
    */
   again?: { tools: string[]; ms: number; fallback?: AgentFailure; detail?: string };
+  /**
+   * The agent model asked once more, the same request, after an answer not in its shape on a turn that needed
+   * it (AgentRunner.retry, AGENT_RETRY; call 60), set by the runner: why the first answer was not in its shape
+   * (`invalid`, its failure's detail), how long the second took, ms, and why it failed too where it did. Where
+   * the second came, this record is of it (the turn resolved again with it, as with any answer); where it
+   * failed, of the first (its fallback said). `ms` is then both answers' time.
+   */
+  retried?: { invalid: string; ms: number; fallback?: AgentFailure; detail?: string };
+  /**
+   * The line said while the model was slow on a call (business.yaml's `waiting`; run/waiting.ts agentFiller),
+   * set by the runner: its prompt, when it came due (ms from the model first asked), and whether the channel
+   * said it (false where it has no early lines). Absent where no answer was that late, or the app has none.
+   */
+  filler?: { promptId: string; atMs: number; said: boolean };
   /**
    * At a form's read-back, the scripted reading: the decision model asked the form's own questions in the
    * turn's own request, beside the agent's ask (run/turn.ts readBackReading; the agent-mode design's calls 38
