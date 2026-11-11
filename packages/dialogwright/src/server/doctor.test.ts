@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { agentChecks, formatResult, languageChecks, main, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { agentChecks, formatResult, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { BUSINESS_FIXTURE_DIR } from '../define/__fixtures__/business/app';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
@@ -965,5 +965,24 @@ describe('agent mode (pnpm diagnose)', () => {
 
   it('says nothing for a scripted app', () => {
     expect(agentChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {})).toEqual([]);
+  });
+});
+
+describe('Telnyx noise suppression in pnpm diagnose', () => {
+  const krisp = { engine: 'Krisp' as const, settings: [['suppressionLevel', '75']] as const };
+  it('says nothing unset', () => {
+    expect(noiseSuppressionChecks({ voiceProviders: ['telnyx'], telnyxNoiseSuppression: null })).toEqual([]);
+  });
+  it('names what each Telnyx call starts with', () => {
+    expect(noiseSuppressionChecks({ voiceProviders: ['twilio', 'telnyx'], telnyxNoiseSuppression: krisp })).toEqual([
+      { id: 'carrier', status: 'ok', message: 'Telnyx calls start with noise suppression: Krisp (suppressionLevel 75) on the caller\'s audio (billed by Telnyx)' },
+    ]);
+  });
+  it('warns that it is a Telnyx setting on a server with no Telnyx line', () => {
+    expect(noiseSuppressionChecks({ voiceProviders: ['twilio'], telnyxNoiseSuppression: krisp })).toEqual([{
+      id: 'carrier', status: 'warn',
+      message: 'TELNYX_NOISE_SUPPRESSION is Krisp, a Telnyx setting, but VOICE_PROVIDERS lists no Telnyx line: no call is sent it',
+      fix: 'list telnyx in VOICE_PROVIDERS, or unset TELNYX_NOISE_SUPPRESSION (Twilio\'s start document has no such setting)',
+    }]);
   });
 });

@@ -845,7 +845,11 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they
         // come back with the setup; on a host, the app's id too, so the setup starts the call in the same app;
         // and what the webhook said of the caller (a withheld number, the number's attestation), as data.
-        const options = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to, s.numbers) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId), ...callerEcho(params) }, s);
+        const connect = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to, s.numbers) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId), ...callerEcho(params) }, s);
+        // Telnyx's noise suppression (TELNYX_NOISE_SUPPRESSION) is started on the call here, once: a reconnect's
+        // document is on the same call, and does not start it again.
+        const suppression = provider.id === 'telnyx' && deps.config.telnyxNoiseSuppression ? { noiseSuppression: deps.config.telnyxNoiseSuppression } : {};
+        const options = { ...connect, ...suppression };
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }

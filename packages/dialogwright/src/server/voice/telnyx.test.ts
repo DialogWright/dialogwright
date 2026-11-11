@@ -202,6 +202,21 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.startDocument({ ...START, pauseS: 0 })).toBe(telnyxProvider.startDocument(START));
   });
 
+  it('starts noise suppression on the caller\'s audio ahead of the relay when given it (TELNYX_NOISE_SUPPRESSION), and not otherwise', () => {
+    const krisp = telnyxProvider.startDocument({ ...START, noiseSuppression: { engine: 'Krisp', settings: [['model', 'krisp-viva-tel-v2.kef'], ['suppressionLevel', '75']] } });
+    expect(krisp).toBe(telnyxProvider.startDocument(START).replace(
+      '<Response><Connect',
+      '<Response><Start><Suppression direction="outbound" noiseSuppressionEngine="Krisp" model="krisp-viva-tel-v2.kef" suppressionLevel="75"/></Start><Connect',
+    ));
+    expect(telnyxProvider.startDocument({ ...START, noiseSuppression: { engine: 'AiCoustics', settings: [] } }))
+      .toContain('<Response><Start><Suppression direction="outbound" noiseSuppressionEngine="AiCoustics"/></Start><Connect');
+    // Before a planned restart's pause too: started on the call before anything else.
+    expect(telnyxProvider.startDocument({ ...START, pauseS: 5, noiseSuppression: { engine: 'Denoiser', settings: [] } }))
+      .toContain('<Response><Start><Suppression direction="outbound" noiseSuppressionEngine="Denoiser"/></Start><Pause length="5"/><Connect');
+    expect(telnyxProvider.startDocument({ ...START, noiseSuppression: undefined })).toBe(telnyxProvider.startDocument(START));
+    expect(telnyxProvider.startDocument(START)).not.toContain('<Start>');
+  });
+
   it('asks for the event streams it is given', () => {
     expect(telnyxProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '', events: 'speaker-events tokens-played' })).toContain('events="speaker-events tokens-played"');
     expect(telnyxProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '' })).not.toContain('events=');

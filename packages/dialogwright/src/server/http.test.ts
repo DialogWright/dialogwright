@@ -618,6 +618,19 @@ describe('Telnyx webhooks', () => {
     expect(d.store.get('v2:abc')?.reconnects).toBe(1);
   });
 
+  it('starts Telnyx\'s noise suppression (TELNYX_NOISE_SUPPRESSION) in the document that answers the call, never again on a reconnect, and never on Twilio', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY, TELNYX_NOISE_SUPPRESSION: 'krisp', TELNYX_NOISE_SUPPRESSION_SETTINGS: 'suppressionLevel=80' });
+    const base = await listen(d);
+    const answer = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc&From=%2B15555550100');
+    expect(answer.text).toContain('<Response><Start><Suppression direction="outbound" noiseSuppressionEngine="Krisp" suppressionLevel="80"/></Start><Connect action=');
+    const twilio = await post(base, '/voice/twilio', { CallSid: 'CA1', From: '+15555550100' });
+    expect(twilio.text).not.toContain('Suppression');
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const again = await postTelnyx(base, '/cr-action/telnyx', JSON.stringify({ CallSid: 'v2:abc', CallStatus: 'active', SessionStatus: 'failed' }), { type: 'application/json' });
+    expect(again.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
+    expect(again.text).not.toContain('<Start>');
+  });
+
   it('with no call status at all, reconnects only a relay failure on a call the engine still holds live, and otherwise hangs up', () => {
     const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
     const act = (body: Record<string, string>) =>

@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { agentSettings, gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, type Env, type ServerConfig } from './config';
+import { describeNoiseSuppression } from './voice/noiseSuppression';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
@@ -289,6 +290,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
     }
     results.push(problem ?? { id: 'carrier', status: 'ok', message: said.join('; ') });
   }
+  // Telnyx's noise suppression, where it is set: what each call is started with, or that no Telnyx line will get it.
+  results.push(...noiseSuppressionChecks(config));
 
   // 5. The model.
   const p = config.jevProvider;
@@ -510,6 +513,24 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   } catch (e) {
     return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
   }
+}
+
+/**
+ * TELNYX_NOISE_SUPPRESSION, where it is set: the engine and its settings each Telnyx call is started with
+ * (billed by Telnyx, per direction), or a warning that it is a Telnyx setting and VOICE_PROVIDERS lists no
+ * Telnyx line, so no call gets it (Twilio has no such setting in its start document). Nothing when unset.
+ */
+export function noiseSuppressionChecks(config: Pick<ServerConfig, 'voiceProviders' | 'telnyxNoiseSuppression'>): CheckResult[] {
+  const n = config.telnyxNoiseSuppression;
+  if (!n) return [];
+  if (!config.voiceProviders.includes('telnyx')) {
+    return [{
+      id: 'carrier', status: 'warn',
+      message: `TELNYX_NOISE_SUPPRESSION is ${n.engine}, a Telnyx setting, but VOICE_PROVIDERS lists no Telnyx line: no call is sent it`,
+      fix: 'list telnyx in VOICE_PROVIDERS, or unset TELNYX_NOISE_SUPPRESSION (Twilio\'s start document has no such setting)',
+    }];
+  }
+  return [{ id: 'carrier', status: 'ok', message: `Telnyx calls start with noise suppression: ${describeNoiseSuppression(n)} (billed by Telnyx)` }];
 }
 
 /**

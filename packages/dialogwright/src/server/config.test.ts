@@ -477,6 +477,18 @@ describe('voice providers', () => {
     expect(describeConfig(loadConfig({ ...telnyx, TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram', TELNYX_SPEECH_MODEL: 'flux' }))).toMatch(/telnyx recognition deepgram flux(  |$)/);
   });
 
+  it('takes Telnyx\'s noise suppression from TELNYX_NOISE_SUPPRESSION: unset, none and nothing said; set, on the startup line', () => {
+    const telnyx = { ...base, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY };
+    expect(loadConfig(telnyx).telnyxNoiseSuppression).toBeNull();
+    expect(describeConfig(loadConfig(telnyx))).not.toContain('noise suppression');
+    const krisp = loadConfig({ ...telnyx, TELNYX_NOISE_SUPPRESSION: 'krisp', TELNYX_NOISE_SUPPRESSION_SETTINGS: 'suppressionLevel=75' });
+    expect(krisp.telnyxNoiseSuppression).toEqual({ engine: 'Krisp', settings: [['suppressionLevel', '75']] });
+    expect(describeConfig(krisp)).toMatch(/telnyx noise suppression Krisp \(suppressionLevel 75\) on the caller's audio(  |$)/);
+    // A Telnyx setting on a server with no Telnyx line: loaded, and said to be sent to no call.
+    expect(describeConfig(loadConfig({ ...base, TELNYX_NOISE_SUPPRESSION: 'krisp' }))).toContain('telnyx noise suppression Krisp not sent (a Telnyx setting, and VOICE_PROVIDERS lists no Telnyx line)');
+    expect(() => loadConfig({ ...telnyx, TELNYX_NOISE_SUPPRESSION: 'loud' })).toThrow(/TELNYX_NOISE_SUPPRESSION must be one of krisp, aicoustics, deepfilternet, denoiser/);
+  });
+
   it('refuses a Telnyx key that is not a base64 Ed25519 public key', () => {
     expect(() => loadConfig({ ...base, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: 'not-a-key' })).toThrow(
       "TELNYX_PUBLIC_KEY must be the account's base64 Ed25519 public key",

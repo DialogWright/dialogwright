@@ -6,6 +6,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { envVariableOf } from '../core/app/envReference';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
+import { describeNoiseSuppression, noiseSuppressionOf, type NoiseSuppression } from './voice/noiseSuppression';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
   BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
@@ -143,6 +144,13 @@ export interface ServerConfig {
    * Telnyx reports no playback and nothing is said twice.
    */
   telnyxEvents?: string | null;
+  /**
+   * TELNYX_NOISE_SUPPRESSION, optional: Telnyx's noise suppression on the caller's audio (krisp, aicoustics,
+   * deepfilternet or denoiser), with TELNYX_NOISE_SUPPRESSION_SETTINGS, the engine's TeXML attributes
+   * (voice/noiseSuppression.ts). Written at the head of the document that answers a Telnyx call. Unset
+   * (absent or null), none, and the document is as before. Billed by Telnyx; no other carrier is sent it.
+   */
+  telnyxNoiseSuppression?: NoiseSuppression | null;
   /**
    * RESAY_CUT_LINES=on|off, default on: a turn's lines the carrier reports it finished playing in less
    * than `resayMinFraction` of their estimated length, with no interrupt and no caller heard between,
@@ -767,6 +775,7 @@ export function loadConfig(env: Env): ServerConfig {
     if (!['speaker-events', 'tokens-played'].includes(t.toLowerCase())) throw new Error(`TELNYX_EVENTS must name event streams from speaker-events, tokens-played, got "${t}"`);
   }
   const telnyxEvents = telnyxEventTokens.length > 0 ? telnyxEventTokens.join(' ') : null;
+  const telnyxNoiseSuppression = noiseSuppressionOf(env);
   const chat = chatOf(env, publicHost);
   if (voiceProviders.length === 0 && chat === undefined) throw new Error('VOICE_PROVIDERS=none serves no phone line, so the server needs CHAT=on (the web chat): set CHAT=on, or name a provider in VOICE_PROVIDERS');
   const widget = widgetOf(env);
@@ -799,6 +808,7 @@ export function loadConfig(env: Env): ServerConfig {
     telnyxTranscriptionProvider,
     telnyxSpeechModel,
     telnyxEvents,
+    telnyxNoiseSuppression,
     ...resayOf(env),
     ...bargeInOf(env, voiceProviders),
     speechOverLine: speechOverLineOf(env),
@@ -1155,6 +1165,18 @@ function describeEndAfterPlayback(c: ServerConfig): string {
   return held.length === 0 ? 'end after playback auto (no carrier listed needs it)' : `end after playback auto (${held.join(', ')}), ${upTo}`;
 }
 
+/**
+ * TELNYX_NOISE_SUPPRESSION as the startup line says it: the engine and its settings on the caller's audio, or,
+ * with no Telnyx line listed, that it is Telnyx's and sent to no call.
+ */
+export function describeTelnyxNoiseSuppression(c: Pick<ServerConfig, 'voiceProviders' | 'telnyxNoiseSuppression'>): string {
+  const n = c.telnyxNoiseSuppression;
+  if (!n) return 'telnyx noise suppression off';
+  return c.voiceProviders.includes('telnyx')
+    ? `telnyx noise suppression ${describeNoiseSuppression(n)}`
+    : `telnyx noise suppression ${n.engine} not sent (a Telnyx setting, and VOICE_PROVIDERS lists no Telnyx line)`;
+}
+
 /** Bytes as gigabytes, as the startup line and diagnose say them. */
 export const gb = (bytes: number): string => `${Number((bytes / 1024 ** 3).toFixed(2))} GB`;
 
@@ -1210,6 +1232,7 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}${c.telnyxSpeechModel ? ` ${c.telnyxSpeechModel}` : ''}`] : []),
     ...(c.voiceProviders.includes('telnyx') && c.telnyxEvents ? [`telnyx events ${c.telnyxEvents}`] : []),
+    ...(c.telnyxNoiseSuppression ? [describeTelnyxNoiseSuppression(c)] : []),
     ...(c.voiceProviders.some(readsPlaybackEvents) ? [describeResay(c), describeSpurious(c), describeIncompleteWait(c)] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
     ...(c.widget ? [`widget on (${c.widget.file})`] : []),

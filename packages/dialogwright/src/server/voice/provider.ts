@@ -1,3 +1,4 @@
+import type { NoiseSuppression } from './noiseSuppression';
 import type { SetupFrame } from '../../channel/relay/frames';
 import type { BargeIn } from '../../channel/voiceProviders';
 /**
@@ -110,6 +111,13 @@ export interface StartDocumentOptions {
    * that cannot pause leaves it out, and the document connects at once.
    */
   readonly pauseS?: number;
+  /**
+   * Telnyx's noise suppression on the caller's audio (TELNYX_NOISE_SUPPRESSION), a `<Start><Suppression>`
+   * ahead of `<Connect>` (voice/noiseSuppression.ts); absent, none, as before. Only the document that answers a
+   * call carries it, never a reconnect's: it is started on the call, which a reconnect is still. Another
+   * carrier ignores it.
+   */
+  readonly noiseSuppression?: NoiseSuppression;
 }
 
 /** One language as a start document names it: what the voice speaks, what is heard, and the voice. */

@@ -2,6 +2,7 @@ import type { CallbackParams, PlaybackEvent, StartDocumentOptions, VoiceProvider
 import { dialVerb } from './dial';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
+import { suppressionVerb } from './noiseSuppression';
 import { isWithheldWord } from '../../core/callerNumber';
 
 /**
@@ -126,6 +127,11 @@ import { isWithheldWord } from '../../core/callerNumber';
  *    not on Telnyx's text frame page (token and last only), and how it meets the relay element's
  *    `interruptible` is not documented. With BARGE_IN=none or dtmf the adapter sends it `false`
  *    (channel/relay/frames.ts bargeInFrame) so a line never allows what the element forbids.
+ * 8. Noise suppression (TELNYX_NOISE_SUPPRESSION, voice/noiseSuppression.ts): the documented TeXML
+ *    `<Start><Suppression direction noiseSuppressionEngine .../></Start>`, written ahead of `<Connect>` in the
+ *    document that answers the call; not yet seen on a live call. A reconnect's document does not start it
+ *    again, on the understanding that it runs on the call until the call ends or a `<Stop><Suppression/>`
+ *    (Telnyx documents both, and not what a second start on the same call does).
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
 
@@ -258,7 +264,8 @@ function startDocument(o: StartDocumentOptions): string {
     else if (o.language.voice !== undefined) attrs.push(attr('voice', o.language.voice));
   } else if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
   const relay = relayElement(attrs, placed.children);
-  return xmlResponse(`${pauseVerb(o.pauseS)}<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
+  // Noise suppression (TELNYX_NOISE_SUPPRESSION) first: started on the call before the relay hears the caller.
+  return xmlResponse(`${suppressionVerb(o.noiseSuppression, attr)}${pauseVerb(o.pauseS)}<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
 }
 
 /** An event's on or off, as Telnyx writes it (`on`, `off`); null for anything else. */
