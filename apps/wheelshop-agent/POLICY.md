@@ -6,18 +6,21 @@
 
 - A model leads the conversation, but it acts only through the actions below, and every action goes through the gate. Each decision, allowed or refused, is written to the audit.
 - Anything not listed under Actions is refused.
-- Every action is open to a caller nobody has proven (level 0): this app has no identity. The number a caller calls from may recognise a dealership account; it is never proof of who is speaking.
+- Every action is open to a caller nobody has proven (level 0): this app has no identity. The number a caller calls from may recognise a known account; it is never proof of who is speaking.
 - The rules of an action run in the order shown, and the first one that fails decides.
-- Every change is read back in the business's fixed words with exactly the values it will run with, and runs only once the caller has said yes to that read-back (the gate's `confirmed` rule, over all of the change's params, runs last). A lookup is never confirmed. The follow-on actions of a change run after that yes with no read-back of their own, each through the gate with the same values.
+- Every change is read back in the business's fixed words with exactly the values it will run with. The caller's answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate's `confirmed` rule, over all of the change's params, runs last). A lookup is never confirmed.
+- One confirmation at a time: a call made while a read-back waits for its answer is not run.
+- Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.
+- A follow-on action runs only after its parent ran on the caller's yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.
+- After 3 refusals of the same action on a call (`limits.refusalsPerAction`), the agent model is told to offer the caller a person rather than try again.
 - `end_call` is the runtime's own action, offered to the model on every call: it says the closing line and ends the call, and changes nothing.
 
 ## What a model is sent and what is recorded
 
-- The conversation is sent to the agent model: the caller's words, its own replies and the fixed lines said. Identity factors are never sent (this app has none).
-- The results of the actions the model calls are sent to it, each held to its action's check in a closed form.
-- A value an action's `audit` hides (`mask`, `length` or `secret`) is masked, once understood, in what the model is sent.
-- The caller's number is given to the model by its last four digits, so it can say them; the whole number goes only to the actions' code.
-- The audit, the trace and the console record each action's params as its `audit` says, by default hidden (`•`): see each action's table below.
+- The agent model is sent, in full: the caller's words, its own replies, the fixed lines said, the arguments of its own action calls, each read-back as it was said (the caller's own values among it), and what each action returned, as the action returned it. Nothing checks an action's result: there is no closed-form check on a converse action's reply, so an action returns only what the model may see. This app has no identity factors to withhold.
+- The caller's number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions' code (a phone param the model writes as `caller` is resolved by the runtime).
+- The reason a call was refused is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form.
+- The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below), and an action's result as the model is sent it, with the values of hidden params replaced and cut to 600 characters.
 
 ## Actions
 
@@ -79,14 +82,12 @@ After the caller's yes it is followed by `send_photo_request` and `notify_shop_r
 
 Follows send_request on the customer's yes, only with their yes to texts too (the runtime runs it; the model is never offered it).
 
-Never offered to the model: it runs after the caller's yes to `send_request`, with the values read back there.
-
-Read back before it runs, in these words: "We'll text {callbackNumber} asking for a photo of the damage. Is that right?"
+Never offered to the model, and it has no read-back of its own: it runs after the caller's yes to `send_request`, whose confirmation stands in for it, with the values read back there.
 
 Rules, in the order they run:
 
 - textOk must be one of yes (refused as no-consent)
-- the caller's yes to a read-back of callbackNumber, textOk
+- the caller's yes to the read-back of `send_request` (its values for callbackNumber, textOk are the ones read back there)
 
 | Param | Type | Recorded |
 | --- | --- | --- |
@@ -97,13 +98,11 @@ Rules, in the order they run:
 
 Follows send_request on the customer's yes, texting the shop a summary (the runtime runs it; the model is never offered it).
 
-Never offered to the model: it runs after the caller's yes to `send_request`, with the values read back there.
-
-Read back before it runs, in these words: "We'll text the shop a summary of the request from {name}. Is that right?"
+Never offered to the model, and it has no read-back of its own: it runs after the caller's yes to `send_request`, whose confirmation stands in for it, with the values read back there.
 
 Rules, in the order they run:
 
-- the caller's yes to a read-back of name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk
+- the caller's yes to the read-back of `send_request` (its values for name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk are the ones read back there)
 
 | Param | Type | Recorded |
 | --- | --- | --- |
@@ -139,13 +138,11 @@ After the caller's yes it is followed by `notify_shop_booking`, each through the
 
 Follows book_dealer on the caller's yes, texting the shop a summary (the runtime runs it; the model is never offered it).
 
-Never offered to the model: it runs after the caller's yes to `book_dealer`, with the values read back there.
-
-Read back before it runs, in these words: "We'll text the shop a summary of the booking for {account}. Is that right?"
+Never offered to the model, and it has no read-back of its own: it runs after the caller's yes to `book_dealer`, whose confirmation stands in for it, with the values read back there.
 
 Rules, in the order they run:
 
-- the caller's yes to a read-back of account, cars, vehicles, slot
+- the caller's yes to the read-back of `book_dealer` (its values for account, cars, vehicles, slot are the ones read back there)
 
 | Param | Type | Recorded |
 | --- | --- | --- |

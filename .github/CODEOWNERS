@@ -9,6 +9,8 @@
 # The files that say it
 policy.yaml     @stilesja
 identity.yaml   @stilesja
+# A converse app's gate is its agent.yaml's actions (their rules and read-backs), so the whole file is reviewed
+agent.yaml      @stilesja
 
 # What a reviewer reads: the policy card, and the matrix that shows a change as its verdicts
 POLICY.md       @stilesja

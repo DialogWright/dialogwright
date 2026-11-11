@@ -29,6 +29,25 @@ function followOnsOf(b: AgentBusiness): Set<string> {
   return new Set(Object.values(b.actions).flatMap((a) => a.then ?? []));
 }
 
+/** A bound as it is written: today (plus days), a date, a number, or a lookup's value. */
+function boundText(b: { kind: string; days?: number; date?: string; value?: string; ref?: { lookup: string; param: string; field?: string } }): string {
+  switch (b.kind) {
+    case 'today': return b.days === undefined ? 'today' : `today ${b.days > 0 ? '+' : '-'} ${Math.abs(b.days)} days`;
+    case 'date': return b.date ?? '';
+    case 'number': return b.value ?? '';
+    default: return `${b.ref!.lookup}(${b.ref!.param})${b.ref!.field === undefined ? '' : `.${b.ref!.field}`}`;
+  }
+}
+
+/** A range rule's bounds, in words: "not before 2026-12-01, not after today + 30 days". */
+function boundsText(rule: Rule): string {
+  if (rule.rule === 'dateInRange') {
+    return [rule.notBefore ? `not before ${boundText(rule.notBefore)}` : '', rule.notAfter ? `not after ${boundText(rule.notAfter)}` : '', rule.within ? `within ${boundText({ kind: 'lookup', ref: rule.within })}` : ''].filter((x) => x !== '').join(', ');
+  }
+  if (rule.rule === 'limit') return [rule.min ? `at least ${boundText(rule.min)}` : '', rule.max ? `at most ${boundText(rule.max)}` : ''].filter((x) => x !== '').join(', ');
+  return '';
+}
+
 /** A rule as agent.yaml wrote it, in words. */
 function ruleWords(rule: Rule): string {
   switch (rule.rule) {
@@ -36,8 +55,8 @@ function ruleWords(rule: Rule): string {
     case 'noneOf': return `${rule.field} must not be ${rule.values.join(', ')}${rule.reason === undefined ? '' : ` (refused as ${rule.reason})`}`;
     case 'fields': return `only ${rule.fields.join(', ')} may be sent`;
     case 'confirmed': return `the caller's yes to a read-back of ${rule.fields.join(', ') || 'no values'}`;
-    case 'dateInRange': return `${rule.field} must be a day within the range the rule names`;
-    case 'limit': return `${rule.field} must be within the limit the rule names`;
+    case 'dateInRange': return `${rule.field} must be a day ${boundsText(rule) || 'in range'}`;
+    case 'limit': return `${rule.field} must be a number ${boundsText(rule) || 'within its limit'}`;
     case 'callerNumber': return `${rule.field} must be the number calling${rule.else === 'confirmed' ? ', or one the caller confirmed' : ''}${rule.withheld === 'refuse' ? ' (refused where the caller withheld it)' : ''}`;
     case 'scope': return rule.subject === null ? 'scope (no subject)' : `${rule.subject.param} must be a subject the caller may act for`;
     default: return rule.rule;
@@ -51,8 +70,8 @@ function ruleHeader(rule: Rule): string {
     case 'fields': return `fields(${rule.fields.join(', ')})`;
     case 'oneOf': return `oneOf(${rule.field}: ${rule.values.join(', ')})`;
     case 'noneOf': return `noneOf(${rule.field}: ${rule.values.join(', ')})`;
-    case 'dateInRange': return `dateInRange(${rule.field})`;
-    case 'limit': return `limit(${rule.field})`;
+    case 'dateInRange': return `dateInRange(${rule.field}: ${boundsText(rule)})`;
+    case 'limit': return `limit(${rule.field}: ${boundsText(rule)})`;
     case 'callerNumber': return `callerNumber(${rule.field}${rule.else === 'confirmed' ? ', else confirmed' : ''}${rule.withheld === 'refuse' ? ', withheld refused' : ''})`;
     case 'scope': return rule.subject === null ? 'scope(no subject)' : `scope(${rule.subject.param})`;
     case 'custom': return `custom ${rule.id}`;
@@ -72,8 +91,15 @@ function sampleValue(spec: ActionSpec['params'][string]): string {
   }
 }
 
-/** The values a listed param is tried with: the first listed, and another value. */
+/** The value a listed param is tried with besides the ones listed. */
 const OTHER = 'another value';
+
+/** A day (YYYY-MM-DD) some days from another. */
+function daysFrom(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // ---------------------------------------------------------------------------------------------
 // The matrix
@@ -93,18 +119,32 @@ export function conversePolicyMatrixText(app: ConverseApp): string {
     '# either value.',
     '# what a call carries',
     '#   confirmed   none; match (the caller said yes to a read-back of exactly these values); mismatch',
-    '#   a param     for a param a oneOf or noneOf rule lists: the first value listed, and another value',
+    '#   a param     for a param a rule lists or bounds: every value listed, the value at each bound and one beyond it (a bound a lookup gives is not tried), and another value',
     '# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>',
   ];
   for (const [name, spec] of Object.entries(app.business.actions)) {
     const action: PolicyAction = policy.source.actions[name]!;
     out.push('', `${name} · level ${action.level} · ${action.rules.map(ruleHeader).join(', ') || 'no rules'}`);
     const base = Object.fromEntries(Object.entries(spec.params).map(([p, s]) => [p, sampleValue(s)]));
-    // The params a listed rule names: each tried with a listed value and another.
-    const listed = new Map<string, string[]>();
-    for (const r of action.rules) if (r.rule === 'oneOf' || r.rule === 'noneOf') listed.set(r.field, [...new Set([...(listed.get(r.field) ?? []), r.values[0]!])]);
+    // The params a rule bounds or lists: each tried with every value listed, at and beyond each bound, and another value.
+    const tried = new Map<string, string[]>();
+    const add = (field: string, ...values: string[]): void => void tried.set(field, [...new Set([...(tried.get(field) ?? []), ...values])]);
+    for (const r of action.rules) {
+      if (r.rule === 'oneOf' || r.rule === 'noneOf') add(r.field, ...r.values, OTHER);
+      else if (r.rule === 'dateInRange') {
+        for (const [bound, step] of [[r.notBefore, -1], [r.notAfter, 1]] as const) {
+          const day = bound?.kind === 'today' ? daysFrom(MATRIX_TODAY, bound.days ?? 0) : bound?.kind === 'date' ? bound.date : undefined;
+          if (day !== undefined) add(r.field, day, daysFrom(day, step));
+        }
+      } else if (r.rule === 'limit') {
+        for (const [bound, step] of [[r.min, -1], [r.max, 1]] as const) {
+          const n = bound?.kind === 'number' ? Number(bound.value) : NaN;
+          if (Number.isFinite(n)) add(r.field, String(n), String(n + step));
+        }
+      }
+    }
     let variants: Record<string, string>[] = [{}];
-    for (const [field, values] of listed) variants = variants.flatMap((v) => [...values, OTHER].map((value) => ({ ...v, [field]: value })));
+    for (const [field, values] of tried) variants = variants.flatMap((v) => values.map((value) => ({ ...v, [field]: value })));
     const confirmations = spec.kind === 'change' ? (['none', 'match', 'mismatch'] as const) : (['none'] as const);
     const lines: { cond: string; verdict: string }[] = [];
     for (const variant of variants) {
@@ -156,6 +196,11 @@ export function conversePolicyCardText(app: ConverseApp): string {
   const b = app.business;
   const followOns = followOnsOf(b);
   const parentsOf = (name: string): string[] => Object.entries(b.actions).filter(([, a]) => a.then?.includes(name)).map(([n]) => n);
+  const levels = [...new Set(Object.values(policyOf(b).source.actions).map((a) => a.level))];
+  const accounts = (b.sources.accounts ?? []).length > 0;
+  const identityLine = levels.length === 1 && levels[0] === 0
+    ? `Every action is open to a caller nobody has proven (level 0): this app has no identity.${accounts ? ' The number a caller calls from may recognise a known account; it is never proof of who is speaking.' : ''}`
+    : `The actions are at levels ${levels.join(', ')}; the runtime asks for every call as a caller nobody has proven (level 0).`;
   const lines: string[] = [
     `# Policy card: ${b.business.name}`,
     '',
@@ -165,18 +210,21 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '',
     '- A model leads the conversation, but it acts only through the actions below, and every action goes through the gate. Each decision, allowed or refused, is written to the audit.',
     '- Anything not listed under Actions is refused.',
-    '- Every action is open to a caller nobody has proven (level 0): this app has no identity. The number a caller calls from may recognise a dealership account; it is never proof of who is speaking.',
+    `- ${identityLine}`,
     '- The rules of an action run in the order shown, and the first one that fails decides.',
-    '- Every change is read back in the business\'s fixed words with exactly the values it will run with, and runs only once the caller has said yes to that read-back (the gate\'s `confirmed` rule, over all of the change\'s params, runs last). A lookup is never confirmed. The follow-on actions of a change run after that yes with no read-back of their own, each through the gate with the same values.',
+    '- Every change is read back in the business\'s fixed words with exactly the values it will run with. The caller\'s answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate\'s `confirmed` rule, over all of the change\'s params, runs last). A lookup is never confirmed.',
+    '- One confirmation at a time: a call made while a read-back waits for its answer is not run.',
+    '- Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.',
+    '- A follow-on action runs only after its parent ran on the caller\'s yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.',
+    `- After ${b.limits.refusalsPerAction} refusals of the same action on a call (\`limits.refusalsPerAction\`), the agent model is told to offer the caller a person rather than try again.`,
     `- ${code(END_CALL)} is the runtime's own action, offered to the model on every call: it says the closing line and ends the call, and changes nothing.`,
     '',
     '## What a model is sent and what is recorded',
     '',
-    '- The conversation is sent to the agent model: the caller\'s words, its own replies and the fixed lines said. Identity factors are never sent (this app has none).',
-    '- The results of the actions the model calls are sent to it, each held to its action\'s check in a closed form.',
-    '- A value an action\'s `audit` hides (`mask`, `length` or `secret`) is masked, once understood, in what the model is sent.',
-    '- The caller\'s number is given to the model by its last four digits, so it can say them; the whole number goes only to the actions\' code.',
-    '- The audit, the trace and the console record each action\'s params as its `audit` says, by default hidden (`•`): see each action\'s table below.',
+    '- The agent model is sent, in full: the caller\'s words, its own replies, the fixed lines said, the arguments of its own action calls, each read-back as it was said (the caller\'s own values among it), and what each action returned, as the action returned it. Nothing checks an action\'s result: there is no closed-form check on a converse action\'s reply, so an action returns only what the model may see. This app has no identity factors to withhold.',
+    '- The caller\'s number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions\' code (a phone param the model writes as `caller` is resolved by the runtime).',
+    '- The reason a call was refused is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form.',
+    '- The trace and the audit record each action\'s params as its `audit` says, hidden (`•`) where it says nothing (see each action\'s table below), and an action\'s result as the model is sent it, with the values of hidden params replaced and cut to 600 characters.',
     '',
     '## Actions',
     '',
@@ -190,12 +238,12 @@ export function conversePolicyCardText(app: ConverseApp): string {
   }
   for (const [name, spec] of Object.entries(b.actions)) {
     lines.push('', `### ${code(name)}: ${spec.kind === 'change' ? 'a change' : 'a lookup'}`, '', cell(spec.about.trim().replace(/\s+/g, ' ')), '');
-    if (followOns.has(name)) lines.push(`Never offered to the model: it runs after the caller's yes to ${andList(parentsOf(name).map(code))}, with the values read back there.`, '');
-    if (spec.kind === 'change') lines.push(`Read back before it runs, in these words: "${spec.readBack?.en ?? ''}"`, '');
+    if (followOns.has(name)) lines.push(`Never offered to the model, and it has no read-back of its own: it runs after the caller's yes to ${andList(parentsOf(name).map(code))}, whose confirmation stands in for it, with the values read back there.`, '');
+    if (spec.kind === 'change' && !followOns.has(name)) lines.push(`Read back before it runs, in these words: "${spec.readBack?.en ?? ''}"`, '');
     const written = writtenRules(spec);
     lines.push('Rules, in the order they run:', '');
     written.forEach((r) => lines.push(`- ${ruleWords(r)}`));
-    if (spec.kind === 'change') lines.push(`- ${ruleWords({ rule: 'confirmed', fields: confirmedFields(spec) })}`);
+    if (spec.kind === 'change') lines.push(followOns.has(name) ? `- the caller's yes to the read-back of ${andList(parentsOf(name).map(code))} (its values for ${confirmedFields(spec).join(', ') || 'no values'} are the ones read back there)` : `- ${ruleWords({ rule: 'confirmed', fields: confirmedFields(spec) })}`);
     if (written.length === 0 && spec.kind === 'lookup') lines.push('- none: a lookup reads and returns a result; it is open to every caller');
     if (spec.then !== undefined && spec.then.length > 0) lines.push('', `After the caller's yes it is followed by ${andList(spec.then.map(code))}, each through the gate.`);
     const params = Object.entries(spec.params);

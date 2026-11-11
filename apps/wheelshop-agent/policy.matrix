@@ -8,7 +8,7 @@
 # either value.
 # what a call carries
 #   confirmed   none; match (the caller said yes to a read-back of exactly these values); mismatch
-#   a param     for a param a oneOf or noneOf rule lists: the first value listed, and another value
+#   a param     for a param a rule lists or bounds: every value listed, the value at each bound and one beyond it (a bound a lookup gives is not tried), and another value
 # verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>
 
 recognise_caller · level 0 · no rules

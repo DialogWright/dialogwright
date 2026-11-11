@@ -2,7 +2,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { converseFixture } from '../testing/converse/app';
+import { readFileSync as read } from 'node:fs';
+import { agentBusinessProblems } from '../converse/business/load';
+import { CONVERSE_FIXTURE_DIR, converseFixture } from '../testing/converse/app';
 import { conversePolicyCardText, conversePolicyMatrixText, converseAppMapText } from '../testing/conversePages';
 import { workspaceCopy, type WorkspaceCopy } from './__fixtures__/workspaceCopy';
 import { main } from './cli';
@@ -53,14 +55,59 @@ describe('the pages of a converse app', () => {
     expect(text).toMatch(/\| `book` \| change \| yes \| `confirmed\(/);
     expect(text).toContain('Read back before it runs, in these words:');
     expect(text).toContain('the caller\'s yes to a read-back of');
-    expect(text).toContain('The conversation is sent to the agent model');
-    expect(text).toContain('by its last four digits');
+    expect(text).toContain('The agent model is sent, in full');
+    expect(text).toContain('Nothing checks an action\'s result');
+    expect(text).toContain('only by its last four digits');
   });
 
   it('the map: the actions and where a slot value must come from', () => {
     const text = converseAppMapText(app);
     expect(text).toContain('```mermaid');
     expect(text).toMatch(/a_availability -->\|\w+\| a_book/);
+  });
+});
+
+/** The fixture app with its agent.yaml edited (`edit` on the text), as a copy: the pages are written from the business. */
+function edited(edit: (text: string) => string): ReturnType<typeof converseFixture>['app'] {
+  const { app } = converseFixture();
+  const { value, problems } = agentBusinessProblems(edit(read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8')));
+  if (!value) throw new Error(problems.map((p) => p.message).join('\n'));
+  return { ...app, business: value };
+}
+
+describe('an edit to agent.yaml changes the pages', () => {
+  const { app } = converseFixture();
+  const rule = (r: string) => (t: string): string => t.replace('    audit: { name: length, phone: last4 }', `    rules:\n${r}\n    audit: { name: length, phone: last4 }`);
+
+  it('a rule: a list is tried value by value, a bound at and beyond it', () => {
+    const listed = edited(rule('      - oneOf: { field: name, values: [ann, bo], reason: not-listed }'));
+    const matrix = conversePolicyMatrixText(listed);
+    expect(matrix).toContain('oneOf(name: ann, bo)');
+    for (const v of ['name ann', 'name bo', 'name another value']) expect(matrix).toContain(v);
+    expect(conversePolicyCardText(listed)).toContain('name must be one of ann, bo (refused as not-listed)');
+    expect(matrix).not.toBe(conversePolicyMatrixText(app));
+    const bounded = edited(rule('      - dateInRange: { field: window, notAfter: "2026-12-31" }'));
+    const bm = conversePolicyMatrixText(bounded);
+    expect(bm).toContain('2026-12-31');
+    expect(bm).toContain('2027-01-01');
+    expect(conversePolicyCardText(bounded)).toContain('not after 2026-12-31');
+    expect(conversePolicyCardText(edited(rule('      - dateInRange: { field: window, notAfter: "2026-12-30" }')))).not.toBe(conversePolicyCardText(bounded));
+  });
+
+  it('a read-back: the card prints it', () => {
+    const card = conversePolicyCardText(edited((t) => t.replace('Is that right?', 'Does that sound right?')));
+    expect(card).toContain('Does that sound right?');
+    expect(card).not.toBe(conversePolicyCardText(app));
+  });
+
+  it('a follow-on: the card and the map show it, and print no read-back for it', () => {
+    const text = (t: string): string => t.replace('    audit: { name: length, phone: last4 }\n', '    audit: { name: length, phone: last4 }\n    then: [tell]\n') + '  tell:\n    about: Tell.\n    kind: change\n    params:\n      name: { type: text, about: n. }\n    readBack:\n      en: "NEVER-SAID {name}."\n';
+    const withThen = edited(text);
+    const card = conversePolicyCardText(withThen);
+    expect(card).toContain('no: follows `book`');
+    expect(card).not.toContain('NEVER-SAID');
+    expect(card).toContain('it has no read-back of its own');
+    expect(converseAppMapText(withThen)).toMatch(/a_book ==>\|[^|]*\| a_tell/);
   });
 });
 
