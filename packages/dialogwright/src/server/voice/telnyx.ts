@@ -58,8 +58,14 @@ import { isWithheldWord } from '../../core/callerNumber';
  *   socket stays open. So Telnyx's provider says `endDropsSpeech`, and the adapter holds the `end` until
  *   the lines before it have played (END_AFTER_PLAYBACK, server/adapter.ts): until tokensPlayed or
  *   agentSpeaking off says so, or, without TELNYX_EVENTS, for the lines' estimated length.
- * - agentSpeaking and tokensPlayed follow Telnyx's TTS pipeline, not the audio the caller hears (Telnyx
- *   support: tokensPlayed reports the text handed to TTS). With interruptible="none", a `play` frame sent
+ * - Telnyx support says tokensPlayed reports the text handed to TTS, but on a call it came at speaking pace,
+ *   as the audio ends (call 61, 2026-11-10: a 22-word line reported 7.0 s after its send, the 41-word read-back
+ *   19.8 s, against the estimate's 8.8 and 16.4 s), with agentSpeaking off about 31 ms after it. So the engine
+ *   takes the report as the line's end where it comes sooner than the estimate (speech over a line,
+ *   server/adapter.ts linesPlayed, the maintainer's decision of 2026-11-10). Two exceptions are known, each read
+ *   for what it is: a reply right after the caller spoke reported played in full far too soon, the caller having
+ *   heard nothing (the cut line below, said again: RESAY_CUT_LINES), and the stop and start of a frame sent
+ *   mid-line, next. With interruptible="none", a `play` frame sent
  *   while a text played gave agentSpeaking off and, about 230 ms later, on again, but the caller heard the
  *   text on to its end: a frame sent mid-line did not stop the line's audio. So an earlier reading, that a
  *   new frame replaces what is playing, does not hold, and the engine has no way to stop a playback on

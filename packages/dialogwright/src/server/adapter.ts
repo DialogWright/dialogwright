@@ -1168,7 +1168,7 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   end (armNoInput `fromLines`); every other wait is counted as it always was, from the last send's own
  *   estimate, which does not see lines queued behind one still playing. Where the carrier reports a line played
  *   sooner than its estimate (Telnyx's tokensPlayed naming it, or agentSpeaking off that stays off for
- *   RESAY_SETTLE_MS), that report is its end, and the lines queued behind it start there (linesPlayed; the
+ *   STOP_SETTLE_MS), that report is its end, and the lines queued behind it start there (linesPlayed; the
  *   agent-mode design, call 61, decided by the maintainer 2026-11-10: a line estimated at 9.2 s was reported
  *   played at 7.5 s, and "No. That's it." begun 1.4 s after the report was taken as over it and set aside).
  *   A stop that names no line and is followed at once by a start is not one: on a call before, agentSpeaking
@@ -1226,6 +1226,8 @@ interface LineSpan {
   held: boolean;
   /** Its end is the carrier's report that it played, sooner than its estimate (linesPlayed). */
   played?: true;
+  /** A report has come of it played, or of a line sent after it (linesPlayed): no later report names it. */
+  reported?: true;
 }
 
 /**
@@ -1289,18 +1291,29 @@ function noteLineSent(callSid: string, frame: OutboundFrame, bargeIn: BargeIn, d
   linesOut.set(callSid, spans.slice(-LINE_SPANS_KEPT));
 }
 
-/** A carrier's stop that names no line, waiting out RESAY_SETTLE_MS before it is taken as the lines' end (linesPlayed). */
+/** A carrier's stop that names no line, waiting out STOP_SETTLE_MS before it is taken as the lines' end (linesPlayed). */
 const stopsSettling = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * How long a carrier's stop that names no line (Telnyx's agentSpeaking off) must stay stopped, with no start, to be
+ * the end of the lines sent before it (linesPlayed): a frame sent mid-line gave a stop and a start 230 ms apart
+ * (server/voice/telnyx.ts), and 500 ms is twice that. It delays only when the stop is taken, never where the lines
+ * are placed to end (the stop's own time): a prompt's speech is read against them about a second after it ends.
+ */
+export const STOP_SETTLE_MS = 500;
 
 /**
  * The carrier's report of its playback, read for the lines' end (the agent-mode design, call 61, decided by the
  * maintainer 2026-11-10). A report that a line played (Telnyx's tokensPlayed, its text as sent; a turn's lines may
- * come run together as one, so a report ending with a line's text names it) ends that line, and every line sent
- * before it, there, where its estimate ran later: speech that starts after it is not over them. Lines queued
- * behind it start from it. A stop that names no line (agentSpeaking off) ends the lines sent before it once it has
- * stayed stopped for RESAY_SETTLE_MS (a carrier may stop between lines, and a frame sent mid-line gave a stop and
- * a start 230 ms apart: server/voice/telnyx.ts); a start meanwhile cancels it. Never later than the estimate: a
- * report after it changes nothing. Where no report has come, the estimate is all there is.
+ * come run together as one, so a report ending with a line's text names it) names the earliest line not yet
+ * reported whose text ends the report: the carrier plays and reports in the order sent, so a line queued behind
+ * with the same words, or words that end the playing one's ("What's your name?" behind "Thanks. What's your
+ * name?"), is not taken for it. That line, and every line before it, end there where their estimate ran later, and
+ * are reported: speech that starts after it is not over them. Lines queued behind it start from it. A stop that
+ * names no line (agentSpeaking off) ends the lines sent before it, never one sent at or after it (call 61 sent the
+ * reply in the very millisecond of the filler's stop), once it has stayed stopped for STOP_SETTLE_MS; a start
+ * meanwhile cancels it. Never later than the estimate: a report after it changes nothing. Where no report has come,
+ * the estimate is all there is.
  */
 function linesPlayed(callSid: string, ev: PlaybackEvent): void {
   if (ev.kind !== 'playback') return;
@@ -1314,25 +1327,34 @@ function linesPlayed(callSid: string, ev: PlaybackEvent): void {
   const spans = linesOut.get(callSid) ?? [];
   if (ev.text !== undefined) {
     const said = folded(ev.text);
-    let named = -1;
-    spans.forEach((l, i) => {
-      if (l.text !== null && l.text !== '' && l.sentMs <= now && said.endsWith(l.text)) named = i;
-    });
+    const named = spans.findIndex((l) => l.reported !== true && l.text !== null && l.text !== '' && said.endsWith(l.text));
     if (named >= 0) endLinesAt(callSid, named, now);
     return;
   }
   const timer = setTimeout(() => {
     stopsSettling.delete(callSid);
-    const before = (linesOut.get(callSid) ?? []).reduce((at, l, i) => (l.sentMs <= now ? i : at), -1);
+    const before = (linesOut.get(callSid) ?? []).reduce((at, l, i) => (l.sentMs < now ? i : at), -1);
     if (before >= 0) endLinesAt(callSid, before, now);
-  }, RESAY_SETTLE_MS);
+  }, STOP_SETTLE_MS);
   timer.unref?.();
   stopsSettling.set(callSid, timer);
 }
 
 /**
- * The lines up to the one at `index` played by `atMs` (linesPlayed): each that was to end later ends there
- * (`played`), and the lines queued behind the last of them start that much sooner.
+ * The lines' end as speech over a line reads it, for the adapter's own tests (server/linesPlayed.test.ts): a line
+ * sent on a call that speech cannot interrupt (BARGE_IN=none), a carrier's report, and the end of the lines sent.
+ */
+export const linesForTest = {
+  sent: (callSid: string, text: string): void => noteLineSent(callSid, textFrame(text, true), 'none', new Map()),
+  report: (callSid: string, ev: PlaybackEvent): void => linesPlayed(callSid, ev),
+  end: (callSid: string): number | null => linesEndOf(callSid),
+  played: (callSid: string): boolean[] => (linesOut.get(callSid) ?? []).map((l) => l.played === true),
+  forget: (callSid: string): void => forgetLines(callSid),
+};
+
+/**
+ * The lines up to the one at `index` played by `atMs` (linesPlayed): each reported, each that was to end later
+ * ending there (`played`), and the lines queued behind the last of them start that much sooner.
  */
 function endLinesAt(callSid: string, index: number, atMs: number): void {
   const spans = linesOut.get(callSid);
@@ -1340,7 +1362,7 @@ function endLinesAt(callSid: string, index: number, atMs: number): void {
   const was = spans[index]!.toMs;
   const sooner = Math.max(0, was - atMs);
   linesOut.set(callSid, spans.map((l, i) => {
-    if (i <= index) return l.toMs > atMs ? { ...l, fromMs: Math.min(l.fromMs, atMs), toMs: atMs, played: true as const } : l;
+    if (i <= index) return l.toMs > atMs ? { ...l, fromMs: Math.min(l.fromMs, atMs), toMs: atMs, played: true as const, reported: true as const } : { ...l, reported: true as const };
     return sooner > 0 && l.fromMs >= was ? { ...l, fromMs: l.fromMs - sooner, toMs: l.toMs - sooner } : l;
   }));
 }
