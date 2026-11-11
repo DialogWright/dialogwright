@@ -17,7 +17,7 @@ recognise_caller · level 0 · no rules
 check_availability · level 0 · no rules
   every caller  ALLOW
 
-send_request · level 0 · confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk)
+send_request · level 0 · confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)
   every caller  confirmed none|mismatch  BLOCK confirmation
                 confirmed match          ALLOW
 
@@ -26,7 +26,7 @@ send_photo_request · level 0 · oneOf(textOk: yes), confirmed(callbackNumber, t
                 textOk yes, confirmed match          ALLOW
                 textOk another value                 BLOCK no-consent
 
-notify_shop_request · level 0 · confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk)
+notify_shop_request · level 0 · confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)
   every caller  confirmed none|mismatch  BLOCK confirmation
                 confirmed match          ALLOW
 
@@ -38,7 +38,7 @@ notify_shop_booking · level 0 · confirmed(account, cars, vehicles, slot)
   every caller  confirmed none|mismatch  BLOCK confirmation
                 confirmed match          ALLOW
 
-leave_callback · level 0 · confirmed(name, callbackNumber, about)
+leave_callback · level 0 · confirmed(name, callbackNumber, about, notes)
   every caller  confirmed none|mismatch  BLOCK confirmation
                 confirmed match          ALLOW
 

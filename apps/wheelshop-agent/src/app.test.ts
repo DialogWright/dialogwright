@@ -77,6 +77,25 @@ describe('send_request', () => {
     expect(c.audit.filter((r) => r.type === 'tool_result').map((r) => String(r.detail.summary))).toContainEqual('request R101 sent for 2026-11-17 morning');
   });
 
+  it('reads a caller\'s note back, and keeps it with the request and in the shop\'s summary', async () => {
+    const provider = fakeTextProvider();
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const script: ConverseModelEvent[][] = [
+      [call('c1', 'check_availability', { day: TUESDAY }), done('tool')],
+      [call('c2', 'send_request', { ...REQUEST, textOk: 'no', notes: "can't send a photo, call instead" }), done('tool')],
+      [text('Thanks, it is in.'), done()],
+    ];
+    const c = converseTestCall(app, { model: fakeConverseModel(script), jev: yesJev, now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
+    await c.start();
+    const [readBack] = await c.say('Tuesday morning please, but I cannot send a photo');
+    expect(readBack).toContain('texts there are OK: no. A note for the shop: can\'t send a photo, call instead. Is that right?');
+    await c.say('yes');
+    expect(sys.requests).toMatchObject([{ ref: 'R101', notes: "can't send a photo, call instead" }]);
+    expect(provider.sent.map((t) => [t.to, t.body])).toEqual([
+      [SHOP_PHONE, "New request from Dana Example (5555550111): 2019 Honda Civic, curb rash, one wheel; note: can't send a photo, call instead. Drop-off: Tuesday, November 17, morning."],
+    ]);
+  });
+
   it('offers the model no follow-on: the photo text and the shop\'s summary run only after the request\'s yes', async () => {
     const model = fakeConverseModel([[text('Hello.'), done()]]);
     const { app } = wheelshop({ now: () => NOW });

@@ -29,12 +29,12 @@
 | --- | --- | --- | --- | --- |
 | `recognise_caller` | lookup | yes | none | none |
 | `check_availability` | lookup | yes | none | none |
-| `send_request` | change | yes | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk)` | `send_photo_request`, `notify_shop_request` |
+| `send_request` | change | yes | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | `send_photo_request`, `notify_shop_request` |
 | `send_photo_request` | change | no: follows `send_request` | `oneOf(textOk: yes)`, `confirmed(callbackNumber, textOk)` | none |
-| `notify_shop_request` | change | no: follows `send_request` | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk)` | none |
+| `notify_shop_request` | change | no: follows `send_request` | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | none |
 | `book_dealer` | change | yes | `confirmed(account, cars, vehicles, slot)` | `notify_shop_booking` |
 | `notify_shop_booking` | change | no: follows `book_dealer` | `confirmed(account, cars, vehicles, slot)` | none |
-| `leave_callback` | change | yes | `confirmed(name, callbackNumber, about)` | none |
+| `leave_callback` | change | yes | `confirmed(name, callbackNumber, about, notes)` | none |
 
 ### `recognise_caller`: a lookup
 
@@ -60,11 +60,11 @@ Rules, in the order they run:
 
 Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a dealership account. Ask whether we may text them at their number before calling it. Call it as soon as you have every detail: the line then reads the request back to the customer and sends it on their yes, so it is not in until this is called and confirmed.
 
-Read back before it runs, in these words: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}. Is that right?"
+Read back before it runs, in these words: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}.[ A note for the shop: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
 
 Rules, in the order they run:
 
-- the caller's yes to a read-back of name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk
+- the caller's yes to a read-back of name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes
 
 After the caller's yes it is followed by `send_photo_request` and `notify_shop_request`, each through the gate.
 
@@ -78,6 +78,7 @@ After the caller's yes it is followed by `send_photo_request` and `notify_shop_r
 | `slot` | slot from `check_availability` | as it is |
 | `callbackNumber` | phone | by its last four |
 | `textOk` | choice (yes, no) | as it is |
+| `notes` | text (one line, at most 120 characters) | as it is |
 
 ### `send_photo_request`: a change
 
@@ -103,7 +104,7 @@ Never offered to the model, and it has no read-back of its own: it runs after th
 
 Rules, in the order they run:
 
-- the caller's yes to the read-back of `send_request` (its values for name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk are the ones read back there)
+- the caller's yes to the read-back of `send_request` (its values for name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes are the ones read back there)
 
 | Param | Type | Recorded |
 | --- | --- | --- |
@@ -115,6 +116,7 @@ Rules, in the order they run:
 | `slot` | slot from `check_availability` | as it is |
 | `callbackNumber` | phone | by its last four |
 | `textOk` | choice (yes, no) | as it is |
+| `notes` | text (one line, at most 120 characters) | as it is |
 
 ### `book_dealer`: a change
 
@@ -156,14 +158,15 @@ Rules, in the order they run:
 
 Leave the shop a note to call the customer back, for someone who wants to speak with a person.
 
-Read back before it runs, in these words: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}. Is that right?"
+Read back before it runs, in these words: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}.[ A note for the shop: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
 
 Rules, in the order they run:
 
-- the caller's yes to a read-back of name, callbackNumber, about
+- the caller's yes to a read-back of name, callbackNumber, about, notes
 
 | Param | Type | Recorded |
 | --- | --- | --- |
 | `name` | text (one line, at most 120 characters) | hidden (`•`) |
 | `callbackNumber` | phone | by its last four |
 | `about` | text (one line, at most 120 characters) | as it is |
+| `notes` | text (one line, at most 120 characters) | as it is |

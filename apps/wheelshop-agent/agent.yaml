@@ -59,6 +59,32 @@ facts:
   - There is no live transfer; a caller who wants to speak with someone can leave a callback note, and someone from the shop calls back as soon as they can.
   - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
   - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
+# The questions callers ask, with the shop's answers. Each came from the simulated callers' calls, where a
+# model answered something this file did not (the judge's "gaps", 2026-11-11): the owner answers them here.
+questions: # assumption: the owner corrects these
+  - q: When will someone from the shop call me back?
+    a: Usually the same working day, or the next working day if the shop has closed by then.
+  - q: How long will I be without my car?
+    a: >-
+      Most repairs are ready the same day, by the end of the window you drop off in: about noon for the
+      morning window, about 5 for the afternoon. If a job needs longer, the shop tells you when it sends the price.
+  - q: Do I need to bring anything when I drop the car off?
+    a: Just the car and its keys; there's no paperwork.
+  - q: Does it cost anything to hold a window, or to cancel?
+    a: >-
+      No. Nothing is charged until you accept the shop's price, and you can cancel before drop-off at no cost:
+      reply to our text or get in touch with us.
+  - q: When do I need to send the photo?
+    a: >-
+      As soon as you can: the shop prices the job from it, and your window is held while it waits. Once the
+      shop texts you the price, reply within 24 hours to book it (or by 6 pm the day before drop-off, whichever
+      comes first).
+  - q: What if I can't send a photo?
+    a: That's fine; tell us, and the shop calls you instead to talk the damage through and give you a price.
+  - q: Is my car ready? What's the status of my wheel?
+    a: >-
+      We can't look up a job on this line. The shop texts you when your car is ready to collect, or calls if
+      you'd rather not have texts; if you'd like someone to call you about it, we can leave a callback note.
 persona:
   style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
 lines:
@@ -121,10 +147,11 @@ actions:
       slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
+      notes: { type: text, optional: true, about: "Anything else the caller wants the shop to know, in short (for example: can't send a photo, call instead; or best reached after 3). Leave it out when there is nothing." }
     readBack:
-      en: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}. Is that right?"
+      en: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}.[ A note for the shop: {notes}.] Is that right?"
     then: [send_photo_request, notify_shop_request]
-    audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep }
+    audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep, notes: keep }
   send_photo_request:
     about: Follows send_request on the customer's yes, only with their yes to texts too (the runtime runs it; the model is never offered it).
     kind: change
@@ -148,9 +175,10 @@ actions:
       slot: { type: slot, from: check_availability, about: The drop-off window. }
       callbackNumber: { type: phone, about: The customer's number. }
       textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to texts. }
+      notes: { type: text, optional: true, about: "The caller's note for the shop, if any." }
     readBack:
       en: "We'll text the shop a summary of the request from {name}. Is that right?"
-    audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep }
+    audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep, notes: keep }
   book_dealer:
     about: >-
       Book a dealership account's cars straight into a drop-off window, only for the account the caller's
@@ -184,6 +212,7 @@ actions:
       name: { type: text, about: "The customer's name, as they gave it." }
       callbackNumber: { type: phone, about: The best number to call them back on. }
       about: { type: text, about: "What they want to talk about, as a short lowercase phrase the read-back says after the word about (for example: the wheel they left last week)." }
+      notes: { type: text, optional: true, about: "Anything else the caller wants the shop to know, in short (for example: best after 3). Leave it out when there is nothing." }
     readBack:
-      en: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}. Is that right?"
-    audit: { name: mask, callbackNumber: last4, about: keep }
+      en: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}.[ A note for the shop: {notes}.] Is that right?"
+    audit: { name: mask, callbackNumber: last4, about: keep, notes: keep }

@@ -248,7 +248,10 @@ export function conversePolicyCardText(app: ConverseApp): string {
   for (const [name, spec] of Object.entries(b.actions)) {
     lines.push('', `### ${code(name)}: ${spec.kind === 'change' ? 'a change' : 'a lookup'}`, '', cell(spec.about.trim().replace(/\s+/g, ' ')), '');
     if (followOns.has(name)) lines.push(`Never offered to the model, and it has no read-back of its own: it runs after the caller's yes to ${andList(parentsOf(name).map(code))}, whose confirmation stands in for it, with the values read back there.`, '');
-    if (spec.kind === 'change' && !followOns.has(name)) lines.push(`Read back before it runs, in these words: "${spec.readBack?.en ?? ''}"`, '');
+    if (spec.kind === 'change' && !followOns.has(name)) {
+      const frame = spec.readBack?.en ?? '';
+      lines.push(`Read back before it runs, in these words: "${frame}"${/\[[^[\]]*\]/.test(frame) ? ' (a part in square brackets is said only when its value is given)' : ''}`, '');
+    }
     const written = writtenRules(spec);
     lines.push('Rules, in the order they run:', '');
     written.forEach((r) => lines.push(`- ${ruleWords(r)}`));

@@ -10,12 +10,12 @@
 | --- | --- | --- | --- |
 | `recognise_caller` | lookup | nothing | the caller |
 | `check_availability` | lookup | `day` | the caller |
-| `send_request` | change | `name`, `vehicle`, `wheels`, `damage`, `finish`, `slot`, `callbackNumber`, `textOk` | `check_availability` |
+| `send_request` | change | `name`, `vehicle`, `wheels`, `damage`, `finish`, `slot`, `callbackNumber`, `textOk`, `notes` | `check_availability` |
 | `send_photo_request` | change, a follow-on | `callbackNumber`, `textOk` | the caller |
-| `notify_shop_request` | change, a follow-on | `name`, `vehicle`, `wheels`, `damage`, `finish`, `slot`, `callbackNumber`, `textOk` | `check_availability` |
+| `notify_shop_request` | change, a follow-on | `name`, `vehicle`, `wheels`, `damage`, `finish`, `slot`, `callbackNumber`, `textOk`, `notes` | `check_availability` |
 | `book_dealer` | change | `account`, `cars`, `vehicles`, `slot` | `recognise_caller`, `check_availability` |
 | `notify_shop_booking` | change, a follow-on | `account`, `cars`, `vehicles`, `slot` | `recognise_caller`, `check_availability` |
-| `leave_callback` | change | `name`, `callbackNumber`, `about` | the caller |
+| `leave_callback` | change | `name`, `callbackNumber`, `about`, `notes` | the caller |
 
 ## Actions, follow-ons and sources
 

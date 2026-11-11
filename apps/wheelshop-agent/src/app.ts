@@ -44,7 +44,7 @@ const DIAMOND_CUT: Readonly<Record<string, string>> = { 'diamond cut': 'yes', pa
 /** The details of a request, for the shop's summary. */
 function requestDetails(p: Readonly<Record<string, string>>): string {
   const diamond = p.finish === 'diamond cut' ? ', diamond cut' : p.finish === 'not sure' ? ', not sure if diamond cut' : '';
-  return `${p.vehicle ?? ''}, ${p.damage ?? ''}, ${p.wheels ?? ''} wheel${p.wheels === 'one' ? '' : 's'}${diamond}`;
+  return `${p.vehicle ?? ''}, ${p.damage ?? ''}, ${p.wheels ?? ''} wheel${p.wheels === 'one' ? '' : 's'}${diamond}${(p.notes ?? '') === '' ? '' : `; note: ${p.notes}`}`;
 }
 
 /** A request or a booking that takes room the window has not got: the calendar refuses it, as a real one would. */
@@ -74,7 +74,7 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
       const r = once(sys, ctx.key, 'R', sys.requests.length, nowMs, (ref) => {
         sys.keep('request', {
           ref, at: iso(nowMs), callerName: p.name ?? '', vehicle: p.vehicle ?? '', wheels: p.wheels ?? '', damage: p.damage ?? '', diamondCut: DIAMOND_CUT[p.finish ?? ''] ?? '', finish: p.finish ?? '',
-          day, window, callbackNumber: tenDigits(p.callbackNumber ?? ''), textOk: p.textOk ?? '',
+          day, window, callbackNumber: tenDigits(p.callbackNumber ?? ''), textOk: p.textOk ?? '', ...((p.notes ?? '') === '' ? {} : { notes: p.notes! }),
         }, nowMs);
         return `request ${ref} sent for ${day} ${window}`;
       });
@@ -122,8 +122,8 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
       const nowMs = sys.now();
       const number = tenDigits(p.callbackNumber ?? '');
       return (await onceAsync(sys, ctx.key, 'C', sys.callbacks.length, nowMs, async (ref) => {
-        sys.keep('callback', { ref, at: iso(nowMs), name: p.name ?? '', callbackNumber: number, about: p.about ?? '' }, nowMs);
-        const vars = { name: p.name ?? '', about: p.about ?? '', ref };
+        sys.keep('callback', { ref, at: iso(nowMs), name: p.name ?? '', callbackNumber: number, about: p.about ?? '', ...((p.notes ?? '') === '' ? {} : { notes: p.notes! }) }, nowMs);
+        const vars = { name: p.name ?? '', about: (p.notes ?? '') === '' ? p.about ?? '' : `${p.about ?? ''} (note: ${p.notes})`, ref };
         await sendText(sys, ctx.texts, nowMs, ref, ctx.env(SHOP_PHONE) ?? '', textLine('callbackNote', { ...vars, number }), textLine('callbackNote', { ...vars, number: last4(number) }), { key: ctx.key });
         return `callback note ${ref} for ${last4(number)}`;
       })).summary;
