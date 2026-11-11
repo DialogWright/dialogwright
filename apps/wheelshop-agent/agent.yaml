@@ -81,6 +81,30 @@ questions: # assumption: the owner corrects these
       comes first).
   - q: What if I can't send a photo?
     a: That's fine; tell us, and the shop calls you instead to talk the damage through and give you a price.
+  - q: Are there any discounts or deals?
+    a: We don't run discounts or promotions; the price is the shop's, firmed up from the photo.
+  - q: Does the price depend on my car, or on the wheel?
+    a: >-
+      The ballparks are per wheel, whatever the car. A diamond cut wheel has its own range, and the shop firms
+      up the price for your wheel from the photo.
+  - q: What if I'm late for the drop-off time?
+    a: >-
+      The windows are drop off by 8 or by noon. If you'll be late, tell us when you reply to our text, and the
+      shop will see what it can do.
+  - q: When can I pick the car up?
+    a: Any time after it's ready that day (about noon for the morning window, about 5 for the afternoon).
+  - q: Can someone else drop the car off, and do I have to wait?
+    a: Anyone can drop it off with the keys, and there's no need to wait at the shop.
+  - q: Where do I park?
+    a: Park in front of the detailing shop at 400 Commerce Drive and bring the keys inside.
+  - q: What kind of photo do you need?
+    a: A clear photo of the damaged part of the wheel is enough; more than one angle helps. Reply to our text with them.
+  - q: Do I get a confirmation number or a written quote?
+    a: >-
+      There's no booking number: the shop texts you its price, and your reply to that text books it. That text
+      is your confirmation.
+  - q: Can I call the shop directly?
+    a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
   - q: Is my car ready? What's the status of my wheel?
     a: >-
       We can't look up a job on this line. The shop texts you when your car is ready to collect, or calls if
