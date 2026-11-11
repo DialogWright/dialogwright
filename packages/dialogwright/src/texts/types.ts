@@ -1,4 +1,5 @@
 import type { AnswerMap, QuestionMap } from '../jev/types';
+import type { TextKeys, TextLimits } from './record';
 
 /**
  * Texts (SMS and MMS): a capability the server gives an app's code, neutral to any app
@@ -142,4 +143,13 @@ export interface TextRecord {
   /** A text that came in to a number no app texts from or is reached by: recorded in the server's own audit, handed to no app. */
   readonly unrouted?: true;
   readonly provider: string;
+}
+
+/** What a run sends texts with (RunOptions.texts). */
+export interface TurnTexts {
+  readonly provider: TextProvider;
+  readonly from: string;
+  readonly keys: TextKeys;
+  /** The sender's abuse limits (texts/record.ts TextLimits); absent, none (a test's). */
+  readonly limits?: TextLimits;
 }

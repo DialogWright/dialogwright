@@ -1,5 +1,5 @@
-import { recordingTexts, textAuditRow, type TextKeys, type TextLimits } from '../texts/record';
-import type { TextProvider, TextRecord } from '../texts/types';
+import { recordingTexts, textAuditRow } from '../texts/record';
+import type { TextProvider, TextRecord, TurnTexts } from '../texts/types';
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { agentSettledWithout, followUpOf, followUpQuestions, plan, sensitiveDigit, slotContext, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
@@ -18,7 +18,8 @@ import { JevClientError, isNoul, noulValue, type AnswerMap, type JevClient, type
 import type { RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceSink } from '../trace/writer';
 import type { FollowUpRecord, TraceRecord } from '../trace/types';
-import type { AuditDraft, AuditEntry, Chained } from '../audit/types';
+import type { AuditDraft, AuditEntry } from '../audit/types';
+import { chainDrafts, type AuditSink } from '../audit/sink';
 import { topicsListening, type TurnKnowledge } from '../core/knowledge';
 import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
@@ -49,29 +50,9 @@ export interface TurnObserver {
   audit?(entries: readonly AuditEntry[], at: number): void;
 }
 
-/**
- * Where a turn's audit drafts are chained: the server's AuditLog (day files), its Postgres audit
- * (AUDIT_STORE=postgres, audit/postgres.ts), or a test's collector. A sink that chains at once returns
- * the entry; one that chains in a database returns a promise of it.
- */
-export interface AuditSink {
-  append(callId: string, channel: string, d: AuditDraft): Chained<AuditEntry>;
-  /** A turn's drafts chained together (in one transaction, for a database); absent, each is appended in turn. */
-  appendAll?(callId: string, channel: string, ds: readonly AuditDraft[]): Promise<AuditEntry[]>;
-}
-
-/** `ds` chained in order: at once from a sink that chains at once (as it always was), else a promise of the entries. */
-export function chainDrafts(sink: AuditSink, callId: string, channel: string, ds: readonly AuditDraft[]): Chained<AuditEntry[]> {
-  if (sink.appendAll && ds.length > 0) return sink.appendAll(callId, channel, ds);
-  const out = ds.map((d) => sink.append(callId, channel, d));
-  return out.some((e) => e instanceof Promise) ? Promise.all(out) : (out as AuditEntry[]);
-}
-
-/** `fn` with what was chained: at once when it is there, else once it is (a failure goes to `onError`, never thrown). */
-export function whenChained<T>(x: Chained<T>, fn: (t: T) => void, onError: (err: unknown) => void): void {
-  if (x instanceof Promise) x.then(fn, onError);
-  else fn(x);
-}
+// Moved to audit/sink.ts and texts/types.ts (shared with src/converse); re-exported so nothing else changes.
+export { chainDrafts, whenChained, type AuditSink } from '../audit/sink';
+export type { TurnTexts } from '../texts/types';
 
 export interface RunOptions {
   client: JevClient;
@@ -152,15 +133,6 @@ export interface RunOptions {
    * app's code has none and no text is sent.
    */
   texts?: TurnTexts | null;
-}
-
-/** What a run sends texts with (RunOptions.texts). */
-export interface TurnTexts {
-  readonly provider: TextProvider;
-  readonly from: string;
-  readonly keys: TextKeys;
-  /** The sender's abuse limits (texts/record.ts TextLimits); absent, none (a test's). */
-  readonly limits?: TextLimits;
 }
 
 /**

@@ -317,3 +317,98 @@ describe('the engine carries no private data', () => {
     for (const d of ['+15555550100', '+1555', '555-0100', 'specification']) expect(PRIVATE_DATA.test(d), d).toBe(false);
   });
 });
+
+/**
+ * src/converse (the agent runtime) never reaches the scripted engine by a value import, directly or
+ * through anything it imports. A type-only import is allowed (it is erased). src/eval is exempt: it is a
+ * black-box tool that starts the whole server.
+ */
+const SCRIPTED_ENGINE: readonly string[] = [
+  'core/turn', 'core/gates', 'core/lifecycle', 'core/agentTurn', 'core/questions',
+  'run/', 'slots/', 'prompts/', 'harness-text/',
+  'render/turn', 'render/checks', 'render/agentLine',
+  'jev/heuristicStub', 'jev/fixtureStub', 'jev/defaults',
+];
+
+/** The relative specifiers `source` imports by value (not `import type` / `export type`; `import { type X }` counts as a value import). */
+function valueSpecifiers(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+  const out: string[] = [];
+  const re = /\b(?:import|export)(\s+type\b)?\s*[\w*${},\s]*?\bfrom\s*'(\.[^']*)'|\bimport\s*'(\.[^']*)'|\bimport\(\s*'(\.[^']*)'\s*\)|\brequire\(\s*'(\.[^']*)'\s*\)/g;
+  for (const m of code.matchAll(re)) {
+    if (m[1]) continue;
+    out.push((m[2] ?? m[3] ?? m[4] ?? m[5])!);
+  }
+  return out;
+}
+
+/** `entryFiles` and every file they import by value, transitively (relative imports; resolves `.ts` and `/index.ts`). Paths are as `src` joined them. */
+function valueImportsClosure(entryFiles: string[], src: string): Set<string> {
+  const seen = new Set<string>();
+  const visit = (file: string, text?: string): void => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    let body = text;
+    if (body === undefined) body = readFileSync(file, 'utf8');
+    for (const spec of valueSpecifiers(body)) {
+      const base = normalize(join(dirname(file), spec));
+      for (const c of [`${base}.ts`, join(base, 'index.ts')]) {
+        try {
+          if (statSync(c).isFile()) {
+            visit(c);
+            break;
+          }
+        } catch {
+          // not this candidate
+        }
+      }
+    }
+  };
+  for (const f of entryFiles) visit(normalize(f));
+  return new Set([...seen].map((f) => normalize(f)).filter((f) => f.startsWith(normalize(src))));
+}
+
+const inScriptedEngine = (file: string): boolean => {
+  const rel = file.replace(/^src\//, '').replace(/\.ts$/, '');
+  return SCRIPTED_ENGINE.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p));
+};
+
+describe('converse stays off the scripted engine', () => {
+  it('no file under src/converse reaches the scripted engine by a value import, transitively', () => {
+    const entries = files('src/converse');
+    expect(entries.length).toBeGreaterThan(5);
+    const closure = valueImportsClosure(entries, 'src');
+    const reached = [...closure].filter(inScriptedEngine);
+    expect(reached).toEqual([]);
+  });
+
+  it('a value import of the scripted engine is caught, a type import is not, and a bare re-export is', () => {
+    expect(valueSpecifiers(`import { x } from '../core/turn';`)).toEqual(['../core/turn']);
+    expect(valueSpecifiers(`import {\n  a,\n  b,\n} from '../core/turn';`)).toEqual(['../core/turn']);
+    expect(valueSpecifiers(`export * from '../core/turn';`)).toEqual(['../core/turn']);
+    expect(valueSpecifiers(`import { type X, y } from '../core/turn';`)).toEqual(['../core/turn']);
+    expect(valueSpecifiers(`const m = await import('../core/turn');`)).toEqual(['../core/turn']);
+    expect(valueSpecifiers(`import type { X } from '../core/turn';`)).toEqual([]);
+    expect(valueSpecifiers(`export type { X } from '../core/turn';`)).toEqual([]);
+    expect(valueSpecifiers(`// import { x } from '../core/turn';\n/* import { y } from '../core/turn'; */`)).toEqual([]);
+    expect(inScriptedEngine('src/core/turn.ts')).toBe(true);
+    expect(inScriptedEngine('src/run/anything.ts')).toBe(true);
+    expect(inScriptedEngine('src/audit/sink.ts')).toBe(false);
+  });
+
+  it('follows imports transitively through a module that is not itself on the denylist', () => {
+    const closure = valueImportsClosure(['src/core/recording.ts'], 'src');
+    // core/recording re-exports audit/recording by value: both are in its closure, neither in the scripted engine.
+    expect(closure.has('src/audit/recording.ts')).toBe(true);
+    expect([...closure].filter(inScriptedEngine)).toEqual([]);
+    // run/turn is on the denylist, and reaches core/turn by value.
+    const run = valueImportsClosure(['src/run/turn.ts'], 'src');
+    expect(run.has('src/core/turn.ts')).toBe(true);
+  });
+
+  it('the shared types moved out of the scripted engine are reachable without it', () => {
+    for (const f of ['src/audit/sink.ts', 'src/texts/types.ts', 'src/audit/recording.ts']) {
+      expect([...valueImportsClosure([f], 'src')].filter(inScriptedEngine), f).toEqual([]);
+    }
+  });
+});
