@@ -460,7 +460,7 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
   const spec = business.model.default;
   const keyVar = converseModelKeyVar(spec);
   const said = `a converse app: the conversation's model ${spec} (agent.yaml's model.default)`;
-  if (keyVar === null) out.push({ id: 'converse', status: 'fail', message: `${said} names no provider the runtime takes: the server will not start`, fix: 'write the model as anthropic:<model>, inception:<model> or openrouter:<model>' });
+  if (keyVar === null) out.push({ id: 'converse', status: 'fail', message: `${said} names no provider the runtime takes: the server will not start`, fix: 'write the model as anthropic:<model>, inception:<model>, openrouter:<model> or meta:<model>' });
   else if (!env[keyVar]?.trim()) out.push({ id: 'converse', status: 'fail', message: `${said}, but ${keyVar} is unset: the server will not start`, fix: `set ${keyVar} in the settings file (the model's key)` });
   else out.push({ id: 'converse', status: 'ok', message: `${said}, key in ${keyVar}, within ${business.model.timeoutMs} ms a reply` });
   if (config !== null) {

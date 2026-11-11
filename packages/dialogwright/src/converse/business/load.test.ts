@@ -139,6 +139,13 @@ describe('what is refused', () => {
     expect(p).toMatchObject({ path: 'model.default' });
   });
 
+  it('a Meta model, and an OpenRouter model pinned to a host, are models; hosts after @ elsewhere, or none named, are not', () => {
+    expect(problemsOf(changed('anthropic:claude-haiku-5-5', 'meta:muse-ember-1.0'))).toEqual([]);
+    expect(problemsOf(changed('anthropic:claude-haiku-5-5', 'openrouter:vendor/model@groq'))).toEqual([]);
+    expect(problemsOf(changed('anthropic:claude-haiku-5-5', 'meta:muse-ember-1.0@groq'))[0]).toMatchObject({ path: 'model.default' });
+    expect(problemsOf(changed('anthropic:claude-haiku-5-5', 'openrouter:vendor/model@'))[0]).toMatchObject({ path: 'model.default' });
+  });
+
   it('the google calendar, reserved for later', () => {
     const [p] = problemsOf(changed('kind: fake', 'kind: google'));
     expect(p).toMatchObject({ path: 'sources.calendar.kind' });

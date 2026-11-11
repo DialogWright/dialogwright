@@ -13,6 +13,13 @@ import type { ActionSpec } from './business/schema';
 /** ran: allowed and done; failed: allowed, and the action threw; confirmed: run after the caller's yes. */
 export type ConverseToolOutcome = 'ran' | 'failed' | 'refused' | 'readBack' | 'confirmed' | 'notConfirmed' | 'invalid';
 
+/** One request to the model, timed: to its first event of any kind, and to its end (its time while it ran, whatever stopped it). */
+export interface ModelRequestTime {
+  firstMs: number | null;
+  ms: number;
+  error?: string;
+}
+
 export interface ConverseTraceRecord {
   v: 3;
   kind: 'converse';
@@ -25,8 +32,12 @@ export interface ConverseTraceRecord {
   replies: string[];
   /** Each action called, its params as recorded. */
   tools: { name: string; args: Record<string, string>; outcome: ConverseToolOutcome; reason?: string }[];
-  /** The model's requests of the turn: their time, the first text's time from the turn's start, usage and cost summed over them. */
-  model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean };
+  /**
+   * The model's requests of the turn: their time, the first text's time from the turn's start, usage and cost
+   * summed over them; and each request on its own (`requests`): ms to its first event (null: none came), ms to
+   * its end, and how it failed where it did.
+   */
+  model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; requests?: ModelRequestTime[] };
   /** The read-back said, or answered, this turn: the decision model's reading of the answer and whether it confirmed. */
   readBack?: { text: string; yes?: number; no?: number; confirmed?: boolean };
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */

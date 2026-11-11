@@ -269,7 +269,7 @@
         "default": {
           "type": "string",
           "minLength": 1,
-          "description": "The model, as <provider>:<model> (anthropic, inception or openrouter). Claude models go through anthropic only."
+          "description": "The model, as <provider>:<model> (anthropic, inception, openrouter or meta). Claude models go through anthropic only. An OpenRouter model may name the hosts it is asked on after @ (openrouter:openai/gpt-oss-120b@groq), with no fallback to others; OpenRouter is always asked for hosts that collect no data."
         },
         "timeoutMs": {
           "default": 6000,
@@ -286,7 +286,7 @@
           "maximum": 9007199254740991
         },
         "effort": {
-          "description": "How hard the model reasons: minimal, low, medium or high, sent in each provider's own form (Inception's reasoning_effort, where minimal is its instant; OpenRouter's reasoning.effort; not sent to Anthropic). Default: the provider's own.",
+          "description": "How hard the model reasons: minimal, low, medium or high, sent in each provider's own form (Inception's reasoning_effort, where minimal is its instant; Meta's reasoning_effort; OpenRouter's reasoning.effort; Anthropic's output_config.effort, where minimal is low). Default: the provider's own.",
           "type": "string",
           "enum": [
             "minimal",

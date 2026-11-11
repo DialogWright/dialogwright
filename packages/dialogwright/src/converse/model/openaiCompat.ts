@@ -20,40 +20,54 @@ function messagesOf(system: string, messages: ModelMessage[]): Record<string, un
   return out;
 }
 
+/** The providers asked through OpenAI-compatible chat completions. */
+export type OpenAiCompatProvider = 'inception' | 'openrouter' | 'meta';
+
+const URLS: Record<OpenAiCompatProvider, string> = { inception: KNOWN.inception.url, openrouter: KNOWN.openrouter.url, meta: 'https://api.meta.ai/v1/chat/completions' };
+
 /**
  * The reasoning effort in the provider's own form: Inception's `reasoning_effort` (its least is `instant`, which
- * `minimal` names), OpenRouter's `reasoning.effort`. Nothing where the request names none.
+ * `minimal` names), Meta's `reasoning_effort` (minimal is its own), OpenRouter's `reasoning.effort`. Nothing
+ * where the request names none.
  */
-function effortOf(provider: 'inception' | 'openrouter', req: ModelRequest): Record<string, unknown> {
+function effortOf(provider: OpenAiCompatProvider, req: ModelRequest): Record<string, unknown> {
   if (req.effort === undefined) return {};
-  return provider === 'inception' ? { reasoning_effort: req.effort === 'minimal' ? 'instant' : req.effort } : { reasoning: { effort: req.effort } };
+  if (provider === 'inception') return { reasoning_effort: req.effort === 'minimal' ? 'instant' : req.effort };
+  return provider === 'meta' ? { reasoning_effort: req.effort } : { reasoning: { effort: req.effort } };
 }
 
-/** The chat completions body for a request (no key in it); `temperature` only where the request sets it, the effort in the provider's form. */
-export function openAiCompatBody(model: string, req: ModelRequest, provider: 'inception' | 'openrouter'): Record<string, unknown> {
+/**
+ * The chat completions body for a request (no key in it); `temperature` only where the request sets it, the
+ * effort in the provider's form. OpenRouter is asked for hosts that collect no data (`data_collection: deny`),
+ * and only the hosts `only` names where it names any, with no fallback to others. Meta takes the token limit
+ * as `max_completion_tokens`.
+ */
+export function openAiCompatBody(model: string, req: ModelRequest, provider: OpenAiCompatProvider, only: readonly string[] = []): Record<string, unknown> {
   return {
     ...effortOf(provider, req),
     model,
     stream: true,
     stream_options: { include_usage: true },
-    max_tokens: req.maxTokens,
+    ...(provider === 'meta' ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens }),
+    ...(provider === 'openrouter' ? { provider: { data_collection: 'deny', ...(only.length > 0 ? { order: [...only], allow_fallbacks: false } : {}) } } : {}),
     messages: messagesOf(req.system, req.messages),
     ...(req.tools.length > 0 ? { tools: req.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) } : {}),
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
   };
 }
 
-export function openAiCompatModel(o: { provider: 'inception' | 'openrouter'; model: string; apiKey: string; url?: string; fetch?: typeof fetch }): ConverseModel {
+export function openAiCompatModel(o: { provider: OpenAiCompatProvider; model: string; apiKey: string; only?: readonly string[]; url?: string; fetch?: typeof fetch }): ConverseModel {
   const doFetch = o.fetch ?? fetch;
+  const only = o.only ?? [];
   return {
-    id: `${o.provider}:${o.model}`,
+    id: `${o.provider}:${o.model}${only.length > 0 ? `@${only.join(',')}` : ''}`,
     async *stream(req, signal): AsyncIterable<ModelEvent> {
       let res: Response;
       try {
-        res = await doFetch(o.url ?? KNOWN[o.provider].url, {
+        res = await doFetch(o.url ?? URLS[o.provider], {
           method: 'POST',
           headers: { authorization: `Bearer ${o.apiKey}`, 'content-type': 'application/json' },
-          body: JSON.stringify(openAiCompatBody(o.model, req, o.provider)),
+          body: JSON.stringify(openAiCompatBody(o.model, req, o.provider, only)),
           signal,
         });
       } catch (e) {

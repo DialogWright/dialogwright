@@ -48,3 +48,12 @@ export function loadPersonas(file: string): Persona[] {
     return r.data;
   });
 }
+
+/**
+ * A cooperative persona: one who wants something done (a request, a booking or a callback) and tries nothing
+ * they should not get (no `adversarial`). Their calls are the ones the bar of the task done correctly is over;
+ * a question answered, nothing to be done, or a caller pushing the line are measured by the other figures.
+ */
+export function isCooperative(p: Persona): boolean {
+  return p.adversarial === undefined && (p.expects === 'request' || p.expects === 'booking' || p.expects === 'callback');
+}

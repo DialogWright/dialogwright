@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ConverseModel, ModelTool } from '../converse/model/types';
+import type { ModelRequestTime } from '../converse/trace';
 import type { AuditEntry } from '../audit/types';
 import type { Budget } from './budget';
 import type { SimCall } from './chatDriver';
 import type { Persona } from './personas';
+import type { TurnTiming } from './measures';
 
 export interface Judged {
   completed: boolean;
@@ -187,10 +189,9 @@ export async function judgeCall(model: ConverseModel, spend: Budget, businessTex
   return verdict ?? failed(verdict === null && why === 'the judge gave no verdict' ? `${why} (stopped: ${stop || 'unknown'}; said: ${said.slice(0, 80)})` : why);
 }
 
-/** What the line's agent model cost on a call (an agent-mode app's, or a converse app's), from the traces in `traceDir` and its folders (summed over the call's turns); null where no turn records one. */
-export function agentCostOfCall(traceDir: string, callId: string): number | null {
-  let total = 0;
-  let found = false;
+/** Each record of a call in the traces in `traceDir` and its folders (a host's, a folder per app), in file order. */
+function traceRecordsOfCall(traceDir: string, callId: string): Record<string, any>[] {
+  const out: Record<string, any>[] = [];
   const walk = (dir: string): void => {
     let names: string[];
     try {
@@ -204,20 +205,52 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
         for (const line of readFileSync(path, 'utf8').split('\n')) {
           if (!line.includes(callId)) continue;
           try {
-            const r = JSON.parse(line) as { sessionId?: string; kind?: string; agent?: { costUsd?: number }; model?: { costUsd?: number | null } };
-            // An agent-mode turn's agent model, or a converse turn's model (kind 'converse').
-            const cost = r.kind === 'converse' ? r.model?.costUsd : r.agent?.costUsd;
-            if (r.sessionId === callId && typeof cost === 'number') {
-              total += cost;
-              found = true;
-            }
+            const r = JSON.parse(line) as Record<string, any> | null;
+            if (r !== null && typeof r === 'object' && r.sessionId === callId) out.push(r);
           } catch {
-            // a line that is not a record is not counted
+            // a line that is not a record is not read
           }
         }
       } else if (!name.includes('.')) walk(path);
     }
   };
   walk(traceDir);
+  return out;
+}
+
+/** What the line's agent model cost on a call (an agent-mode app's, or a converse app's), from the traces in `traceDir` and its folders (summed over the call's turns); null where no turn records one. */
+export function agentCostOfCall(traceDir: string, callId: string): number | null {
+  let total = 0;
+  let found = false;
+  for (const r of traceRecordsOfCall(traceDir, callId)) {
+    // An agent-mode turn's agent model, or a converse turn's model (kind 'converse').
+    const cost: unknown = r.kind === 'converse' ? r.model?.costUsd : r.agent?.costUsd;
+    if (typeof cost === 'number') {
+      total += cost;
+      found = true;
+    }
+  }
   return found ? total : null;
+}
+
+/**
+ * A converse call's model use, from its traces: each caller turn's requests to the model with their true
+ * times (ModelRequestTime), and the tokens summed over the call (null where no turn records any).
+ */
+export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null } {
+  const turns: TurnTiming[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let found = false;
+  for (const r of traceRecordsOfCall(traceDir, callId)) {
+    if (r.kind !== 'converse') continue;
+    const usage = r.model?.usage;
+    if (typeof usage?.inputTokens === 'number' && typeof usage?.outputTokens === 'number') {
+      inputTokens += usage.inputTokens;
+      outputTokens += usage.outputTokens;
+      found = true;
+    }
+    if (typeof r.said === 'string' && Array.isArray(r.model?.requests)) turns.push({ requests: r.model.requests as ModelRequestTime[] });
+  }
+  return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null };
 }

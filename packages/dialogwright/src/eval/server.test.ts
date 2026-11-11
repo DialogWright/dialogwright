@@ -7,7 +7,7 @@ import { defineConverseApp, type ConverseApp } from '../converse/app';
 import { fakeModel } from '../converse/model/fake';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import { CALLER, done, text } from '../testing/converse/chat';
-import { startEvalServer, type EvalServer } from './server';
+import { EVAL_MODEL_TIMEOUT_MS, evalApp, startEvalServer, type EvalServer } from './server';
 
 /**
  * The server a simulated call runs on (eval/server.ts): for a converse app, a server of its own per call,
@@ -87,5 +87,24 @@ describe('startEvalServer', () => {
     expect(made).toBe(2);
     expect(a.auditDir).not.toBe(b.auditDir);
     expect(a.traceDir).not.toBe(b.traceDir);
+  });
+
+  it('gives each call\'s app the model a run names, at its effort (none where it says none), and the eval\'s long timeout, leaving the app as it is', () => {
+    const app = defineConverseApp(deployedApp(), { tools: { availability: async () => [], book: async () => 'booked' } });
+    const before = structuredClone(app.business.model);
+    expect(before.timeoutMs).toBeLessThan(EVAL_MODEL_TIMEOUT_MS);
+    expect(evalApp(app).business.model).toEqual({ ...before, timeoutMs: EVAL_MODEL_TIMEOUT_MS });
+    expect(evalApp(app, { default: 'meta:muse-ember-1.0', effort: 'low' }).business.model).toEqual({ ...before, default: 'meta:muse-ember-1.0', effort: 'low', timeoutMs: EVAL_MODEL_TIMEOUT_MS });
+    expect(evalApp({ ...app, business: { ...app.business, model: { ...before, effort: 'minimal' } } }, { default: 'anthropic:claude-haiku-5-5', effort: null }).business.model).not.toHaveProperty('effort');
+    expect(app.business.model).toEqual(before);
+  });
+
+  it('asks the model of a call at the effort the run names', async () => {
+    const model = fakeModel([[text('Hello.'), done()]]);
+    const app = defineConverseApp(deployedApp(), { tools: { availability: async () => [], book: async () => 'booked' } });
+    const s = await startEvalServer(app, env(folder()), { work: folder(), converseModel: () => model, model: { default: 'anthropic:claude-haiku-5-5', effort: 'low' } });
+    servers.push(s);
+    await chat(s.url);
+    expect(model.requests[0]).toMatchObject({ effort: 'low' });
   });
 });

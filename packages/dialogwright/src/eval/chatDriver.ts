@@ -12,7 +12,7 @@ export interface SimCall {
   turns: SimTurn[];
   /** Who ended it: the line (an end or a transfer, or it fell silent), the caller (hung up) or the turn limit. */
   ended: 'line' | 'caller' | 'turns';
-  /** For each caller turn, ms from sending it to the line's first word. */
+  /** For each caller turn, ms from sending it to the line's first sentence (its first say_delta, else its say). */
   firstWordMs: number[];
   /** The chat session, which is the call's id in the audit and the trace. */
   callId?: string;
@@ -30,7 +30,8 @@ interface Wire {
 /**
  * Drives one call over the chat wire, as any client would: start, then the caller's lines and the line's
  * replies, until the caller hangs up, the line ends or transfers, or `maxTurns` caller turns were said. A
- * reply is every line the server says until `settleMs` passes with none (a filler, then the answer).
+ * reply is every line the server says until `settleMs` passes with none (a filler, then the answer); a reply
+ * whose sentences are streaming (say_delta) is waited for until its say.
  */
 export async function driveChat(o: {
   url: string;
@@ -83,14 +84,21 @@ export async function driveChat(o: {
     const lines: string[] = [];
     let first: number | null = null;
     let over = false;
+    // Sentences streamed (say_delta) and not yet followed by their reply's say: the reply is still coming.
+    let streaming = false;
     for (;;) {
-      const m = await next(lines.length === 0 ? o.timeoutMs : settleMs);
+      const m = await next(lines.length === 0 || streaming ? o.timeoutMs : settleMs);
       if (m === null) {
         if (closed) over = true;
         break;
       }
-      if (m.type === 'say' && typeof m.text === 'string') {
+      if (m.type === 'say_delta' && typeof m.text === 'string') {
+        // The first sentence sent: what a caller would hear first. The reply's text is its say.
         if (first === null) first = Date.now() - sentAt;
+        streaming = true;
+      } else if (m.type === 'say' && typeof m.text === 'string') {
+        if (first === null) first = Date.now() - sentAt;
+        streaming = false;
         lines.push(m.text);
       } else if (m.type === 'transfer' || m.type === 'end') {
         over = true;
@@ -109,8 +117,9 @@ export async function driveChat(o: {
       socket.once('open', () => resolve());
       socket.once('error', (e) => reject(e));
     });
-    // The number the persona calls from, where it has one: the start's context, as a test page's would name it.
-    socket.send(JSON.stringify({ type: 'start', v: 1, ...(o.persona.callingFrom !== undefined ? { context: { callerNumber: o.persona.callingFrom } } : {}) }));
+    // The reply streamed (each sentence as say_delta as soon as it is ready), so the first sentence is timed; and
+    // the number the persona calls from, where it has one: the start's context, as a test page's would name it.
+    socket.send(JSON.stringify({ type: 'start', v: 1, stream: true, ...(o.persona.callingFrom !== undefined ? { context: { callerNumber: o.persona.callingFrom } } : {}) }));
     const ready = await next(o.timeoutMs);
     if (ready === null || ready.type !== 'ready') throw new Error(`the chat did not start (${ready?.type ?? 'silence'})`);
     call.callId = ready.session;

@@ -1,6 +1,6 @@
 import { costUsd } from '../converse/model/price';
 
-/** What a run has spent on the models it asks (the caller and the judge), so it can stop at a limit. */
+/** What a run has spent on the models it asks (the caller and the judge) and on the line's agent model, so it can stop at a limit. */
 export class Budget {
   private total = 0;
   private readonly unpriced = new Set<string>();
@@ -20,8 +20,18 @@ export class Budget {
     this.total += c;
   }
 
+  /** Adds a cost already worked out at its model's price (the agent model's, from a call's traces). */
+  addUsd(usd: number): void {
+    this.total += usd;
+  }
+
   spent(): number {
     return this.total;
+  }
+
+  /** The limit, in US dollars. */
+  limit(): number {
+    return this.limitUsd;
   }
 
   left(): number {

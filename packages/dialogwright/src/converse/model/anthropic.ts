@@ -12,9 +12,10 @@ const blockOf = (c: ModelContent): Record<string, unknown> =>
       ? { type: 'tool_use', id: c.id, name: c.name, input: c.args }
       : { type: 'tool_result', tool_use_id: c.id, content: c.content, ...(c.isError ? { is_error: true } : {}) };
 
-/** The Messages API body for a request (no key in it). */
+/** The Messages API body for a request (no key in it); the effort as `output_config.effort`, minimal (which the API does not have) as low. */
 export function anthropicBody(model: string, req: ModelRequest): Record<string, unknown> {
   return {
+    ...(req.effort !== undefined ? { output_config: { effort: req.effort === 'minimal' ? 'low' : req.effort } } : {}),
     model,
     max_tokens: req.maxTokens,
     stream: true,

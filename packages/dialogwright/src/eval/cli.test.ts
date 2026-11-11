@@ -19,7 +19,7 @@ describe('dialogwright eval', () => {
 
   it('refuses a model whose price is unknown, unless allowed', async () => {
     const t = io({});
-    expect(await evalCommand(['.', '--personas', 'p.yaml', '--judge', 'anthropic:claude-sonnet-5-5'], t.io)).toBe(2);
+    expect(await evalCommand(['.', '--personas', 'p.yaml', '--judge', 'anthropic:claude-unpriced-test'], t.io)).toBe(2);
     expect(t.err.join('\n')).toMatch(/no price is known for the judge model/);
   });
 

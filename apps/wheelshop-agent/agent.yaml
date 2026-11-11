@@ -68,7 +68,9 @@ lines:
   handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
   done: { en: "That's done." }
 model:
-  default: inception:mercury-3 # until the model comparison (plan 1, Task 10) decides
+  # The model comparison of 2026-11-11 (docs/designs/eval/2026-11-model-comparison.md) found no model that clears
+  # the bars; Mercury, the fastest, stays until the maintainer decides.
+  default: inception:mercury-3
   # Mercury reasons least at minimal (Inception's instant); its reasoning counts toward maxTokens, and a reply cut
   # off at it is a failed turn, never spoken (DESIGN.md, Findings 1).
   effort: minimal
@@ -110,7 +112,7 @@ actions:
       so it is not in until this is called and confirmed.
     kind: change
     params:
-      name: { type: text, about: The customer's name. }
+      name: { type: text, about: "The customer's name, as they gave it." }
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
       damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
@@ -137,7 +139,7 @@ actions:
     about: Follows send_request on the customer's yes, texting the shop a summary (the runtime runs it; the model is never offered it).
     kind: change
     params:
-      name: { type: text, about: The customer's name. }
+      name: { type: text, about: "The customer's name, as they gave it." }
       vehicle: { type: text, about: The car. }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels. }
       damage: { type: text, about: The damage. }
@@ -177,7 +179,7 @@ actions:
     about: Leave the shop a note to call the customer back, for someone who wants to speak with a person.
     kind: change
     params:
-      name: { type: text, about: The customer's name. }
+      name: { type: text, about: "The customer's name, as they gave it." }
       callbackNumber: { type: phone, about: The best number to call them back on. }
       about: { type: text, about: "What they want to talk about, as a short lowercase phrase the read-back says after the word about (for example: the wheel they left last week)." }
     readBack:

@@ -1,5 +1,8 @@
-import { checkApp, formatProblem, type JevClient } from 'dialogwright';
+import { checkApp, formatProblem, type ConverseApp, type JevClient } from 'dialogwright';
 import { converseTestCall, fakeConverseModel, fakeTextProvider, type ConverseModelEvent } from 'dialogwright/testing';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { APP_DIR, wheelshop } from './app';
 
@@ -194,5 +197,17 @@ describe('the app folder', () => {
     const again = app.fresh!();
     expect(again).not.toBe(app);
     expect(again.tools.send_request).not.toBe(app.tools.send_request);
+  });
+
+  it('keeps a fresh app\'s records in memory alone, whatever SHOP_DATA_DIR says: a simulated call never reads or writes the shop\'s log', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wheelshop-fresh-'));
+    const deps = (app: ConverseApp) => ({ app, base: '/wheelshop-agent', env: (n: string) => (n === 'SHOP_DATA_DIR' ? dir : undefined), now: () => NOW, log: () => {}, publicHost: 'localhost', consoleSignIn: false });
+    const { app } = wheelshop({ now: () => NOW });
+    const fresh = app.fresh!();
+    const pages = fresh.pages as (d: ReturnType<typeof deps>) => { warnings?: string[] };
+    expect(pages(deps(fresh)).warnings).toContainEqual(expect.stringMatching(/kept in memory/));
+    expect(readdirSync(dir)).toEqual([]);
+    const own = (app.pages as (d: ReturnType<typeof deps>) => { warnings?: string[] })(deps(app));
+    expect(own.warnings ?? []).not.toContainEqual(expect.stringMatching(/kept in memory/));
   });
 });

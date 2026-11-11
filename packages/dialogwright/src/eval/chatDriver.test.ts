@@ -85,6 +85,35 @@ describe('driveChat: the number a persona calls from', () => {
     } finally {
       await r.close();
     }
-    expect(r.starts).toEqual([{ type: 'start', v: 1, context: { callerNumber: '+15555550142' } }, { type: 'start', v: 1 }]);
+    expect(r.starts).toEqual([{ type: 'start', v: 1, stream: true, context: { callerNumber: '+15555550142' } }, { type: 'start', v: 1, stream: true }]);
+  });
+});
+
+describe('driveChat: the first sentence', () => {
+  it('asks for the reply streamed, times the first sentence (its say_delta), and keeps the reply from its say alone', async () => {
+    const { WebSocketServer } = await import('ws');
+    const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
+    wss.on('connection', (ws) => {
+      ws.once('message', () => {
+        ws.send(JSON.stringify({ type: 'ready', session: 's1' }));
+        ws.send(JSON.stringify({ type: 'say', text: 'Hello.' }));
+        ws.on('message', () => {
+          setTimeout(() => ws.send(JSON.stringify({ type: 'say_delta', text: 'Sure. ' })), 20);
+          setTimeout(() => ws.send(JSON.stringify({ type: 'say_delta', text: 'Friday is free.' })), 300);
+          setTimeout(() => ws.send(JSON.stringify({ type: 'say', text: 'Sure. Friday is free.' })), 310);
+        });
+      });
+    });
+    const port = (wss.address() as { port: number }).port;
+    try {
+      let asked = 0;
+      const call = await driveChat({ url: `ws://127.0.0.1:${port}/chat`, origin: ORIGIN, persona, maxTurns: 1, timeoutMs: 2000, settleMs: 100, caller: async () => (asked++ === 0 ? 'Is Friday free?' : null) });
+      expect(call.firstWordMs).toHaveLength(1);
+      expect(call.firstWordMs[0]).toBeLessThan(250);
+      expect(call.turns.at(-1)).toMatchObject({ who: 'line', text: 'Sure. Friday is free.' });
+    } finally {
+      await new Promise((resolve) => wss.close(() => resolve(undefined)));
+    }
   });
 });

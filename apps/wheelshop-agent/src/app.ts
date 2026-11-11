@@ -4,6 +4,7 @@ import { lapseDue, quoteFor, replyToLapsed, replyToQuote } from './quotes';
 import {
   COUNTS, ON_FILE_MS, SHOP_PHONE, Systems, dayWords, forwardBody, iso, last4, once, onceAsync, ownerSummary, sendText, shopConfigOf, slotParts, tenDigits, textLine, usNumber,
 } from './shop';
+import { SHOP_DATA_DIR } from './shopLog';
 import { shopPages } from './shopPage';
 
 /**
@@ -163,6 +164,11 @@ export async function shopOnText(s: Systems, m: IncomingText, ctx: TextContext):
 /** What the app is made with: the clock its systems read (the server's, or a test's). */
 export interface WheelshopOptions {
   now?: () => number;
+  /**
+   * Keep the shop's records in memory alone, whatever SHOP_DATA_DIR says: the app made fresh for a simulated
+   * call (`fresh`), which must never read the shop's log back nor write a pretend request into it.
+   */
+  inMemory?: boolean;
 }
 
 /**
@@ -177,10 +183,10 @@ export function wheelshop(o: WheelshopOptions = {}): { app: ConverseApp; sys: Sy
     tools: shopTools(sys),
     onText: (m, ctx) => shopOnText(sys, m, ctx),
     pages: (deps) => shopPages(sys, {
-      brand: { name: 'Example Wheel Works', mark: 'EW' }, base: deps.base, env: deps.env, now: deps.now, log: deps.log,
+      brand: { name: 'Example Wheel Works', mark: 'EW' }, base: deps.base, env: o.inMemory === true ? (name) => (name === SHOP_DATA_DIR ? undefined : deps.env(name)) : deps.env, now: deps.now, log: deps.log,
       publicHost: deps.publicHost, signOut: deps.consoleSignIn, ...(deps.texts !== undefined ? { texts: deps.texts } : {}),
     }),
-    fresh: () => wheelshop(o).app,
+    fresh: () => wheelshop({ ...o, inMemory: true }).app,
   });
   // The systems read the calendar, the time zone and the accounts from agent.yaml, once it is joined to the code.
   sys.configure(shopConfigOf(app.business));

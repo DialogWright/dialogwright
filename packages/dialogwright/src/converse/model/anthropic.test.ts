@@ -80,11 +80,13 @@ describe('anthropicModel', () => {
     expect(await collect(anthropicModel({ model: 'm', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()))).toMatchObject([{ type: 'error', kind: 'invalid' }]);
   });
 
-  it('sends no reasoning effort: the Messages API takes none from this request', async () => {
+  it('sends the effort as output_config.effort (minimal, which the Messages API does not have, as low), and none where the request names none', async () => {
     const f = stubFetch(stream);
     await collect(anthropicModel({ model: 'claude-haiku-5-5', apiKey: KEY, fetch: f.fetch }).stream({ ...req, effort: 'minimal' }, ctl()));
-    const body = String(f.calls[0]!.init.body);
-    expect(body).not.toContain('effort');
-    expect(body).not.toContain('reasoning');
+    await collect(anthropicModel({ model: 'claude-haiku-5-5', apiKey: KEY, fetch: f.fetch }).stream({ ...req, effort: 'medium' }, ctl()));
+    await collect(anthropicModel({ model: 'claude-haiku-5-5', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()));
+    const bodies = f.calls.map((c) => JSON.parse(String(c.init.body)) as Record<string, unknown>);
+    expect(bodies.map((b) => b.output_config)).toEqual([{ effort: 'low' }, { effort: 'medium' }, undefined]);
+    expect(String(f.calls[0]!.init.body)).not.toContain('reasoning');
   });
 });

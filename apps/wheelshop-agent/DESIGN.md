@@ -47,7 +47,7 @@ A chat has no calling number, and `app.yaml` says `chat.callerNumberFromContext:
 
 ## Settings and the shop page
 
-Nothing is read from the process as the app is made (`src/index.ts`). agent.yaml's `env.DEALER_TEST_LINE` is read by the server from the app's own settings as it starts (on a host, its own settings file), and the shop page is made then, with the app's settings (`SHOP_DATA_DIR`, `SHOP_PHONE`), the server's sender (so a quote sent from the page is texted), its clock and its log. The actions read their settings at call time (`ctx.env`). Each simulated call runs on the app made again (`app.fresh`), so no call sees what another booked.
+Nothing is read from the process as the app is made (`src/index.ts`). agent.yaml's `env.DEALER_TEST_LINE` is read by the server from the app's own settings as it starts (on a host, its own settings file), and the shop page is made then, with the app's settings (`SHOP_DATA_DIR`, `SHOP_PHONE`), the server's sender (so a quote sent from the page is texted), its clock and its log. The actions read their settings at call time (`ctx.env`). Each simulated call runs on the app made again (`app.fresh`), its records in memory alone whatever `SHOP_DATA_DIR` says, so no call sees what another booked and none reads or writes the shop's log.
 
 ## Findings
 

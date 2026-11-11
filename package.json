@@ -40,7 +40,8 @@
     "render:bakeoff": "tsx packages/dialogwright/src/define/cli.ts render:bakeoff",
     "render:judge-eval": "tsx packages/dialogwright/src/define/cli.ts render:judge-eval",
     "agent:bakeoff": "tsx packages/dialogwright/src/define/cli.ts agent:bakeoff",
-    "eval": "tsx packages/dialogwright/src/define/cli.ts eval"
+    "eval": "tsx packages/dialogwright/src/define/cli.ts eval",
+    "eval:compare": "tsx packages/dialogwright/src/define/cli.ts eval:compare"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

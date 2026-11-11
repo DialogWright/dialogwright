@@ -38,7 +38,7 @@ export const PARAM_TYPES = ['date', 'slot', 'choice', 'number', 'text', 'phone']
 /** How a param may be recorded (the same words as policy.yaml's audit). */
 export const AUDIT_MASKS = ['last4', 'mask', 'length', 'secret', 'keep'] as const;
 /** The providers a model is named through. */
-export const MODEL_PROVIDERS = ['anthropic', 'inception', 'openrouter'] as const;
+export const MODEL_PROVIDERS = ['anthropic', 'inception', 'openrouter', 'meta'] as const;
 
 /** A number written out (E.164) or `env.<NAME>`, a setting that holds it. */
 const numberOrEnv = () =>
@@ -99,6 +99,10 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
       issue(ctx, ['model', 'default'], `"${spec}" does not name a provider and a model`, `write <provider>:<model> with the provider ${MODEL_PROVIDERS.join(', ')}, for example anthropic:claude-haiku-5-5`);
     } else if (provider === 'openrouter' && /anthropic\/|claude/i.test(name)) {
       issue(ctx, ['model', 'default'], `"${spec}" asks a Claude model through OpenRouter`, `write anthropic:<model>: Claude models go through the Anthropic API only`);
+    } else if (provider !== 'openrouter' && name.includes('@')) {
+      issue(ctx, ['model', 'default'], `"${spec}" names hosts after @, which only an OpenRouter model does`, `write ${provider}:<model> with no @`);
+    } else if (provider === 'openrouter' && name.includes('@') && name.slice(name.indexOf('@') + 1).split(',').some((h) => h.trim() === '')) {
+      issue(ctx, ['model', 'default'], `"${spec}" names no OpenRouter host after @`, 'write openrouter:<vendor>/<model>@<host>, for example openrouter:openai/gpt-oss-120b@groq');
     }
   }
   const calendar = isMap(root.sources) && isMap(root.sources.calendar) ? root.sources.calendar : undefined;
@@ -206,10 +210,10 @@ export const agentBusinessSchema = z
       .describe('The lines said word for word.'),
     model: z
       .strictObject({
-        default: text().describe('The model, as <provider>:<model> (anthropic, inception or openrouter). Claude models go through anthropic only.'),
+        default: text().describe('The model, as <provider>:<model> (anthropic, inception, openrouter or meta). Claude models go through anthropic only. An OpenRouter model may name the hosts it is asked on after @ (openrouter:openai/gpt-oss-120b@groq), with no fallback to others; OpenRouter is always asked for hosts that collect no data.'),
         timeoutMs: z.number().int().positive().default(6000).describe('How long a model reply may take before the turn falls back.'),
         maxTokens: z.number().int().positive().default(400).describe('The most tokens a reply may use (a model\'s reasoning counts toward it). A reply cut off at it is a failed turn, never spoken as it was cut.'),
-        effort: z.enum(MODEL_EFFORTS).optional().describe('How hard the model reasons: minimal, low, medium or high, sent in each provider\'s own form (Inception\'s reasoning_effort, where minimal is its instant; OpenRouter\'s reasoning.effort; not sent to Anthropic). Default: the provider\'s own.'),
+        effort: z.enum(MODEL_EFFORTS).optional().describe('How hard the model reasons: minimal, low, medium or high, sent in each provider\'s own form (Inception\'s reasoning_effort, where minimal is its instant; Meta\'s reasoning_effort; OpenRouter\'s reasoning.effort; Anthropic\'s output_config.effort, where minimal is low). Default: the provider\'s own.'),
       })
       .describe('The model that leads the conversation.'),
     limits: z

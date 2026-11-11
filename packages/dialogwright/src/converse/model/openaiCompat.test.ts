@@ -66,6 +66,28 @@ describe('openAiCompatModel', () => {
     const bodies = f.calls.map((c) => JSON.parse(String(c.init.body)) as Record<string, unknown>);
     expect(bodies.map((b) => [b.reasoning_effort, b.reasoning])).toEqual([['instant', undefined], ['low', undefined], [undefined, { effort: 'minimal' }], [undefined, undefined]]);
   });
+  it('asks OpenRouter for providers that collect no data, and only the hosts a spec pins (no fallback to others)', async () => {
+    const f = stubFetch(toolStream);
+    await collect(openAiCompatModel({ provider: 'openrouter', model: 'vendor/model', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()));
+    await collect(openAiCompatModel({ provider: 'openrouter', model: 'vendor/model', only: ['groq'], apiKey: KEY, fetch: f.fetch }).stream(req, ctl()));
+    await collect(openAiCompatModel({ provider: 'inception', model: 'mercury-3', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()));
+    const bodies = f.calls.map((c) => JSON.parse(String(c.init.body)) as Record<string, unknown>);
+    expect(bodies.map((b) => [b.model, b.provider])).toEqual([
+      ['vendor/model', { data_collection: 'deny' }],
+      ['vendor/model', { data_collection: 'deny', order: ['groq'], allow_fallbacks: false }],
+      ['mercury-3', undefined],
+    ]);
+  });
+  it('asks Meta at its own address, with reasoning_effort as named (minimal is Meta\'s own) and max_completion_tokens', async () => {
+    const f = stubFetch(toolStream);
+    const m = openAiCompatModel({ provider: 'meta', model: 'muse-ember-1.0', apiKey: KEY, fetch: f.fetch });
+    expect(m.id).toBe('meta:muse-ember-1.0');
+    expect(await collect(m.stream({ ...req, effort: 'minimal' }, ctl()))).toContainEqual({ type: 'tool_call', id: 'call_1', name: 'book', args: { day: '2026-11-13' } });
+    expect(f.calls[0]!.url).toBe('https://api.meta.ai/v1/chat/completions');
+    expect((f.calls[0]!.init.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
+    const body = JSON.parse(String(f.calls[0]!.init.body)) as Record<string, unknown>;
+    expect([body.reasoning_effort, body.reasoning, body.max_completion_tokens, body.max_tokens, body.provider]).toEqual(['minimal', undefined, 200, undefined, undefined]);
+  });
   it('maps a plain stop to end and length to length', async () => {
     const run = async (finish: string) => collect(openAiCompatModel({ provider: 'inception', model: 'm', apiKey: KEY, fetch: stubFetch(() => sseResponse([chunk({ content: 'x' }, finish), sse('[DONE]')])).fetch }).stream(req, ctl()));
     expect((await run('stop')).at(-1)).toMatchObject({ type: 'done', stop: 'end' });

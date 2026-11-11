@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadPersonas } from './personas';
+import { isCooperative, loadPersonas } from './personas';
 
 const write = (yaml: string): string => {
   const f = join(mkdtempSync(join(tmpdir(), 'personas-')), 'personas.yaml');
@@ -47,5 +47,17 @@ describe('loadPersonas', () => {
     const one = (from: string): string => `personas:\n  - id: regular\n    goal: Book in.\n    truth: { name: Pat Example }\n    manner: Quick.\n    expects: booking\n    callingFrom: "${from}"\n`;
     expect(loadPersonas(write(one('+15555550142')))[0]!.callingFrom).toBe('+15555550142');
     expect(() => loadPersonas(write(one('555 555 0142')))).toThrow(/persona regular: callingFrom/);
+  });
+});
+
+describe('isCooperative', () => {
+  const base = { id: 'p', goal: 'g', truth: { name: 'Pat Example' }, manner: 'Plain.' };
+  it('is a persona who wants something done (a request, a booking or a callback) and tries nothing they should not get', () => {
+    expect(isCooperative({ ...base, expects: 'request' })).toBe(true);
+    expect(isCooperative({ ...base, expects: 'booking', asksIfHuman: true })).toBe(true);
+    expect(isCooperative({ ...base, expects: 'callback' })).toBe(true);
+    expect(isCooperative({ ...base, expects: 'answer' })).toBe(false);
+    expect(isCooperative({ ...base, expects: 'none' })).toBe(false);
+    expect(isCooperative({ ...base, expects: 'request', adversarial: 'Pushes for a discount.' })).toBe(false);
   });
 });

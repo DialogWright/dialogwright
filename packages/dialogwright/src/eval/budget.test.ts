@@ -29,4 +29,12 @@ describe('Budget', () => {
     expect(b.exceeded()).toBe(true);
     expect(b.left()).toBe(0);
   });
+
+  it('counts a cost already priced (the line\'s agent model, from its traces)', () => {
+    const b = new Budget(0.05);
+    b.addUsd(0.03);
+    b.addUsd(0.03);
+    expect(b.spent()).toBeCloseTo(0.06);
+    expect(b.exceeded()).toBe(true);
+  });
 });

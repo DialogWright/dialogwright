@@ -358,7 +358,10 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
   const calls: Extract<ModelEvent, { type: 'tool_call' }>[] = [];
   let text = '';
   let first = true;
+  let firstMs: number | null = null;
+  let failed: string | undefined;
   const fail = (error: string, stalled = false): Round => {
+    failed = error;
     controller.abort();
     void Promise.resolve(iter.return?.()).catch(() => undefined);
     return { ok: false, error, spoke: sp.spoke, stalled };
@@ -376,6 +379,7 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
       }
       if (next === TIMED_OUT) return first ? fail(`timeout: no answer began within ${Math.round(wait)} ms`, true) : fail(`timeout: the answer was not done within the model's ${t.deps.business.model.timeoutMs} ms`);
       if (next.done) break;
+      if (first) firstMs = Date.now() - started;
       first = false;
       const ev = next.value;
       if (ev.type === 'text') {
@@ -393,9 +397,16 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
       } else return fail(`${ev.kind}: ${ev.detail}`);
     }
   } finally {
-    t.model.ms += Date.now() - started;
+    const ms = Date.now() - started;
+    t.model.ms += ms;
+    (t.model.requests ??= []).push({ firstMs, ms, ...(failed !== undefined ? { error: failed } : {}) });
   }
-  if (text.trim() === '' && calls.length === 0) return fail('empty: the model said nothing and called nothing');
+  if (text.trim() === '' && calls.length === 0) {
+    const r = fail('empty: the model said nothing and called nothing');
+    // The request is timed already; its failure is this.
+    t.model.requests!.at(-1)!.error = failed;
+    return r;
+  }
   return { ok: true, calls, text };
 }
 

@@ -1,6 +1,6 @@
 /**
  * The model client of the converse runtime: one streaming, tool-calling interface over the Anthropic
- * Messages API and OpenAI-compatible chat completions (Inception, OpenRouter). A client never throws
+ * Messages API and OpenAI-compatible chat completions (Inception, OpenRouter, Meta). A client never throws
  * while streaming: a failure is an `error` event, and the stream ends.
  */
 

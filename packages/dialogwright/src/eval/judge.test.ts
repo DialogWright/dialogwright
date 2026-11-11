@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { fakeModel } from '../converse/model/fake';
 import { Budget } from './budget';
 import type { SimCall } from './chatDriver';
-import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall } from './judge';
+import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall } from './judge';
 import type { Persona } from './personas';
 
 const persona: Persona = { id: 'p', goal: 'Ask the hours.', truth: { name: 'Pat Example' }, manner: 'Plain.', expects: 'answer' };
@@ -139,5 +139,22 @@ describe('the run artifacts', () => {
     mkdirSync(join(traces, 'example'));
     writeFileSync(join(traces, 'example', 'c1.jsonl'), [JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', model: { costUsd: 0.004 } }), JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', model: { costUsd: null } }), JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', model: { costUsd: 0.001 } })].join('\n'));
     expect(agentCostOfCall(traces, 'c1')).toBeCloseTo(0.005);
+  });
+
+  it('reads a converse call\'s model use: each caller turn\'s timed requests, and the tokens summed', () => {
+    const traces = mkdtempSync(join(tmpdir(), 'traces-use-'));
+    mkdirSync(join(traces, 'example'));
+    const rec = (said: string | null, requests: object[] | undefined, inputTokens: number, outputTokens: number) => JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', said, model: { costUsd: 0, usage: { inputTokens, outputTokens }, ...(requests ? { requests } : {}) } });
+    writeFileSync(join(traces, 'example', 'c1.jsonl'), [
+      rec(null, undefined, 0, 0),
+      rec('hello', [{ firstMs: 200, ms: 600 }], 1000, 50),
+      rec('Friday?', [{ firstMs: 100, ms: 300 }, { firstMs: 400, ms: 900, error: 'x' }], 2000, 80),
+      JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c2', said: 'no', model: { usage: { inputTokens: 5, outputTokens: 5 }, requests: [{ firstMs: 1, ms: 1 }] } }),
+    ].join('\n'));
+    expect(modelUseOfCall(traces, 'c1')).toEqual({
+      turns: [{ requests: [{ firstMs: 200, ms: 600 }] }, { requests: [{ firstMs: 100, ms: 300 }, { firstMs: 400, ms: 900, error: 'x' }] }],
+      tokens: { inputTokens: 3000, outputTokens: 130 },
+    });
+    expect(modelUseOfCall(traces, 'c9')).toEqual({ turns: [], tokens: null });
   });
 });

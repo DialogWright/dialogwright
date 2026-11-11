@@ -702,6 +702,32 @@ describe('converseTurn: the model\'s failures', () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
+  it('keeps each request\'s time in the trace: to its first event and to its end, and how it failed', async () => {
+    let n = 0;
+    const slow: ConverseModel = {
+      id: 'slow',
+      async *stream(_req, signal) {
+        if (n++ === 0) {
+          await new Promise((resolve) => signal.addEventListener('abort', resolve));
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        yield text('Hello there.');
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        yield done();
+      },
+    };
+    const h = harness([], { model: slow, edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  timeoutMs: 200') });
+    await h.run(fresh(), { kind: 'text', text: 'hi' });
+    const [stalled, answered] = h.traces[0]!.model.requests!;
+    expect(stalled).toMatchObject({ firstMs: null, error: expect.stringMatching(/^timeout: no answer began/) });
+    expect(stalled!.ms).toBeGreaterThanOrEqual(90);
+    expect(answered!.error).toBeUndefined();
+    expect(answered!.firstMs).toBeGreaterThanOrEqual(35);
+    expect(answered!.ms).toBeGreaterThanOrEqual(answered!.firstMs! + 25);
+    expect(h.traces[0]!.model.requests).toHaveLength(2);
+  });
+
   it('takes an empty reply as a failure', async () => {
     const h = harness([[done()], [done()]]);
     const s = await h.run(fresh(), { kind: 'text', text: 'hi' });

@@ -60,7 +60,8 @@ function paramSchema(p: ParamSpec): Record<string, unknown> {
     case 'slot': return { type: 'string', description: `${p.about} The id of one of the results ${p.from} returned on this call.` };
     case 'choice': return { type: 'string', enum: [...(p.options ?? [])], description: p.about };
     case 'number': return { type: 'string', description: `${p.about} A number.` };
-    case 'phone': return { type: 'string', description: `${p.about} A phone number with its area code, or "${CALLER_TOKEN}" for the number the caller is calling from.` };
+    // The token stands for a number alone: worded so, as a call once sent a request under the name "Caller".
+    case 'phone': return { type: 'string', description: `${p.about} A phone number with its area code, or the word "${CALLER_TOKEN}", which stands for the number the caller is calling from and for nothing else.` };
     case 'text': return { type: 'string', description: p.about };
   }
 }

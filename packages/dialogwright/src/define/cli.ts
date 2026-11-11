@@ -64,6 +64,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['render:judge-eval', 'measure the span drift judge against the span\'s shape checks on labelled cases: the real judge recorded into a cassette, one report (--replay: from the cassette)'],
   ['agent:bakeoff', "compare agent models on a cases file's calls: answered, valid JSON, values and actions right, figures, latency and cost, each recorded into its own cassette beside the cases (--replay: from the cassettes)"],
   ['eval', "simulated callers over the chat wire: a model plays each persona, a model judges the call, one summary of the measures (the author's own keys; refused in CI)"],
+  ['eval:compare', "a converse app's models compared on its simulated callers, cheapest first, against the bars, within a budget; stops at the first that clears them (the author's own keys; refused in CI)"],
   ['policy:matrix', 'write policy.matrix, the reviewed golden of what the gate decides'],
   ['policy:card', 'write POLICY.md, the policy in plain English with its diagrams'],
   ['app:diagram', "write APP-MAP.md, the app's intents, forms, slots, actions and rules as diagrams"],
@@ -272,6 +273,10 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'eval') {
     const { evalCommand } = await import('../eval/cli');
     return evalCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
+  }
+  if (command === 'eval:compare') {
+    const { compareCommand } = await import('../eval/compareCli');
+    return compareCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
   }
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);
