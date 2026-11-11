@@ -63,7 +63,8 @@ function shown(b: AgentBusiness, spec: ParamSpec | undefined, value: string, lan
 
 /**
  * The read-back of `action` in `lang`, each {placeholder} filled with its param as the type displays
- * it (an optional param left out as nothing). `seen` holds the lookups' results a slot's label is read
+ * it. A part in square brackets is said only when every param it names has a value, without its brackets
+ * ("for the {item}[, {details}]"): that is where an optional param is read back. `seen` holds the lookups' results a slot's label is read
  * from (required, so a caller never reads a slot back without this call's lookups). Throws for an action with no read-back: only a change has one, and agent.yaml's check makes
  * every change have one.
  */
@@ -71,7 +72,9 @@ export function readBackText(b: AgentBusiness, action: string, params: Record<st
   const spec = b.actions[action];
   const frame = spec?.readBack?.[lang];
   if (spec === undefined || frame === undefined) throw new Error(`"${action}" has no read-back in ${lang}`);
-  return frame.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen, callerNumber));
+  const given = (name: string): boolean => (params[name] ?? '') !== '';
+  const parts = frame.replace(/\[([^[\]]*)\]/g, (_, part: string) => ([...part.matchAll(/\{([^{}]*)\}/g)].every((m) => given(m[1]!)) ? part : ''));
+  return parts.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen, callerNumber));
 }
 
 /** Each param of `action` as its read-back says it (a date as its day, a slot by its label, a phone as phoneShown), for the trace to mask where it is said. */

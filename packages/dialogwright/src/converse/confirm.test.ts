@@ -13,12 +13,9 @@ import { CONFIRM_NO_BELOW, CONFIRM_YES_AT, isConfirmed, readBackText, readYesNo 
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'business', 'fixture', 'agent.yaml');
 
-/** The fixture business, its read-back naming every param of the booking. */
+/** The fixture business: its booking's read-back names every param, the optional details in a part in square brackets. */
 function business(): AgentBusiness {
-  const text = readFileSync(FIXTURE, 'utf8').replace(
-    'for the {item}. We',
-    'for the {item} ({details}). We',
-  );
+  const text = readFileSync(FIXTURE, 'utf8');
   const { value, problems } = agentBusinessProblems(text);
   if (!value) throw new Error(problems.map((p) => p.message).join('\n'));
   return value;
@@ -33,6 +30,14 @@ describe('readBackText', () => {
     expect(readBackText(b, 'book', params, 'en', seen)).toBe(
       'A visit on Friday, November 13, drop off by noon, for the kettle (it sparks). We will call the number 555 555 0142. Is that right?',
     );
+  });
+
+  it('leaves out a part in square brackets whose optional param has no value, and says it without its brackets when it has one', () => {
+    const { details: _, ...without } = params;
+    expect(readBackText(b, 'book', without, 'en', seen)).toBe(
+      'A visit on Friday, November 13, drop off by noon, for the kettle. We will call the number 555 555 0142. Is that right?',
+    );
+    expect(readBackText(b, 'book', { ...params, details: '' }, 'en', seen)).toContain('for the kettle. We will');
   });
 
   it('says the number calling as that, by its last four only', () => {
@@ -51,10 +56,6 @@ describe('readBackText', () => {
   it('reads no label from the prototype of what was seen', () => {
     const proto = { ...b, actions: { ...b.actions, book: { ...b.actions.book!, params: { ...b.actions.book!.params, window: { type: 'slot' as const, from: 'toString', about: 'A window.' } } } } };
     expect(readBackText(proto, 'book', { ...params, window: 'w-9' }, 'en', {})).toContain('Friday, November 13, w-9, for');
-  });
-
-  it('says an optional param left out as nothing', () => {
-    expect(readBackText(b, 'book', { ...params, details: '' }, 'en', seen)).toContain('for the kettle (). ');
   });
 
   it('throws for an action that has no read-back', () => {

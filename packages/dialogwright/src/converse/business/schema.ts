@@ -70,7 +70,7 @@ const action = z
     about: text().describe('What the action does and when to use it, for the model.'),
     kind: z.enum(['lookup', 'change']).describe('lookup: reads and returns a result. change: does something, and so is read back and confirmed by the caller first.'),
     params: z.record(identifier(), param).default({}).describe('The parameters the call carries, by name.'),
-    readBack: worded('The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter; required for a change').optional(),
+    readBack: worded('The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter, an optional one in a part in square brackets said only when it has a value ("[, {details}]"); required for a change').optional(),
     then: z.array(identifier()).optional().describe('Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.'),
     rules: z.array(policyRuleEntry).optional().describe('The gate\'s rules for this action, in the same shape as policy.yaml\'s.'),
     audit: z.record(identifier(), z.enum(AUDIT_MASKS)).optional().describe('How each param that needs it is recorded: last4, mask, length, secret or keep. Default: mask.'),
@@ -142,11 +142,15 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
         named.add(key);
         if (!Object.hasOwn(params, key)) issue(ctx, ['actions', name, 'readBack', 'en'], `the placeholder {${key}} is no param of "${name}"`, `write one of its params (${Object.keys(params).join(', ') || 'it has none'}) in the braces, or add the param`);
       }
-      // The caller's yes confirms every value the change runs with, so its read-back says each one the change must have.
+      // The caller's yes confirms every value the change runs with, so its read-back says each one: a required param
+      // as it is, an optional one in a part in square brackets, said only when it has a value ("[, {details}]").
       // A follow-on's read-back is never said (it runs on its parent's yes, with values its parent read back), so it is not held to this.
       if (a.kind === 'change' && !followed.has(name)) {
+        const inParts = new Set([...a.readBack.en.matchAll(/\[([^[\]]*)\]/g)].flatMap((m) => [...m[1]!.matchAll(/\{([^{}]*)\}/g)].map((x) => x[1]!)));
         for (const [pname, p] of Object.entries(params)) {
-          if (isMap(p) && p.optional !== true && !named.has(pname)) issue(ctx, ['actions', name, 'readBack', 'en'], `the read-back of "${name}" does not say {${pname}}, so the caller's yes would confirm it unheard`, `write {${pname}} in the read-back, or mark it optional`);
+          if (!isMap(p)) continue;
+          if (p.optional !== true && inParts.has(pname)) issue(ctx, ['actions', name, 'readBack', 'en'], `the read-back of "${name}" says the required {${pname}} in a part in square brackets, said only when it has a value`, `write {${pname}} outside the square brackets`);
+          else if (!named.has(pname)) issue(ctx, ['actions', name, 'readBack', 'en'], `the read-back of "${name}" does not say {${pname}}, so the caller's yes would confirm it unheard`, p.optional === true ? `write {${pname}} in a part in square brackets, said only when it has a value ("[, {${pname}}]")` : `write {${pname}} in the read-back, or mark it optional and write it in a part in square brackets`);
         }
       }
     }
@@ -221,6 +225,10 @@ export const agentBusinessSchema = z
     priceCaveat: worded('What the agent says alongside any price (for example that the final price is confirmed once the work is seen)'),
     notOffered: z.array(text()).default([]).describe('What the business does not do.'),
     facts: z.array(text()).default([]).describe('Anything else the agent may say, one fact each.'),
+    questions: z
+      .array(z.strictObject({ q: text().describe('A question callers ask, in their words.'), a: text().describe('The business\'s answer, as the agent may say it.') }).describe('One question and its answer.'))
+      .default([])
+      .describe('The questions callers ask and the business\'s answers: what to bring, how long things take, when someone calls back, what it costs to cancel. Where the business has not answered a question, the agent has nothing to go on; the simulated callers\' judge lists such answers as gaps for the owner to fill in here.'),
     persona: z
       .strictObject({
         style: text().describe('How the agent speaks.'),

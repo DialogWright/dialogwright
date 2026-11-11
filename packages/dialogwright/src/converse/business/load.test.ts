@@ -82,11 +82,27 @@ describe('what is refused', () => {
     expect(rest).toEqual([]);
     expect(p).toMatchObject({ path: 'actions.book.readBack.en' });
     expect(p!.message).toMatch(/does not say \{phone\}/);
-    expect(p!.fix).toBe('write {phone} in the read-back, or mark it optional');
+    expect(p!.fix).toBe('write {phone} in the read-back, or mark it optional and write it in a part in square brackets');
   });
 
-  it('a read-back may leave out an optional param, and a follow-on\'s read-back, never said, is not held to it', () => {
-    expect(problemsOf(changed('phone: { type: phone, about:', 'phone: { type: phone, optional: true, about:').replace(' We will call the number {phone}.', ''))).toEqual([]);
+  it('an optional param is read back in a part in square brackets, never left out or said bare of one', () => {
+    const optionalPhone = changed('phone: { type: phone, about:', 'phone: { type: phone, optional: true, about:');
+    expect(problemsOf(optionalPhone.replace(' We will call the number {phone}.', '[ We will call the number {phone}.]'))).toEqual([]);
+    const [left, ...rest] = problemsOf(optionalPhone.replace(' We will call the number {phone}.', ''));
+    expect(rest).toEqual([]);
+    expect(left!.message).toMatch(/does not say \{phone\}/);
+    expect(left!.fix).toBe('write {phone} in a part in square brackets, said only when it has a value ("[, {phone}]")');
+    const [missing] = problemsOf(changed('for the {item}[ ({details})].', 'for the {item}.'));
+    expect(missing!.message).toMatch(/does not say \{details\}/);
+  });
+
+  it('a required param in a part in square brackets, which would go unsaid when it is empty', () => {
+    const [p, ...rest] = problemsOf(changed(' We will call the number {phone}.', '[ We will call the number {phone}.]'));
+    expect(rest).toEqual([]);
+    expect(p!.message).toBe('the read-back of "book" says the required {phone} in a part in square brackets, said only when it has a value');
+  });
+
+  it('a follow-on\'s read-back, never said, is not held to naming its params', () => {
     expect(problemsOf(changed('en: "Tell the office about the {item}."', 'en: "Tell the office."'))).toEqual([]);
     // Once it is no follow-on, its read-back is said, and so held to it.
     const [p] = problemsOf(changed('then: [notify]', 'then: []').replace('en: "Tell the office about the {item}."', 'en: "Tell the office."'));
@@ -218,6 +234,20 @@ describe('businessText', () => {
     };
     const order = [at('Services:'), at('$80–$140 per item'), at('Prices: The price is confirmed'), at('Not offered:'), at('- Same-day visits'), at('Facts:'), at('Hours: Monday to Friday')];
     expect(order).toEqual([...order].sort((x, y) => x - y));
+  });
+
+  it('lists the questions callers ask with the business\'s answers after the facts, and none when there are none', () => {
+    expect(text).not.toContain('Questions callers ask');
+    const withQuestions = agentBusinessProblems(changed('facts:\n', 'questions:\n  - { q: Do I need to be home?, a: "Yes, someone needs to let the technician in." }\nfacts:\n')).value!;
+    const t = businessText(withQuestions);
+    expect(t).toContain('Questions callers ask, with our answers:\n- Do I need to be home? Yes, someone needs to let the technician in.');
+    expect(t.indexOf('Facts:')).toBeLessThan(t.indexOf('Questions callers ask'));
+    expect(t.indexOf('Questions callers ask')).toBeLessThan(t.indexOf('Hours:'));
+  });
+
+  it('refuses a question with no answer', () => {
+    const [p] = problemsOf(changed('facts:\n', 'questions:\n  - { q: Do I need to be home? }\nfacts:\n'));
+    expect(p?.path).toMatch(/^questions\[0\]/);
   });
 
   it('names the business and where it is first', () => {

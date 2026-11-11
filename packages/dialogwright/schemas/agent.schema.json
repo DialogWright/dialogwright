@@ -125,6 +125,32 @@
         "minLength": 1
       }
     },
+    "questions": {
+      "default": [],
+      "description": "The questions callers ask and the business's answers: what to bring, how long things take, when someone calls back, what it costs to cancel. Where the business has not answered a question, the agent has nothing to go on; the simulated callers' judge lists such answers as gaps for the owner to fill in here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A question callers ask, in their words."
+          },
+          "a": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The business's answer, as the agent may say it."
+          }
+        },
+        "required": [
+          "q",
+          "a"
+        ],
+        "additionalProperties": false,
+        "description": "One question and its answer."
+      }
+    },
     "persona": {
       "type": "object",
       "properties": {
@@ -537,14 +563,14 @@
               "en": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter; required for a change, in English."
+                "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter, an optional one in a part in square brackets said only when it has a value (\"[, {details}]\"); required for a change, in English."
               }
             },
             "required": [
               "en"
             ],
             "additionalProperties": false,
-            "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter; required for a change, per language."
+            "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter, an optional one in a part in square brackets said only when it has a value (\"[, {details}]\"); required for a change, per language."
           },
           "then": {
             "description": "Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.",
