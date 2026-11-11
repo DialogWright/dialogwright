@@ -14,7 +14,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { mockCodeVerifier } from '../core/tools';
 import { newSession, type Session } from '../core/session';
-import { type TurnRun } from './turn';
+import { questionAfterFiller, type TurnRun } from './turn';
 import { Continuation } from './continuation';
 import { holdsReply } from '../server/adapter';
 import type { TurnResult } from '../core/turn';
@@ -83,6 +83,8 @@ interface CallOptions {
   jevFails?: string;
   /** The caller came back in before these words (Continuation.resumed): they continue the words before them. */
   resumedBefore?: string;
+  /** These words were heard over a line the caller could not interrupt (UserSpeech.overLine, SPEECH_OVER_LINE=unless-miss). */
+  overLine?: string;
 }
 
 async function call(script: Scripted, steps: string[], opts: CallOptions = {}): Promise<Call> {
@@ -116,7 +118,7 @@ async function call(script: Scripted, steps: string[], opts: CallOptions = {}): 
   await run(withCallerNumber(startEvent(), opts.chat ? undefined : '+15555550199'));
   for (const text of steps) {
     if (text === opts.resumedBefore) continuation.resumed();
-    await run(opts.chat ? textEvent(text) : speechEvent(text));
+    await run(opts.chat ? textEvent(text) : text === opts.overLine ? { ...speechEvent(text), overLine: true as const } : speechEvent(text));
   }
   return { runs, early, last: runs.at(-1)! };
 }
@@ -221,6 +223,37 @@ describe('a line while the agent model is slow on a call (business.yaml waiting)
     const slow = await call((w, a) => (w === YES ? { delayMs: 450, out: said('Great!') } : script(w, a)), [HOLD, DETAILS, YES]);
     expect(slow.early).toEqual([]);
     expect(slow.last.record.agent).toMatchObject({ use: 'failed', fallback: 'timeout', scripted: 'read' });
+  });
+
+  it('words heard over a line: no line for the model\'s slowness, the wait the same, the answer used (call 61)', async () => {
+    const c = await call(nameAfter(350), [HOLD, 'Avery Lane'], { overLine: 'Avery Lane' });
+    expect(c.early).toEqual([]);
+    expect(c.last.record.filler).toBeUndefined();
+    expect(c.last.record.agent).toMatchObject({ use: 'used' });
+    expect(c.last.result.session.slots.request_patronName!.value).toBe('avery lane');
+    expect(c.last.result.session.agent!.waitLine).toBeUndefined();
+  });
+
+  it('words heard over a line that are set aside: no line said before them, so no silence after one (call 61)', async () => {
+    const c = await call((w) => (w === HOLD ? { delayMs: 0, out: HOLD_ANSWER } : { delayMs: 350, out: said('Sure.') }), [HOLD, 'mm hmm okay'], { overLine: 'mm hmm okay' });
+    expect(c.early).toEqual([]);
+    expect(c.last.record.filler).toBeUndefined();
+    expect(c.last.result.setAside).toBe('speech-over-line');
+    expect(c.last.result.decision).toEqual({ kind: 'ignore' });
+  });
+
+  it('a turn set aside after a line for the model\'s slowness says the question it was on again, never silence', () => {
+    const c = { kind: 'ignore' as const };
+    const session = { ...newSession('S-aside', 0, VOICE_RELAY, ANONYMOUS, app.id), lastPromptText: "What's your name?" };
+    const setAside = { session, decision: c, actions: [], setAside: 'speech-over-line' } as unknown as TurnResult;
+    const again = questionAfterFiller(setAside);
+    expect(again.decision).toEqual({ kind: 'replay', text: "What's your name?" });
+    expect(JSON.stringify(again.actions)).toContain("What's your name?");
+    expect(again.setAside).toBe('speech-over-line');
+    expect(again.session).toBe(session);
+    // Any other turn as it is.
+    const taken = { ...setAside, setAside: undefined } as unknown as TurnResult;
+    expect(questionAfterFiller(taken)).toBe(taken);
   });
 
   it('with no early lines (a harness): the line recorded as due and not said, the wait the same', async () => {

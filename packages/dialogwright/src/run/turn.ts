@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { agentSettledWithout, followUpOf, followUpQuestions, plan, sensitiveDigit, slotContext, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import { cloneSession, type Session } from '../core/session';
+import type { Decision } from '../core/decision';
 import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
 import { pronounceFor, unpronounce } from '../channel/pronounce';
 import { maskId } from '../gate/principal';
@@ -15,7 +16,7 @@ import { DEFAULT_SCREEN_MODE, inlineScreenQuestions, screenQuestions, screenResu
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
 import { JevClientError, isNoul, noulValue, type AnswerMap, type JevClient, type JevResponse, type JevUsage, type JsonValue, type QuestionMap } from '../jev/types';
-import type { RenderContext } from '../prompts/render';
+import { decisionToActions, type RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceSink } from '../trace/writer';
 import type { FollowUpRecord, TraceRecord } from '../trace/types';
 import type { AuditDraft, AuditEntry, Chained } from '../audit/types';
@@ -426,6 +427,20 @@ async function askAgain(runner: AgentRunner, first: AgentContext, seen: readonly
   return { result: await askAgent(runner, ctx, speech, left), ctx };
 }
 
+/**
+ * A turn set aside (TurnResult.setAside) after a line was said for the model's slowness (business.yaml's
+ * `waiting`): the question it was on said again (`replay`, the line last asked, word for word), so the caller,
+ * told "one moment", is not left in silence until the no-input wait (call 61). The session stays as the turn set
+ * it aside; nothing is counted. The filler is not said on words heard over a line (the only turns set aside), so
+ * this is a guard for any other path. Every other turn as it is.
+ */
+export function questionAfterFiller(result: TurnResult): TurnResult {
+  if (result.setAside === undefined || result.session.lastPromptText === '') return result;
+  const decision: Decision = { kind: 'replay', text: result.session.lastPromptText };
+  const session = result.session;
+  return { ...result, decision, actions: decisionToActions(appOf(session), decision, null, session.locale, { shown: !session.caps.speech }) };
+}
+
 /** The failures asked again once (retryAgent): an answer not in its shape, and a turn the provider's content filter refused (call 61). */
 const retriable = (reason: AgentFailure): boolean => reason === 'invalid' || reason === 'filtered';
 
@@ -627,7 +642,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const agentWait = agentCtx !== null && opts.agent != null && session.caps.speech && !atReadBack ? (appOf(session).agent?.waiting ?? null) : null;
   const ownBudgetMs = opts.agent != null ? agentBudget(opts.agent, session.caps.speech) : 0;
   const agentBudgetMs = Math.max(ownBudgetMs, agentWait?.upToMs ?? 0);
-  const filler = agentWait !== null ? agentFiller(session, agentWait, { ...(opts.early !== undefined ? { early: opts.early } : {}), render: opts.render ?? null }, agentAskedAt) : null;
+  // Never on words heard over a line the caller could not interrupt (UserSpeech.overLine, marked only under
+  // SPEECH_OVER_LINE=unless-miss): such a turn may be set aside, nothing said, and a line said for its slowness
+  // would leave the caller in silence after it (call 61: "Okay, one moment.", then nothing until the no-input wait).
+  // The turn still waits for the answer as long (upToMs), the line it was over playing or just played.
+  const overLine = event.type === 'user.speech' && event.overLine === true;
+  const filler = agentWait !== null && !overLine ? agentFiller(session, agentWait, { ...(opts.early !== undefined ? { early: opts.early } : {}), render: opts.render ?? null }, agentAskedAt) : null;
   // A turn the decision model's reading shows will be decided without the answer (agentSettledWithout) waits no
   // longer for it than the runner's own budget: past it, the answer is taken as late, as it was before the setting.
   let capTimer: ReturnType<typeof setTimeout> | undefined;
@@ -641,14 +661,14 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // The decision model's reading is in: the line is said only where it would not be said over a caller not finished,
   // and never on a turn that will not use the answer (then the wait is the runner's own budget too).
   const readingIn = (): void => {
-    if (filler === null) return;
+    if (agentWait === null) return;
     const answers = response?.answers ?? null;
     if (agentSettledWithout(session, event, error !== null ? null : answers, tc, screen)) {
-      filler.stop();
+      filler?.stop();
       capAgent?.();
       return;
     }
-    filler.readingIn(answers !== null && isNoul(answers.utteranceComplete) ? noulValue(answers, 'utteranceComplete') : null);
+    filler?.readingIn(answers !== null && isNoul(answers.utteranceComplete) ? noulValue(answers, 'utteranceComplete') : null);
   };
   try {
     // Its answer in, the line waits: a turn still waiting on the decision model or a tool is not the model being slow.
@@ -811,10 +831,11 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     const retrievedAny = retrieved ?? second?.retrieved ?? null;
     // An app in agent mode: the agent's reply, where the turn says it, held to the facts by the checks and the
     // drift judge (render/agentLine.ts), its fixed line said in its place where one fails, and the records with it.
-    // The line said while the model was slow: the call's next is another (Session.agent.waitLine).
+    // The line said while the model was slow: the call's next is another (Session.agent.waitLine). A turn set aside
+    // after it says the question it was on again, never silence (questionAfterFiller).
     if (fillerSaid?.said === true) {
       const a = resolved.session.agent ?? { conversation: [], failures: 0 };
-      resolved = { ...resolved, session: { ...resolved.session, agent: { ...a, waitLine: fillerSaid.index } } };
+      resolved = questionAfterFiller({ ...resolved, session: { ...resolved.session, agent: { ...a, waitLine: fillerSaid.index } } });
     }
     const held = appOf(session).mode === 'agent'
       ? await holdAgentLine({
