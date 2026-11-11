@@ -101,9 +101,23 @@ const played = (relay: FakeRelay, text: string) => {
   relay.send({ type: 'info', name: 'tokensPlayed', value: text });
 };
 
+/**
+ * Twilio (and Telnyx without its events) reports no playback, so a prompt sent at once is speech over the question
+ * just sent (BARGE_IN=none), and no line for the model's slowness is said on such words (call 61): these calls take
+ * every answer as before (SPEECH_OVER_LINE=take), being about the line, not about speech over a line.
+ */
+const TAKE = { SPEECH_OVER_LINE: 'take' };
+/** On Telnyx, the caller answers once Telnyx has reported the question played (call 61: the report is the line's end). */
+const answerAfter = async (relay: FakeRelay, words: string): Promise<void> => {
+  played(relay, relay.texts().at(-1)!);
+  relay.send({ type: 'info', name: 'agentSpeaking', value: 'off' });
+  await pause(50);
+  relay.prompt(words);
+};
+
 describe('a line while the agent model is slow, on the phone', () => {
   it('Twilio: the line goes out once the answer is late, and the turn\'s own line after it', async () => {
-    const ws = await start({ 'Avery Lane': 700 });
+    const ws = await start({ 'Avery Lane': 700 }, TAKE);
     const relay = await connect(ws, 'twilio', 'CA-wait-1');
     try {
       relay.prompt(HOLD);
@@ -124,7 +138,7 @@ describe('a line while the agent model is slow, on the phone', () => {
     try {
       relay.prompt(HOLD);
       await relay.waitForTexts(2);
-      relay.prompt('Avery Lane');
+      await answerAfter(relay, 'Avery Lane');
       await relay.waitForTexts(3);
       expect(relay.texts().at(-1)!.trim()).toBe('One sec.');
       // The answer is in (500 ms), and the reply waits for the line to have played.
@@ -139,7 +153,8 @@ describe('a line while the agent model is slow, on the phone', () => {
   });
 
   it('Telnyx with no playback report: the turn\'s own line after the line\'s estimated length', async () => {
-    const ws = await start({ 'Avery Lane': 500 });
+    // No events, so no report of the question played either: the answer taken as before (TAKE).
+    const ws = await start({ 'Avery Lane': 500 }, TAKE);
     const relay = await connect(ws, 'telnyx', 'v3:wait-3');
     try {
       relay.prompt(HOLD);
@@ -157,7 +172,7 @@ describe('a line while the agent model is slow, on the phone', () => {
 
 describe('what the caller says over the line answers nothing (the review of call 60)', () => {
   it('an "okay" over the line before the read-back is not its yes: no turn, nothing filed, the read-back said; a yes after it files', async () => {
-    const ws = await start({ [DETAILS]: 700 });
+    const ws = await start({ [DETAILS]: 700 }, TAKE);
     const relay = await connect(ws, 'twilio', 'CA-wait-4');
     try {
       relay.prompt(HOLD);
@@ -189,7 +204,7 @@ describe('what the caller says over the line answers nothing (the review of call
     try {
       relay.prompt(HOLD);
       await relay.waitForTexts(2);
-      relay.prompt('Avery Lane');
+      await answerAfter(relay, 'Avery Lane');
       await relay.waitForTexts(3);
       // The caller starts speaking over "One sec." (reported), and the prompt comes once the question is out.
       relay.send({ type: 'info', name: 'clientSpeaking', value: 'on' });
