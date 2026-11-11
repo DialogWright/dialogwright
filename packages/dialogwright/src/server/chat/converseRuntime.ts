@@ -37,6 +37,8 @@ import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
  *   where it was (a read-back waiting for its answer included); a reply still streaming is not resumed.
  *   A resume streams where the resuming client's start says `stream: true`, whatever the first said.
  * - No sign-in: a token on a start or a sign_in is refused, as on a chat whose sign-in is off.
+ * - Once a turn (the start, a text) has sent all it says, its correction included, `onTurnEnd` is told, where
+ *   the server was given one (the simulated callers' server, eval/server.ts).
  */
 
 /** The schema a converse chat is saved under (StoredChat.schema). */
@@ -63,6 +65,12 @@ export interface ConverseChatDeps {
   log: (line: string) => void;
   /** A chat's trace and frame log, by its id. */
   resources(id: string): { trace: TraceSink; frames: FrameSink };
+  /**
+   * Called once a turn of the person (the start, a text) has finished, with everything it says sent (the reply,
+   * and the correction when there is one): the simulated callers' driver ends a reply on it (eval/chatDriver.ts),
+   * the chat wire having no end-of-turn message. Absent on a deployment.
+   */
+  onTurnEnd?: (chatId: string) => void;
 }
 
 /** One chat as this runtime holds it. */
@@ -110,6 +118,16 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       if (r instanceof Promise) r.catch((err: unknown) => log(`chat ${id}: the end's audit entry failed: ${describeError(err)}`));
     } catch (err) {
       log(`chat ${id}: the end's audit entry failed: ${describeError(err)}`);
+    }
+  };
+
+  /** The turn's end told (deps.onTurnEnd); a hook that throws is logged, never the chat's failure. */
+  const turnEnded = (id: string): void => {
+    if (deps.onTurnEnd === undefined) return;
+    try {
+      deps.onTurnEnd(id);
+    } catch (err) {
+      log(`chat ${id}: the turn's end hook failed: ${describeError(err)}`);
     }
   };
 
@@ -203,9 +221,13 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       const number = named !== undefined && E164.test(named) ? named : undefined;
       if (named !== undefined && number === undefined) io.record('log', { callerNumberRefused: 'not E.164' });
       c.state = newConverseState({ appId: app.id, callId: id, channel: 'chat', ...(number !== undefined ? { callerNumber: number, account: accountOf(app.business, number) } : {}) });
-      io.send(io.ready(LANG));
-      await run(id, c, { kind: 'start' }, io);
-      if (start.token !== undefined && !io.ended) io.send(NO_SIGN_IN);
+      try {
+        io.send(io.ready(LANG));
+        await run(id, c, { kind: 'start' }, io);
+        if (start.token !== undefined && !io.ended) io.send(NO_SIGN_IN);
+      } finally {
+        turnEnded(id);
+      }
     },
 
     resumed(id, start) {
@@ -213,7 +235,11 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
     },
 
     async text(id, text, io) {
-      return { ended: await run(id, held(id), { kind: 'text', text }, io) };
+      try {
+        return { ended: await run(id, held(id), { kind: 'text', text }, io) };
+      } finally {
+        turnEnded(id);
+      }
     },
 
     async left(id, why) {

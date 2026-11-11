@@ -203,6 +203,13 @@ export interface ServerOverrides {
    * `model.default`, resolved with the app's own settings (its key from them).
    */
   converseModel?: (appId: string) => ConverseModel;
+  /**
+   * Told each web chat's turn end, by the chat's id: once a turn of the person (the start, a text) has sent
+   * all it says, a converse reply's correction included (chat/runtime.ts). The simulated callers' server
+   * gives it (eval/server.ts), so its driver ends a reply there rather than after a pause, the chat wire having
+   * no end-of-turn message. A harness's seam, not a setting: a deployment gives none.
+   */
+  onTurnEnd?: (chatId: string) => void;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -1004,6 +1011,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const chatOf = (a: (typeof hosted)[number]): ChatEndpoint => (isConverseApp(a.app) ? converseChatOf(a as AppRun<ConverseApp>) : scriptedChatOf(a as AppRun<App>));
   const converseChatOf = (a: AppRun<ConverseApp>): ChatEndpoint => chatTransport(transportOf(a), converseChatRuntime({
     app: a.app, model: converseModels.get(a.id)!, jev: clientOf(a.id), jevTimeoutMs: thresholds.JEV_TIMEOUT_MS, audit: auditOf(a.id), texts: textsOf(a.id), now, log,
+    ...(overrides.onTurnEnd !== undefined ? { onTurnEnd: overrides.onTurnEnd } : {}),
     env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined),
     resources: (id) => {
       const startedAtMs = now();
@@ -1016,6 +1024,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ...(host ? { keysFor } : {}),
     anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
     fetch: overrides.chatFetch,
+    ...(overrides.onTurnEnd !== undefined ? { onTurnEnd: overrides.onTurnEnd } : {}),
     resources: (id, sessions) => {
       const file = safeFileStem(id);
       // As a call's (server/traceMeta.ts): the chat's last values once it leaves `sessions`, its restores as its generation.

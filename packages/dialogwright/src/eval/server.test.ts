@@ -7,6 +7,7 @@ import { defineConverseApp, type ConverseApp } from '../converse/app';
 import { fakeModel } from '../converse/model/fake';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import { CALLER, done, text } from '../testing/converse/chat';
+import { driveChat } from './chatDriver';
 import { EVAL_MODEL_TIMEOUT_MS, evalApp, startEvalServer, type EvalServer } from './server';
 
 /**
@@ -114,5 +115,19 @@ describe('startEvalServer', () => {
     servers.push(s);
     await chat(s.url);
     expect(model.requests[0]).toMatchObject({ effort: 'low' });
+  });
+
+  it('tells its driver each turn\'s end, so a reply ends there rather than after a pause', async () => {
+    const model = fakeModel([[text('Hello there.'), done()]]);
+    const app = defineConverseApp(deployedApp(), { tools: { availability: async () => [], book: async () => 'booked' } });
+    const s = await startEvalServer(app, env(folder()), { work: folder(), converseModel: () => model });
+    servers.push(s);
+    let asked = 0;
+    const began = Date.now();
+    // A settle far longer than the test may take: each reply must end at its turn's end.
+    const call = await driveChat({ url: s.url, origin: ORIGIN, persona: { id: 'p', goal: 'Say hello.', truth: {}, manner: 'Plain.', expects: 'answer' }, maxTurns: 3, timeoutMs: 20_000, settleMs: 20_000, turnEnds: s.turnEnds, caller: async () => (asked++ === 0 ? 'hello' : null) });
+    expect(Date.now() - began).toBeLessThan(5000);
+    expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line']);
+    expect(call.turns[2]!.text).toBe('Hello there.');
   });
 });

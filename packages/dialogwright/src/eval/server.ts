@@ -7,6 +7,7 @@ import { loadConfig } from '../server/config';
 import { hostRouting, type HostedApp } from '../server/host';
 import { startServer, type RunningServer } from '../server/index';
 import type { TextProvider } from '../texts/types';
+import { turnEndSignal, type TurnEnds } from './chatDriver';
 
 /**
  * The server a simulated call runs on (pnpm eval): in this process, its audit and traces in folders under
@@ -15,7 +16,8 @@ import type { TextProvider } from '../texts/types';
  * calls from out of the start's context (chat.callerNumberFromContext), whatever app.yaml says; its model is
  * the one a run names (eval:compare), its opener the one a run names (eval --opener), and its model's time the eval's own (EVAL_MODEL_TIMEOUT_MS). Each is the
  * harness's own override, given to this server alone, never a setting a deployment can have. A scripted app
- * runs on one server for the whole run, as it is registered.
+ * runs on one server for the whole run, as it is registered. Either way the server tells each chat turn's end
+ * (ServerOverrides.onTurnEnd) to `turnEnds`, which the driver ends each reply on (eval/chatDriver.ts).
  */
 
 /**
@@ -55,6 +57,8 @@ export interface EvalServer {
   url: string;
   auditDir: string;
   traceDir: string;
+  /** Each chat turn's end on this server, for the driver (driveChat's turnEnds). */
+  turnEnds: TurnEnds;
   close(): Promise<void>;
 }
 
@@ -67,7 +71,8 @@ export async function startEvalServer(app: HostedApp, env: Record<string, string
   mkdirSync(dir, { recursive: true });
   const serverEnv: Record<string, string | undefined> = { ...env, AUDIT_DIR: auditDir, TRACE_DIR: traceDir };
   let running: RunningServer;
-  const base = { host: '127.0.0.1', log: () => {}, env: serverEnv, ...(o.textProvider !== undefined ? { textProvider: o.textProvider } : {}) };
+  const ends = turnEndSignal();
+  const base = { host: '127.0.0.1', log: () => {}, env: serverEnv, onTurnEnd: ends.ended, ...(o.textProvider !== undefined ? { textProvider: o.textProvider } : {}) };
   if (isConverseApp(app)) {
     const made: ConverseApp = evalApp(app.fresh?.() ?? app, o.model, o.style);
     const call: ConverseApp = { ...made, chat: { ...made.chat, callerNumberFromContext: true } };
@@ -76,5 +81,5 @@ export async function startEvalServer(app: HostedApp, env: Record<string, string
   } else {
     running = await startServer(loadConfig(serverEnv), base);
   }
-  return { url: `ws://127.0.0.1:${running.port}/chat`, auditDir, traceDir, close: () => running.close() };
+  return { url: `ws://127.0.0.1:${running.port}/chat`, auditDir, traceDir, turnEnds: ends, close: () => running.close() };
 }

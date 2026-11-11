@@ -188,7 +188,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     let server: EvalServer | null = shared;
     try {
       server ??= await serverFor();
-      call = await driveChat({ url: server.url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN });
+      call = await driveChat({ url: server.url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN, turnEnds: server.turnEnds });
     } catch (e) {
       failures.push(`call failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
     } finally {

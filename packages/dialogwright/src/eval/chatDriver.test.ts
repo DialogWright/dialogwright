@@ -7,7 +7,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { loadConfig } from '../server/config';
 import { startServer, type RunningServer } from '../server/index';
-import { driveChat } from './chatDriver';
+import { driveChat, turnEndSignal } from './chatDriver';
 import type { Persona } from './personas';
 
 const ORIGIN = 'https://eval.example.com';
@@ -116,5 +116,75 @@ describe('driveChat: the first sentence', () => {
     } finally {
       await new Promise((resolve) => wss.close(() => resolve(undefined)));
     }
+  });
+});
+
+describe('driveChat: a turn\'s end (the chat runtime\'s onTurnEnd)', () => {
+  const SLIP = 'We are open Saturdays too.';
+  const CORRECTION = 'Sorry, I should correct that: we are open every day, 9 to 5.';
+
+  /** A chat server whose reply to a caller is a say, then after `lateMs` a correction, the turn's end told once both are sent. */
+  async function correcting(lateMs: number) {
+    const { WebSocketServer } = await import('ws');
+    const ends = turnEndSignal();
+    const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
+    wss.on('connection', (ws) => {
+      ws.once('message', () => {
+        ws.send(JSON.stringify({ type: 'ready', session: 's1' }));
+        ws.send(JSON.stringify({ type: 'say', text: 'Hello.' }));
+        ends.ended('s1');
+        ws.on('message', (d) => {
+          if ((JSON.parse(d.toString()) as { type: string }).type !== 'text') return;
+          setTimeout(() => ws.send(JSON.stringify({ type: 'say', text: SLIP })), 20);
+          setTimeout(() => {
+            ws.send(JSON.stringify({ type: 'say', text: CORRECTION }));
+            ends.ended('s1');
+          }, 20 + lateMs);
+        });
+      });
+    });
+    const port = (wss.address() as { port: number }).port;
+    return { url: `ws://127.0.0.1:${port}/chat`, ends, close: () => new Promise<void>((resolve) => wss.close(() => resolve())) };
+  }
+
+  it('keeps a reply and a correction that follows it after more than settleMs as one line turn, ending it at the turn\'s end', async () => {
+    const s = await correcting(500);
+    try {
+      let asked = 0;
+      const call = await driveChat({ url: s.url, origin: ORIGIN, persona, maxTurns: 2, timeoutMs: 5000, settleMs: 100, turnEnds: s.ends, caller: async () => (asked++ === 0 ? 'Are you open Saturday?' : null) });
+      expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line']);
+      expect(call.turns[0]!.text).toBe('Hello.');
+      expect(call.turns[2]!.text).toBe(`${SLIP} ${CORRECTION}`);
+      expect(call.ended).toBe('caller');
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('with no turn ends, settles as before: the reply ends settleMs after its last line, before the correction', async () => {
+    const s = await correcting(500);
+    try {
+      let asked = 0;
+      const call = await driveChat({ url: s.url, origin: ORIGIN, persona, maxTurns: 1, timeoutMs: 5000, settleMs: 100, caller: async () => (asked++ === 0 ? 'Are you open Saturday?' : null) });
+      expect(call.turns.at(-1)).toMatchObject({ who: 'line', text: SLIP });
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('ends a reply at the turn\'s end of an engine\'s own server (ServerOverrides.onTurnEnd), not after settling', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eval-driver-'));
+    const ends = turnEndSignal();
+    const env = { PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN, PORT: '0', TODAY_OVERRIDE: '2026-10-12', TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, DASHBOARD: 'off', JEV_CLIENT: 'stub' };
+    running = await startServer(loadConfig(env), { host: '127.0.0.1', log: () => {}, env, client: new HeuristicStubClient({ todayIso: '2026-10-12', app: libraryApp }), onTurnEnd: ends.ended });
+    const lines = ['I want to check a hold'];
+    let i = 0;
+    const began = Date.now();
+    // A settle far longer than the test may take: each reply must end at its turn's end.
+    const call = await driveChat({ url: `ws://127.0.0.1:${running.port}/chat`, origin: ORIGIN, persona, maxTurns: 4, timeoutMs: 20_000, settleMs: 20_000, turnEnds: ends, caller: async () => lines[i++] ?? null });
+    expect(Date.now() - began).toBeLessThan(5000);
+    expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line']);
+    expect(call.ended).toBe('caller');
   });
 });

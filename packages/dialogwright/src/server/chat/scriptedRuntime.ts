@@ -19,7 +19,7 @@ import type { FrameSink } from '../frameLog';
 import { jwksKeys } from './jwks';
 import { isDelegate, principalForToken, type ChatSignIn } from './signin';
 import type { KeyObject } from 'node:crypto';
-import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
+import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime, type ChatStart } from './runtime';
 
 /**
  * The scripted runtime of the web chat: each chat a session of the engine's own (core/session.ts) on the
@@ -49,6 +49,12 @@ export interface ScriptedChatDeps extends ChatTurnDeps {
   fetch?: typeof fetch;
   /** The key lookup for a JWKS URL (CHAT_SIGNIN=jwt), shared by the endpoints of a server of several apps; absent, this runtime's own. */
   keysFor?: (url: string) => (kid: string) => Promise<KeyObject | null>;
+  /**
+   * Called once a turn of the person (the start, with a sign-in its token asks; a text) has finished, with
+   * everything it says sent: the simulated callers' driver ends a reply on it (eval/chatDriver.ts), the chat
+   * wire having no end-of-turn message. Absent on a deployment.
+   */
+  onTurnEnd?: (chatId: string) => void;
 }
 
 /** One chat session as this runtime holds it: the turn's entry, its frame log, and the transport's counts. */
@@ -227,6 +233,45 @@ export function scriptedChatRuntime(deps: ScriptedChatDeps): ChatRuntime {
 
   const ready = (e: ScriptedEntry): ServerMessage[] => [e.io.ready(localeOf(e.session))];
 
+  /** A new chat's opening: its start turn, then the sign-in a token on the start asks for. */
+  const opening = async (id: string, start: ChatStart): Promise<void> => {
+    const s = held(id);
+    // A token on start: a delegate's chat begins as theirs (as the harness's `as` does); a subject signs
+    // in through the core once the chat has opened, as a later sign-in does.
+    let refused: ServerMessage | null = null;
+    let subject: Party | null = null;
+    let delegate: Party | null = null;
+    if (start.token !== undefined) {
+      const r = await verify(s, start.token);
+      if (!r.ok) refused = r.error;
+      else if (isDelegate(appOf(s.session), r.principal)) delegate = r.principal;
+      else subject = r.principal;
+    }
+    if (delegate !== null) {
+      s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate, s.session.appId);
+      log(`chat ${s.id}: signed in (${delegate.kind}, level ${delegate.level})`);
+      s.io.record('log', { signedIn: delegate.level, kind: delegate.kind });
+    }
+    const signedIn: ServerMessage[] = delegate === null ? [] : [{ type: 'signed_in', level: delegate.level }];
+    // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
+    // and ready names the one the session speaks.
+    // The page's context, by the app's callData keys (chat.<key>); none for an app that names none.
+    const data = callDataFrom(appOf(s.session).callData, {}, start.context);
+    await turn(s, withCallData(startEvent({ channel: 'chat' }, start.locale), data), (x) => [...ready(x), ...signedIn]);
+    if (refused !== null) sendTo(s, refused);
+    if (subject !== null && !s.io.ended) await signInTurn(s, subject);
+  };
+
+  /** The turn's end told (deps.onTurnEnd); a hook that throws is logged, never the chat's failure. */
+  const turnEnded = (id: string): void => {
+    if (deps.onTurnEnd === undefined) return;
+    try {
+      deps.onTurnEnd(id);
+    } catch (err) {
+      log(`chat ${id}: the turn's end hook failed: ${describeError(err)}`);
+    }
+  };
+
   return {
     prepare(id) {
       const { opts, frames } = deps.resources(id, observed);
@@ -243,40 +288,24 @@ export function scriptedChatRuntime(deps: ScriptedChatDeps): ChatRuntime {
     },
 
     async open(id, start) {
-      const s = held(id);
-      // A token on start: a delegate's chat begins as theirs (as the harness's `as` does); a subject signs
-      // in through the core once the chat has opened, as a later sign-in does.
-      let refused: ServerMessage | null = null;
-      let subject: Party | null = null;
-      let delegate: Party | null = null;
-      if (start.token !== undefined) {
-        const r = await verify(s, start.token);
-        if (!r.ok) refused = r.error;
-        else if (isDelegate(appOf(s.session), r.principal)) delegate = r.principal;
-        else subject = r.principal;
+      try {
+        await opening(id, start);
+      } finally {
+        turnEnded(id);
       }
-      if (delegate !== null) {
-        s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate, s.session.appId);
-        log(`chat ${s.id}: signed in (${delegate.kind}, level ${delegate.level})`);
-        s.io.record('log', { signedIn: delegate.level, kind: delegate.kind });
-      }
-      const signedIn: ServerMessage[] = delegate === null ? [] : [{ type: 'signed_in', level: delegate.level }];
-      // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
-      // and ready names the one the session speaks.
-      // The page's context, by the app's callData keys (chat.<key>); none for an app that names none.
-      const data = callDataFrom(appOf(s.session).callData, {}, start.context);
-      await turn(s, withCallData(startEvent({ channel: 'chat' }, start.locale), data), (x) => [...ready(x), ...signedIn]);
-      if (refused !== null) sendTo(s, refused);
-      if (subject !== null && !s.io.ended) await signInTurn(s, subject);
     },
 
     // A scripted chat sends each reply's lines whole: nothing a resume asks changes it.
     resumed() {},
 
     async text(id, text) {
-      const e = held(id);
-      await turn(e, textEvent(text));
-      return { ended: e.io.ended };
+      try {
+        const e = held(id);
+        await turn(e, textEvent(text));
+        return { ended: e.io.ended };
+      } finally {
+        turnEnded(id);
+      }
     },
 
     async signIn(id, token, _io, resumed) {
