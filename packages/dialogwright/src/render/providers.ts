@@ -261,7 +261,8 @@ export function renderCassetteModel(p: RenderProvider): string {
   return `${p.model}.thinking-${t.mode}${t.effort !== undefined ? `.effort-${t.effort}` : ''}${realtime}`;
 }
 
-const KNOWN: Record<RenderProviderName, { url: string; keyVar: string; model: string }> = {
+/** Each provider's endpoint, key variable and default model (the converse model client reads the first two). */
+export const KNOWN: Record<RenderProviderName, { url: string; keyVar: string; model: string }> = {
   openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', keyVar: 'OPENROUTER_API_KEY', model: 'anthropic/claude-haiku-5.5' },
   anthropic: { url: 'https://api.anthropic.com/v1/messages', keyVar: 'ANTHROPIC_API_KEY', model: 'claude-haiku-5-5' },
   inception: { url: 'https://api.inceptionlabs.ai/v1/chat/completions', keyVar: 'INCEPTION_API_KEY', model: 'mercury-3' },
