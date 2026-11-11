@@ -1860,6 +1860,13 @@ describe('a form done on the call is not opened again by a question (call 61, th
     expect(value(later.last, 'request_title')).toBe('The Silent Harbor');
   });
 
+  it('"another hold, please" heard over a line, its form done and no value yet, is a request (a route), never set aside as a miss', async () => {
+    const ANOTHER = 'another hold please';
+    const c = await call({ ...done, [ANOTHER]: said('Sure. Which title would you like?') }, [HOLD, DETAILS, 'yes', { text: ANOTHER, overLine: true }]);
+    expect(c.last.result.setAside).toBeUndefined();
+    expect(heard(c.last)).toBe('Sure. Which title would you like?');
+  });
+
   it('a form the call has not completed opens on its request alone, as the call\'s first request does', async () => {
     const c = await call({ [HOLD]: said('Happy to help. What name is it under?') }, [HOLD]);
     expect(c.last.result.session.form).toBe('request');
