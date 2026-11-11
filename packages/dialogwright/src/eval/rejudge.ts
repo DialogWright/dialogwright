@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
 import { agentBusinessProblems } from '../converse/business/load';
@@ -10,10 +10,10 @@ import { inCi } from '../define/ci';
 import { Budget } from './budget';
 import { businessTextOf, effortArg, envOf, type EvalIo } from './cli';
 import { clears, compareMarkdown, DEFAULT_BARS, type CandidateResult } from './compare';
-import { JUDGE_FAILED, judgeCall } from './judge';
+import { hasVerdict, JUDGE_FAILED, judgeCall, notJudged, parseVerdict, type Judged } from './judge';
 import { summarize } from './measures';
 import { loadPersonas } from './personas';
-import { readRunInfo, summaryMarkdown, withheldNames, type RunRecord, type StoredRun } from './report';
+import { judgedBy, JUDGE_INPUTS, readRunInfo, summaryMarkdown, withheldNames, writeJudgeInput, type RunRecord, type StoredRun } from './report';
 
 /**
  * eval:rejudge: a run's stored calls (results.jsonl: each transcript with the actions the gate decided and
@@ -22,17 +22,25 @@ import { readRunInfo, summaryMarkdown, withheldNames, type RunRecord, type Store
  * rejudged/summary.md beside it; a comparison's folder (one results folder per candidate) also gets
  * rejudged/comparison.md, the table again. A verdict already given is kept, so a re-judge stopped by its
  * budget goes on where it stopped.
+ *
+ * With no judge model (the maintainer, 2026-11-11: judging simulated calls is development work, done by the
+ * assistant in its own session): --inputs writes each call's judge input, exactly what the judge model would
+ * be given, and --verdicts reads the verdicts given from them, a verdicts file of one line per call, each
+ * held to the same shape as the judge model's (parseVerdict), into rejudged/ as a model's re-judge writes it.
  */
 
 export const REJUDGE_USAGE = [
-  'usage: dialogwright eval:rejudge <results dir> [--judge anthropic:<model>] [--budget <usd>] [--parallel N] [--app <dir> --personas <file>] [--today YYYY-MM-DD] [--publish]',
+  'usage: dialogwright eval:rejudge <results dir> [--judge anthropic:<model> | --inputs | --verdicts <file.jsonl> [--judged-by <words>]] [--budget <usd>] [--parallel N] [--app <dir> --personas <file>] [--today YYYY-MM-DD] [--publish]',
   '  the calls stored in <results dir>/results.jsonl (or in each folder of a comparison) judged again under the material-claims rubric, with no call made again;',
   '  writes rejudged/results.jsonl and rejudged/summary.md beside each, and for a comparison rejudged/comparison.md, the table under the material-claims bar',
-  '  defaults: --judge anthropic:claude-sonnet-5-5, --budget 10 (US dollars; it stops, keeping what it judged, once spent: run it again to go on), --parallel 4',
+  '  --judge: a judge model (default anthropic:claude-sonnet-5-5); --budget 10 (US dollars; it stops, keeping what it judged, once spent: run it again to go on), --parallel 4',
   '  the budget is checked before each call is judged, so the spend may pass it by up to --parallel judgements already in flight',
+  '  --inputs: no model; writes each call\'s judge input (exactly what the judge model is given: its instructions, the verdict\'s JSON schema and the call) into judge-inputs/<persona>-<run>.md beside results.jsonl, for judging by hand',
+  '  --verdicts <file.jsonl>: no model; one line per call, {"persona": "<id>", "run": <n>, "folder": "<results folder, for a comparison>", "verdict": {...the verdict tool\'s arguments...}}, each held to the judge\'s own shape;',
+  '    a line that fails is reported with its reason and its call left unjudged (exit 1); --judged-by names who judged (default "by hand"). A verdict already in rejudged/ is kept unless a line gives the call another',
   '  a run that wrote no run.json (before the material-claims rubric) needs --app (its business information) and --personas, and --today where its calls have no day',
   '  --publish writes each rejudged/summary.md as a page to commit: no per-call notes, each material claim by its sentence alone, the personas\' names and phone numbers withheld',
-  '  a judge whose price is not known is refused. The keys: from the environment, then the repository\'s .env; never printed. Refused in CI.',
+  '  a judge whose price is not known is refused. The keys: from the environment, then the repository\'s .env; never printed. A judge model is refused in CI; --inputs and --verdicts ask no model and run anywhere.',
 ].join('\n');
 
 export interface RejudgeIo extends EvalIo {
@@ -41,6 +49,7 @@ export interface RejudgeIo extends EvalIo {
 }
 
 const DEFAULT_JUDGE = 'anthropic:claude-sonnet-5-5';
+const BY_HAND = 'by hand';
 const RESULTS = 'results.jsonl';
 const OUT = 'rejudged';
 
@@ -55,7 +64,7 @@ function resultFolders(dir: string): string[] {
   } catch {
     return [];
   }
-  return names.filter((name) => name !== OUT).map((name) => join(dir, name)).filter((d) => existsSync(join(d, RESULTS)));
+  return names.filter((name) => name !== OUT && name !== JUDGE_INPUTS).map((name) => join(dir, name)).filter((d) => existsSync(join(d, RESULTS)));
 }
 
 /** The words a summary.md of the run printed for its line, caller and decision model (a run with no run.json). */
@@ -86,12 +95,18 @@ function dayWords(iso: string): string {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso}T12:00:00Z`));
 }
 
-const keyOf = (r: RunRecord): string => `${r.persona}#${r.run}`;
+const keyOf = (r: Pick<RunRecord, 'persona' | 'run'>): string => `${r.persona}#${r.run}`;
 
 interface Rejudged {
   records: RunRecord[];
   stoppedByBudget: boolean;
 }
+
+/** A stored call with its new verdict: a judge failure is the one failure that changes with it. */
+const withVerdict = (r: RunRecord, judged: Judged): RunRecord => ({ ...r, judged, failures: [...r.failures.filter((f) => f !== JUDGE_FAILED), ...(judged.notes.startsWith(JUDGE_FAILED) ? [JUDGE_FAILED] : [])] });
+
+/** The verdicts already in a folder's rejudged/results.jsonl: those given, not a failed one nor one still waiting. */
+const keptVerdicts = (outFile: string): Map<string, RunRecord> => new Map(readJsonl(outFile).filter((r) => hasVerdict(r.judged)).map((r) => [keyOf(r), r]));
 
 /** Judges one results folder's calls again: those with no verdict yet in rejudged/results.jsonl. */
 async function rejudgeFolder(dir: string, run: StoredRun, judge: ConverseModel, budget: Budget, parallel: number, today: string | undefined): Promise<Rejudged> {
@@ -99,8 +114,8 @@ async function rejudgeFolder(dir: string, run: StoredRun, judge: ConverseModel, 
   const outDir = join(dir, OUT);
   mkdirSync(outDir, { recursive: true });
   const outFile = join(outDir, RESULTS);
-  // A verdict the judge gave is kept; a failed one is asked again.
-  const kept = new Map(readJsonl(outFile).filter((r) => !r.judged.notes.startsWith(JUDGE_FAILED)).map((r) => [keyOf(r), r]));
+  // A verdict the judge gave is kept; a failed one, or one still waiting, is asked again.
+  const kept = keptVerdicts(outFile);
   writeFileSync(outFile, [...kept.values()].map((r) => JSON.stringify(r) + '\n').join(''));
   const personas = new Map(run.personas.map((p) => [p.id, p]));
   const todo = stored.filter((r) => !kept.has(keyOf(r)));
@@ -118,7 +133,7 @@ async function rejudgeFolder(dir: string, run: StoredRun, judge: ConverseModel, 
       const persona = personas.get(r.persona)!;
       // A call that was never held has nothing to judge: its verdict stands.
       const judged = r.call.turns.length === 0 ? r.judged : await judgeCall(judge, budget, run.business, persona, r.call, r.actions, { today: (r.today ?? today)! });
-      const again: RunRecord = { ...r, judged, failures: [...r.failures.filter((f) => f !== JUDGE_FAILED), ...(judged.notes.startsWith(JUDGE_FAILED) ? [JUDGE_FAILED] : [])] };
+      const again = withVerdict(r, judged);
       done.push(again);
       writeFileSync(outFile, JSON.stringify(again) + '\n', { flag: 'a' });
     }
@@ -127,6 +142,67 @@ async function rejudgeFolder(dir: string, run: StoredRun, judge: ConverseModel, 
   const order = new Map(stored.map((r, i) => [keyOf(r), i]));
   const records = [...kept.values(), ...done].sort((a, b) => (order.get(keyOf(a)) ?? 0) - (order.get(keyOf(b)) ?? 0));
   return { records, stoppedByBudget: stoppedByBudget || records.length < stored.length };
+}
+
+/**
+ * One results folder's calls with the verdicts a verdicts file gave (`given`, by persona and run): a call it
+ * gives none keeps a verdict already in rejudged/, else waits for one (a call never held keeps its own, as a
+ * model's re-judge leaves it). Written whole, in the stored order.
+ */
+function verdictsFolder(dir: string, given: ReadonlyMap<string, Judged>): Rejudged {
+  const stored = readJsonl(join(dir, RESULTS));
+  const outDir = join(dir, OUT);
+  mkdirSync(outDir, { recursive: true });
+  const outFile = join(outDir, RESULTS);
+  const kept = keptVerdicts(outFile);
+  const records = stored.map((r) => {
+    const v = given.get(keyOf(r));
+    if (v !== undefined) return withVerdict(r, v);
+    return kept.get(keyOf(r)) ?? withVerdict(r, r.call.turns.length === 0 ? r.judged : notJudged());
+  });
+  writeFileSync(outFile, records.map((r) => JSON.stringify(r) + '\n').join(''));
+  return { records, stoppedByBudget: false };
+}
+
+/**
+ * A verdicts file read against the results folders: each line's verdict by folder, then persona and run, and
+ * each line that fails with its reason. A line names its folder (the folder's own name) where `folders` are a
+ * comparison's.
+ */
+function readVerdicts(file: string, folders: readonly string[], comparison: boolean): { given: Map<string, Map<string, Judged>>; problems: string[] } {
+  const given = new Map(folders.map((d) => [d, new Map<string, Judged>()]));
+  const stored = new Map(folders.map((d) => [d, new Map(readJsonl(join(d, RESULTS)).map((r) => [keyOf(r), r]))]));
+  const byName = new Map(folders.map((d) => [basename(d), d]));
+  const problems: string[] = [];
+  readFileSync(file, 'utf8').split('\n').forEach((text, i) => {
+    if (text.trim() === '') return;
+    const at = `line ${i + 1}`;
+    let line: unknown;
+    try {
+      line = JSON.parse(text);
+    } catch {
+      line = null;
+    }
+    if (line === null || typeof line !== 'object' || Array.isArray(line)) return void problems.push(`${at}: not a JSON object`);
+    const { persona, run, folder, verdict } = line as Record<string, unknown>;
+    if (typeof persona !== 'string' || typeof run !== 'number' || !Number.isInteger(run) || verdict === null || typeof verdict !== 'object' || Array.isArray(verdict)) {
+      return void problems.push(`${at}: give "persona" (its id), "run" (a whole number, as the judge input names it) and "verdict" (the verdict tool's arguments)`);
+    }
+    if (folder !== undefined && typeof folder !== 'string') return void problems.push(`${at}: "folder" is the name of a results folder`);
+    if (comparison && folder === undefined) return void problems.push(`${at}: name the folder (one of ${[...byName.keys()].join(', ')}): this is a comparison`);
+    const dir = folder === undefined ? folders[0]! : byName.get(folder);
+    if (dir === undefined) return void problems.push(`${at}: no results folder "${folder}" (one of ${[...byName.keys()].join(', ')})`);
+    const call = stored.get(dir)!.get(keyOf({ persona, run }));
+    const where = comparison ? ` in ${basename(dir)}` : '';
+    if (call === undefined) return void problems.push(`${at}: no call of the persona "${persona.slice(0, 40)}", run ${run}${where}`);
+    const label = `${at} (${persona}, run ${run}${where})`;
+    if (call.call.turns.length === 0) return void problems.push(`${label}: that call was never held, so there is nothing to judge`);
+    if (given.get(dir)!.has(keyOf(call))) return void problems.push(`${label}: a second verdict for the same call`);
+    const v = parseVerdict(verdict as Record<string, unknown>);
+    if (typeof v === 'string') return void problems.push(`${label}: ${v}`);
+    given.get(dir)!.set(keyOf(call), v);
+  });
+  return { given, problems };
 }
 
 /** A line's model as a summary names it ("inception:mercury-3 (effort minimal)") as a candidate. */
@@ -138,19 +214,22 @@ function candidateOf(line: string | undefined): { model: string; effort?: Candid
   return { model: m[1]!, ...(effort !== undefined ? { effort } : {}) };
 }
 
-/** Re-judges stored runs; returns the exit code (2: a command line it does not understand, or CI; 1: a failure before any judgement). */
+/**
+ * Re-judges stored runs, or writes their judge inputs (--inputs), or reads verdicts given by hand
+ * (--verdicts); returns the exit code (2: a command line it does not understand, or a judge model in CI;
+ * 1: a failure before any judgement, or a verdicts line that failed).
+ */
 export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Promise<number> {
-  if (inCi(io.env ?? process.env)) {
-    io.err('dialogwright eval:rejudge: refused in CI (CI is set): it asks a real model with your own key, so it is a person\'s step');
-    return 2;
-  }
   let parsed;
   try {
     parsed = parseArgs({
       args: [...argv],
       allowPositionals: true,
       options: {
-        judge: { type: 'string', default: DEFAULT_JUDGE },
+        judge: { type: 'string' },
+        inputs: { type: 'boolean', default: false },
+        verdicts: { type: 'string' },
+        'judged-by': { type: 'string', default: BY_HAND },
         budget: { type: 'string', default: '10' },
         parallel: { type: 'string', default: '4' },
         app: { type: 'string' },
@@ -165,9 +244,20 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
     return 2;
   }
   const { values, positionals } = parsed;
+  const modes = [values.inputs, values.verdicts !== undefined, values.judge !== undefined].filter(Boolean).length;
+  const mode: 'model' | 'inputs' | 'verdicts' = values.inputs ? 'inputs' : values.verdicts !== undefined ? 'verdicts' : 'model';
+  // Only a judge model is a person's step: the inputs and the verdicts ask no model.
+  if (mode === 'model' && inCi(io.env ?? process.env)) {
+    io.err('dialogwright eval:rejudge: refused in CI (CI is set): it asks a real model with your own key, so it is a person\'s step (--inputs and --verdicts ask none)');
+    return 2;
+  }
   if (values.help) {
     io.out(REJUDGE_USAGE);
     return 0;
+  }
+  if (modes > 1) {
+    io.err(`dialogwright eval:rejudge: give one of --inputs, --verdicts and --judge\n${REJUDGE_USAGE}`);
+    return 2;
   }
   const budgetUsd = Number(values.budget);
   const parallel = Number(values.parallel);
@@ -179,8 +269,8 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
     io.err(`dialogwright eval:rejudge: --today is a date, YYYY-MM-DD\n${REJUDGE_USAGE}`);
     return 2;
   }
-  const spec = values.judge!;
-  if (costUsd(spec, { inputTokens: 1, outputTokens: 1 }) === null) {
+  const spec = values.judge ?? DEFAULT_JUDGE;
+  if (mode === 'model' && costUsd(spec, { inputTokens: 1, outputTokens: 1 }) === null) {
     io.err(`dialogwright eval:rejudge: no price is known for the judge model ${spec}, so the budget would under-count it: add its price (converse/model/price.ts)`);
     return 2;
   }
@@ -190,6 +280,7 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
     io.err(`dialogwright eval:rejudge: ${positionals[0]} holds no ${RESULTS}, nor any folder that does`);
     return 2;
   }
+  const comparison = folders.length > 1 || folders[0] !== root;
   const today = values.today !== undefined ? dayWords(values.today) : undefined;
   const runs = new Map<string, StoredRun>();
   for (const dir of folders) {
@@ -212,35 +303,74 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
       io.err(`dialogwright eval:rejudge: ${dir}: the persona "${unknown.persona}" is not among the run's personas`);
       return 1;
     }
-    if (today === undefined && records.some((r) => r.today === undefined && r.call.turns.length > 0)) {
+    if (today === undefined && mode !== 'verdicts' && records.some((r) => r.today === undefined && r.call.turns.length > 0)) {
       io.err(`dialogwright eval:rejudge: ${dir}: its calls do not say the day they took place: give --today YYYY-MM-DD, the day where the business is`);
       return 2;
     }
     runs.set(dir, run);
   }
-  let judge: ConverseModel;
-  try {
-    judge = io.judge?.(spec) ?? resolveConverseModel(spec, envOf(io, root));
-  } catch (e) {
-    io.err(`dialogwright eval:rejudge: ${e instanceof Error ? e.message : String(e)}`);
-    return 1;
+
+  if (mode === 'inputs') {
+    for (const dir of folders) {
+      const run = runs.get(dir)!;
+      const personas = new Map(run.personas.map((p) => [p.id, p]));
+      let n = 0;
+      for (const r of readJsonl(join(dir, RESULTS))) {
+        if (writeJudgeInput(dir, r, run.business, personas.get(r.persona)!, { ...(today !== undefined ? { today } : {}), ...(comparison ? { folder: basename(dir) } : {}) })) n++;
+      }
+      io.out(`wrote ${n} judge inputs into ${join(dir, JUDGE_INPUTS)}/`);
+    }
+    io.out(`give the verdicts as one line per call (each judge input names its line), then: dialogwright eval:rejudge ${positionals[0]} --verdicts <file.jsonl>`);
+    return 0;
   }
+
+  const outcomes = new Map<string, Rejudged & { spentUsd: number }>();
+  let judgeName: string;
+  let failedLines = 0;
   const budget = new Budget(budgetUsd, (l) => io.err(l));
+  if (mode === 'verdicts') {
+    judgeName = values['judged-by']!.trim() || BY_HAND;
+    const file = resolve(io.invokedFrom, values.verdicts!);
+    if (!existsSync(file)) {
+      io.err(`dialogwright eval:rejudge: ${values.verdicts} is not a file`);
+      return 2;
+    }
+    const { given, problems } = readVerdicts(file, folders, comparison);
+    for (const p of problems) io.err(`dialogwright eval:rejudge: ${values.verdicts} ${p}`);
+    failedLines = problems.length;
+    for (const dir of folders) outcomes.set(dir, { ...verdictsFolder(dir, given.get(dir)!), spentUsd: 0 });
+  } else {
+    let judge: ConverseModel;
+    try {
+      judge = io.judge?.(spec) ?? resolveConverseModel(spec, envOf(io, root));
+    } catch (e) {
+      io.err(`dialogwright eval:rejudge: ${e instanceof Error ? e.message : String(e)}`);
+      return 1;
+    }
+    judgeName = judge.id;
+    for (const dir of folders) {
+      const before = budget.spent();
+      io.out(`re-judging ${dir} with ${spec}; spent so far $${budget.spent().toFixed(2)} of $${budgetUsd.toFixed(2)}`);
+      const out = await rejudgeFolder(dir, runs.get(dir)!, judge, budget, parallel, today);
+      outcomes.set(dir, { ...out, spentUsd: budget.spent() - before });
+    }
+  }
+
   const candidates: CandidateResult[] = [];
   for (const dir of folders) {
     const run = runs.get(dir)!;
-    const before = budget.spent();
-    io.out(`re-judging ${dir} with ${spec}; spent so far $${budget.spent().toFixed(2)} of $${budgetUsd.toFixed(2)}`);
-    const out = await rejudgeFolder(dir, run, judge, budget, parallel, today);
+    const out = outcomes.get(dir)!;
     const timing = run.timeoutMs !== undefined ? { timeoutMs: run.timeoutMs } : {};
     const limits = [
       'The verdicts were given again from the stored calls: the latencies, timeouts and costs are the original run\'s, and the caller\'s words are the ones the original run heard.',
-      'The judge is a model: its reading is a judgement, not a guarantee.',
+      mode === 'verdicts'
+        ? `The verdicts were given ${judgedBy(judgeName)} from each call's judge input (exactly what the judge model is given), and read from a verdicts file in the judge's own shape: a reading, not a guarantee.`
+        : 'The judge is a model: its reading is a judgement, not a guarantee.',
       ...(out.stoppedByBudget ? [`The re-judge stopped when the budget was spent, with ${out.records.length} calls judged: run it again to go on.`] : []),
     ];
     const text = summaryMarkdown(out.records, {
-      app: run.app, callerModel: run.callerModel, judgeModel: judge.id, decisionClient: run.decisionClient, runsPerPersona: run.runsPerPersona,
-      spentUsd: budget.spent() - before, budgetUsd, stoppedByBudget: out.stoppedByBudget, limits, rejudged: true,
+      app: run.app, callerModel: run.callerModel, judgeModel: judgeName, decisionClient: run.decisionClient, runsPerPersona: run.runsPerPersona,
+      spentUsd: out.spentUsd, budgetUsd, stoppedByBudget: out.stoppedByBudget, limits, rejudged: true,
       ...(run.lineModel !== undefined ? { lineModel: run.lineModel } : {}), ...(run.timeoutMs !== undefined ? { timeoutMs: run.timeoutMs } : {}), ...(run.opener !== undefined ? { opener: run.opener } : {}),
       ...(values.publish ? { published: { withheld: withheldNames(run.personas) } } : {}),
     });
@@ -249,7 +379,7 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
     const summary = summarize(out.records, timing);
     candidates.push({ ...c, summary, price: priceOf(c.model), cleared: !out.stoppedByBudget && clears(summary, DEFAULT_BARS), ...(out.stoppedByBudget ? { stoppedByBudget: true } : {}) });
   }
-  if (folders.length > 1 || folders[0] !== root) {
+  if (comparison) {
     // A comparison: its table again, in the order the original table gave the candidates.
     const original = existsSync(join(root, 'comparison.md')) ? readFileSync(join(root, 'comparison.md'), 'utf8') : '';
     const at = (c: CandidateResult): number => {
@@ -260,7 +390,7 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
     const runsPerPersona = Math.max(...[...runs.values()].map((r) => r.runsPerPersona));
     const table = compareMarkdown(candidates, {
       app: [...runs.values()][0]!.app, bars: DEFAULT_BARS, spentUsd: budget.spent(), budgetUsd, runsPerPersona,
-      note: `Re-judged by ${judge.id} from the stored calls under the material-claims rubric: the spend is the judge's alone, no call was made again, and the latencies, timeouts and agent costs are the original runs'.`,
+      note: `Re-judged ${judgedBy(judgeName)} from the stored calls under the material-claims rubric: the spend is the judge's alone, no call was made again, and the latencies, timeouts and agent costs are the original runs'.`,
     });
     mkdirSync(join(root, OUT), { recursive: true });
     writeFileSync(join(root, OUT, 'comparison.md'), table);
@@ -269,5 +399,9 @@ export async function rejudgeCommand(argv: readonly string[], io: RejudgeIo): Pr
     io.out(readFileSync(join(root, OUT, 'summary.md'), 'utf8'));
   }
   io.out(`spent $${budget.spent().toFixed(4)} of $${budgetUsd.toFixed(2)}`);
+  if (failedLines > 0) {
+    io.err(`dialogwright eval:rejudge: ${failedLines} line${failedLines === 1 ? '' : 's'} of ${values.verdicts} failed: ${failedLines === 1 ? 'its call waits' : 'their calls wait'} for a verdict`);
+    return 1;
+  }
   return 0;
 }

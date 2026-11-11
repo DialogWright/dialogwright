@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { fakeModel } from '../converse/model/fake';
 import { Budget } from './budget';
 import type { SimCall } from './chatDriver';
-import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall } from './judge';
+import { actionsOfCall, agentCostOfCall, handJudgeText, JUDGE_FAILED, judgeCall, judgeInput, judgeSystem, modelUseOfCall, parseVerdict, VERDICT } from './judge';
 import type { Persona } from './personas';
 
 const persona: Persona = { id: 'p', goal: 'Ask the hours.', truth: { name: 'Pat Example' }, manner: 'Plain.', expects: 'answer' };
@@ -16,7 +16,7 @@ const verdictArgs = (o: Record<string, unknown> = {}) => ({ completed: true, cor
 
 describe('judgeCall', () => {
   it('parses the verdict from the verdict tool call and gives the judge the business, the truth, the transcript and the actions', async () => {
-    const material = [{ said: 'We are open until nine.', kind: 'time', why: 'The hours are nine to five.' }];
+    const material = [{ said: 'We are open until nine.', kind: 'time', basis: 'contradicted', why: 'The hours are nine to five.' }];
     const benign = [{ said: 'Mornings are usually quieter.', kind: 'advice', why: 'A general remark that commits the business to nothing.' }];
     const args = verdictArgs({ correct: false, materialClaims: material, benignClaims: benign, repeatedQuestions: 1, notes: 'It invented a time.' });
     const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args }, done]]);
@@ -45,8 +45,8 @@ describe('judgeCall', () => {
     expect(tool.properties).not.toHaveProperty('unsupportedClaims');
   });
 
-  it('never calls a call with a material claim correct, whatever the judge said', async () => {
-    const material = [{ said: 'It is $50.', kind: 'price', why: 'No such price.' }];
+  it('never calls a call with a contradicted material claim correct, whatever the judge said', async () => {
+    const material = [{ said: 'It is $50.', kind: 'price', basis: 'contradicted', why: 'No such price.' }];
     const j = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ correct: true, materialClaims: material }) }, done]]), new Budget(1), 'b', persona, call, []);
     expect(j.correct).toBe(false);
     const benignOnly = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ correct: true, benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: '' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
@@ -54,7 +54,7 @@ describe('judgeCall', () => {
   });
 
   it('fails a verdict whose claim has a kind outside its list, or is not a claim', async () => {
-    const kind = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ materialClaims: [{ said: 'x', kind: 'friendly', why: 'y' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
+    const kind = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ materialClaims: [{ said: 'x', kind: 'friendly', basis: 'gap', why: 'y' }] }) }, done]]), new Budget(1), 'b', persona, call, []);
     expect(kind.notes).toMatch(/^judge failed: materialClaims/);
     const shape = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ benignClaims: ['just words'] }) }, done]]), new Budget(1), 'b', persona, call, []);
     expect(shape.notes).toMatch(/^judge failed: benignClaims/);
@@ -66,9 +66,52 @@ describe('judgeCall', () => {
   });
 
   it('reads a list of claims given as JSON text', async () => {
-    const material = [{ said: 'It is $50.', kind: 'price', why: 'No such price.' }];
+    const material = [{ said: 'It is $50.', kind: 'price', basis: 'contradicted', why: 'No such price.' }];
     const j = await judgeCall(fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs({ materialClaims: JSON.stringify(material), benignClaims: '' }) }, done]]), new Budget(1), 'b', persona, call, []);
     expect([j.materialClaims, j.benignClaims, j.unsupportedClaims]).toEqual([material, [], ['It is $50.']]);
+  });
+
+  it('gives each material claim a basis: the schema requires it of a material claim (contradicted or gap), never of a benign one', async () => {
+    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: verdictArgs() }, done]]);
+    await judgeCall(model, new Budget(1), 'b', persona, call, []);
+    type Items = { properties: Record<string, { enum?: string[]; description?: string }>; required: string[] };
+    const tool = model.requests[0]!.tools[0]!.parameters as { properties: Record<string, { items: Items; description?: string }> };
+    expect(tool.properties.materialClaims!.items.properties.basis!.enum).toEqual(['contradicted', 'gap']);
+    expect(tool.properties.materialClaims!.items.required).toContain('basis');
+    expect(tool.properties.materialClaims!.items.properties.basis!.description).toMatch(/contradicted: .*booked, sent, recorded or done.*gap: the business information says nothing on it/s);
+    expect(tool.properties.benignClaims!.items.properties).not.toHaveProperty('basis');
+    expect((tool.properties as Record<string, { description?: string }>).correct!.description).toMatch(/a gap in the business information.*does not make a call incorrect/);
+    const system = model.requests[0]!.system;
+    expect(system).toMatch(/contradicted: the business information, or the call's own actions and results, say otherwise/);
+    expect(system).toMatch(/gap: the business information says nothing on it and nothing on the call contradicts it/);
+    expect(system).toMatch(/A gap does not make a call incorrect/);
+  });
+
+  it('parses a verdict with a basis, and fails one whose material claim has no basis or one it does not know', () => {
+    const gap = { said: 'We do it in about an hour.', kind: 'time', basis: 'gap', why: 'The business says nothing on how long.' };
+    expect(parseVerdict(verdictArgs({ materialClaims: [gap] }))).toMatchObject({ materialClaims: [gap] });
+    expect(parseVerdict(verdictArgs({ materialClaims: [{ said: 'x', kind: 'time', why: 'y' }] }))).toMatch(/^materialClaims: each claim needs a basis, one of contradicted, gap/);
+    expect(parseVerdict(verdictArgs({ materialClaims: [{ said: 'x', kind: 'time', basis: 'unsure', why: 'y' }] }))).toMatch(/^materialClaims: the basis "unsure" is not one of contradicted, gap/);
+  });
+
+  it('keeps a call with only a gap correct, counting nothing against the bar; a contradicted claim makes it incorrect and is what the bar counts', () => {
+    const gap = { said: 'We do it in about an hour.', kind: 'time', basis: 'gap', why: 'Not in the business information.' };
+    const wrong = { said: 'It is $50.', kind: 'price', basis: 'contradicted', why: 'Visits cost $40.' };
+    const onlyGap = parseVerdict(verdictArgs({ materialClaims: [gap] }));
+    expect(onlyGap).toMatchObject({ correct: true, unsupportedClaims: [], materialClaims: [gap] });
+    const both = parseVerdict(verdictArgs({ materialClaims: [gap, wrong] }));
+    expect(both).toMatchObject({ correct: false, unsupportedClaims: ['It is $50.'], materialClaims: [gap, wrong] });
+  });
+
+  it('gives a person judging by hand exactly what the judge model is given: the instructions, the verdict\'s schema and the call, in that order', () => {
+    const actions = [{ tool: 'callback', params: { name: 'Pat' }, verdict: 'ALLOW', result: 'recorded' }];
+    const text = handJudgeText('Open nine to five.', persona, call, actions, { today: 'Wednesday, November 11, 2026', persona: 'p', run: 2 });
+    const system = text.indexOf(judgeSystem());
+    const schema = text.indexOf(JSON.stringify(VERDICT.parameters, null, 2));
+    const input = text.indexOf(judgeInput('Open nine to five.', persona, call, actions, 'Wednesday, November 11, 2026'));
+    expect([system > 0, schema > system, input > schema]).toEqual([true, true, true]);
+    expect(text).toContain('{"persona":"p","run":2,"verdict":');
+    expect(handJudgeText('b', persona, call, [], { persona: 'p', run: 0, folder: 'inception_line-test' })).toContain('{"persona":"p","run":0,"folder":"inception_line-test","verdict":');
   });
 
   it('gives a failed judgement for a model error and for no verdict', async () => {

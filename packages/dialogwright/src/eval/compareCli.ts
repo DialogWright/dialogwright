@@ -8,18 +8,19 @@ import type { ConverseModel } from '../converse/model/types';
 import { inCi } from '../define/ci';
 import type { HostedApp } from '../server/host';
 import { Budget } from './budget';
-import { envOf, registerFolderApp, runEval, type EvalIo } from './cli';
+import { envOf, NO_JUDGE, registerFolderApp, runEval, type EvalIo } from './cli';
 import { compareMarkdown, compareModels, DEFAULT_BARS, parseCandidate, type CandidateResult } from './compare';
 import { loadPersonas, type Persona } from './personas';
 
 export const COMPARE_USAGE = [
-  'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--parallel N] [--out <dir>] [--stub-decision] [--publish]',
+  'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--parallel N] [--out <dir>] [--stub-decision] [--publish]',
   '  a converse app\'s models compared on its simulated callers (pnpm eval for each), cheapest first: --candidates in the order given, then --expensive only if none cleared the bars',
-  `  the bars: first sentence median <= ${DEFAULT_BARS.firstWordMsMedian} ms, p95 <= ${DEFAULT_BARS.firstWordMsP95} ms; timeouts <= ${DEFAULT_BARS.timeoutRate * 100}% of turns; cooperative calls done correctly >= ${DEFAULT_BARS.correctRate * 100}%; unsupported material claims (a price, a time, a policy that commits the business, a thing said to be done) <= ${DEFAULT_BARS.unsupportedClaims}`,
+  `  the bars: first sentence median <= ${DEFAULT_BARS.firstWordMsMedian} ms, p95 <= ${DEFAULT_BARS.firstWordMsP95} ms; timeouts <= ${DEFAULT_BARS.timeoutRate * 100}% of turns; cooperative calls done correctly >= ${DEFAULT_BARS.correctRate * 100}%; contradicted material claims (a price, a time, a policy that commits the business, a thing said to be done, that the business information or the call\'s own actions and results say otherwise of) <= ${DEFAULT_BARS.unsupportedClaims}; gaps in the business information are listed beside them, not counted`,
   '  once one clears every bar the rest are not run; --reference runs the expensive group at --reference-runs (default 1) per persona if the budget left exceeds its estimate',
   '  #<effort> after a model: minimal, low, medium, high, or none (none sent); without it, agent.yaml\'s. An OpenRouter model may pin its hosts: openrouter:<vendor>/<model>@<host>',
   '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-sonnet-5-5, --budget 45 (US dollars for the caller, the judge and every candidate, shared; the comparison stops once it is spent), --parallel 1',
   '  a candidate whose price is not known (converse/model/price.ts) is skipped, since the budget would under-count it',
+  '  --judge none: no judge model is asked; each call waits for its verdict with its judge input beside it (<out>/<model>/judge-inputs/), so no candidate can clear before it is judged and every candidate runs, within the budget; dialogwright eval:rejudge <out> --verdicts <file> then gives the verdicts and the table',
   '  writes each candidate\'s results into <out>/<model>/ and the table into <out>/comparison.md; --publish writes each candidate\'s summary.md as a page to commit (no per-call notes, names and numbers withheld). Refused in CI.',
 ].join('\n');
 
@@ -80,7 +81,8 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
     io.err(`dialogwright eval:compare: ${e instanceof Error ? e.message : String(e)}`);
     return 2;
   }
-  for (const [flag, spec] of [['caller', values.caller!], ['judge', values.judge!]] as const) {
+  const noJudge = values.judge === NO_JUDGE;
+  for (const [flag, spec] of [['caller', values.caller!], ...(noJudge ? [] : [['judge', values.judge!] as const])] as const) {
     if (costUsd(spec, { inputTokens: 1, outputTokens: 1 }) === null) {
       io.err(`dialogwright eval:compare: no price is known for the ${flag} model ${spec}, so the budget would under-count it: add its price (converse/model/price.ts)`);
       return 2;
@@ -94,12 +96,12 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
   let personas: Persona[];
   let app: HostedApp;
   let callerModel: ConverseModel;
-  let judgeModel: ConverseModel;
+  let judgeModel: ConverseModel | null;
   const env = envOf(io, appDir);
   try {
     personas = loadPersonas(resolve(io.invokedFrom, values.personas));
     callerModel = resolveConverseModel(values.caller!, env);
-    judgeModel = resolveConverseModel(values.judge!, env);
+    judgeModel = noJudge ? null : resolveConverseModel(values.judge!, env);
     app = await registerFolderApp(appDir);
   } catch (e) {
     io.err(`dialogwright eval:compare: ${e instanceof Error ? e.message : String(e)}`);
@@ -131,7 +133,7 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
       run: async (c, spend) => {
         io.out(`running ${c.model}${c.effort === null ? ' (no effort)' : c.effort ? ` (${c.effort})` : ''}: ${c.runs} per persona; spent so far $${spend.spent().toFixed(2)} of $${budgetUsd.toFixed(2)}`);
         const out = await runEval({
-          appDir, app, personas, runs: c.runs, parallel, port: 0, env, callerModel, judgeModel, decision, spend, outDir: join(outDir, slug(c.model)),
+          appDir, app, personas, runs: c.runs, parallel, port: 0, env, callerModel, judgeModel, decision, spend, outDir: join(outDir, slug(c.model)), comparisonFolder: slug(c.model),
           model: { default: c.model, ...(c.effort !== undefined ? { effort: c.effort } : {}) },
           ...(values.publish ? { publish: true } : {}),
         });

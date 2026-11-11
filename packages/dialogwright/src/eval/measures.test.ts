@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { percentile, summarize, type RunResult } from './measures';
-import type { Judged } from './judge';
+import { NOT_JUDGED, type Judged } from './judge';
 
 const judged = (o: Partial<Judged>): Judged => ({ completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '', ...o });
 const result = (j: Partial<Judged>, firstWordMs: number[], agentCostUsd: number | null, failures: string[] = []): RunResult => ({
@@ -52,20 +52,36 @@ describe('summarize', () => {
 });
 
 describe('summarize: the material claims and the benign ones', () => {
-  it('counts the material claims against the bar, by kind, and the benign ones beside them', () => {
+  it('counts the contradicted material claims against the bar, by kind, the gaps apart by kind, and the benign ones beside them', () => {
     const s = summarize([
-      result({ unsupportedClaims: ['It is $50.', 'It is ready Friday.'], materialClaims: [{ said: 'It is $50.', kind: 'price', why: '' }, { said: 'It is ready Friday.', kind: 'time', why: '' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: '' }] }, [100], null),
-      result({ unsupportedClaims: ['Your request is sent.'], materialClaims: [{ said: 'Your request is sent.', kind: 'done', why: '' }], benignClaims: [{ said: 'I cannot take anything off.', kind: 'refusal', why: '' }, { said: 'Mornings are quieter.', kind: 'advice', why: '' }] }, [100], null),
-      result({ unsupportedClaims: ['x'], materialClaims: [{ said: 'x', kind: 'price', why: '' }], notes: 'judge failed: no verdict' }, [100], null),
+      result({ unsupportedClaims: ['It is $50.', 'It is ready Friday.'], materialClaims: [{ said: 'It is $50.', kind: 'price', basis: 'contradicted', why: '' }, { said: 'It is ready Friday.', kind: 'time', basis: 'contradicted', why: '' }, { said: 'It takes an hour.', kind: 'time', basis: 'gap', why: '' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: '' }] }, [100], null),
+      result({ unsupportedClaims: ['Your request is sent.'], materialClaims: [{ said: 'Your request is sent.', kind: 'done', basis: 'contradicted', why: '' }, { said: 'We warranty it a year.', kind: 'policy', basis: 'gap', why: '' }, { said: 'Balancing is free.', kind: 'price', basis: 'gap', why: '' }], benignClaims: [{ said: 'I cannot take anything off.', kind: 'refusal', why: '' }, { said: 'Mornings are quieter.', kind: 'advice', why: '' }] }, [100], null),
+      result({ unsupportedClaims: ['x'], materialClaims: [{ said: 'x', kind: 'price', basis: 'contradicted', why: '' }, { said: 'y', kind: 'time', basis: 'gap', why: '' }], notes: 'judge failed: no verdict' }, [100], null),
     ]);
     expect(s.unsupportedClaims).toBe(3);
     expect(s.materialByKind).toEqual({ price: 1, time: 1, policy: 0, done: 1 });
+    expect(s.gapClaims).toBe(3);
+    expect(s.gapsByKind).toEqual({ price: 1, time: 1, policy: 1, done: 0 });
     expect(s.benignClaims).toBe(3);
+  });
+
+  it('counts a verdict given before the bases (2026-11-11) by every material claim, as before, with no gaps', () => {
+    const s = summarize([result({ unsupportedClaims: ['It is $50.', 'It takes an hour.'], materialClaims: [{ said: 'It is $50.', kind: 'price', why: '' }, { said: 'It takes an hour.', kind: 'time', why: '' }] }, [100], null)]);
+    expect([s.unsupportedClaims, s.materialByKind, s.gapClaims]).toEqual([2, { price: 1, time: 1, policy: 0, done: 0 }, 0]);
   });
 
   it('counts a verdict given before the rubric by its unsupported claims, with no kind and no benign ones', () => {
     const s = summarize([result({ unsupportedClaims: ['a', 'b'] }, [100], null)]);
-    expect([s.unsupportedClaims, s.benignClaims, s.materialByKind]).toEqual([2, 0, { price: 0, time: 0, policy: 0, done: 0 }]);
+    expect([s.unsupportedClaims, s.benignClaims, s.materialByKind, s.gapClaims]).toEqual([2, 0, { price: 0, time: 0, policy: 0, done: 0 }, 0]);
+  });
+
+  it('leaves a call not judged yet (--judge none) out of the rates, and out of the calls judged', () => {
+    const s = summarize([
+      result({}, [100], null),
+      result({ completed: false, correct: false, notes: NOT_JUDGED }, [100], null),
+      { ...result({ completed: false, correct: false, notes: NOT_JUDGED }, [100], null), cooperative: true },
+    ]);
+    expect([s.runs, s.judged, s.completedRate, s.correctRate, s.cooperativeJudged]).toEqual([3, 1, 1, 1, 0]);
   });
 });
 

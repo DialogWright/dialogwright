@@ -19,10 +19,10 @@ import { defaultTimeZone } from '../core/localDate';
 import { Budget } from './budget';
 import { modelCaller } from './caller';
 import { driveChat, type SimCall } from './chatDriver';
-import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall, type Judged } from './judge';
+import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall, notJudged, type Judged } from './judge';
 import { summarize, type RunSummary } from './measures';
 import { isCooperative, loadPersonas, type Persona } from './personas';
-import { appendResult, withheldNames, writeRunInfo, writeSummary, type RunRecord } from './report';
+import { appendResult, JUDGE_INPUTS, withheldNames, writeJudgeInput, writeRunInfo, writeSummary, type RunRecord } from './report';
 import { MODEL_EFFORTS, type ModelEffort } from '../converse/model/types';
 import { OPENERS, type Opener } from '../converse/business/schema';
 
@@ -51,10 +51,11 @@ export async function registerFolderApp(dir: string): Promise<HostedApp> {
 }
 
 export const EVAL_USAGE = [
-  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--publish]',
+  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--publish]',
   '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire,',
-  '  a model playing the caller and a model judging the call; writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
+  '  a model playing the caller and a model judging the call (or none, below); writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
   '  writes run.json beside them too (the business text and the personas the calls were judged against), so the calls can be judged again with no call made (dialogwright eval:rejudge)',
+  '  --judge none: no judge model is asked or paid for; each call is stored waiting for its verdict, with its judge input (exactly what the judge model would be given) in judge-inputs/<persona>-<run>.md, for judging by hand; dialogwright eval:rejudge <out> --verdicts <file> then gives the verdicts',
   '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-sonnet-5-5 (a cheaper one with --judge), --budget 5 (US dollars, the caller, the judge and the line\'s own model; the run stops, keeping what it has, once it is spent; it is checked before each call, so the spend may pass it by up to --parallel calls already in flight)',
   '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
   '  a caller, judge or line model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
@@ -74,6 +75,8 @@ export interface EvalIo {
 
 const DEFAULT_CALLER = 'anthropic:claude-haiku-5-5';
 const DEFAULT_JUDGE = 'anthropic:claude-sonnet-5-5';
+/** --judge none: no judge model; the calls are judged by hand from their judge inputs. */
+export const NO_JUDGE = 'none';
 const CHAT_ORIGIN = 'https://eval.example.com';
 const MAX_TURNS = 14;
 /** How long the harness waits for the line's reply: past the model's own (eval) time, asked twice, and a turn's rounds. */
@@ -98,7 +101,8 @@ export interface EvalRun {
   /** The settings the app's server runs with (its keys among them). */
   env: Record<string, string | undefined>;
   callerModel: ConverseModel;
-  judgeModel: ConverseModel;
+  /** The judge; null: none is asked (--judge none), and each call is stored with its judge input, waiting for a verdict. */
+  judgeModel: ConverseModel | null;
   decision: 'jev' | 'stub';
   /** What is spent: the caller, the judge and the line's own model. Shared across runs (eval:compare). */
   spend: Budget;
@@ -109,6 +113,8 @@ export interface EvalRun {
   style?: EvalStyle;
   /** summary.md as a page to commit (--publish): no per-call notes, the personas' names withheld. */
   publish?: boolean;
+  /** The results folder's name where it is one of a comparison's (eval:compare): each judge input's verdict line names it. */
+  comparisonFolder?: string;
 }
 
 export interface EvalOutcome {
@@ -133,8 +139,9 @@ export function lineModelOf(app: HostedApp, model?: EvalModel): string | null {
 
 /**
  * Runs the evaluation: each persona `runs` times over the chat wire, a model playing the caller and a model
- * judging each call, until the plan is done or the budget is spent (the calls it has are kept); writes
- * results.jsonl and summary.md into `outDir`. Throws when the app's server does not start.
+ * judging each call (with no judge, each call's judge input written for judging by hand), until the plan is
+ * done or the budget is spent (the calls it has are kept); writes results.jsonl and summary.md into `outDir`.
+ * Throws when the app's server does not start.
  */
 export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   const { app, appDir, env, spend } = o;
@@ -195,13 +202,16 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     const callId = call.callId ?? '';
     const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
     const today = todayWords();
-    const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(o.judgeModel, spend, businessText, p, call, actions, { today });
+    const judged = call.turns.length === 0 ? failedJudgement('no call was held') : o.judgeModel === null ? notJudged() : await judgeCall(o.judgeModel, spend, businessText, p, call, actions, { today });
     if (judged.notes.startsWith(JUDGE_FAILED)) failures.push(JUDGE_FAILED);
     const agentCostUsd = callId === '' ? null : agentCostOfCall(traceDir, callId);
     // The line's own model is spent too: its cost, priced in its traces, counts toward the budget.
     if (agentCostUsd !== null) spend.addUsd(agentCostUsd);
     const use = callId === '' ? { turns: [], tokens: null } : modelUseOfCall(traceDir, callId);
-    return { persona: p.id, run, today, call, judged, actions, agentCostUsd, failures, cooperative: isCooperative(p), turns: use.turns, agentTokens: use.tokens };
+    const record: RunRecord = { persona: p.id, run, today, call, judged, actions, agentCostUsd, failures, cooperative: isCooperative(p), turns: use.turns, agentTokens: use.tokens };
+    // With no judge, the call's judge input is written beside it, for judging by hand.
+    if (o.judgeModel === null) writeJudgeInput(o.outDir, record, businessText, p, o.comparisonFolder !== undefined ? { folder: o.comparisonFolder } : {});
+    return record;
   };
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -228,11 +238,13 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     ...(timeoutMs !== undefined ? [`Each model request ran to its end (up to 30 s) and its true time was recorded; the timeouts are the turns that would have reached the line's own ${timeoutMs} ms (no first event within half of it, or not done within it), worked out from those times.`] : []),
     'The first sentence is timed from the caller\'s words being sent to the first sentence of the reply arriving over the chat (its say_delta): no speech, no network to a phone.',
     'A reply is every line the server says until 2 s pass with none (the chat wire has no end-of-turn marker), so a filler followed by an answer slower than that is split across two caller turns.',
-    'The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.',
+    ...(o.judgeModel === null
+      ? [`No judge was asked (--judge none): each call held waits for its verdict, its judge input in ${JUDGE_INPUTS}/. The caller is a model.`]
+      : ['The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.']),
     ...(stoppedByBudget ? [`The run stopped when the budget was spent, after ${records.length} of ${plan.length} planned calls.`] : []),
   ];
   const text = writeSummary(o.outDir, records, {
-    app: app.id, callerModel: o.callerModel.id, decisionClient, judgeModel: o.judgeModel.id,
+    app: app.id, callerModel: o.callerModel.id, decisionClient, judgeModel: o.judgeModel?.id ?? 'none',
     runsPerPersona: o.runs, spentUsd: spend.spent(), budgetUsd: spend.limit(), stoppedByBudget, limits,
     ...(lineWords !== undefined ? { lineModel: lineWords } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
@@ -322,7 +334,8 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     io.err(`dialogwright eval: --effort goes with --model\n${EVAL_USAGE}`);
     return 2;
   }
-  for (const [flag, spec] of [['caller', values.caller!], ['judge', values.judge!], ...(values.model !== undefined ? [['line', values.model] as const] : [])] as const) {
+  const noJudge = values.judge === NO_JUDGE;
+  for (const [flag, spec] of [['caller', values.caller!], ...(noJudge ? [] : [['judge', values.judge!] as const]), ...(values.model !== undefined ? [['line', values.model] as const] : [])] as const) {
     if (costUsd(spec, { inputTokens: 1, outputTokens: 1 }) === null && !values['allow-unpriced']) {
       io.err(`dialogwright eval: no price is known for the ${flag} model ${spec}, so the budget would under-count it: add its price (converse/model/price.ts) or pass --allow-unpriced`);
       return 2;
@@ -342,10 +355,10 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   }
   const env = envOf(io, appDir);
   let callerModel: ConverseModel;
-  let judgeModel: ConverseModel;
+  let judgeModel: ConverseModel | null;
   try {
     callerModel = resolveConverseModel(values.caller!, env);
-    judgeModel = resolveConverseModel(values.judge!, env);
+    judgeModel = noJudge ? null : resolveConverseModel(values.judge!, env);
     if (values.model !== undefined) resolveConverseModel(values.model, env);
   } catch (e) {
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);

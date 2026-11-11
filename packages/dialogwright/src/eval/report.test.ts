@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { NOT_JUDGED } from './judge';
 import type { Persona } from './personas';
 import { PUBLISHED_LIMIT, publishedText, scrubNumbers, summaryMarkdown, withheldNames, type RunRecord } from './report';
 
@@ -54,15 +55,40 @@ describe('the summary page', () => {
     expect(publishedText('Dana Example, Dana and Example Wheel Works.', withheldNames(personas))).toBe('[name], [name] and Example Wheel Works.');
   });
 
-  it('gives the material claims (by kind, each listed under its kind with numbers scrubbed) and the benign ones beside them', () => {
-    const r: RunRecord = { ...record('It quoted a price.', ['It is $50 at 555 555 0142.']), judged: { completed: true, correct: false, unsupportedClaims: ['It is $50 at 555 555 0142.'], materialClaims: [{ said: 'It is $50 at 555 555 0142.', kind: 'price', why: 'No such price.' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: 'A pleasantry.' }], honestWhenAsked: null, repeatedQuestions: 0, notes: 'It quoted a price.' } };
+  it('gives the contradicted material claims (what the bar counts, by kind, each listed under its kind with numbers scrubbed), the gaps apart, and the benign ones beside them', () => {
+    const r: RunRecord = { ...record('It quoted a price.', ['It is $50 at 555 555 0142.']), judged: { completed: true, correct: false, unsupportedClaims: ['It is $50 at 555 555 0142.'], materialClaims: [{ said: 'It is $50 at 555 555 0142.', kind: 'price', basis: 'contradicted', why: 'No such price.' }, { said: 'It takes about an hour.', kind: 'time', basis: 'gap', why: 'The business says nothing on how long.' }], benignClaims: [{ said: 'Drive safe!', kind: 'friendly', why: 'A pleasantry.' }], honestWhenAsked: null, repeatedQuestions: 0, notes: 'It quoted a price.' } };
     const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
-    expect(text).toContain('| Unsupported material claims (price / time / policy / done) | 1 (1 / 0 / 0 / 0) |');
+    expect(text).toContain('| Contradicted material claims, what the bar counts (price / time / policy / done) | 1 (1 / 0 / 0 / 0) |');
+    expect(text).toContain('| Gaps in the business information (price / time / policy / done) | 1 (0 / 1 / 0 / 0) |');
     expect(text).toContain('| Benign claims (not counted) | 1 |');
-    expect(text).toContain('## Material claims by kind');
+    expect(text).toContain('## Contradicted material claims by kind');
     expect(text).toContain('### price');
     expect(text).toContain('- p (run 1): "It is $50 at [number]." No such price.');
+    const gaps = text.slice(text.indexOf('## Gaps in the business information, by kind'));
+    expect(gaps).toContain('### time');
+    expect(gaps).toContain('- p (run 1): "It takes about an hour." The business says nothing on how long.');
+    expect(gaps).not.toContain('It is $50');
     expect(text).not.toContain('Drive safe!');
+    // The page to commit lists each gap the same way, by its sentence alone.
+    const published = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [], published: { withheld: [] } });
+    expect(published).toContain('- p (run 1): "It takes about an hour."\n');
+    expect(published).not.toContain('says nothing on how long');
+  });
+
+  it('keeps a verdict given before the bases readable: each material claim listed and counted as the bar counted it', () => {
+    const r: RunRecord = { ...record('', []), judged: { completed: true, correct: false, unsupportedClaims: ['It is $50.'], materialClaims: [{ said: 'It is $50.', kind: 'price', why: 'No such price.' }], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } };
+    const text = summaryMarkdown([r], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
+    expect(text).toContain('| Contradicted material claims, what the bar counts (price / time / policy / done) | 1 (1 / 0 / 0 / 0) |');
+    expect(text).toContain('- p (run 1): "It is $50." No such price.');
+    expect(text).not.toContain('## Gaps in the business information, by kind');
+  });
+
+  it('says how many calls wait for verdicts, and leaves them out of the calls judged', () => {
+    const waiting: RunRecord = { ...record(NOT_JUDGED, []), judged: { completed: false, correct: false, unsupportedClaims: [], materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: NOT_JUDGED } };
+    const text = summaryMarkdown([waiting, waiting, { ...record('', []), judged: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }], { app: 'a', callerModel: 'c', judgeModel: 'none', decisionClient: 'd', runsPerPersona: 3, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
+    expect(text).toContain('| Calls judged | 1 of 3 |');
+    expect(text).toContain('2 of 3 calls wait for verdicts: each one\'s judge input is in judge-inputs/');
+    expect(text).not.toContain('What the judge noted');
   });
 
   it('says a page was re-judged from stored transcripts, by which judge', () => {

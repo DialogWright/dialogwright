@@ -512,6 +512,18 @@ It shares the transport split above, so the split is done once, in a way that se
    - **The summary** shows both counts (`eval/judge.ts`, `eval/measures.ts`).
    - **Re-judging.** `dialogwright eval:rejudge` judges stored calls again under the rubric, with no call
      made again.
+   - **Contradicted or a gap** (the maintainer, later the same day, after his hand-check of the judge).
+     Most unsupported material claims were a reasonable answer where the business information is silent;
+     the real faults contradicted it. Each material claim now has a basis: **contradicted** (the business
+     information, or the call's own actions and results, say otherwise, or the line says something was
+     booked, sent, recorded or done that the actions do not show) or a **gap** (the business information
+     says nothing on it, and nothing on the call contradicts it). The bar and a call's correctness count
+     the contradicted ones only; the gaps are listed apart, for the business's owner to fill.
+   - **Judged in the session.** Judging the simulated calls is development work, done by the assistant in
+     its own session, not by an API judge: `dialogwright eval --judge none` stores each call with its
+     judge input (exactly what the judge model is given), and `eval:rejudge --verdicts` reads the verdicts
+     given from them (`--inputs` writes the inputs for a stored run). The API judge stays an option for
+     adopters; API calls are kept for what the app does on a real call.
 5. **The opener.** `persona.opener: acknowledge` in agent.yaml (absent: no opener) asks the model to begin
    each reply with a brief, natural acknowledgement that commits the business to nothing ("Got it.",
    "Sure, let me look."), worded differently from reply to reply, and left out where it would sound odd.

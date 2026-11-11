@@ -6,7 +6,7 @@ import type { RunSummary } from './measures';
 
 /** A summary exactly at the bars. */
 const atBars = (o: Partial<RunSummary> = {}): RunSummary => ({
-  runs: 60, judged: 60, completedRate: 1, correctRate: 1, cooperativeJudged: 40, cooperativeCorrectRate: 0.95, unsupportedClaims: 0, materialByKind: { price: 0, time: 0, policy: 0, done: 0 }, benignClaims: 4, repeatedQuestionsPerCall: 0,
+  runs: 60, judged: 60, completedRate: 1, correctRate: 1, cooperativeJudged: 40, cooperativeCorrectRate: 0.95, unsupportedClaims: 0, materialByKind: { price: 0, time: 0, policy: 0, done: 0 }, gapClaims: 3, gapsByKind: { price: 1, time: 1, policy: 1, done: 0 }, benignClaims: 4, repeatedQuestionsPerCall: 0,
   firstWordMsMedian: 1200, firstWordMsP90: 2000, firstWordMsP95: 2500, firstWordMsP99: 4000, modelTurns: 500, timeoutRate: 0.01,
   wouldTimeout: { '1800': 0.1, '3000': 0.02, '4000': 0.01, '6000': 0.01 }, agentCostPerCallUsd: 0.004, agentTokensPerCall: { inputTokens: 20000, outputTokens: 500 }, failures: {}, ...o,
 });
@@ -121,10 +121,10 @@ describe('compareMarkdown', () => {
       { model: 'anthropic:dear-test', summary: null, skipped: 'a cheaper model cleared the bars', price: { input: 1, output: 5, source: 'a test, 2026-11-11' } },
     ], { app: 'a', bars: DEFAULT_BARS, spentUsd: 1.5, budgetUsd: 45, runsPerPersona: 5 });
     expect(text).toContain('| inception:cheap-test (minimal) |');
-    expect(text).toContain('unsupported material claims 2 over');
-    expect(text).toContain('| Unsupported material claims (benign beside them) |');
-    expect(text).toContain('| 2 (4 benign) |');
-    expect(text).toContain('unsupported material claims ≤ 0');
+    expect(text).toContain('contradicted material claims 2 over');
+    expect(text).toContain('| Contradicted claims (gaps, benign beside them) |');
+    expect(text).toContain('| 2 (3 gaps, 4 benign) |');
+    expect(text).toContain('contradicted material claims ≤ 0');
     expect(text).toContain('a test, 2026-11-11');
     expect(text).toContain('| anthropic:dear-test | skipped: a cheaper model cleared the bars |');
     expect(text).toContain('$1.50 of $45.00');

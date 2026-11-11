@@ -37,6 +37,18 @@ describe('dialogwright eval:compare', () => {
     expect(COMPARE_USAGE).toContain('--judge anthropic:claude-sonnet-5-5');
   });
 
+  it('holds each candidate to the contradicted claims, and takes --judge none: every candidate runs, to be judged by hand', async () => {
+    expect(COMPARE_USAGE).toMatch(/contradicted material claims/);
+    expect(COMPARE_USAGE).toMatch(/--judge none/);
+    expect(COMPARE_USAGE).toMatch(/eval:rejudge <out> --verdicts/);
+    const file = join(mkdtempSync(join(tmpdir(), 'compare-cli-')), 'p.yaml');
+    writeFileSync(file, 'personas:\n  - id: a\n    goal: g\n    truth: { n: m }\n    manner: plain\n    expects: none\n');
+    // No judge is priced or resolved: the command goes on to its next check.
+    const t = io({ ANTHROPIC_API_KEY: 'not-a-key' });
+    expect(await compareCommand([LIBRARY_DIR, '--personas', file, '--candidates', 'inception:mercury-3', '--judge', 'none'], t.io)).toBe(2);
+    expect(t.err.join('\n')).toMatch(/for a converse app/);
+  });
+
   it('is for a converse app', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'compare-cli-')), 'p.yaml');
     writeFileSync(file, 'personas:\n  - id: a\n    goal: g\n    truth: { n: m }\n    manner: plain\n    expects: none\n');

@@ -1,4 +1,4 @@
-import { JUDGE_FAILED, MATERIAL_KINDS, type Judged, type MaterialKind } from './judge';
+import { countsAgainstBar, hasVerdict, MATERIAL_KINDS, type Claim, type Judged, type MaterialKind } from './judge';
 import type { SimCall } from './chatDriver';
 import type { ModelRequestTime } from '../converse/trace';
 
@@ -7,7 +7,7 @@ export const WOULD_TIMEOUT_MS = [1800, 3000, 4000, 6000] as const;
 
 export interface RunSummary {
   runs: number;
-  /** The calls the judge gave a verdict on; the rates are over these. */
+  /** The calls the judge gave a verdict on (not one it failed to give, nor one still waiting for it); the rates are over these. */
   judged: number;
   completedRate: number;
   correctRate: number;
@@ -15,10 +15,18 @@ export interface RunSummary {
   cooperativeJudged: number;
   /** Of those, the share whose task was done correctly: completed and correct. */
   cooperativeCorrectRate: number;
-  /** The unsupported material claims (a price, a time, a policy, a thing said to be done): what the honesty bar counts. */
+  /**
+   * The contradicted material claims (a price, a time, a policy, a thing said to be done, that the business
+   * information or the call's own actions and results say otherwise of): what the honesty bar counts. A verdict
+   * given before the bases (2026-11-11) counts every material claim, as it did.
+   */
   unsupportedClaims: number;
-  /** Those by kind (a verdict given before the rubric has none). */
+  /** The contradicted material claims by kind, the gaps left out (a verdict given before the rubric has none; one given before the bases counts each). */
   materialByKind: Record<MaterialKind, number>;
+  /** The material claims the business information says nothing on (gaps for its owner to fill): listed, not counted against the bar. */
+  gapClaims: number;
+  /** Those by kind. */
+  gapsByKind: Record<MaterialKind, number>;
   /** What else the line said that nothing supports but that commits the business to nothing; not counted against the bar. */
   benignClaims: number;
   repeatedQuestionsPerCall: number;
@@ -80,8 +88,11 @@ const timedOut = (r: ModelRequestTime): boolean => r.error?.startsWith('timeout'
 /** The measures of a run. `timeoutMs`: the line's own model timeout (agent.yaml model.timeoutMs), for the timeout rate. */
 export function summarize(results: readonly RunResult[], o: { timeoutMs?: number } = {}): RunSummary {
   const n = results.length;
-  // A judge that failed gave no verdict: its calls are out of the rates, not counted as failures of the line.
-  const verdicts = results.filter((r) => !r.judged.notes.startsWith(JUDGE_FAILED));
+  // A judge that failed gave no verdict, and a call not judged yet has none: their calls are out of the rates, not counted as failures of the line.
+  const verdicts = results.filter((r) => hasVerdict(r.judged));
+  const byKind = (which: (c: Claim) => boolean): Record<MaterialKind, number> =>
+    Object.fromEntries(MATERIAL_KINDS.map((k) => [k, verdicts.reduce((s, r) => s + (r.judged.materialClaims ?? []).filter((c) => c.kind === k && which(c)).length, 0)])) as Record<MaterialKind, number>;
+  const isGap = (c: Claim): boolean => !countsAgainstBar(c);
   const rate = (f: (r: RunResult) => boolean): number => (verdicts.length === 0 ? 0 : verdicts.filter(f).length / verdicts.length);
   const cooperative = verdicts.filter((r) => r.cooperative === true);
   const firstWords = results.flatMap((r) => r.call.firstWordMs);
@@ -99,7 +110,9 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     cooperativeJudged: cooperative.length,
     cooperativeCorrectRate: cooperative.length === 0 ? 0 : cooperative.filter((r) => r.judged.completed && r.judged.correct).length / cooperative.length,
     unsupportedClaims: verdicts.reduce((s, r) => s + r.judged.unsupportedClaims.length, 0),
-    materialByKind: Object.fromEntries(MATERIAL_KINDS.map((k) => [k, verdicts.reduce((s, r) => s + (r.judged.materialClaims ?? []).filter((c) => c.kind === k).length, 0)])) as Record<MaterialKind, number>,
+    materialByKind: byKind(countsAgainstBar),
+    gapClaims: verdicts.reduce((s, r) => s + (r.judged.materialClaims ?? []).filter(isGap).length, 0),
+    gapsByKind: byKind(isGap),
     benignClaims: verdicts.reduce((s, r) => s + (r.judged.benignClaims ?? []).length, 0),
     repeatedQuestionsPerCall: verdicts.length === 0 ? 0 : verdicts.reduce((s, r) => s + r.judged.repeatedQuestions, 0) / verdicts.length,
     firstWordMsMedian: percentile(firstWords, 0.5),
