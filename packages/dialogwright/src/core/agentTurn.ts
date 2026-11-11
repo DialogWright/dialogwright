@@ -54,8 +54,9 @@ import type { RenderLine } from '../render/types';
  *    again as it stands, uncounted; anything else (words neither a yes nor a no) asks the read-back again
  *    on its ladder, counted, the reply before it as an aside (after "What should I change?", that
  *    question with the reply in its place), so words that settle nothing reach the keypad and a person.
- * 2. **A form opened**: with none open, the request the decision model read opens its form; failing that,
- *    the form the answer's values belong to (the caller's own forms only: one only a recognized caller
+ * 2. **A form opened**: with none open, the request the decision model read opens its form (one the call has
+ *    completed only where the answer gives a value for a field of it, the person form always: a question about a
+ *    service after a request is done is not a second job, call 61); failing that, the form the answer's values belong to (the caller's own forms only: one only a recognized caller
  *    may open is never chosen for anyone else). A form only a recognized caller may open, asked for by
  *    anyone else, says its line and opens the form it offers instead (FormDef.recognizedOnly).
  * 3. **Values**: each checked by its field's slot type (BuiltSlotSpec.check), its words held to this
@@ -84,7 +85,8 @@ import type { RenderLine } from '../render/types';
  *    shown. A result that fails its check ends the turn with a person (`result-unchecked`), as for any tool.
  * 4. **The read-back** once every required field is filled (`submit` before that is ignored).
  * 5. **The reply**, said as an agent line (PromptDecision.agent) in place of its fallback, the next empty
- *    field's question, or with no form the open question; a reply that asks nothing is said before that
+ *    field's question, or with no form the open question ("Is there anything else I can help with?" after a form is
+ *    done, else the opening question); a reply that asks nothing is said before that
  *    question instead. Where the answer says its reply asks for another field of the form still empty
  *    (`asks`, call 55), that field's question is the turn's: the reply's fallback, what a silence or a miss
  *    asks again, and what the next turn reads the words for. A choice of yes and no (a consent) is always asked
@@ -634,6 +636,25 @@ function formForValues(app: App, s: Session, fields: readonly string[]): FormId 
     if (n > 0 && (best === null || n > best.n || (n === best.n && only && !best.only))) best = { form, n, only };
   }
   return best?.form ?? null;
+}
+
+/**
+ * The form the decision model read the turn as asking for, to open with none open: its verdict's form, unless
+ * the call has completed it already (Session.completed) and the answer gives no value for a field of it (the
+ * agent-mode design, call 61, decided by the maintainer 2026-11-10). After a request is done, "What if I have a
+ * wheel that's bent?" read as the request's intent at 0.82 opened it afresh, the reply that answered the question
+ * stood in for its first field's question, and the next silence asked the caller's name: a question about a
+ * service is not a second job. A second job opens its form once the answer gives a value for it (formForValues),
+ * this turn or a later one ("I'd like to book another one": the reply may ask for the details). The person form
+ * opens on its request however often it was completed: a person asked for is never held to values. Null where
+ * the verdict reads no form, or one such.
+ */
+function requested(app: App, s: Session, verdict: Verdict, given: readonly string[]): FormId | null {
+  if (verdict.kind !== 'route' || !isFormIntent(app, verdict.intent)) return null;
+  const form = verdict.intent;
+  if (!s.completed.includes(form) || app.personForm?.form === form) return form;
+  const names = new Set((app.agent!.forms[form]?.fields ?? []).map((f) => f.name));
+  return given.some((f) => names.has(f)) ? form : null;
 }
 
 /**
@@ -1412,7 +1433,8 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const acks: Ack[] = [];
   let opened = false;
   if (s.form === null) {
-    const want = verdict.kind === 'route' && isFormIntent(app, verdict.intent) ? verdict.intent : formForValues(app, s, (answer?.values ?? []).map((v) => v.field));
+    const given = (answer?.values ?? []).map((v) => v.field);
+    const want = requested(app, s, verdict, given) ?? formForValues(app, s, given);
     if (want !== null) opened = openForm(app, s, want, acks) !== null || acks.length > 0;
   }
   const lineSaid = acks.length > 0;
@@ -1512,7 +1534,10 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     if (asksYesNo(app, asked, form)) return { decision: r !== null && !asks(r) ? withAside(asked, r, record) : asked, events: applied.events };
     return { decision: replyOrAside(asked, reply, record), events: applied.events };
   }
-  return { decision: replyOrAside(prompt('ask_intent', 'intent', {}, acks), reply, record), events: applied.events };
+  // With no form open, the open question stands: "Is there anything else I can help with?" after a form is done
+  // (what a silence then asks again, App.anythingElseSilence), else the opening question (call 61).
+  const open = s.lastPromptId === 'anything_else' ? 'anything_else' : 'ask_intent';
+  return { decision: replyOrAside(prompt(open, 'intent', {}, acks), reply, record), events: applied.events };
 }
 
 /**

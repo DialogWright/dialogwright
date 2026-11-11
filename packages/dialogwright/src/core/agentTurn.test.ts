@@ -1816,3 +1816,53 @@ describe('after the agent model fails, the question the line was waiting on (cal
     expect(promptOf(c.last)).toBe('ask_request_patronName');
   });
 });
+
+describe('a form done on the call is not opened again by a question (call 61, the maintainer\'s decision 2026-11-10)', () => {
+  const done = { [HOLD]: HOLD_ANSWER, [DETAILS]: DETAILS_ANSWER, yes: said('') };
+  // Read as the request's intent by the decision model (the word "hold"), as "What if I have a wheel that's bent?" was at 0.82.
+  const QUESTION = 'what if a hold runs out?';
+  const ANSWERED = { ...said('A hold is kept for a week, and the desk calls before it runs out. Anything else I can help with?'), fromFacts: true };
+
+  it('after the request is done, a question read as its request is answered, no form opened, and "anything else?" stands', async () => {
+    const c = await call({ ...done, [QUESTION]: ANSWERED }, [HOLD, DETAILS, 'yes', QUESTION]);
+    expect(promptOf(c.runs.at(-2)!)).toBe('anything_else');
+    expect(c.last.result.session.form).toBeNull();
+    expect(c.last.result.rows.find((r) => r.decided)?.outcome).toBe('route:request');
+    expect(promptOf(c.last)).toBe('anything_else');
+    expect(heard(c.last)).toBe(ANSWERED.reply);
+    expect(c.last.record.agent).toMatchObject({ use: 'used', replySaid: true, fromFacts: true });
+    // A silence after it asks "anything else?" again, never the request's first question.
+    const quiet = await call({ ...done, [QUESTION]: ANSWERED }, [HOLD, DETAILS, 'yes', QUESTION, { text: '', silence: true }]);
+    expect(quiet.last.result.session.form).toBeNull();
+    expect(promptOf(quiet.last)).not.toBe('ask_request_patronName');
+  });
+
+  it('then "that\'s all": the call\'s goodbye, nothing reopened', async () => {
+    const c = await call({ ...done, [QUESTION]: ANSWERED, "no, that's all": { ...said('Thanks for calling. Goodbye.'), closes: true } }, [HOLD, DETAILS, 'yes', QUESTION, "no, that's all"]);
+    expect(c.last.result.session.form).toBeNull();
+    expect(c.last.result.session.ended).toBe(true);
+    expect(c.sys.holds).toHaveLength(1);
+  });
+
+  it('a second job opens the form once the answer gives a value for it: at once, or on the turn that gives the first', async () => {
+    const AGAIN = 'and a hold on The Silent Harbor too';
+    const now = await call({ ...done, [AGAIN]: said('Happy to. What name is it under?', [['title', 'The Silent Harbor', 'The Silent Harbor']]) }, [HOLD, DETAILS, 'yes', AGAIN]);
+    expect(now.last.result.session.form).toBe('request');
+    expect(value(now.last, 'request_title')).toBe('The Silent Harbor');
+    // "Another hold, please": no value yet, so no form; the reply asks for the title, and the title opens it.
+    const ANOTHER = 'another hold please';
+    const TITLE = 'The Silent Harbor';
+    const later = await call({ ...done, [ANOTHER]: said('Sure. Which title would you like?'), [TITLE]: said('Got it. What name is it under?', [['title', 'The Silent Harbor', 'The Silent Harbor']]) }, [HOLD, DETAILS, 'yes', ANOTHER, TITLE]);
+    const asked = later.runs.at(-2)!;
+    expect(asked.result.session.form).toBeNull();
+    expect(heard(asked)).toBe('Sure. Which title would you like?');
+    expect(later.last.result.session.form).toBe('request');
+    expect(value(later.last, 'request_title')).toBe('The Silent Harbor');
+  });
+
+  it('a form the call has not completed opens on its request alone, as the call\'s first request does', async () => {
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?') }, [HOLD]);
+    expect(c.last.result.session.form).toBe('request');
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+  });
+});
