@@ -7,6 +7,7 @@ import { SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
 import { SCHEMAS_DIR } from './generate';
 import { businessJsonSchema, hostJsonSchema, jsonSchemas, kbJsonSchemas, localeLabelsJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 import { slotsSchema } from './slots';
+import { personasJsonSchema } from '../../eval/personas';
 
 const FIXTURE = join(__dirname, '..', '__fixtures__', 'valid');
 /** The folders of the other apps this package runs from policy.yaml and identity.yaml: the library fixture and the testkit. */
@@ -228,6 +229,11 @@ describe('the JSON Schemas', () => {
   it('schemas/host.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {
     const committed = readFileSync(join(SCHEMAS_DIR, 'host.schema.json'), 'utf8');
     expect(committed, 'schemas/host.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(hostJsonSchema()));
+  });
+
+  it('schemas/personas.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {
+    const committed = readFileSync(join(SCHEMAS_DIR, 'personas.schema.json'), 'utf8');
+    expect(committed, 'schemas/personas.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(personasJsonSchema()));
   });
 
   it('schemas/business.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {

@@ -32,6 +32,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright regress [dir] [options]            (../harness-text/regressCommand.ts: an app's regression run)
  *   dialogwright render:bakeoff [dir] --models ...  (../harness-text/renderBakeoffCommand.ts: render models compared)
  *   dialogwright render:judge-eval [--replay] ...   (../harness-text/judgeEvalCommand.ts: the span drift judge measured against the shape checks)
+ *   dialogwright eval <app dir> --personas ...   (../eval/cli.ts: simulated callers over the chat wire)
  *   dialogwright agent:bakeoff --cases ... --models ...   (../harness-text/agentBakeoffCommand.ts: agent models compared on a cases file's calls)
  *   dialogwright configure | start | serve | diagnose | service | fallback | console:link   (../server: running an app, or a host file's apps)
  *   dialogwright audit:verify [dir | postgres://...] (../audit/verifyCli.ts: each audit day file's hash chain, or the audit in Postgres)
@@ -62,6 +63,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['render:bakeoff', "compare render models on an app's generated lines: each recorded into its own cassette, one table (--replay: from the cassettes)"],
   ['render:judge-eval', 'measure the span drift judge against the span\'s shape checks on labelled cases: the real judge recorded into a cassette, one report (--replay: from the cassette)'],
   ['agent:bakeoff', "compare agent models on a cases file's calls: answered, valid JSON, values and actions right, figures, latency and cost, each recorded into its own cassette beside the cases (--replay: from the cassettes)"],
+  ['eval', "simulated callers over the chat wire: a model plays each persona, a model judges the call, one summary of the measures (the author's own keys; refused in CI)"],
   ['policy:matrix', 'write policy.matrix, the reviewed golden of what the gate decides'],
   ['policy:card', 'write POLICY.md, the policy in plain English with its diagrams'],
   ['app:diagram', "write APP-MAP.md, the app's intents, forms, slots, actions and rules as diagrams"],
@@ -127,6 +129,8 @@ export const USAGE = [
   '  the span drift judge against the span\'s shape checks on labelled cases, the judge recorded with the decision model\'s key (refused in CI); --replay tables its cassette alone (dialogwright render:judge-eval --help)',
   '       dialogwright agent:bakeoff --cases <file> --models <model>[,<model>...] [--recorded <dir>] [--examples on|off|both] [--repeat N] [--replay] [--judge-ms N] [--price <model>=<input>,<output>]... [--by-turn] [--print-prompt] [--out <file.md>] [--json]',
   '  agent models compared on a cases file\'s calls, each recorded into its own cassette beside the cases (or in --recorded) with your keys (refused in CI); --replay tables the cassettes alone (dialogwright agent:bakeoff --help)',
+  '       dialogwright eval <app dir> --personas <file> [--runs N] [--caller <model>] [--judge <model>] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced]',
+  '  simulated callers over the chat wire, a model playing each persona and a model judging the call, one summary (refused in CI; dialogwright eval --help)',
   '       dialogwright configure | start | serve | diagnose | service | fallback | console:link | audit:verify [options]',
   '  running an app: each prints its own usage; dialogwright help lists every command',
 ].join('\n');
@@ -264,6 +268,10 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'agent:bakeoff') {
     const { agentBakeoffCommand } = await import('../harness-text/agentBakeoffCommand');
     return agentBakeoffCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
+  }
+  if (command === 'eval') {
+    const { evalCommand } = await import('../eval/cli');
+    return evalCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
   }
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);

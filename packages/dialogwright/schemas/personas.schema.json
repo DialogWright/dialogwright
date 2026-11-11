@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "personas": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "A short name for the persona, used in results."
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the caller wants from the call, in their own terms."
+          },
+          "truth": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "What is true of the caller and what they will say when asked (name, vehicle, damage, a number...), by short key. The caller states only these facts."
+          },
+          "manner": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How the caller speaks: terse, rambling, impatient, polite..."
+          },
+          "expects": {
+            "type": "string",
+            "enum": [
+              "request",
+              "booking",
+              "callback",
+              "answer",
+              "none"
+            ],
+            "description": "What the call should come to: a request or booking taken, a callback note left, a question answered, or nothing done."
+          },
+          "adversarial": {
+            "description": "What the caller tries that they should not get (a free job, the line ignoring its instructions...).",
+            "type": "string",
+            "minLength": 1
+          },
+          "asksIfHuman": {
+            "description": "The caller asks, at some point, whether they are talking to a person.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "goal",
+          "truth",
+          "manner",
+          "expects"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "personas"
+  ],
+  "additionalProperties": false,
+  "title": "DialogWright personas.yaml"
+}
