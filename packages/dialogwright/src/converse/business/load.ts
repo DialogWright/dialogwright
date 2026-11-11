@@ -64,12 +64,12 @@ function resolved(value: string, env: Record<string, string | undefined>): strin
 }
 
 /**
- * The business of the app folder `dir` (its agent.yaml), with `env.<NAME>` numbers read from `env`. An
- * account's number whose variable is unset is left out (the account is recognised by its other numbers);
- * a transfer number whose variable is unset is an error. Throws AgentBusinessError, whose message is
+ * The business of the app folder `dir` (its agent.yaml), its `env.<NAME>` references kept as they are
+ * written: what a converse app is made with, before any server has read the app's settings
+ * (resolveAgentSettings reads them as the server starts). Throws AgentBusinessError, whose message is
  * `pnpm check`'s own lines.
  */
-export function loadAgentBusiness(dir: string, env: Record<string, string | undefined> = process.env): AgentBusiness {
+export function readAgentBusiness(dir: string): AgentBusiness {
   let text: string;
   try {
     text = readFileSync(join(dir, AGENT_FILE), 'utf8');
@@ -78,6 +78,15 @@ export function loadAgentBusiness(dir: string, env: Record<string, string | unde
   }
   const { problems, value } = agentBusinessProblems(text);
   if (!value) throw new AgentBusinessError(problems);
+  return value;
+}
+
+/**
+ * The business with its `env.<NAME>` numbers read from `env` (the app's own settings): an account's number
+ * whose variable is unset is left out (the account is recognised by its other numbers); a transfer number
+ * whose variable is unset is an error (AgentBusinessError).
+ */
+export function resolveAgentSettings(value: AgentBusiness, env: Record<string, string | undefined>): AgentBusiness {
   const accounts = value.sources.accounts?.map((a) => ({
     ...a,
     numbers: a.numbers.flatMap((n) => {
@@ -94,4 +103,9 @@ export function loadAgentBusiness(dir: string, env: Record<string, string | unde
     transfer = { number };
   }
   return { ...value, sources: { ...value.sources, ...(accounts ? { accounts } : {}) }, ...(transfer ? { transfer } : {}) };
+}
+
+/** The business of the app folder `dir`, its `env.<NAME>` numbers read from `env` (readAgentBusiness, then resolveAgentSettings). */
+export function loadAgentBusiness(dir: string, env: Record<string, string | undefined>): AgentBusiness {
+  return resolveAgentSettings(readAgentBusiness(dir), env);
 }

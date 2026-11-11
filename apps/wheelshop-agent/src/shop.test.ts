@@ -250,7 +250,7 @@ describe('the shop page on the server', () => {
       TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, JEV_CLIENT: 'stub', TIMEZONE: 'America/Los_Angeles',
       CONSOLE_LINK_FILE: join(dir, 'link', 'link.json'), ...env,
     };
-    const { app } = wheelshop({ env: (n) => settings[n as keyof typeof settings], log: (l) => logs.push(l) });
+    const { app } = wheelshop();
     const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env: settings, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env: settings });
     running = await startServer(loadConfig(settings), { host: '127.0.0.1', log: (l) => logs.push(l), env: settings, apps, converseModel: () => fakeConverseModel([]) });
     return { base: `http://127.0.0.1:${running.port}`, logs, dir };
@@ -262,7 +262,7 @@ describe('the shop page on the server', () => {
     before.openLog(shop);
     await aDay(before);
     const { base, logs } = await start({ SHOP_DATA_DIR: shop });
-    expect(logs).toContain(`shop page: 9 records read back from ${join(shop, SHOP_LOG_FILE)}`);
+    expect(logs.some((l) => l.endsWith(`shop page: 9 records read back from ${join(shop, SHOP_LOG_FILE)}`))).toBe(true);
     const local = await fetch(`${base}/wheelshop-agent/shop`);
     expect(local.status).toBe(200);
     expect(local.headers.get('content-security-policy')).toContain("img-src https:");

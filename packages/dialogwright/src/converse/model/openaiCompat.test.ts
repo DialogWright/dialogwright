@@ -57,6 +57,15 @@ describe('openAiCompatModel', () => {
     expect(a.messages[3]).toEqual({ role: 'tool', tool_call_id: 'c0', content: 'free' });
     expect(String(f.calls[0]!.init.body)).not.toContain(KEY);
   });
+  it('sends the reasoning effort in each provider\'s form: Inception\'s reasoning_effort (minimal is its instant), OpenRouter\'s reasoning.effort; none where the request names none', async () => {
+    const f = stubFetch(toolStream);
+    await collect(openAiCompatModel({ provider: 'inception', model: 'mercury-3', apiKey: KEY, fetch: f.fetch }).stream({ ...req, effort: 'minimal' }, ctl()));
+    await collect(openAiCompatModel({ provider: 'inception', model: 'mercury-3', apiKey: KEY, fetch: f.fetch }).stream({ ...req, effort: 'low' }, ctl()));
+    await collect(openAiCompatModel({ provider: 'openrouter', model: 'vendor/model', apiKey: KEY, fetch: f.fetch }).stream({ ...req, effort: 'minimal' }, ctl()));
+    await collect(openAiCompatModel({ provider: 'inception', model: 'mercury-3', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()));
+    const bodies = f.calls.map((c) => JSON.parse(String(c.init.body)) as Record<string, unknown>);
+    expect(bodies.map((b) => [b.reasoning_effort, b.reasoning])).toEqual([['instant', undefined], ['low', undefined], [undefined, { effort: 'minimal' }], [undefined, undefined]]);
+  });
   it('maps a plain stop to end and length to length', async () => {
     const run = async (finish: string) => collect(openAiCompatModel({ provider: 'inception', model: 'm', apiKey: KEY, fetch: stubFetch(() => sseResponse([chunk({ content: 'x' }, finish), sse('[DONE]')])).fetch }).stream(req, ctl()));
     expect((await run('stop')).at(-1)).toMatchObject({ type: 'done', stop: 'end' });

@@ -33,7 +33,7 @@ const yesJev: JevClient = {
   },
 };
 
-const REQUEST = { name: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', finish: 'painted all over', slot: `${TUESDAY}:morning`, callbackNumber: '555 555 0111' };
+const REQUEST = { name: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', finish: 'painted', slot: `${TUESDAY}:morning`, callbackNumber: '555 555 0111' };
 
 /** The model's side of a request: a lookup, the request called, then a reply after the caller's answer. */
 const requestScript = (textOk: string): ConverseModelEvent[][] => [
@@ -44,7 +44,7 @@ const requestScript = (textOk: string): ConverseModelEvent[][] => [
 
 function shop(textOk: string, callerNumber?: string) {
   const provider = fakeTextProvider();
-  const { app, sys } = wheelshop({ now: () => NOW, env: () => undefined });
+  const { app, sys } = wheelshop({ now: () => NOW });
   const c = converseTestCall(app, { model: fakeConverseModel(requestScript(textOk)), jev: yesJev, now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE }, ...(callerNumber !== undefined ? { callerNumber } : {}) });
   return { c, sys, provider };
 }
@@ -56,13 +56,13 @@ describe('send_request', () => {
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
-      'Here\'s your request: Dana Example, your 2019 Honda Civic, damage: curb rash, on one of its wheels, finish: painted all over, dropping off Tuesday, November 17, morning, by 8. We\'ll reach you on the number ending in 0111, and texts there are OK: yes. Is that right?',
+      'Here\'s your request: Dana Example, your 2019 Honda Civic, damage: curb rash, on one of its wheels, finish: painted, dropping off Tuesday, November 17, morning, by 8. We\'ll reach you on 555 555 0111, and texts there are OK: yes. Is that right?',
     ]);
     expect(sys.requests).toEqual([]);
     expect(provider.sent).toEqual([]);
 
     expect(await c.say('yes, that is right')).toEqual(['Thanks, it is in.']);
-    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', diamondCut: 'no', finish: 'painted all over', day: TUESDAY, window: 'morning', callbackNumber: '5555550111', textOk: 'yes' }]);
+    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', diamondCut: 'no', finish: 'painted', day: TUESDAY, window: 'morning', callbackNumber: '5555550111', textOk: 'yes' }]);
     expect(sys.roomIn(TUESDAY, 'morning')).toBe(room - 1);
     expect(provider.sent.map((t) => [t.to, t.body])).toEqual([
       [RETAIL, 'Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we\'ll send you a price. Reply STOP to opt out.'],
@@ -70,6 +70,17 @@ describe('send_request', () => {
     ]);
     const gate = c.audit.filter((r) => r.type === 'gate').map((r) => `${String(r.detail.tool)} ${String(r.detail.verdict)}`);
     expect(gate).toEqual(['check_availability ALLOW', 'send_request BLOCK', 'send_request ALLOW', 'send_photo_request ALLOW', 'notify_shop_request ALLOW']);
+    // Each result is recorded beside its gate row: the request's reference among them.
+    expect(c.audit.filter((r) => r.type === 'tool_result').map((r) => String(r.detail.summary))).toContainEqual('request R101 sent for 2026-11-17 morning');
+  });
+
+  it('offers the model no follow-on: the photo text and the shop\'s summary run only after the request\'s yes', async () => {
+    const model = fakeConverseModel([[text('Hello.'), done()]]);
+    const { app } = wheelshop({ now: () => NOW });
+    const c = converseTestCall(app, { model, jev: yesJev, now: () => new Date(NOW) });
+    await c.start();
+    await c.say('hi');
+    expect(model.requests[0]!.tools.map((t) => t.name)).toEqual(['recognise_caller', 'check_availability', 'send_request', 'book_dealer', 'leave_callback', 'end_call']);
   });
 
   it('texts the caller nothing without their yes to texts: the gate refuses the photo request (no-consent), and the shop still gets its summary', async () => {
@@ -93,7 +104,7 @@ describe('send_request', () => {
   });
 
   it('offers no window on a day the shop is closed, and none on the standing Friday-morning drop-off', async () => {
-    const { sys } = wheelshop({ now: () => NOW, env: () => undefined });
+    const { sys } = wheelshop({ now: () => NOW });
     expect(sys.free('2026-11-14')).toEqual([]);
     expect(sys.free('2026-11-13').map((s) => s.id)).toEqual(['2026-11-13:afternoon']);
     expect(sys.free('2026-11-10')).toEqual([]);
@@ -105,44 +116,58 @@ describe('send_request', () => {
 });
 
 describe('book_dealer', () => {
-  const dealerScript: ConverseModelEvent[][] = [
-    [call('c1', 'check_availability', { day: THURSDAY }), done('tool')],
-    [call('c2', 'book_dealer', { account: 'Rivergate Motors', cars: 'three', slot: `${THURSDAY}:morning` }), done('tool')],
-    [text('You are booked in.'), done()],
+  const VEHICLES = 'a 2021 BMW 3 Series, a 2020 Audi A4 and a 2022 Kia Sorento, all four wheels';
+  const dealerScript = (cars = 'three', last = 'You are booked in.'): ConverseModelEvent[][] => [
+    [call('c0', 'recognise_caller', {}), call('c1', 'check_availability', { day: THURSDAY }), done('tool')],
+    [call('c2', 'book_dealer', { account: 'Rivergate Motors', cars, vehicles: VEHICLES, slot: `${THURSDAY}:morning` }), done('tool')],
+    [text(last), done()],
   ];
 
   it('books the cars of the account the caller\'s number is on file for, and texts the shop a summary', async () => {
     const provider = fakeTextProvider();
-    const { app, sys } = wheelshop({ now: () => NOW, env: () => undefined });
-    const c = converseTestCall(app, { model: fakeConverseModel(dealerScript), jev: yesJev, callerNumber: DEALER, channel: 'voice', now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const c = converseTestCall(app, { model: fakeConverseModel(dealerScript()), jev: yesJev, callerNumber: DEALER, channel: 'voice', now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
     await c.start();
     expect(c.state.caller.account).toBe('Rivergate Motors');
-    expect(await c.say('Rivergate Motors, three trade-ins tomorrow morning')).toEqual(['So that\'s Rivergate Motors, three in all, dropping off Thursday, November 12, morning, by 8. Shall we book it?']);
+    expect(await c.say('Rivergate Motors, three trade-ins tomorrow morning')).toEqual([`So that's Rivergate Motors, three in all: ${VEHICLES}, dropping off Thursday, November 12, morning, by 8. Shall we book it?`]);
     expect(await c.say('yes')).toEqual(['You are booked in.']);
-    expect(sys.bookings).toMatchObject([{ ref: 'B101', account: 'Rivergate Motors', cars: 'three', day: THURSDAY, window: 'morning' }]);
+    expect(sys.bookings).toMatchObject([{ ref: 'B101', account: 'Rivergate Motors', cars: 'three', vehicles: VEHICLES, day: THURSDAY, window: 'morning' }]);
     expect(sys.roomIn(THURSDAY, 'morning')).toBe(0);
-    expect(provider.sent.map((t) => [t.to, t.body])).toEqual([[SHOP_PHONE, 'New booking from Rivergate Motors (5555550142): three cars. Drop-off: Thursday, November 12, morning.']]);
+    expect(provider.sent.map((t) => [t.to, t.body])).toEqual([[SHOP_PHONE, `New booking from Rivergate Motors (5555550142): three cars, ${VEHICLES}. Drop-off: Thursday, November 12, morning.`]]);
   });
 
-  it('books nothing for a caller whose number is on file for no account, whatever account they name', async () => {
-    const { app, sys } = wheelshop({ now: () => NOW, env: () => undefined });
-    const c = converseTestCall(app, { model: fakeConverseModel(dealerScript), jev: yesJev, callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
+  it('refuses, before any read-back, an account the number calling is not on file for: the account is what recognise_caller returned', async () => {
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const c = converseTestCall(app, { model: fakeConverseModel(dealerScript('three', 'We can send the shop a request instead.')), jev: yesJev, callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
-    await c.say('This is Rivergate Motors, three trade-ins tomorrow morning');
-    await c.say('yes');
+    expect(c.state.caller.account).toBeNull();
+    expect(await c.say('This is Rivergate Motors, three trade-ins tomorrow morning')).toEqual(['We can send the shop a request instead.']);
     expect(sys.bookings).toEqual([]);
-    expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'book_dealer', outcome: 'failed' }]);
+    expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'recognise_caller', outcome: 'ran' }, { name: 'check_availability', outcome: 'ran' }, { name: 'book_dealer', outcome: 'invalid' }]);
+    expect(c.audit.filter((r) => r.type === 'gate').map((r) => r.detail.tool)).not.toContain('book_dealer');
+  });
+
+  it('books nothing where the window has no room for every car now: the shop\'s calendar refuses it, and says how many it can take', async () => {
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const c = converseTestCall(app, { model: fakeConverseModel(dealerScript('three', 'That window has filled.')), jev: yesJev, callerNumber: DEALER, now: () => new Date(NOW), env: { SHOP_PHONE } });
+    await c.start();
+    await c.say('Rivergate Motors, three trade-ins tomorrow morning');
+    // Another booking takes a place in the window between the read-back and the yes.
+    sys.keep('booking', { ref: 'B900', at: new Date(NOW).toISOString(), account: 'Northside Auto Sales', cars: 'one', vehicles: '', day: THURSDAY, window: 'morning' }, NOW);
+    expect(await c.say('yes')).toEqual(['That window has filled.']);
+    expect(sys.bookings.map((b) => b.ref)).toEqual(['B900']);
+    expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'book_dealer', outcome: 'failed', reason: expect.stringContaining('has room for 2 now, not 3') }]);
   });
 });
 
 describe('leave_callback', () => {
   it('keeps the note and texts the shop to call back, on the caller\'s yes', async () => {
     const provider = fakeTextProvider();
-    const { app, sys } = wheelshop({ now: () => NOW, env: () => undefined });
+    const { app, sys } = wheelshop({ now: () => NOW });
     const script: ConverseModelEvent[][] = [[call('c1', 'leave_callback', { name: 'Avery Sample', callbackNumber: 'caller', about: 'a wheel left last week' }), done('tool')], [text('Someone will call you.'), done()]];
     const c = converseTestCall(app, { model: fakeConverseModel(script), jev: yesJev, callerNumber: '+15555550114', now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
     await c.start();
-    expect(await c.say('I would rather talk to a person')).toEqual(['We\'ll have someone from the shop call Avery Sample back on the number ending in 0114 about a wheel left last week. Is that right?']);
+    expect(await c.say('I would rather talk to a person')).toEqual(['We\'ll have someone from the shop call Avery Sample back on the number you\'re calling from, ending in 0114 about a wheel left last week. Is that right?']);
     await c.say('yes');
     expect(sys.callbacks).toMatchObject([{ ref: 'C101', name: 'Avery Sample', callbackNumber: '5555550114', about: 'a wheel left last week' }]);
     expect(provider.sent.map((t) => [t.to, t.body])).toEqual([[SHOP_PHONE, 'Call back Avery Sample at 5555550114 about a wheel left last week (callback note C101).']]);
@@ -152,5 +177,22 @@ describe('leave_callback', () => {
 describe('the app folder', () => {
   it('passes pnpm check', async () => {
     expect((await checkApp(APP_DIR)).map(formatProblem)).toEqual([]);
+  });
+
+  it('takes no caller number from a chat\'s context as deployed: only the simulated callers\' own server does (the engine\'s tests hold both)', () => {
+    expect(wheelshop({}).app.chat.callerNumberFromContext).toBe(false);
+  });
+
+  it('reads no setting as it is made: agent.yaml\'s references wait for the server, and the shop page is made by it', () => {
+    const { app } = wheelshop({});
+    expect(app.business.sources.accounts!.find((a) => a.name === 'Rivergate Motors')!.numbers).toContain('env.DEALER_TEST_LINE');
+    expect(typeof app.pages).toBe('function');
+  });
+
+  it('is made fresh for each simulated call, with systems of its own', () => {
+    const { app } = wheelshop({ now: () => NOW });
+    const again = app.fresh!();
+    expect(again).not.toBe(app);
+    expect(again.tools.send_request).not.toBe(app.tools.send_request);
   });
 });

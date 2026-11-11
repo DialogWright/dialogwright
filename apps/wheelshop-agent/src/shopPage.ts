@@ -566,8 +566,12 @@ export interface ShopPagesOptions {
   brand: ShopPageOptions['brand'];
   /** Where the app's pages are mounted, `/<app id>`. */
   base: string;
-  /** One of the app's settings (SHOP_DATA_DIR, SHOP_PHONE, TEXT_LIMIT_PER_NUMBER, PUBLIC_HOST, CONSOLE_AUTH). */
+  /** One of the app's settings (SHOP_DATA_DIR, SHOP_PHONE, TEXT_LIMIT_PER_NUMBER). */
   env: (name: string) => string | undefined;
+  /** The server's public name (PUBLIC_HOST), for the forms' Origin check. */
+  publicHost: string;
+  /** The console has a sign-in (CONSOLE_AUTH=token): the page offers Sign out. */
+  signOut: boolean;
   /** The app's sender for the page's texts; absent, they are printed. */
   texts?: Texts;
   now: () => number;
@@ -575,7 +579,7 @@ export interface ShopPagesOptions {
 }
 
 /**
- * The app's pages (ConverseApp.pages): the shop page, made with the app. It opens the shop's log (SHOP_DATA_DIR;
+ * The app's pages (ConverseApp.pages): the shop page, made by the server as it starts (ConversePageDeps). It opens the shop's log (SHOP_DATA_DIR;
  * a relative folder is from where the server runs, as TRACE_DIR is) and reads it back, or, unset, says the
  * records are in memory alone; then lapses the holds whose time is up. The lapse check is the page route's
  * sweep from then on: one server's (DESIGN.md, "Quote and confirm").
@@ -600,9 +604,9 @@ export function shopPages(sys: Systems, o: ShopPagesOptions): AppRoutes {
     }
   }
   // Behind the console's sign-in where the server has one (a console page): then it offers Sign out.
-  const publicHost = o.env('PUBLIC_HOST')?.trim();
+  const publicHost = o.publicHost.trim();
   const route = shopRoute(sys, {
-    brand: o.brand, now: o.now, signOut: (o.env('CONSOLE_AUTH')?.trim() ?? '') !== '', base: o.base, env: o.env, log: o.log,
+    brand: o.brand, now: o.now, signOut: o.signOut, base: o.base, env: o.env, log: o.log,
     // The business's time zone (agent.yaml's business.timezone), read once the systems are configured: the page's times and the quotes' cutoffs.
     get timeZone() {
       return sys.config.timeZone;

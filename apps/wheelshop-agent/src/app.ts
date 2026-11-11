@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConverseApp, type ConverseApp, type ConverseToolImpl, type IncomingText, type TextContext, type Texts } from 'dialogwright';
+import { defineConverseApp, type ConverseApp, type ConverseToolImpl, type IncomingText, type TextContext } from 'dialogwright';
 import { lapseDue, quoteFor, replyToLapsed, replyToQuote } from './quotes';
 import {
   COUNTS, ON_FILE_MS, SHOP_PHONE, Systems, dayWords, forwardBody, iso, last4, once, onceAsync, ownerSummary, sendText, shopConfigOf, slotParts, tenDigits, textLine, usNumber,
@@ -13,11 +13,15 @@ import { shopPages } from './shopPage';
  * caller's yes and puts every action through the gate. This file is the shop's actions and nothing else,
  * each a stand-in on the shop's systems (src/shop.ts):
  *
+ * - `recognise_caller`: the dealership account the number calling is on file for (the runtime's state), as a
+ *   lookup, so `book_dealer`'s account is held to it before anything is read back.
  * - `check_availability`: the drop-off windows with room on a day, from the shop's fake calendar.
  * - `send_request`: a retail caller's request, kept, taking a place in the window they picked. On the yes it
  *   is followed by `send_photo_request` (a text asking for a photo, which the gate lets run only with the
  *   caller's yes to texts, never this code) and `notify_shop_request` (the shop's summary).
- * - `book_dealer`: a dealership's cars booked into a window, followed by `notify_shop_booking`.
+ * - `book_dealer`: a dealership's cars booked into a window, followed by `notify_shop_booking`. Its account is
+ *   one `recognise_caller` returned (a slot param, checked by the runtime); its cars must fit the window's room
+ *   now (the calendar refuses otherwise, as a real one would).
  * - `leave_callback`: a note for the shop to call the caller back, texted to the shop.
  * - `onText`: a text that comes in: a reply to a quote the shop sent from its page (src/quotes.ts), or a
  *   photo sent on to the shop's phone with the request it is for.
@@ -34,7 +38,7 @@ export const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 const APP_ID = 'wheelshop-agent';
 
 /** Whether a request's wheel is diamond cut, as the shop page and its summary say it: from the finish the caller described. */
-const DIAMOND_CUT: Readonly<Record<string, string>> = { 'diamond cut': 'yes', 'painted all over': 'no', 'not sure': 'not sure' };
+const DIAMOND_CUT: Readonly<Record<string, string>> = { 'diamond cut': 'yes', painted: 'no', 'not sure': 'not sure' };
 
 /** The details of a request, for the shop's summary. */
 function requestDetails(p: Readonly<Record<string, string>>): string {
@@ -56,6 +60,9 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
     return at;
   };
   return {
+    // The account the number calling is on file for (the runtime matched it as the call started), as the lookup book_dealer's account comes from.
+    recognise_caller: async (_p, ctx) => (ctx.caller.account ? [{ id: ctx.caller.account, label: ctx.caller.account }] : []),
+
     check_availability: async (p) => sys.free(p.day ?? ''),
 
     // Kept with the caller's words, the callback number by its ten digits (as the shop page and onText read it),
@@ -90,16 +97,13 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
         sendText(sys, ctx.texts, nowMs, ref, ctx.env(SHOP_PHONE) ?? '', ownerSummary({ ...vars, callbackNumber: number }), ownerSummary({ ...vars, callbackNumber: last4(number) }), { key: ctx.key }))).summary;
     },
 
-    // Only the account the caller's number is on file for books: agent.yaml has no rule that holds a param to
-    // the account the number recognises yet (DESIGN.md, "Findings"), so the shop's account system refuses any
-    // other, as it refuses a window without room.
+    // The account is one recognise_caller returned (the runtime holds the slot param to it before the read-back).
     book_dealer: async (p, ctx) => {
-      if (ctx.caller.account !== p.account) throw new Error(`the number calling is not on file for ${p.account ?? 'that account'}, so it cannot book for it: offer to send a request instead`);
       const cars = COUNTS[p.cars ?? ''] ?? 1;
       const { day, window } = room(ctx.key, 'B', p.slot ?? '', cars);
       const nowMs = sys.now();
       return once(sys, ctx.key, 'B', sys.bookings.length, nowMs, (ref) => {
-        sys.keep('booking', { ref, at: iso(nowMs), account: p.account ?? '', cars: p.cars ?? '', vehicles: '', day, window }, nowMs);
+        sys.keep('booking', { ref, at: iso(nowMs), account: p.account ?? '', cars: p.cars ?? '', vehicles: p.vehicles ?? '', day, window }, nowMs);
         return `booking ${ref}: ${p.cars ?? ''} cars for ${p.account ?? ''}, ${day} ${window}`;
       }).summary;
     },
@@ -109,7 +113,7 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
       const { day, window } = slotParts(p.slot ?? '');
       const account = sys.accountOf(p.account ?? '');
       // The account's own number is the business's record, not a caller's: in the summary whole.
-      const summary = ownerSummary({ kind: 'booking', who: account.name, callbackNumber: account.number, details: `${p.cars ?? ''} cars`, day: dayWords(day), window });
+      const summary = ownerSummary({ kind: 'booking', who: account.name, callbackNumber: account.number, details: `${p.cars ?? ''} cars${(p.vehicles ?? '') === '' ? '' : `, ${p.vehicles ?? ''}`}`, day: dayWords(day), window });
       return (await onceAsync(sys, ctx.key, 'N', sys.texts.length, nowMs, (ref) => sendText(sys, ctx.texts, nowMs, ref, ctx.env(SHOP_PHONE) ?? '', summary, summary, { key: ctx.key }))).summary;
     },
 
@@ -156,26 +160,27 @@ export async function shopOnText(s: Systems, m: IncomingText, ctx: TextContext):
   if (recent !== undefined && number !== null && recent.textOk === 'yes' && media.length > 0 && s.quotesOf(recent.ref).length === 0) await sendText(s, ctx.texts, ctx.nowMs, s.nextRef('T', s.texts.length), `+1${number}`, textLine('photoThanks'), textLine('photoThanks'));
 }
 
-/** What the app is made with: the clock, its settings for the shop page, and the page's sender. */
+/** What the app is made with: the clock its systems read (the server's, or a test's). */
 export interface WheelshopOptions {
   now?: () => number;
-  /** The settings the shop page reads as it is made (SHOP_DATA_DIR, PUBLIC_HOST, CONSOLE_AUTH, SHOP_PHONE). */
-  env: (name: string) => string | undefined;
-  /** The shop page's sender; absent, its texts (a quote) are printed. */
-  pageTexts?: Texts;
-  log?: (line: string) => void;
 }
 
-/** The app and its systems: one per server (index.ts), one per test. */
-export function wheelshop(o: WheelshopOptions): { app: ConverseApp; sys: Systems } {
+/**
+ * The app and its systems: one per server (index.ts), one per test, one per simulated call (`fresh`). Nothing
+ * is read from the process as it is made: agent.yaml's references (env.DEALER_TEST_LINE) are read by the server
+ * from the app's own settings as it starts, and the shop page is made then too, with the app's settings, its
+ * sender and the server's clock and log.
+ */
+export function wheelshop(o: WheelshopOptions = {}): { app: ConverseApp; sys: Systems } {
   const sys = new Systems(o.now);
   const app = defineConverseApp(APP_DIR, {
     tools: shopTools(sys),
     onText: (m, ctx) => shopOnText(sys, m, ctx),
-    pages: shopPages(sys, {
-      brand: { name: 'Example Wheel Works', mark: 'EW' }, base: `/${APP_ID}`, env: o.env, now: sys.now, log: o.log ?? (() => {}),
-      ...(o.pageTexts !== undefined ? { texts: o.pageTexts } : {}),
+    pages: (deps) => shopPages(sys, {
+      brand: { name: 'Example Wheel Works', mark: 'EW' }, base: deps.base, env: deps.env, now: deps.now, log: deps.log,
+      publicHost: deps.publicHost, signOut: deps.consoleSignIn, ...(deps.texts !== undefined ? { texts: deps.texts } : {}),
     }),
+    fresh: () => wheelshop(o).app,
   });
   // The systems read the calendar, the time zone and the accounts from agent.yaml, once it is joined to the code.
   sys.configure(shopConfigOf(app.business));

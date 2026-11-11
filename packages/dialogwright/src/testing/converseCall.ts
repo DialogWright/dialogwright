@@ -1,6 +1,6 @@
 import type { AuditSink } from '../audit/sink';
 import type { AuditDraft } from '../audit/types';
-import type { ConverseApp } from '../converse/app';
+import { appWithSettings, type ConverseApp } from '../converse/app';
 import type { ConverseModel } from '../converse/model/types';
 import { policyOf } from '../converse/policy';
 import { accountOf } from '../converse/sources/accounts';
@@ -32,7 +32,7 @@ export interface ConverseTestCallOptions {
   channel?: 'chat' | 'voice';
   /** The clock; default the real one. */
   now?: () => Date;
-  /** The app's settings its code reads (ctx.env). */
+  /** The app's settings: what its code reads (ctx.env), and what agent.yaml's env.<NAME> references are read from. */
   env?: Readonly<Record<string, string>>;
   /** A text sender for the app's code (fakeTextProvider); absent, the code has none. */
   texts?: TextProvider;
@@ -61,7 +61,9 @@ export interface ConverseTestCall {
   readonly traces: readonly ConverseTraceRecord[];
 }
 
-export function converseTestCall(app: ConverseApp, o: ConverseTestCallOptions): ConverseTestCall {
+export function converseTestCall(made: ConverseApp, o: ConverseTestCallOptions): ConverseTestCall {
+  // agent.yaml's env.<NAME> references read from the test's settings, as the server reads them from the app's.
+  const app = appWithSettings(made, o.env ?? {});
   const now = o.now ?? (() => new Date());
   const callId = o.callId ?? 'test-call';
   const channel = o.channel ?? 'chat';

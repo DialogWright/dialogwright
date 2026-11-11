@@ -79,4 +79,12 @@ describe('anthropicModel', () => {
     const f = stubFetch(() => sseResponse([sse({ type: 'message_start', message: { usage: { input_tokens: 1 } } })]));
     expect(await collect(anthropicModel({ model: 'm', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()))).toMatchObject([{ type: 'error', kind: 'invalid' }]);
   });
+
+  it('sends no reasoning effort: the Messages API takes none from this request', async () => {
+    const f = stubFetch(stream);
+    await collect(anthropicModel({ model: 'claude-haiku-5-5', apiKey: KEY, fetch: f.fetch }).stream({ ...req, effort: 'minimal' }, ctl()));
+    const body = String(f.calls[0]!.init.body);
+    expect(body).not.toContain('effort');
+    expect(body).not.toContain('reasoning');
+  });
 });

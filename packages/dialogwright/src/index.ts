@@ -228,7 +228,7 @@ export type { HostApp, HostedApp, HostRouting } from './server/host';
 // registers it (registerConverseApp, then serverMain), by host.yaml beside other apps, or by startServer's overrides.apps.
 export { defineConverseApp, isConverseApp, businessCalendar } from './converse/app';
 export { registerConverseApp } from './core/app/registry';
-export type { ConverseApp, ConverseChatSettings, Calendar as ConverseCalendar, Slot as ConverseSlot } from './converse/app';
+export type { ConverseApp, ConverseChatSettings, ConversePageDeps, ConversePagesFactory, Calendar as ConverseCalendar, Slot as ConverseSlot } from './converse/app';
 export type { ToolImpl as ConverseToolImpl } from './converse/turn';
 export type { ConverseTraceRecord } from './converse/trace';
 export type { RunningServer, ServerOverrides, Sidecars } from './server/index';

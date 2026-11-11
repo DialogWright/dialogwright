@@ -11,6 +11,7 @@ import { auditRowsIn, BOOKING, CALLER, Chat, CHAT_ORIGIN as ORIGIN, DAY, done, s
 import type { ServerMessage } from '../channel/chat/protocol';
 import type { ConverseModel, ModelEvent } from '../converse/model/types';
 import { fakeModel } from '../converse/model/fake';
+import { fakeTextProvider } from '../texts/record';
 import type { ConverseApp } from '../converse/app';
 import { defineConverseApp } from '../converse/app';
 import { CONVERSE_FIXTURE_DIR, converseFixture } from '../testing/converse/app';
@@ -26,7 +27,7 @@ import type { HostedApp } from './host';
  * restart in the middle of a read-back resumes the chat on the new server, where the yes books it once.
  */
 
-const READ_BACK = 'A visit Tuesday, January 15, 9 to 12 for Sam Example, on ending in 0123. Is that right?';
+const READ_BACK = "A visit Tuesday, January 15, 9 to 12 for Sam Example, on the number you're calling from, ending in 0123. Is that right?";
 
 const servers: RunningServer[] = [];
 const sockets: Chat[] = [];
@@ -255,6 +256,55 @@ describe('the web chat on the converse runtime', () => {
     await c.say('The morning please, for Sam Example, on this number.');
     await c.say('yes');
     expect(read).toEqual(['desk-own', undefined]);
+  });
+
+  it('reads agent.yaml\'s env references from the app\'s own settings as the server starts, never from the process at load', async () => {
+    const dir = folder();
+    const own = join(dir, 'converse');
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(own);
+    writeFileSync(join(own, 'agent.yaml'), `${readFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8').replace('sources:\n', 'sources:\n  accounts:\n    - { name: Example Regular, numbers: [env.VISIT_REGULAR_LINE] }\n')}`);
+    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\nchat:\n  callerNumberFromContext: true\n');
+    expect(process.env.VISIT_REGULAR_LINE).toBeUndefined();
+    const app = defineConverseApp(own, { tools: { availability: async () => [], book: async () => 'booked' } });
+    // Made with the app, the reference is kept as it is written: no setting is read until a server starts.
+    expect(app.business.sources.accounts![0]!.numbers).toEqual(['env.VISIT_REGULAR_LINE']);
+    const env = settings(dir);
+    const model = fakeModel([[text('Hello again.'), done()]]);
+    const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env, settings: { ...env, VISIT_REGULAR_LINE: CALLER }, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env });
+    const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: yesJev(), log: () => {}, env, apps, converseModel: () => model });
+    servers.push(server);
+    const c = await Chat.open(`http://127.0.0.1:${server.port}`, sockets);
+    c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    await c.say('hi');
+    expect(model.requests[0]!.system).toContain('on file for the account "Example Regular"');
+  });
+
+  it('makes a converse app\'s pages as the server starts, with its settings, its sender, the clock and the log', async () => {
+    const dir = folder();
+    let given: { base: string; desk: string | undefined; texts: boolean; now: number } | null = null;
+    const page = {
+      label: 'a page', path: '/hello', localOnly: false,
+      handle: async (_req: unknown, res: import('node:http').ServerResponse) => (res.writeHead(200, { 'content-type': 'text/plain' }).end('hello'), true),
+    };
+    const app = defineConverseApp(CONVERSE_FIXTURE_DIR, {
+      tools: { availability: async () => [], book: async () => 'booked' },
+      pages: (deps) => {
+        given = { base: deps.base, desk: deps.env('VISIT_DESK'), texts: deps.texts !== undefined, now: deps.now() };
+        deps.log('made the page');
+        return { routes: [page] };
+      },
+    });
+    expect(given).toBeNull();
+    const env = settings(dir, { TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'1'.repeat(32)}`, TWILIO_AUTH_TOKEN: 't' });
+    const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env, settings: { ...env, VISIT_DESK: 'desk-2' }, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env });
+    const logs: string[] = [];
+    const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: yesJev(), log: (l) => logs.push(l), env, apps, converseModel: () => fakeModel([]), textProvider: fakeTextProvider(), now: () => 1234 });
+    servers.push(server);
+    expect(given).toEqual({ base: '/converse', desk: 'desk-2', texts: true, now: 1234 });
+    expect(logs.some((l) => l.includes('made the page'))).toBe(true);
+    expect((await fetch(`http://127.0.0.1:${server.port}/converse/hello`)).status).toBe(200);
   });
 
   it('ends a chat the person ends: the read-back waiting is dropped, and the end recorded', async () => {

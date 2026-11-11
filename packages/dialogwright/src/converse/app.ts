@@ -7,7 +7,8 @@ import { positionOf, problemsOfIssues, type Problem } from '../define/problems';
 import { appSchema } from '../define/schema/app';
 import type { JsonSchema } from '../define/schema/json';
 import type { AppRoutes } from '../server/appRoutes';
-import { AGENT_FILE, AgentBusinessError, loadAgentBusiness } from './business/load';
+import type { Texts } from '../texts/types';
+import { AGENT_FILE, AgentBusinessError, readAgentBusiness, resolveAgentSettings } from './business/load';
 import type { AgentBusiness } from './business/schema';
 import { policyOf } from './policy';
 import { fakeCalendar, type Calendar, type Slot } from './sources/calendar';
@@ -25,11 +26,39 @@ export interface ConverseApp {
   dir: string;
   business: AgentBusiness;
   tools: Record<string, ToolImpl>;
-  pages?: AppRoutes;
+  /** The app's own pages, under /<id>: routes made with the app, or made by the server as it starts (ConversePagesFactory). */
+  pages?: AppRoutes | ConversePagesFactory;
   onText?: App['onText'];
   /** The app's chat settings (app.yaml's `chat`). */
   chat: ConverseChatSettings;
+  /**
+   * The app made again, with state of its own (its systems, its calendar), where its code keeps any: a test
+   * harness starts each simulated call on one (pnpm eval), so no call sees what another booked. Absent, the
+   * app keeps no state of its own and is used as it is.
+   */
+  fresh?: () => ConverseApp;
 }
+
+/** What a converse app's pages are made with, as the server starts: as a scripted app's pages are (AppPageDeps), for an app with no scripted parts. */
+export interface ConversePageDeps {
+  /** The app, its agent.yaml's references read from its own settings. */
+  app: ConverseApp;
+  /** Where its pages are mounted, `/<app id>`. */
+  base: string;
+  /** One of the app's settings by name: on a host its own settings file over the server's, on a server of one the server's environment. */
+  env(name: string): string | undefined;
+  /** The app's sender (TEXT_FROM), each text recorded in its audit; absent where the server has none. */
+  texts?: Texts;
+  now(): number;
+  log(line: string): void;
+  /** The server's public name (PUBLIC_HOST), for a form's Origin check. */
+  publicHost: string;
+  /** The console has a sign-in (CONSOLE_AUTH=token): a console page may offer Sign out. */
+  consoleSignIn: boolean;
+}
+
+/** A converse app's pages, made by the server as it starts. */
+export type ConversePagesFactory = (deps: ConversePageDeps) => AppRoutes;
 
 /** What a converse app's chat takes from app.yaml's `chat`. */
 export interface ConverseChatSettings {
@@ -89,14 +118,15 @@ function readAppYaml(dir: string): AppYaml {
 
 /**
  * The app of the folder `dir`: its app.yaml (the app's id, `mode: converse`, its chat settings), its
- * agent.yaml (env.<NAME> numbers read from the environment) and `code`. Refuses (AgentBusinessError, a path
+ * agent.yaml (its env.<NAME> references kept as written: the server reads them from the app's own settings
+ * as it starts, appWithSettings) and `code`. Refuses (AgentBusinessError, a path
  * and a fix per problem) an app.yaml its schema refuses or that is not converse's, an action with no code,
  * code for no action, and what the business's gate cannot hold (policyOf); agent.yaml's own check already
  * refuses a follow-on that takes a param its parent has not.
  */
-export function defineConverseApp(dir: string, code: { tools: Record<string, ToolImpl>; pages?: AppRoutes; onText?: App['onText'] }): ConverseApp {
+export function defineConverseApp(dir: string, code: { tools: Record<string, ToolImpl>; pages?: AppRoutes | ConversePagesFactory; onText?: App['onText']; fresh?: () => ConverseApp }): ConverseApp {
   const yaml = readAppYaml(dir);
-  const business = loadAgentBusiness(dir);
+  const business = readAgentBusiness(dir);
   const problems: Problem[] = [];
   const add = (path: string, message: string, fix: string): void => void problems.push({ file: AGENT_FILE, line: 1, column: 1, path, message, fix });
   for (const name of Object.keys(business.actions)) {
@@ -116,7 +146,13 @@ export function defineConverseApp(dir: string, code: { tools: Record<string, Too
     chat: { callerNumberFromContext: yaml.chat?.callerNumberFromContext === true },
     ...(code.pages !== undefined ? { pages: code.pages } : {}),
     ...(code.onText !== undefined ? { onText: code.onText } : {}),
+    ...(code.fresh !== undefined ? { fresh: code.fresh } : {}),
   };
+}
+
+/** The app with agent.yaml's env.<NAME> references read from `settings`, the app's own (the server does this as it starts). */
+export function appWithSettings(app: ConverseApp, settings: Record<string, string | undefined>): ConverseApp {
+  return { ...app, business: resolveAgentSettings(app.business, settings) };
 }
 
 /** Whether a hosted app is a converse app (the server's dispatch: a converse app's chat runs on the converse runtime). */

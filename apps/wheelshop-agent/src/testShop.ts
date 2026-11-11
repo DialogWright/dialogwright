@@ -13,7 +13,7 @@ const clocks = new WeakMap<Systems, { ms: number }>();
 
 /** New systems, as a server starts with: agent.yaml's calendar, time zone and accounts, and a clock set by `run`. */
 export function newSystems(ms = 0): Systems {
-  business ??= wheelshop({ env: () => undefined }).app.business;
+  business ??= wheelshop().app.business;
   const clock = { ms };
   const sys = new Systems(() => clock.ms);
   sys.configure(shopConfigOf(business));

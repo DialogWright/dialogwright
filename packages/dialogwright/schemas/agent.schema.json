@@ -280,10 +280,20 @@
         },
         "maxTokens": {
           "default": 400,
-          "description": "The most tokens a reply may use.",
+          "description": "The most tokens a reply may use (a model's reasoning counts toward it). A reply cut off at it is a failed turn, never spoken as it was cut.",
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
+        },
+        "effort": {
+          "description": "How hard the model reasons: minimal, low, medium or high, sent in each provider's own form (Inception's reasoning_effort, where minimal is its instant; OpenRouter's reasoning.effort; not sent to Anthropic). Default: the provider's own.",
+          "type": "string",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ]
         }
       },
       "required": [

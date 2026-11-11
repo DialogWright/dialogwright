@@ -37,7 +37,7 @@ services: # assumption: the owner corrects these
   - name: refinishing worn or faded finishes
     about: A tired finish brought back.
 priceCaveat:
-  en: "That's a ballpark; the shop confirms the price once it sees the damage, so send us a photo and we'll firm it up."
+  en: "That's a ballpark; the shop firms up the price once it sees the damage, from a photo we ask you for once your request is in."
 notOffered: # assumption: the owner corrects these
   - cracked wheels
   - straightening bent wheels
@@ -52,11 +52,13 @@ facts:
   - How long any other job takes depends on the damage; the shop says once it has seen it. # assumption: the owner corrects these
   - "Cars are dropped off in a window: the morning window, drop off by 8, ready by about noon; or the afternoon window, drop off by noon, ready by about 5." # assumption: the owner corrects these
   - Dealerships on Commerce Drive send their trade-ins here.
-  - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window. # assumption: the owner corrects these
+  - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window, up to three cars in one window. # assumption: the owner corrects these
   - Dealership work is billed at the rates agreed with the shop. # assumption: the owner corrects these
   - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
-  - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them.
+  - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them. # assumption: the owner corrects these
   - There is no live transfer; a caller who wants to speak with someone can leave a callback note, and someone from the shop calls back as soon as they can.
+  - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
+  - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
 persona:
   style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
 lines:
@@ -67,10 +69,10 @@ lines:
   done: { en: "That's done." }
 model:
   default: inception:mercury-3 # until the model comparison (plan 1, Task 10) decides
-  # Mercury 3 is sent no reasoning effort yet, so it reasons by default and its reasoning counts toward this
-  # limit: at 400 (the default) a reply was cut short or empty (DESIGN.md, Findings 1). Room for both until the
-  # runtime sends an effort.
-  maxTokens: 1500
+  # Mercury reasons least at minimal (Inception's instant); its reasoning counts toward maxTokens, and a reply cut
+  # off at it is a failed turn, never spoken (DESIGN.md, Findings 1).
+  effort: minimal
+  maxTokens: 600
 sources:
   calendar:
     kind: fake # the shop's stand-in calendar (src/shop.ts), from these days and windows
@@ -88,8 +90,14 @@ sources:
     - name: Lakeview Imports
       numbers: ["+15555550161"]
 actions:
+  recognise_caller:
+    about: >-
+      The dealership account the number calling is on file for, if any: call it before book_dealer, whose
+      account must be one it returned. A number on file recognises an account; it does not prove who is speaking.
+    kind: lookup
+    params: {}
   check_availability:
-    about: The drop-off windows with room on a day, each with how many cars it can still take. The only source of what is free.
+    about: The drop-off windows with room on a day, each with how many cars it can still take (its room). The only source of what is free.
     kind: lookup
     params:
       day: { type: date, about: The day the car would be dropped off. }
@@ -106,34 +114,34 @@ actions:
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
       damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
-      finish: { type: choice, options: [diamond cut, painted all over, not sure], about: "The wheel's face as the customer describes it: diamond cut (bright bare machined metal with fine lines, two-tone included), painted all over, or not sure." }
+      finish: { type: choice, options: [diamond cut, painted, not sure], about: "The wheel's face as the customer describes it: diamond cut (bright bare machined metal with fine lines, two-tone included), painted (all over, or painted with no bare machined metal), or not sure." }
       slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
     readBack:
-      en: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on the number {callbackNumber}, and texts there are OK: {textOk}. Is that right?"
+      en: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}. Is that right?"
     then: [send_photo_request, notify_shop_request]
     audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep }
   send_photo_request:
-    about: Runs by itself after send_request, only with the customer's yes to texts; never call it yourself.
+    about: Follows send_request on the customer's yes, only with their yes to texts too (the runtime runs it; the model is never offered it).
     kind: change
     params:
       callbackNumber: { type: phone, about: The customer's number. }
       textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to be texted there. }
     readBack:
-      en: "We'll text the number {callbackNumber} asking for a photo of the damage. Is that right?"
+      en: "We'll text {callbackNumber} asking for a photo of the damage. Is that right?"
     rules:
       - oneOf: { field: textOk, values: ["yes"], reason: no-consent }
     audit: { callbackNumber: last4, textOk: keep }
   notify_shop_request:
-    about: Runs by itself after send_request, texting the shop a summary; never call it yourself.
+    about: Follows send_request on the customer's yes, texting the shop a summary (the runtime runs it; the model is never offered it).
     kind: change
     params:
       name: { type: text, about: The customer's name. }
       vehicle: { type: text, about: The car. }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels. }
       damage: { type: text, about: The damage. }
-      finish: { type: choice, options: [diamond cut, painted all over, not sure], about: The wheel's face. }
+      finish: { type: choice, options: [diamond cut, painted, not sure], about: The wheel's face. }
       slot: { type: slot, from: check_availability, about: The drop-off window. }
       callbackNumber: { type: phone, about: The customer's number. }
       textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to texts. }
@@ -146,23 +154,25 @@ actions:
       number is on file for; anyone else sends a request instead.
     kind: change
     params:
-      account: { type: choice, options: [Rivergate Motors, Northside Auto Sales, Lakeview Imports], about: The account the caller's number is on file for. }
-      cars: { type: choice, options: [one, two, three, four, five, six], about: How many cars they are dropping off. }
+      account: { type: slot, from: recognise_caller, about: The account recognise_caller returned for the number calling. }
+      cars: { type: choice, options: [one, two, three], about: "How many cars they are dropping off: a window holds three at most, so more go in another window as a booking of their own." }
+      vehicles: { type: text, about: "The cars and which wheels need work, as the caller gives them (makes, models or stock numbers)." }
       slot: { type: slot, from: check_availability, about: "The drop-off window they picked from check_availability's results, with room for all the cars." }
     readBack:
-      en: "So that's {account}, {cars} in all, dropping off {slot}. Shall we book it?"
+      en: "So that's {account}, {cars} in all: {vehicles}, dropping off {slot}. Shall we book it?"
     then: [notify_shop_booking]
-    audit: { account: keep, cars: keep, slot: keep }
+    audit: { account: keep, cars: keep, vehicles: keep, slot: keep }
   notify_shop_booking:
-    about: Runs by itself after book_dealer, texting the shop a summary; never call it yourself.
+    about: Follows book_dealer on the caller's yes, texting the shop a summary (the runtime runs it; the model is never offered it).
     kind: change
     params:
-      account: { type: choice, options: [Rivergate Motors, Northside Auto Sales, Lakeview Imports], about: The account. }
-      cars: { type: choice, options: [one, two, three, four, five, six], about: How many cars. }
+      account: { type: slot, from: recognise_caller, about: The account. }
+      cars: { type: choice, options: [one, two, three], about: How many cars. }
+      vehicles: { type: text, about: The cars and wheels. }
       slot: { type: slot, from: check_availability, about: The drop-off window. }
     readBack:
       en: "We'll text the shop a summary of the booking for {account}. Is that right?"
-    audit: { account: keep, cars: keep, slot: keep }
+    audit: { account: keep, cars: keep, vehicles: keep, slot: keep }
   leave_callback:
     about: Leave the shop a note to call the customer back, for someone who wants to speak with a person.
     kind: change
@@ -171,5 +181,5 @@ actions:
       callbackNumber: { type: phone, about: The best number to call them back on. }
       about: { type: text, about: "What they want to talk about, as a short lowercase phrase the read-back says after the word about (for example: the wheel they left last week)." }
     readBack:
-      en: "We'll have someone from the shop call {name} back on the number {callbackNumber} about {about}. Is that right?"
+      en: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}. Is that right?"
     audit: { name: mask, callbackNumber: last4, about: keep }

@@ -20,9 +20,19 @@ function messagesOf(system: string, messages: ModelMessage[]): Record<string, un
   return out;
 }
 
-/** The chat completions body for a request (no key in it); `temperature` only where the request sets it. */
-export function openAiCompatBody(model: string, req: ModelRequest): Record<string, unknown> {
+/**
+ * The reasoning effort in the provider's own form: Inception's `reasoning_effort` (its least is `instant`, which
+ * `minimal` names), OpenRouter's `reasoning.effort`. Nothing where the request names none.
+ */
+function effortOf(provider: 'inception' | 'openrouter', req: ModelRequest): Record<string, unknown> {
+  if (req.effort === undefined) return {};
+  return provider === 'inception' ? { reasoning_effort: req.effort === 'minimal' ? 'instant' : req.effort } : { reasoning: { effort: req.effort } };
+}
+
+/** The chat completions body for a request (no key in it); `temperature` only where the request sets it, the effort in the provider's form. */
+export function openAiCompatBody(model: string, req: ModelRequest, provider: 'inception' | 'openrouter'): Record<string, unknown> {
   return {
+    ...effortOf(provider, req),
     model,
     stream: true,
     stream_options: { include_usage: true },
@@ -43,7 +53,7 @@ export function openAiCompatModel(o: { provider: 'inception' | 'openrouter'; mod
         res = await doFetch(o.url ?? KNOWN[o.provider].url, {
           method: 'POST',
           headers: { authorization: `Bearer ${o.apiKey}`, 'content-type': 'application/json' },
-          body: JSON.stringify(openAiCompatBody(o.model, req)),
+          body: JSON.stringify(openAiCompatBody(o.model, req, o.provider)),
           signal,
         });
       } catch (e) {

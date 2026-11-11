@@ -3,6 +3,7 @@ import { ENV_REFERENCE } from '../../core/app/envReference';
 import { E164 } from '../../core/numberLocales';
 import { checkAlways, identifier, matching, text } from '../../define/schema/common';
 import { policyRuleEntry } from '../../define/schema/policy';
+import { MODEL_EFFORTS } from '../model/types';
 
 /**
  * agent.yaml: everything about a business the converse runtime (docs/designs/2026-11-11-agent-runtime.md)
@@ -207,7 +208,8 @@ export const agentBusinessSchema = z
       .strictObject({
         default: text().describe('The model, as <provider>:<model> (anthropic, inception or openrouter). Claude models go through anthropic only.'),
         timeoutMs: z.number().int().positive().default(6000).describe('How long a model reply may take before the turn falls back.'),
-        maxTokens: z.number().int().positive().default(400).describe('The most tokens a reply may use.'),
+        maxTokens: z.number().int().positive().default(400).describe('The most tokens a reply may use (a model\'s reasoning counts toward it). A reply cut off at it is a failed turn, never spoken as it was cut.'),
+        effort: z.enum(MODEL_EFFORTS).optional().describe('How hard the model reasons: minimal, low, medium or high, sent in each provider\'s own form (Inception\'s reasoning_effort, where minimal is its instant; OpenRouter\'s reasoning.effort; not sent to Anthropic). Default: the provider\'s own.'),
       })
       .describe('The model that leads the conversation.'),
     limits: z

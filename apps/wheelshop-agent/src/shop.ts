@@ -218,7 +218,11 @@ export class Systems {
     return WEEKDAY_NAMES[new Date(parseIso(day)).getUTCDay()] === 'friday' && window === 'morning' ? this.capacityOf('morning') : 0;
   }
 
-  /** An account by its name: its name and the first number written out for it (one read from a setting, a tester's phone, is never in a summary). */
+  /**
+   * An account by its name: its name and the first number agent.yaml writes out for it, for the shop's summary. The
+   * systems hold agent.yaml as written, so an `env.<NAME>` entry (a tester's phone, set in the app's settings) is
+   * skipped, never read: a summary never carries it.
+   */
   accountOf(name: string): { name: string; number: string } {
     const a = this.config.accounts.find((x) => x.name === name);
     const number = a?.numbers.find((n) => !n.startsWith('env.')) ?? '';

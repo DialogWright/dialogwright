@@ -77,7 +77,7 @@ actions:
     params:
       phone: { type: phone, about: The number to call back. }
     readBack:
-      en: "A call back to the number {phone}. Is that right?"
+      en: "A call back to {phone}. Is that right?"
     audit: { phone: last4 }
   leave_note:
     about: Leave a note for the counter.
@@ -231,7 +231,8 @@ describe('the model\'s request', () => {
     expect(req.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
     expect(req.messages[0]!.content).toEqual([{ type: 'text', text: '[The call is connected.]' }]);
     expect(s.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant']);
-    expect(req.tools.map((t) => t.name)).toEqual(['check_availability', 'book', 'notify', 'callback', 'leave_note', 'end_call']);
+    // notify only follows book (its `then`): the model is never offered it.
+    expect(req.tools.map((t) => t.name)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'end_call']);
     expect(req.maxTokens).toBe(400);
   });
 });
@@ -256,21 +257,31 @@ describe('converseTurn: a booking', () => {
     expect(lastMessage(h)).toContain('The caller confirmed; done');
     expect(h.said.at(-1)).toEqual(['You are booked for Friday morning.', true]);
 
-    const kinds = h.rows.map((r) => (r.type === 'gate' ? `gate ${r.detail.tool} ${r.detail.verdict}` : `${r.type} ${String(r.detail.action ?? '')}`.trim()));
+    const kinds = h.rows.map((r) => (r.type === 'gate' ? `gate ${r.detail.tool} ${r.detail.verdict}` : `${r.type} ${String(r.detail.action ?? r.detail.tool ?? '')}`.trim()));
     expect(kinds).toEqual([
       'gate check_availability ALLOW',
+      'tool_result check_availability',
       'gate book BLOCK',
       'confirmed book',
       'gate book ALLOW',
+      'tool_result book',
       'confirmed notify',
       'gate notify ALLOW',
+      'tool_result notify',
     ]);
     const bookHash = confirmationHash({ slot: SLOT, item: 'lamp' }, confirmedFields(h.deps.business.actions.book!));
-    expect(h.rows[2]!.detail).toMatchObject({ action: 'book', hash: bookHash, yes: 0.95, no: 0.05 });
+    expect(h.rows[3]!.detail).toMatchObject({ action: 'book', hash: bookHash, yes: 0.95, no: 0.05 });
     // The follow-on's row names the parent's confirmation, and carries its own hash over the params it took.
-    expect(h.rows[4]!.detail).toMatchObject({ action: 'notify', parent: 'book', parentHash: bookHash, hash: confirmationHash({ item: 'lamp' }, ['item']) });
+    expect(h.rows[6]!.detail).toMatchObject({ action: 'notify', parent: 'book', parentHash: bookHash, hash: confirmationHash({ item: 'lamp' }, ['item']) });
+    // Each action's result is recorded beside its gate row, what the model was sent, the call's masked values masked.
+    expect(h.rows[1]!.detail).toMatchObject({ tool: 'check_availability', ok: true });
+    // The lookup's day is recorded masked (agent.yaml names no audit for it), so its result is recorded with the day masked too.
+    expect(String(h.rows[1]!.detail.summary)).toContain('"id":"•:morning"');
+    expect(String(h.rows[1]!.detail.summary)).not.toContain(FRIDAY);
+    expect(h.rows[5]!.detail).toMatchObject({ tool: 'book', ok: true });
+    expect(h.rows[8]!.detail).toEqual({ tool: 'notify', ok: true, summary: 'noted' });
     // The slot is recorded masked (agent.yaml says nothing of it), the item as it is.
-    expect(h.rows[1]!.detail.call).toBe('book(slot=•, item=lamp)');
+    expect(h.rows[2]!.detail.call).toBe('book(slot=•, item=lamp)');
 
     expect(h.traces.map((t) => t.tools.map((x) => `${x.name}:${x.outcome}`))).toEqual([[], ['check_availability:ran', 'book:readBack'], ['book:confirmed', 'notify:ran']]);
     // The trace keeps what was said with the masked slot masked, as said (its label) and as sent (its id).
@@ -289,7 +300,7 @@ describe('converseTurn: a booking', () => {
     expect(h.calendar.bookings).toHaveLength(0);
     expect(h.notified).toEqual([]);
     expect(s.pending).toBeNull();
-    expect(lastMessage(h)).toContain('did not confirm');
+    expect(lastMessage(h)).toContain('Not done: nothing was changed, booked or sent. The caller did not confirm');
     expect(lastMessage(h)).toContain('yes but make it the afternoon');
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed' }]);
@@ -438,12 +449,24 @@ describe('converseTurn: the caller\'s number', () => {
     const h = harness([[call('c1', 'callback', { phone: 'caller' }), done('tool')], [text('We will call you back.'), done()]]);
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'please call me back on this number' });
-    expect(h.said.at(-1)).toEqual(['A call back to the number ending in 0142. Is that right?', true]);
+    expect(h.said.at(-1)).toEqual(['A call back to the number you\'re calling from, ending in 0142. Is that right?', true]);
     s = await h.run(s, { kind: 'text', text: 'yes' });
     expect(h.calledBack).toEqual([CALLER_NUMBER]);
     for (const req of h.model.requests) expect(JSON.stringify(req)).not.toContain('5555550142');
     expect(h.rows.find((r) => r.type === 'gate')!.detail.call).toBe('callback(phone=...0142)');
     expect(systemPrompt(h.deps.business, s, NOW)).toContain('"caller"');
+  });
+
+  it('reads a number the caller gave back whole, and keeps it out of the trace and the audit', async () => {
+    const h = harness([[call('c1', 'callback', { phone: '555 555 0177' }), done('tool')], [text('We will call you back.'), done()]]);
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'call me back on 555 555 0177' });
+    expect(h.said.at(-1)).toEqual(['A call back to 555 555 0177. Is that right?', true]);
+    await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calledBack).toEqual(['+15555550177']);
+    const recorded = JSON.stringify({ traces: h.traces.map((t) => ({ replies: t.replies, readBack: t.readBack, tools: t.tools })), rows: h.rows });
+    expect(recorded).not.toContain('555 555 0177');
+    expect(recorded).not.toContain('5555550177');
   });
 
   it('refuses "caller" on a chat with no number, saying to ask for one', async () => {
@@ -513,15 +536,26 @@ describe('converseTurn: Out', () => {
 });
 
 describe('converseTurn: refusals', () => {
-  it('sends the gate\'s refusal back as an error, counts it, and past the limit says to offer a person', async () => {
-    const h = harness([
-      [call('c1', 'notify', { item: 'lamp' }), done('tool')],
-      [call('c2', 'notify', { item: 'kettle' }), done('tool')],
-      [text('I can not do that.'), done()],
-    ], { edit: (t) => t.replace('    readBack:\n      en: "Tell the counter', '    rules:\n      - oneOf: { field: item, values: [clock], reason: not-offered }\n    readBack:\n      en: "Tell the counter') });
+  it('refuses a call to an action that only follows another (its `then`), which the model is never offered: nothing is read back or run', async () => {
+    const h = harness([[call('c1', 'notify', { item: 'lamp' }), done('tool')], [text('Let me book it instead.'), done()]]);
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'tell them about my lamp' });
-    expect(s.refusals).toEqual({ notify: 2 });
+    expect(h.notified).toEqual([]);
+    expect(s.pending).toBeNull();
+    expect(h.rows.filter((r) => r.type === 'gate')).toEqual([]);
+    expect(JSON.stringify(h.model.requests[1]!.messages.at(-1))).toMatch(/runs only after book/);
+    expect(h.traces.at(-1)!.tools).toMatchObject([{ name: 'notify', outcome: 'refused' }]);
+  });
+
+  it('sends the gate\'s refusal back as an error, counts it, and past the limit says to offer a person', async () => {
+    const h = harness([
+      [call('c1', 'leave_note', { note: 'the lamp' }), done('tool')],
+      [call('c2', 'leave_note', { note: 'the kettle' }), done('tool')],
+      [text('I can not do that.'), done()],
+    ], { edit: (t) => t.replace('    readBack:\n      en: "A note saying', '    rules:\n      - oneOf: { field: note, values: [the clock], reason: not-offered }\n    readBack:\n      en: "A note saying') });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'tell them about my lamp' });
+    expect(s.refusals).toEqual({ leave_note: 2 });
     const first = JSON.stringify(h.model.requests[1]!.messages.at(-1));
     const second = JSON.stringify(h.model.requests[2]!.messages.at(-1));
     expect(first).toContain('"isError":true');
@@ -547,6 +581,27 @@ describe('converseTurn: the model\'s failures', () => {
     await h.run(fresh(), { kind: 'text', text: 'hi' });
     expect(h.said).toEqual([['Hello there.', true]]);
     expect(h.traces[0]!.replies).toEqual(['Hello there.']);
+  });
+
+  it('takes a reply cut off at the token limit as a failure: its unfinished words are never said, and it is asked once more', async () => {
+    const cut: ModelEvent = { type: 'done', stop: 'length', usage: { inputTokens: 100, outputTokens: 400 } };
+    const h = harness([[text('We have the morning and the aftern'), cut], [text('We have the morning.'), done()]]);
+    await h.run(fresh(), { kind: 'text', text: 'what is free?' });
+    expect(h.said).toEqual([['We have the morning.', true]]);
+    expect(h.traces[0]!.model).toMatchObject({ retried: true, error: expect.stringMatching(/^length: /) });
+    const spoke = harness([[text('Sure. We have the morning and the aftern'), cut], [text('Never asked.'), done()]]);
+    const s = await spoke.run(fresh(), { kind: 'text', text: 'what is free?' });
+    expect(spoke.said).toEqual([['Sure. ', false], ['Sorry, could you say that again?', true]]);
+    expect(s.failures).toBe(1);
+  });
+
+  it('asks the model at agent.yaml\'s effort, and at none where it names none', async () => {
+    const h = harness([[text('Hello.'), done()]], { edit: (t) => t.replace('  default: anthropic:claude-haiku-5-5', '  default: anthropic:claude-haiku-5-5\n  effort: minimal') });
+    await h.run(fresh(), { kind: 'text', text: 'hi' });
+    expect(h.model.requests[0]).toMatchObject({ effort: 'minimal' });
+    const bare = harness([[text('Hello.'), done()]]);
+    await bare.run(fresh(), { kind: 'text', text: 'hi' });
+    expect(bare.model.requests[0]).not.toHaveProperty('effort');
   });
 
   it('does not ask again once part of the answer was said, and keeps what was said', async () => {
@@ -695,6 +750,7 @@ describe('systemPrompt', () => {
     expect(prompt).toContain('The final price is confirmed once the item has been seen.');
     expect(prompt).toMatch(/Claim nothing/);
     expect(prompt).toMatch(/Nothing changes without the caller's yes/);
+    expect(prompt).toMatch(/Never say that something was booked, sent, changed or done unless an action's result on this call says it was done/);
     expect(prompt).toMatch(/automated assistant/);
     expect(prompt).toContain('Calm and brief.');
   });

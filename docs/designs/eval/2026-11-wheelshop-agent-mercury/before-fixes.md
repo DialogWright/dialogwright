@@ -1,6 +1,6 @@
 # Simulated callers on wheelshop-agent
 
-> The first run of 2026-11-11, before the agent.yaml fixes of [the app's DESIGN.md, "Findings"](../../../../apps/wheelshop-agent/DESIGN.md#findings); [the second run](summary.md) is after them.
+> The first run of 2026-11-11, before the agent.yaml fixes of [the app's DESIGN.md, "Findings"](../../../../apps/wheelshop-agent/DESIGN.md#findings); [the second run](run-2.md) is after them, and [the third](summary.md) after fix round 1.
 
 36 calls over the chat wire, 3 per persona planned. Caller: anthropic:claude-haiku-5-5. Judge: anthropic:claude-haiku-5-5. Decision model: the real decision model (Jev). Spent on caller and judge: $0.0904 of $2.5000.
 

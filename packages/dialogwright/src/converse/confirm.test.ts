@@ -29,10 +29,19 @@ describe('readBackText', () => {
   const seen: Seen = { availability: { results: [{ id: 'slot-7', label: 'drop off by noon' }], atMs: 1 } };
   const params = { day: '2026-11-13', window: 'slot-7', item: 'kettle', details: 'it sparks', phone: '+15555550142' };
 
-  it('fills each placeholder with the param as its type displays it', () => {
+  it('fills each placeholder with the param as its type displays it: a number the caller gave read back whole, in groups', () => {
     expect(readBackText(b, 'book', params, 'en', seen)).toBe(
-      'A visit on Friday, November 13, drop off by noon, for the kettle (it sparks). We will call the number ending in 0142. Is that right?',
+      'A visit on Friday, November 13, drop off by noon, for the kettle (it sparks). We will call the number 555 555 0142. Is that right?',
     );
+  });
+
+  it('says the number calling as that, by its last four only', () => {
+    expect(readBackText(b, 'book', params, 'en', seen, '+15555550142')).toContain('We will call the number the number you\'re calling from, ending in 0142.');
+    expect(readBackText(b, 'book', params, 'en', seen, '+15555550199')).toContain('We will call the number 555 555 0142.');
+  });
+
+  it('says a number outside North America as it was checked, with its country code', () => {
+    expect(readBackText(b, 'book', { ...params, phone: '+447700900123' }, 'en', seen)).toContain('We will call the number +447700900123.');
   });
 
   it('says a slot the lookup did not label by the calendar window it names', () => {

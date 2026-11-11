@@ -112,6 +112,15 @@ describe('a quote sent', () => {
     expect(html).toContain('<span class="badge">1 of 3 cars, 1 held</span>');
   });
 
+  it('a request holds the place its caller picked until it is quoted: a quote for another window releases it', async () => {
+    const sys = newSystems();
+    const { texts } = sender();
+    await run(sys, 'send_request', REQUEST, 'k-r1');
+    expect([sys.roomIn('2026-11-12', 'morning'), sys.roomIn('2026-11-12', 'afternoon')]).toEqual([2, 3]);
+    expect(await sendQuote(sys, texts, { request: 'R101', version: '0', price: '180', slot: '2026-11-12 afternoon' }, T0, TZ)).toMatchObject({ ok: true });
+    expect([sys.roomIn('2026-11-12', 'morning'), sys.roomIn('2026-11-12', 'afternoon')]).toEqual([3, 2]);
+  });
+
   it('a double submit of one form quotes once: the same quote, no second text', async () => {
     const sys = newSystems();
     const { texts, sent } = sender();
@@ -487,14 +496,14 @@ describe('the form on the server', () => {
     const all: Record<string, string> = {
       PUBLIC_HOST: 'shop.example.com', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://shop.example.com', PORT: '0',
       TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, JEV_CLIENT: 'stub', TIMEZONE: TZ,
-      CONSOLE_LINK_FILE: join(dir, 'link', 'link.json'), SHOP_DATA_DIR: shop, SHOP_PHONE: SHOP, ...env,
+      CONSOLE_LINK_FILE: join(dir, 'link', 'link.json'), SHOP_DATA_DIR: shop, SHOP_PHONE: SHOP,
+      TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'4'.repeat(32)}`, TWILIO_AUTH_TOKEN: 't', ...env,
     };
     const logs: string[] = [];
-    // The shop page's sender: the fake provider from the shop's number (the page is made with the app, its sender given).
-    const pageTexts: Texts = { send: (t) => provider.send({ ...t, from: '+15555550100' }) };
-    const { app } = wheelshop({ now, env: (n) => all[n], log: (l) => logs.push(l), pageTexts });
+    // The shop page is made by the server as it starts, with the app's settings and the server's sender (the fake provider).
+    const { app } = wheelshop({ now });
     const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env: all, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env: all });
-    running = await startServer(loadConfig(all), { host: '127.0.0.1', log: (l) => logs.push(l), env: all, now, apps, converseModel: () => fakeConverseModel([]) });
+    running = await startServer(loadConfig(all), { host: '127.0.0.1', log: (l) => logs.push(l), env: all, now, apps, converseModel: () => fakeConverseModel([]), textProvider: provider });
     return { base: `http://127.0.0.1:${running.port}`, sent: provider.sent, logs };
   }
 
@@ -600,7 +609,8 @@ describe('the form on the server', () => {
 
   it('notes at start a per-number text limit under 5, and is quiet at 5', async () => {
     const low = await start({}, () => T0);
-    expect(low.logs.some((l) => l.startsWith('shop page: TEXT_LIMIT_PER_NUMBER is 3 (the default): a customer may be texted four times in a day'))).toBe(true);
+    // The server names the app before its page's line (a host's log).
+    expect(low.logs.some((l) => l.includes('shop page: TEXT_LIMIT_PER_NUMBER is 3 (the default): a customer may be texted four times in a day'))).toBe(true);
     await running!.close();
     running = null;
     const five = await start({ TEXT_LIMIT_PER_NUMBER: '5' }, () => T0);

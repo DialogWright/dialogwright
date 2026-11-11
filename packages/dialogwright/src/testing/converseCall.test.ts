@@ -18,7 +18,7 @@ describe('converseTestCall', () => {
     const c = converseTestCall(app, { model: fakeConverseModel(BOOKING), jev: yesJev(), callerNumber: CALLER, now: () => NOW });
     expect(await c.start()).toEqual(['Example Visits, how can I help?']);
     await c.say(`Is there a visit free on ${DAY}?`);
-    expect(await c.say('The morning, for Sam Example, on this number.')).toEqual(['A visit Tuesday, January 15, 9 to 12 for Sam Example, on ending in 0123. Is that right?']);
+    expect(await c.say('The morning, for Sam Example, on this number.')).toEqual(['A visit Tuesday, January 15, 9 to 12 for Sam Example, on the number you\'re calling from, ending in 0123. Is that right?']);
     expect(booked).toEqual([]);
     expect(await c.say('yes')).toEqual(['You are booked for Tuesday morning.']);
     expect(booked).toMatchObject([{ window: SLOT, name: 'Sam Example', phone: CALLER }]);

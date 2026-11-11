@@ -13,9 +13,9 @@ import { inCi } from '../define/ci';
 import { loadFolderApp } from '../define/pageCommand';
 import { REPO_ROOT } from '../define/home';
 import { fakeTextProvider } from '../texts/record';
-import { loadConfig } from '../server/config';
 import { readEnvFile } from '../server/envFile';
-import { startServer } from '../server/index';
+import { startEvalServer, type EvalServer } from './server';
+import { defaultTimeZone } from '../core/localDate';
 import { Budget } from './budget';
 import { modelCaller } from './caller';
 import { driveChat, type SimCall } from './chatDriver';
@@ -178,29 +178,33 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   }
   const outDir = resolve(io.invokedFrom, values.out ?? join('eval-results', new Date().toISOString().replace(/[:.]/g, '-')));
   const work = mkdtempSync(join(tmpdir(), 'dialogwright-eval-'));
-  const auditDir = join(work, 'audit');
-  const traceDir = join(work, 'traces');
   // Texts go to a fake sender: the real texting path runs (and is audited), and nothing is sent.
   const serverEnv: Record<string, string | undefined> = { ...env };
   Object.assign(serverEnv, {
     PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: CHAT_ORIGIN, PORT: String(port),
-    TRACE_DIR: traceDir, AUDIT_DIR: auditDir, AUDIO_DIR: work, DASHBOARD: 'off', JEV_CLIENT: decision,
+    AUDIO_DIR: work, DASHBOARD: 'off', JEV_CLIENT: decision,
     TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}`, TWILIO_AUTH_TOKEN: 'eval-not-a-token',
   });
-  let running;
+  // A converse app: a server of its own for each call, on the app made fresh (eval/server.ts); a scripted app: one server for the run.
+  const perCall = isConverseApp(app);
+  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, textProvider: fakeTextProvider() });
+  let shared: EvalServer | null = null;
   try {
-    running = await startServer(loadConfig(serverEnv), { host: '127.0.0.1', log: () => {}, env: serverEnv, textProvider: fakeTextProvider() });
+    if (!perCall) shared = await serverFor();
+    else await (await serverFor()).close();
   } catch (e) {
     rmSync(work, { recursive: true, force: true });
     io.err(`dialogwright eval: the app's server did not start: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
   }
+  // The day the judge reads the line's dates against: today, where the business is (a converse app's agent.yaml time zone, else the server's).
+  const zone = (isConverseApp(app) ? app.business.business.timezone : undefined) ?? env.TIMEZONE ?? (defaultTimeZone() || 'UTC');
+  const todayWords = (): string => new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: zone }).format(new Date());
   // The business the judge holds the line to: an agent-mode app's business.yaml, or a converse app's agent.yaml.
   const businessFile = [join(appDir, 'business.yaml'), join(appDir, 'agent.yaml')].find((f) => existsSync(f));
   const businessText = businessFile !== undefined ? readFileSync(businessFile, 'utf8') : '(this app has no business.yaml or agent.yaml: judge by what its own answers say)';
   const spend = new Budget(budgetUsd, (l) => io.err(l));
   const caller = modelCaller(callerModel, spend);
-  const url = `ws://127.0.0.1:${running.port}/chat`;
   const records: RunRecord[] = [];
   const plan = personas.flatMap((p) => Array.from({ length: runs }, (_, run) => ({ p, run })));
   let nextJob = 0;
@@ -208,16 +212,23 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   const oneCall = async (p: Persona, run: number): Promise<RunRecord> => {
     const failures: string[] = [];
     let call: SimCall = { persona: p.id, turns: [], ended: 'line', firstWordMs: [] };
+    let server: EvalServer | null = shared;
     try {
-      call = await driveChat({ url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN });
+      server ??= await serverFor();
+      call = await driveChat({ url: server.url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN });
     } catch (e) {
       failures.push(`call failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    } finally {
+      // A call's own server closes once it is done, its records flushed for the reading below.
+      if (server !== null && server !== shared) await server.close();
     }
+    const auditDir = server?.auditDir ?? join(work, 'none');
+    const traceDir = server?.traceDir ?? join(work, 'none');
     if (call.ended === 'turns') failures.push('turn limit');
     if (call.turns.length > 0 && call.turns.every((t) => t.who === 'caller')) failures.push('the line never spoke');
     const callId = call.callId ?? '';
     const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
-    const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(judgeModel, spend, businessText, p, call, actions);
+    const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(judgeModel, spend, businessText, p, call, actions, { today: todayWords() });
     if (judged.notes.startsWith(JUDGE_FAILED)) failures.push(JUDGE_FAILED);
     return { persona: p.id, run, call, judged, actions, agentCostUsd: callId === '' ? null : agentCostOfCall(traceDir, callId), failures };
   };
@@ -237,11 +248,12 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   try {
     await Promise.all(Array.from({ length: parallel }, worker));
   } finally {
-    await running.close();
+    await shared?.close();
     rmSync(work, { recursive: true, force: true });
   }
   const limits = [
-    'A chat carries a caller number only where the persona names one (callingFrom) and the app takes it from the chat\'s context (app.yaml chat.callerNumberFromContext); any other persona who would be recognized by the number they call from can only name who they are.',
+    'A chat carries a caller number only where the persona names one (callingFrom): a converse app takes it from the chat\'s context on the harness\'s own server (never a deployed setting); any other persona who would be recognized by the number they call from can only name who they are.',
+    ...(perCall ? ['Each call ran on a server of its own, on the app made fresh: no call saw what another booked.'] : ['Every call ran on one server, so a later call sees what earlier ones booked.']),
     'A reply is every line the server says until 2 s pass with none (the chat wire has no end-of-turn marker), so a filler followed by an answer slower than that is split across two caller turns.',
     'The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.',
     ...(stoppedByBudget ? [`The run stopped when the budget was spent, after ${records.length} of ${plan.length} planned calls.`] : []),

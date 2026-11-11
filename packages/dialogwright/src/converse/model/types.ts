@@ -27,7 +27,13 @@ export interface ModelRequest {
   tools: ModelTool[];
   maxTokens: number;
   temperature?: number;
+  /** How hard the model reasons (agent.yaml model.effort); each provider is sent it in its own form, and absent, its own default. */
+  effort?: ModelEffort;
 }
+
+/** The reasoning efforts agent.yaml may name. */
+export const MODEL_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
+export type ModelEffort = (typeof MODEL_EFFORTS)[number];
 
 export type ModelEvent =
   | { type: 'text'; delta: string }

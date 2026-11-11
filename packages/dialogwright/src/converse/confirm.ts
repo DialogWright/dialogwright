@@ -38,13 +38,25 @@ function slotShown(b: AgentBusiness, spec: ParamSpec, id: string, seen: Seen): s
   return b.sources.calendar?.windows.find((w) => w.name === id)?.label ?? id;
 }
 
-/** A param's value as its type displays it: a date as its day, a slot by its label, a phone by its last four. */
-function shown(b: AgentBusiness, spec: ParamSpec | undefined, value: string, lang: Lang, seen: Seen): string {
+/**
+ * A phone number as it is read back: the number the caller is calling from as that, by its last four (they
+ * did not say it, and it is never said whole); any other, the one they gave, whole, a North American number
+ * in groups ("555 555 0142"), another as it was checked (E.164).
+ */
+function phoneShown(value: string, callerNumber: string | undefined): string {
+  const digits = value.replace(/\D/g, '');
+  if (callerNumber !== undefined && callerNumber.replace(/\D/g, '') === digits) return `the number you're calling from, ending in ${digits.slice(-4)}`;
+  const ten = value.startsWith('+1') && digits.length === 11 ? digits.slice(1) : null;
+  return ten === null ? value : `${ten.slice(0, 3)} ${ten.slice(3, 6)} ${ten.slice(6)}`;
+}
+
+/** A param's value as its type displays it: a date as its day, a slot by its label, a phone as phoneShown. */
+function shown(b: AgentBusiness, spec: ParamSpec | undefined, value: string, lang: Lang, seen: Seen, callerNumber: string | undefined): string {
   if (value === '' || spec === undefined) return value;
   switch (spec.type) {
     case 'date': return dayShown(value, lang);
     case 'slot': return slotShown(b, spec, value, seen);
-    case 'phone': return `ending in ${value.replace(/\D/g, '').slice(-4)}`;
+    case 'phone': return phoneShown(value, callerNumber);
     default: return value;
   }
 }
@@ -55,18 +67,18 @@ function shown(b: AgentBusiness, spec: ParamSpec | undefined, value: string, lan
  * from (required, so a caller never reads a slot back without this call's lookups). Throws for an action with no read-back: only a change has one, and agent.yaml's check makes
  * every change have one.
  */
-export function readBackText(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen): string {
+export function readBackText(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen, callerNumber?: string): string {
   const spec = b.actions[action];
   const frame = spec?.readBack?.[lang];
   if (spec === undefined || frame === undefined) throw new Error(`"${action}" has no read-back in ${lang}`);
-  return frame.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen));
+  return frame.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen, callerNumber));
 }
 
-/** Each param of `action` as its read-back says it (a date as its day, a slot by its label, a phone by its last four), for the trace to mask where it is said. */
-export function shownParams(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen): Record<string, string> {
+/** Each param of `action` as its read-back says it (a date as its day, a slot by its label, a phone as phoneShown), for the trace to mask where it is said. */
+export function shownParams(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen, callerNumber?: string): Record<string, string> {
   const spec = Object.hasOwn(b.actions, action) ? b.actions[action] : undefined;
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(params)) out[k] = shown(b, spec?.params[k], v, lang, seen);
+  for (const [k, v] of Object.entries(params)) out[k] = shown(b, spec?.params[k], v, lang, seen, callerNumber);
   return out;
 }
 

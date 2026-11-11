@@ -5,7 +5,6 @@
 id: wheelshop-agent
 mode: converse
 chat:
-  # For testing only (the simulated callers' dealership persona, recognised by the number it names): a chat
-  # names the number it calls from in its start's context. A real client's public chat keeps this false,
-  # or any page could claim a dealership's account (DESIGN.md, "The chat and the number calling").
-  callerNumberFromContext: true
+  # A chat names no number it calls from: a page could otherwise claim a dealership's account. The simulated
+  # callers' own server (pnpm eval) turns it on for itself alone (DESIGN.md, "The chat and the number calling").
+  callerNumberFromContext: false

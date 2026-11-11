@@ -81,6 +81,32 @@ describe('the run artifacts', () => {
     ]);
   });
 
+  it('pairs a converse action with its result: past the confirmation, the texts it sent and the runtime\'s own rows', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'audit-'));
+    const row = (type: string, detail: object) => JSON.stringify({ type, detail, seq: 1, at: 't', callId: 'c2', channel: 'chat', prevHash: '0', hash: 'h' });
+    writeFileSync(join(dir, '2026-11-11.jsonl'), [
+      row('gate', { tool: 'availability', call: 'availability(day=2026-11-17)', verdict: 'ALLOW', reason: null }),
+      row('tool_result', { tool: 'availability', ok: true, summary: '[{"id":"2026-11-17:morning","label":"Tuesday, November 17, morning"}]' }),
+      row('gate', { tool: 'book', call: 'book(slot=2026-11-17:morning)', verdict: 'BLOCK', reason: 'confirmation' }),
+      row('confirmed', { action: 'book', hash: 'x', yes: 0.95, no: 0.05 }),
+      row('gate', { tool: 'book', call: 'book(slot=2026-11-17:morning)', verdict: 'ALLOW', reason: null }),
+      row('text_sent', { number: '...0100', bodyLength: 40, status: 'queued' }),
+      row('tool_result', { tool: 'book', ok: true, summary: 'booked (R101)' }),
+      row('converse_end', { by: 'end_call' }),
+    ].join('\n') + '\n');
+    expect(actionsOfCall(dir, 'c2')).toEqual([
+      { tool: 'availability', params: { day: '2026-11-17' }, verdict: 'ALLOW', result: '[{"id":"2026-11-17:morning","label":"Tuesday, November 17, morning"}]' },
+      { tool: 'book', params: { slot: '2026-11-17:morning' }, verdict: 'BLOCK', reason: 'confirmation' },
+      { tool: 'book', params: { slot: '2026-11-17:morning' }, verdict: 'ALLOW', result: 'booked (R101)' },
+    ]);
+  });
+
+  it('tells the judge the day the call took place, where the business is', async () => {
+    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }, done]]);
+    await judgeCall(model, new Budget(1, () => {}), 'b', persona, call, [], { today: 'Wednesday, November 11, 2026' });
+    expect(JSON.stringify(model.requests[0]!.messages)).toContain('Wednesday, November 11, 2026');
+  });
+
   it('tells the judge what came back, that an allow is not a success, and the reasons', async () => {
     const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }, done]]);
     await judgeCall(model, new Budget(1, () => {}), 'b', persona, call, [

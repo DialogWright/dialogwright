@@ -13,7 +13,7 @@ import { isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
-import { systemPrompt, toolsOf } from './prompt';
+import { followOnsOf, systemPrompt, toolsOf } from './prompt';
 import { SentenceBuffer } from './sentences';
 import { businessZone, type ConverseState } from './state';
 import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
@@ -213,15 +213,29 @@ function gateReason(d: GateDecision, spec: ActionSpec | undefined, call: ToolCal
 /** A tool's result as the model is sent it. */
 const resultText = (r: unknown): string => (typeof r === 'string' ? r : r === undefined ? 'done' : JSON.stringify(r));
 
-/** Runs an action the gate allowed, with the call's key; a throw is the action's failure, said to the model. */
+/** The most characters of a result the audit keeps. */
+const RESULT_RECORDED_MAX = 600;
+
+/**
+ * Runs an action the gate allowed, with the call's key; a throw is the action's failure, said to the model.
+ * Its result (or failure) is recorded in the audit beside the gate's row, as the model is sent it, the call's
+ * values that are recorded masked masked, cut to RESULT_RECORDED_MAX.
+ */
 async function runTool(t: Turn, name: string, params: Record<string, string>): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
   const impl = Object.hasOwn(t.deps.tools, name) ? t.deps.tools[name] : undefined;
-  if (impl === undefined) return { ok: false, error: `the action "${name}" has no code` };
-  try {
-    return { ok: true, result: await impl(params, { key: idempotencyKey(t.st.callId, name, params), texts: t.deps.texts, caller: t.st.caller, env: t.deps.env ?? (() => undefined) }) };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  let ran: { ok: true; result: unknown } | { ok: false; error: string };
+  if (impl === undefined) ran = { ok: false, error: `the action "${name}" has no code` };
+  else {
+    try {
+      ran = { ok: true, result: await impl(params, { key: idempotencyKey(t.st.callId, name, params), texts: t.deps.texts, caller: t.st.caller, env: t.deps.env ?? (() => undefined) }) };
+    } catch (e) {
+      ran = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
+  const spec = Object.hasOwn(t.deps.business.actions, name) ? t.deps.business.actions[name] : undefined;
+  const summary = scrubOf(spec, { tool: name, params })(ran.ok ? resultText(ran.result) : `Failed: ${ran.error}`);
+  await record(t, { type: 'tool_result', detail: { tool: name, ok: ran.ok, summary: summary.length > RESULT_RECORDED_MAX ? `${summary.slice(0, RESULT_RECORDED_MAX - 1)}…` : summary } });
+  return ran;
 }
 
 /** A call in the turn's trace: its params as recorded, and its reason with any raw value of a masked param replaced as the params are. */
@@ -230,7 +244,7 @@ function traceTool(t: Turn, spec: ActionSpec | undefined, name: string, args: Re
   for (const [k, v] of Object.entries(args)) raw[k] = typeof v === 'string' ? v : JSON.stringify(v) ?? '';
   const scrub = scrubOf(spec, { tool: name, params: raw });
   t.tools.push({ name, args: recordedArgs(spec, args), outcome, ...(reason !== undefined ? { reason: scrub(reason) } : {}) });
-  t.masked.push(...saidPairs(spec, { tool: name, params: raw }, shownParams(t.deps.business, name, raw, 'en', t.st.seen)));
+  t.masked.push(...saidPairs(spec, { tool: name, params: raw }, shownParams(t.deps.business, name, raw, 'en', t.st.seen, t.st.caller.number)));
 }
 
 /**
@@ -268,6 +282,14 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       results.push({ type: 'tool_result', id: c.id, content: 'The call is ending: the line says the closing line.' });
       continue;
     }
+    const follows = followOnsOf(b).get(c.name);
+    if (follows !== undefined) {
+      // A follow-on runs only after the action it follows, on the caller's yes to that one: never at the model's call.
+      const why = `Not run: "${c.name}" runs only after ${follows}, once the caller has said yes to it; it is never called directly.`;
+      traceTool(t, spec, c.name, c.args, 'refused', why);
+      error(c.id, why);
+      continue;
+    }
     let params: Record<string, string> = {};
     if (spec !== undefined) {
       const checked = checkArgs(spec, c.args, t.st.seen, t.todayIso, t.st.caller.number);
@@ -281,7 +303,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     const call: ToolCall = { tool: c.name, params };
     const d = await gate(t, spec, call, confirmedHashFor(call, t.st.pending));
     if (spec !== undefined && spec.kind === 'change' && awaitsConfirmation(d)) {
-      const text = readBackText(b, c.name, params, 'en', t.st.seen);
+      const text = readBackText(b, c.name, params, 'en', t.st.seen, t.st.caller.number);
       t.st.pending = { action: c.name, params, hash: confirmationHash(params, confirmedFields(spec)), text, id: c.id };
       t.readBack = { text };
       traceTool(t, spec, c.name, params, 'readBack');
@@ -326,7 +348,8 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
 /**
  * One request to the model, streamed: its text to the speaker until its first call (text after a call is
  * written without the call's result, and is dropped), its calls collected. It fails on an error event, a
- * thrown stream, nothing at all, or no event within `firstWaitMs` at first and the model's time after.
+ * thrown stream, nothing at all, a reply cut off at the token limit, or no event within `firstWaitMs` at first
+ * and the model's time after.
  */
 async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number): Promise<Round> {
   const controller = new AbortController();
@@ -364,6 +387,8 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
       else if (ev.type === 'done') {
         t.model.usage.inputTokens += ev.usage.inputTokens;
         t.model.usage.outputTokens += ev.usage.outputTokens;
+        // Cut off at the token limit: what it was writing is unfinished, so the turn fails (its last sentence, never said, is dropped).
+        if (ev.stop === 'length') return fail(`length: the reply reached the ${t.deps.business.model.maxTokens}-token limit`);
         break;
       } else return fail(`${ev.kind}: ${ev.detail}`);
     }
@@ -391,7 +416,7 @@ function requestMessages(st: ConverseState): ModelMessage[] {
  */
 async function round(t: Turn, sp: Speaker): Promise<Round> {
   const b = t.deps.business;
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b), maxTokens: b.model.maxTokens };
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
@@ -491,7 +516,7 @@ async function answered(t: Turn, said: string): Promise<void> {
   const heard = `The line read back: "${p.text}"`;
   if (!yes) {
     traceTool(t, spec, p.action, p.params, 'notConfirmed');
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller did not confirm; they said: '${said}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller did not confirm; they said: '${said}'` }]);
     return;
   }
   await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });

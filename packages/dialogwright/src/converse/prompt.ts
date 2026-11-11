@@ -7,8 +7,9 @@ import { businessZone, type ConverseState } from './state';
 
 /**
  * What the agent model is told (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and
- * "Claims"): the business's information, its persona's style, agent mode's two rules (claim only what the
- * information or a lookup on this call supports; nothing changes without the caller's yes), the honesty
+ * "Claims"): the business's information, its persona's style, agent mode's rules (claim only what the
+ * information or a lookup on this call supports; nothing changes without the caller's yes; nothing is said
+ * to be done that no action's result says was done), the honesty
  * rule, the date and time in the business's zone, and what is known of the caller (the account, and the
  * number by its last four only). It gives context and goals, never a procedure for the words.
  */
@@ -40,9 +41,10 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),
     '',
-    'Two rules hold on every call:',
+    'Three rules hold on every call:',
     `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" Times and availability come only from lookups made on this call.`,
     '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. If the caller does not confirm, you are told what they said.',
+    '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
     '',
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,
     '',
@@ -81,7 +83,15 @@ const END_CALL_TOOL: ModelTool = {
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 
-/** The business's actions as the model's tools, each with its params' JSON Schema, and the runtime's end_call. */
+/** The actions that follow another (named in its `then`), each with the first action it follows: the runtime runs them, never the model. */
+export function followOnsOf(b: AgentBusiness): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [name, spec] of Object.entries(b.actions)) for (const t of spec.then ?? []) if (!out.has(t)) out.set(t, name);
+  return out;
+}
+
+/** The business's actions as the model's tools, each with its params' JSON Schema, and the runtime's end_call. A follow-on is not offered: it runs only after the action it follows. */
 export function toolsOf(b: AgentBusiness): ModelTool[] {
-  return [...Object.entries(b.actions).map(([name, spec]) => toolOf(name, spec)), END_CALL_TOOL];
+  const followOns = followOnsOf(b);
+  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name)).map(([name, spec]) => toolOf(name, spec)), END_CALL_TOOL];
 }

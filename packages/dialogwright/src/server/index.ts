@@ -63,7 +63,7 @@ import { safeFileStem } from './fileStem';
 import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatByApp, chatEndpoint, chatTransport, type ChatEndpoint, type ChatTransportDeps } from './chat/socket';
 import { converseChatRuntime } from './chat/converseRuntime';
-import { isConverseApp, type ConverseApp } from '../converse/app';
+import { appWithSettings, isConverseApp, type ConverseApp } from '../converse/app';
 import type { ConverseModel } from '../converse/model/types';
 import { resolveConverseModel } from '../converse/model/resolve';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
@@ -403,10 +403,19 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
   const todayIso = () => config.todayOverride ?? localDateIso(now(), config.timezone);
 
+  /** A converse app with its agent.yaml's references read from its own settings, its id named where one is not set. */
+  const converseWithSettings = (id: string, app: ConverseApp, settings: Env): ConverseApp => {
+    try {
+      return appWithSettings(app, settings);
+    } catch (err) {
+      throw new Error(`app "${id}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
   // `settings` is what each app's code reads by name (AppContext.env): on a host, its own settings file over
   // the server's; on a server of one, its environment.
   const hosted: readonly AppRun<HostedApp>[] = host
-    ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env, settings: a.settings ?? a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
+    // A converse app's agent.yaml references (env.<NAME>: accounts' numbers, a transfer number) are read here, from its own settings.
+    ? host.apps.map((a) => ({ id: a.id, app: isConverseApp(a.app) ? converseWithSettings(a.id, a.app, a.settings ?? a.env) : a.app, env: a.env, settings: a.settings ?? a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
     : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env, settings: overrides.env ?? process.env }];
   // A converse app (src/converse) runs on its own runtime: its chat (chatOf, below), its audit, traces and
   // texts. Everything else the server does per app (the phone line, the decision model's corpus, clips,
@@ -876,8 +885,19 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   });
   // A converse app's own pages (ConverseApp.pages, built by its code), under /<app id> as a scripted app's are.
   const conversePages = conversesRun.flatMap((a) => {
-    for (const w of a.app.pages?.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
-    return a.app.pages === undefined ? [] : forApp(a.id, () => mountAppPages(appPagesBase(a.id), a.app.pages!.routes));
+    const own = a.app.pages;
+    if (own === undefined) return [];
+    const base = appPagesBase(a.id);
+    // Routes made with the app, or made now with its settings, its sender, the clock and the log.
+    const made = typeof own === 'function'
+      ? forApp(a.id, () => own({
+        app: a.app, base, env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), now, log: (line) => log(`${tag(a.id)}${line}`),
+        publicHost: config.publicHost, consoleSignIn: config.consoleAuth !== undefined,
+        ...(textsOf(a.id) !== null ? { texts: pageTexts(textsOf(a.id)!, auditOf(a.id)) } : {}),
+      }))
+      : own;
+    for (const w of made.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
+    return forApp(a.id, () => mountAppPages(base, made.routes));
   });
   const routes = [...mounted.routes, ...pages, ...conversePages];
   validateRoutes(routes);
