@@ -106,8 +106,8 @@ describe('the summary page', () => {
 
   it('gives the replies the check after speaking corrected and could not read, where the run\'s traces have any', () => {
     const info = { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] };
-    const checked = summaryMarkdown([{ ...record('', []), checks: { read: 5, corrected: 2, unread: 1 } }], info);
-    expect(checked).toContain('| Replies corrected on the call by the check after speaking | 2 of 5 read (1 could not be read) |');
+    const checked = summaryMarkdown([{ ...record('', []), checks: { read: 5, corrected: 2, declined: 1, carried: 1, unread: 1 } }], info);
+    expect(checked).toContain('| Replies the check after speaking read as wrong: corrected on the call / declined by the model / carried to the next message | 2 / 1 / 1 of 5 read (1 could not be read) |');
     expect(summaryMarkdown([record('', [])], info)).not.toContain('check after speaking');
   });
 

@@ -172,7 +172,7 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     `| Agent cost per call | ${usd(all.agentCostPerCallUsd)} |`,
     ...(all.agentTokensPerCall !== null ? [`| Agent tokens per call (in / out) | ${Math.round(all.agentTokensPerCall.inputTokens)} / ${Math.round(all.agentTokensPerCall.outputTokens)} |`] : []),
     // The check after speaking, where the run's traces have it (a run before it has none).
-    ...(all.repliesChecked > 0 ? [`| Replies corrected on the call by the check after speaking | ${all.repliesCorrected} of ${all.repliesChecked - all.checksUnread} read (${all.checksUnread} could not be read) |`] : []),
+    ...(all.repliesChecked > 0 ? [`| Replies the check after speaking read as wrong: corrected on the call / declined by the model / carried to the next message | ${all.repliesCorrected} / ${all.repliesDeclined} / ${all.repliesCarried} of ${all.repliesChecked - all.checksUnread} read (${all.checksUnread} could not be read) |`] : []),
     '',
   ];
   if (Object.keys(all.failures).length > 0) {

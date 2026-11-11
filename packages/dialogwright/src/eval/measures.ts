@@ -53,16 +53,40 @@ export interface RunSummary {
   repliesChecked: number;
   /** Of those, the replies it corrected on the call: read as wrong, and the model asked to put it right. */
   repliesCorrected: number;
+  /** Of those, the replies it read as wrong and the model, asked to put them right, answered with nothing at all: none was made. */
+  repliesDeclined: number;
+  /** Of those, the replies it read as wrong while a read-back waited for the caller's yes: the note was kept for the next message the model is sent. */
+  repliesCarried: number;
   /** Of those, the replies it could not read (the decision model failed or was late), so nothing was corrected. */
   checksUnread: number;
   failures: Record<string, number>;
 }
 
-/** A call's replies by the check after speaking, from its traces: read, corrected on the call, and not read. */
+/** A call's replies by the check after speaking, from its traces: read, corrected on the call, declined by the model, carried to the next message, and not read. */
 export interface CheckCounts {
   read: number;
   corrected: number;
+  declined: number;
+  carried: number;
   unread: number;
+}
+
+/**
+ * One reply the check after speaking read, in turn order (converse/trace.ts `check`): the three readings and
+ * which of them were flagged, and what became of the reply. Numbers and names of readings only, never a word
+ * of the call, so a published page and the results carry none of what was said.
+ */
+export interface CheckReading {
+  /** The trace record's turn (turnIndex). */
+  turn: number;
+  contradicted: number;
+  notDone: number | null;
+  gap: number | null;
+  flagged: string[];
+  /** The reply was corrected on the call (a correction that failed or was declined is none). */
+  corrected: boolean;
+  declined?: true;
+  carried?: true;
 }
 
 /** One caller turn's requests to the model, each with its true time. */
@@ -82,6 +106,8 @@ export interface RunResult {
   agentTokens?: { inputTokens: number; outputTokens: number } | null;
   /** The call's replies by the check after speaking, from the traces; absent for a run before it. */
   checks?: CheckCounts;
+  /** Each reply the check read, in turn order, with its readings; absent for a run before they were kept. */
+  readings?: CheckReading[];
 }
 
 /** The value at a fraction of the sorted values, by the nearest rank (0 for none). */
@@ -147,6 +173,8 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     agentTokensPerCall: tokens.length === 0 ? null : { inputTokens: tokens.reduce((s, t) => s + t.inputTokens, 0) / tokens.length, outputTokens: tokens.reduce((s, t) => s + t.outputTokens, 0) / tokens.length },
     repliesChecked: results.reduce((s, r) => s + (r.checks ? r.checks.read + r.checks.unread : 0), 0),
     repliesCorrected: results.reduce((s, r) => s + (r.checks?.corrected ?? 0), 0),
+    repliesDeclined: results.reduce((s, r) => s + (r.checks?.declined ?? 0), 0),
+    repliesCarried: results.reduce((s, r) => s + (r.checks?.carried ?? 0), 0),
     checksUnread: results.reduce((s, r) => s + (r.checks?.unread ?? 0), 0),
     failures,
   };

@@ -6,7 +6,7 @@ import type { AuditEntry } from '../audit/types';
 import type { Budget } from './budget';
 import type { SimCall } from './chatDriver';
 import type { Persona } from './personas';
-import type { CheckCounts, TurnTiming } from './measures';
+import type { CheckCounts, CheckReading, TurnTiming } from './measures';
 
 /**
  * The honesty bar counts material claims only (the maintainer, 2026-11-11): a claim that commits the business
@@ -371,17 +371,21 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
  * A converse call's model use, from its traces: each caller turn's requests to the model with their true
  * times (ModelRequestTime: the reply's, never a correction's), the tokens summed over the call (null where
  * no turn records any), and the replies the check after speaking read (converse/trace.ts `check`), corrected
- * on the call (a correction that failed or was declined said nothing, so it is none), and could not read (its readings null:
- * the decision model failed or was late).
+ * on the call (a correction that failed or was declined said nothing, so it is none), declined by the model,
+ * carried to the next message (a read-back was waiting), and could not read (its readings null: the decision
+ * model failed or was late). `readings` lists each read reply's readings in turn order, numbers only.
  */
-export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null; checks: CheckCounts } {
+export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null; checks: CheckCounts; readings: CheckReading[] } {
   const turns: TurnTiming[] = [];
-  const checks: CheckCounts = { read: 0, corrected: 0, unread: 0 };
+  const checks: CheckCounts = { read: 0, corrected: 0, declined: 0, carried: 0, unread: 0 };
+  const readings: CheckReading[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
   let found = false;
+  let ordinal = -1;
   for (const r of traceRecordsOfCall(traceDir, callId)) {
     if (r.kind !== 'converse') continue;
+    ordinal += 1;
     const usage = r.model?.usage;
     if (typeof usage?.inputTokens === 'number' && typeof usage?.outputTokens === 'number') {
       inputTokens += usage.inputTokens;
@@ -392,11 +396,25 @@ export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnT
     if (typeof r.said === 'string' && Array.isArray(r.model?.requests)) turns.push({ requests: (r.model.requests as ModelRequestTime[]).filter((q) => q.correction !== true) });
     const check = r.check;
     if (check !== null && typeof check === 'object') {
-      if (typeof check.contradicted === 'number') checks.read += 1;
-      else checks.unread += 1;
       // A correction that failed or that the model declined said nothing: none was made on the call.
-      if (check.corrected === true && check.correctionFailed !== true && check.declined !== true) checks.corrected += 1;
+      const corrected = check.corrected === true && check.correctionFailed !== true && check.declined !== true;
+      if (typeof check.contradicted === 'number') {
+        checks.read += 1;
+        readings.push({
+          turn: typeof r.turnIndex === 'number' ? r.turnIndex : ordinal,
+          contradicted: check.contradicted,
+          notDone: typeof check.notDone === 'number' ? check.notDone : null,
+          gap: typeof check.gap === 'number' ? check.gap : null,
+          flagged: Array.isArray(check.flagged) ? check.flagged.filter((f: unknown): f is string => typeof f === 'string') : [],
+          corrected,
+          ...(check.declined === true ? { declined: true as const } : {}),
+          ...(check.carried === true ? { carried: true as const } : {}),
+        });
+      } else checks.unread += 1;
+      if (corrected) checks.corrected += 1;
+      if (check.declined === true) checks.declined += 1;
+      if (check.carried === true) checks.carried += 1;
     }
   }
-  return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null, checks };
+  return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null, checks, readings };
 }
