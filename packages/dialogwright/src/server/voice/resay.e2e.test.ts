@@ -375,6 +375,8 @@ describe('a reply held for a caller not finished', () => {
     call.relay.prompt('i want to and', true, 'en');
     await new Promise((r) => setTimeout(r, 300));
     await event(call, info('clientSpeaking', 'on'));
+    // Speech, not a blip: it runs MIN_SPEECH_MS (300 ms) before it stops.
+    await new Promise((r) => setTimeout(r, 350));
     await event(call, info('clientSpeaking', 'off'));
     await call.settled();
     expect(call.relay.texts()).toHaveLength(before);

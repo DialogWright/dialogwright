@@ -211,8 +211,10 @@ describe('delivery notes, as the adapter publishes them', () => {
     const { held } = await toFragment(call);
     await vi.advanceTimersByTimeAsync(680);
     await call.caller(true);
+    // Speech once it has run MIN_SPEECH_MS (300 ms): the hold ends then, held from the speech's start.
+    await vi.advanceTimersByTimeAsync(300);
     await held;
-    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(500);
     await call.speak(150, 400);
     await vi.advanceTimersByTimeAsync(900);
     await call.say('twenty five oak hollow lane');

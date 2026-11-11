@@ -209,15 +209,34 @@ describe.each(['none', 'any'] as const)('a caller who came back in, BARGE_IN=%s 
     await vi.advanceTimersByTimeAsync(800);
     await call.say('i want to report a problem');
     await vi.advanceTimersByTimeAsync(2_000);
-    // The caller answers, and is still talking when "at" comes as a final prompt.
+    // The caller answers, and is still talking when "at" comes as a final prompt, for 400 ms in all (speech, MIN_SPEECH_MS).
     await call.caller(true);
+    await vi.advanceTimersByTimeAsync(100);
     await call.say('at');
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(300);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(800);
     await call.say('22 Alder Street.');
     expect(call.place()).toBe('at 22 Alder Street.');
     expect(resumedLine(call)).toEqual({ callerResumed: { pauseMs: 0, intoReplyMs: 0 } });
+    await sameOnReplay(call);
+  });
+
+  it('a blip still going as the prompt comes is not the caller back in (MIN_SPEECH_MS)', async () => {
+    const call = liveCall('telnyx', mode);
+    await call.start();
+    await call.speak(900);
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say('i want to report a problem');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await call.caller(true);
+    await call.say('at');
+    await vi.advanceTimersByTimeAsync(150);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say('22 Alder Street.');
+    expect(call.place()).toBe('22 Alder Street.');
+    expect(call.logs().some((l) => l.msg.callerResumed !== undefined)).toBe(false);
     await sameOnReplay(call);
   });
 
@@ -432,17 +451,18 @@ describe('blips of noise over a reply are not the caller coming back in (MIN_SPE
     await sameOnReplay(call);
   });
 
-  it('a short run still going as the prompt comes counts, as before', async () => {
+  it('a run still going as the prompt comes counts once it has run MIN_SPEECH_MS, from its start', async () => {
     const call = liveCall('telnyx', 'none');
     await toReask(call, 400, 300);
     await vi.advanceTimersByTimeAsync(100);
-    // A blip, then a run of 100 ms still going as the prompt comes, 380 ms into the reply.
+    // A blip, then a run begun 380 ms into the reply, still going 350 ms later as the prompt comes.
     await call.speak(150, 130);
     await call.caller(true);
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(350);
     await call.say('22 Alder Street.');
     await call.caller(false);
     expect(call.place()).toBe('at 22 Alder Street.');
+    expect(resumedLine(call)).toEqual({ callerResumed: { pauseMs: 680, intoReplyMs: 380 } });
     await sameOnReplay(call);
   });
 });

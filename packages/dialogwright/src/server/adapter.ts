@@ -414,9 +414,9 @@ function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean):
     callerSpeaking.add(callSid);
     // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES), nor an interrupt
     // settling one the caller did not make (a spurious interrupt).
+    // (Kept on any report, a blip included: a blip errs toward a line not said twice, never toward one said over a caller.)
     callerHeard(callSid);
-    // A reply held for a caller who had not finished is not said: they went on (holdReply).
-    releaseReply(callSid, 'speech');
+    // A reply held for a caller not finished is let go once their speech counts (countRun, MIN_SPEECH_MS), not at a blip.
     if (noInputHeld.has(callSid)) return;
     // An armed wait keeps its deadline. A silence turn already queued behind a busy one (its timer fired)
     // has a deadline just passed: it is held too, rather than said over the caller once the queue frees.
@@ -532,6 +532,16 @@ const stoppedSincePrompt = new Set<string>();
 const countedStop = new Map<string, number>();
 /** Calls whose caller's current run of speech (since its start) has counted already. */
 const runCounted = new Set<string>();
+/** When the last run of the caller's speech that counted began. */
+const countedStart = new Map<string, number>();
+/** The timer that counts a run still going once it has lasted MIN_SPEECH_MS. */
+const runTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearRunTimer(callSid: string): void {
+  const t = runTimers.get(callSid);
+  if (t !== undefined) clearTimeout(t);
+  runTimers.delete(callSid);
+}
 
 /** MIN_SPEECH_MS: how long a run of the caller's reported speech must last to count as speech, not a blip. */
 function minSpeechOf(deps: AdapterDeps): number {
@@ -551,13 +561,15 @@ function forgetResumed(callSid: string): void {
   stoppedSincePrompt.delete(callSid);
   countedStop.delete(callSid);
   runCounted.delete(callSid);
+  countedStart.delete(callSid);
+  clearRunTimer(callSid);
 }
 
 /**
  * The caller started or stopped speaking: whether they are coming back in over the reply to their last final
  * prompt, and the run of speech the next final prompt carries (followSpeechRun). A run of speech counts once
- * it has lasted MIN_SPEECH_MS (countRun): at its stop, or, still going, when the next final prompt comes
- * (countSpeaking); with MIN_SPEECH_MS 0, at its start, as before. A start that does not count decides only
+ * it has lasted MIN_SPEECH_MS (countRun): while still going, once it has (a timer), or at its stop if that came
+ * first and late enough; with MIN_SPEECH_MS 0, at its start, as before. A start that does not count decides only
  * what any start decides: a caller back in already who paused longer than RESUME_AFTER_PAUSE_MS since the
  * speech that last counted is no longer, and one not back in yet who starts past the windows will not be.
  */
@@ -567,8 +579,11 @@ function followResumed(deps: AdapterDeps, entry: CallEntry, speaking: boolean): 
   if (!speaking) {
     lastStop.set(callSid, now);
     stoppedSincePrompt.add(callSid);
+    clearRunTimer(callSid);
     const start = lastStart.get(callSid);
     if (!runCounted.has(callSid) && callerSpeaking.has(callSid) && start !== undefined && now - start >= minSpeechOf(deps)) countRun(deps, callSid, start);
+    // A blip: a reply held for a caller not finished waits on.
+    if (!runCounted.has(callSid)) resumeHeldReply(callSid);
     if (runCounted.has(callSid)) countedStop.set(callSid, now);
     runCounted.delete(callSid);
     return;
@@ -589,7 +604,21 @@ function followResumed(deps: AdapterDeps, entry: CallEntry, speaking: boolean): 
       if (stop !== undefined && stop >= r.resumedAtMs && now - stop > pauseMs) afterPrompts.delete(callSid);
     }
   }
-  if (minSpeechOf(deps) === 0) countRun(deps, callSid, now);
+  const min = minSpeechOf(deps);
+  if (min === 0) {
+    countRun(deps, callSid, now);
+    return;
+  }
+  // A reply held for a caller not finished waits to see whether this is speech or a blip.
+  pauseHeldReply(callSid);
+  // Still going MIN_SPEECH_MS from now: speech, counted from its start.
+  clearRunTimer(callSid);
+  const timer = setTimeout(() => {
+    runTimers.delete(callSid);
+    if (callerSpeaking.has(callSid) && lastStart.get(callSid) === now && !runCounted.has(callSid)) countRun(deps, callSid, now);
+  }, min);
+  timer.unref?.();
+  runTimers.set(callSid, timer);
 }
 
 /** Whether a caller starting at `atMs` comes back in over the reply to `r`'s prompt: soon after their pause, and soon into the reply (or before it). */
@@ -606,6 +635,9 @@ function withinResumeWindows(deps: AdapterDeps, r: AfterPrompt, atMs: number): b
  */
 function countRun(deps: AdapterDeps, callSid: string, startMs: number): void {
   runCounted.add(callSid);
+  countedStart.set(callSid, startMs);
+  // A reply held for a caller not finished is not said: they went on (holdReply).
+  releaseReply(callSid, 'speech', startMs);
   followSpeechRun(deps, callSid, startMs);
   const r = afterPrompts.get(callSid);
   if (!r || r.resumedAtMs !== null) return;
@@ -613,10 +645,20 @@ function countRun(deps: AdapterDeps, callSid: string, startMs: number): void {
   else afterPrompts.delete(callSid);
 }
 
-/** A final prompt came with the caller speaking: their run counts however long it has lasted (a caller speaking as it comes). */
+/**
+ * A final prompt came with the caller speaking: their run counts if it has lasted MIN_SPEECH_MS already (its
+ * timer may not have run yet); a shorter one is counted, or not, as it goes on.
+ */
 function countSpeaking(deps: AdapterDeps, callSid: string): void {
   const start = lastStart.get(callSid);
-  if (callerSpeaking.has(callSid) && !runCounted.has(callSid) && start !== undefined) countRun(deps, callSid, start);
+  if (callerSpeaking.has(callSid) && !runCounted.has(callSid) && start !== undefined && Date.now() - start >= minSpeechOf(deps)) countRun(deps, callSid, start);
+}
+
+/** The caller is speaking now in a run that counts (MIN_SPEECH_MS), or their last such run stopped no longer than `withinMs` ago. */
+function speechCountedWithin(callSid: string, withinMs: number): boolean {
+  if (callerSpeaking.has(callSid) && runCounted.has(callSid)) return true;
+  const stop = countedStop.get(callSid);
+  return stop !== undefined && Date.now() - stop <= withinMs;
 }
 
 /**
@@ -631,10 +673,11 @@ function notePrompt(deps: AdapterDeps, entry: CallEntry): void {
   stoppedSincePrompt.delete(callSid);
   afterPrompts.delete(callSid);
   if (callerSpeaking.has(callSid)) {
-    // Speaking as it came: back in already, from when they began again (after the stop, if any).
+    // Speaking as it came: back in already, from when they began again (after the stop, if any), where that run
+    // counts (MIN_SPEECH_MS); one that has not yet is back in once it does (countRun), and never if it is a blip.
     const began = lastStart.get(callSid) ?? now;
     if (stopped === undefined || began - stopped <= resumeAfterPauseOf(deps)) {
-      afterPrompts.set(callSid, { speechEndMs: stopped ?? began, sentAtMs: null, resumedAtMs: began });
+      afterPrompts.set(callSid, { speechEndMs: stopped ?? began, sentAtMs: null, resumedAtMs: runCounted.has(callSid) ? began : null });
     }
     return;
   }
@@ -668,11 +711,8 @@ function takeResumed(deps: AdapterDeps, entry: CallEntry): void {
   // Nor when there is nothing to continue (the last turn did more than speak, or was set aside as speech over a
   // line); a turn still queued or running may leave something, and resumed() is told after it, in the queue.
   if (!r || r.resumedAtMs === null || continuationOf(entry).withinMs === 0 || !mayContinue(entry)) return;
-  if (!callerSpeaking.has(callSid)) {
-    const stop = lastStop.get(callSid);
-    const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
-    if (stop === undefined || Date.now() - stop > settle) return;
-  }
+  // The prompt is the speech that came back in: speech that counts, still going or stopped within the transcript's time.
+  if (!speechCountedWithin(callSid, deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS)) return;
   const pauseMs = r.resumedAtMs - r.speechEndMs;
   const intoReplyMs = r.sentAtMs === null ? 0 : Math.max(0, r.resumedAtMs - r.sentAtMs);
   logDelivery(deps, entry, { callerResumed: { pauseMs, intoReplyMs } });
@@ -871,21 +911,44 @@ async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | und
  * turn, as here (harness-text/replay.ts).
  */
 interface HeldReply {
-  timer: ReturnType<typeof setTimeout>;
-  resolve: (outcome: HeldOutcome) => void;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  resolve: (outcome: HeldOutcome, atMs?: number) => void;
+  /** When the wait runs out; while a run of the caller's speech that has not yet counted goes on (MIN_SPEECH_MS), paused with `leftMs` of it left. */
+  dueAtMs: number;
+  leftMs: number | null;
 }
 const heldReplies = new Map<string, HeldReply>();
 
 /** How a held reply ended: the caller went on, heard speaking (`speech`) or with a prompt (`prompt`); or it goes (`sent`). */
 type HeldOutcome = 'speech' | 'prompt' | 'sent';
 
-/** End a call's held reply, if any. */
-function releaseReply(callSid: string, outcome: HeldOutcome): void {
+/** End a call's held reply, if any; `atMs`, when what ended it began (the caller's speech that counted). */
+function releaseReply(callSid: string, outcome: HeldOutcome, atMs?: number): void {
   const h = heldReplies.get(callSid);
   if (!h) return;
-  clearTimeout(h.timer);
+  if (h.timer !== undefined) clearTimeout(h.timer);
   heldReplies.delete(callSid);
-  h.resolve(outcome);
+  h.resolve(outcome, atMs);
+}
+
+/** The caller started speaking: a held reply's wait stops running until their run counts (it is let go) or proves a blip (it runs on). */
+function pauseHeldReply(callSid: string): void {
+  const h = heldReplies.get(callSid);
+  if (!h || h.leftMs !== null) return;
+  if (h.timer !== undefined) clearTimeout(h.timer);
+  h.timer = undefined;
+  h.leftMs = Math.max(0, h.dueAtMs - Date.now());
+}
+
+/** A blip stopped: a held reply's wait runs on with what was left of it. */
+function resumeHeldReply(callSid: string): void {
+  const h = heldReplies.get(callSid);
+  if (!h || h.leftMs === null) return;
+  const left = h.leftMs;
+  h.leftMs = null;
+  h.dueAtMs = Date.now() + left;
+  h.timer = setTimeout(() => releaseReply(callSid, 'sent'), left);
+  h.timer.unref?.();
 }
 
 /**
@@ -915,15 +978,22 @@ async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEven
   // No silence turn over the hold: the turn arms the wait once it ends.
   clearNoInput(callSid);
   const heldAtMs = Date.now();
-  const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= (promptAtMs ?? heldAtMs);
+  // Gone on already: speech that counts (MIN_SPEECH_MS) going on now, or begun since the prompt came; a run still short of it lets the reply go once it counts (countRun).
+  const back = (callerSpeaking.has(callSid) && runCounted.has(callSid)) || (countedStart.get(callSid) ?? -Infinity) >= (promptAtMs ?? heldAtMs);
+  let endedAtMs: number | undefined;
   const ended = back ? 'speech' : await new Promise<HeldOutcome>((resolve) => {
     releaseReply(callSid, 'sent');
-    const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), wait.waitMs), resolve };
+    const h: HeldReply = { timer: undefined, resolve: (outcome, atMs) => { endedAtMs = atMs; resolve(outcome); }, dueAtMs: heldAtMs + wait.waitMs, leftMs: null };
+    h.timer = setTimeout(() => releaseReply(callSid, 'sent'), wait.waitMs);
     h.timer.unref?.();
     heldReplies.set(callSid, h);
+    // A run of the caller's speech going on, not yet counted: the wait waits for what it proves to be.
+    if (callerSpeaking.has(callSid)) pauseHeldReply(callSid);
   });
   const outcome = ended === 'sent' ? 'sent' : 'joined';
-  logDelivery(deps, entry, { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
+  // How long the reply was held: until the caller went on (their speech's start, where it began during the hold), or it went.
+  const heldMs = Math.max(0, (endedAtMs ?? Date.now()) - heldAtMs);
+  logDelivery(deps, entry, { replyHeld: { ms: heldMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
   if (outcome === 'joined') continuation.resumed();
   return ended;
 }
@@ -1306,9 +1376,7 @@ function resumesPrompt(deps: AdapterDeps, entry: CallEntry): boolean {
   const r = afterPrompts.get(callSid);
   const continuation = continuationOf(entry);
   if (!r || r.resumedAtMs === null || continuation.withinMs === 0 || !mayContinue(entry)) return false;
-  if (callerSpeaking.has(callSid)) return true;
-  const stop = lastStop.get(callSid);
-  return stop !== undefined && Date.now() - stop <= (deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS);
+  return speechCountedWithin(callSid, deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS);
 }
 
 /**

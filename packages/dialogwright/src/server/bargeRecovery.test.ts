@@ -16,7 +16,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { registerTestkit } from '../testing/testkit';
 import { ANONYMOUS } from '../gate/principal';
 import { PLACE_APP_ID, placeApp, placeClient } from '../testing/placeApp';
-import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, type BargeIn } from '../channel/voiceProviders';
+import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, type BargeIn } from '../channel/voiceProviders';
 import { describeConfig, loadConfig } from './config';
 import type { TurnResult } from '../core/turn';
 
@@ -350,9 +350,11 @@ describe('a reply held for a caller clearly not finished, INCOMPLETE_WAIT_MS on 
     await vi.advanceTimersByTimeAsync(backInMs);
     expect(call.texts().at(-1)).toBe('Where is the problem?');
     await call.caller(true);
+    // Speech once it has run MIN_SPEECH_MS: the hold waits for it, held from the speech's start.
+    await vi.advanceTimersByTimeAsync(DEFAULT_MIN_SPEECH_MS);
     await held;
     expect(logged(call, 'replyHeld')).toEqual([{ ms: backInMs, outcome: 'joined', utteranceComplete: 0.3, turn: expect.any(Number) }]);
-    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(800 - DEFAULT_MIN_SPEECH_MS);
     await call.speak(150, 400);
     await vi.advanceTimersByTimeAsync(900);
     await call.say(REST);
@@ -381,9 +383,12 @@ describe('a reply held for a caller clearly not finished, INCOMPLETE_WAIT_MS on 
     await vi.advanceTimersByTimeAsync(3_000);
     await call.speak(595, 500);
     await call.caller(true);
-    await call.say(FIRST);
+    const first = call.say(FIRST);
+    // Joined once that speech has run MIN_SPEECH_MS, held from its start (before the hold: 0).
+    await vi.advanceTimersByTimeAsync(DEFAULT_MIN_SPEECH_MS);
+    await first;
     expect(logged(call, 'replyHeld')).toEqual([{ ms: 0, outcome: 'joined', utteranceComplete: 0.3, turn: expect.any(Number) }]);
-    await vi.advanceTimersByTimeAsync(400);
+    await vi.advanceTimersByTimeAsync(400 - DEFAULT_MIN_SPEECH_MS);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(900);
     await call.say(REST);
@@ -469,9 +474,10 @@ describe('a reply held for a caller clearly not finished, INCOMPLETE_WAIT_MS on 
     const { held } = await toFragment(call, FIRST, () => { call.deps.noInputMs = 2_000; });
     await vi.advanceTimersByTimeAsync(680);
     await call.caller(true);
+    await vi.advanceTimersByTimeAsync(DEFAULT_MIN_SPEECH_MS);
     await held;
     // Held while they speak: a cough, then nothing.
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5_000 - DEFAULT_MIN_SPEECH_MS);
     expect(call.logs().some((l) => l.msg.type === 'silence')).toBe(false);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(3_000);
@@ -483,14 +489,42 @@ describe('a reply held for a caller clearly not finished, INCOMPLETE_WAIT_MS on 
     const { held } = await toFragment(call, FIRST, () => { call.deps.noInputMs = 7_000; });
     await vi.advanceTimersByTimeAsync(680);
     await call.caller(true);
+    // A cough of MIN_SPEECH_MS or more counts as speech (one shorter is a blip: below).
+    await vi.advanceTimersByTimeAsync(DEFAULT_MIN_SPEECH_MS);
     await held;
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(100);
     await call.caller(false);
     const silences = () => call.logs().filter((l) => l.msg.type === 'silence').length;
     await vi.advanceTimersByTimeAsync(DEFAULT_NO_INPUT_AFTER_SPEECH_MS - 1);
     expect(silences()).toBe(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(silences()).toBe(1);
+  });
+
+  it('a blip during the hold (call 60\'s noise, MIN_SPEECH_MS): the wait runs on past it, the reply goes, and nothing is joined', async () => {
+    const call = liveCall('telnyx', 'speech', HOLD);
+    const { held } = await toFragment(call);
+    await vi.advanceTimersByTimeAsync(400);
+    // 60 ms of noise: the wait stops while it lasts, then runs on with what was left of it (600 ms).
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(60);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(599);
+    expect(call.texts().at(-1)).toBe('Where is the problem?');
+    await vi.advanceTimersByTimeAsync(1);
+    await held;
+    expect(call.texts().at(-1)).toBe(REASK);
+    expect(logged(call, 'replyHeld')).toEqual([{ ms: DEFAULT_INCOMPLETE_WAIT_MS + 60, outcome: 'sent', utteranceComplete: 0.3, turn: expect.any(Number) }]);
+  });
+
+  it('with MIN_SPEECH_MS=0, as before: the blip joins at once', async () => {
+    const call = liveCall('telnyx', 'speech', HOLD);
+    call.deps.minSpeechMs = 0;
+    const { held } = await toFragment(call);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(true);
+    await held;
+    expect(logged(call, 'replyHeld')).toEqual([{ ms: 400, outcome: 'joined', utteranceComplete: 0.3, turn: expect.any(Number) }]);
   });
 
   it('off (no setting): the reply goes at once, as before', async () => {
