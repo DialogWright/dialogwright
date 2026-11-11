@@ -1,7 +1,6 @@
-import { KNOWN, apiError, safeErrorText } from '../../render/providers';
-import { filteredBy } from '../../agent/provider';
+import { KNOWN, apiError, safeErrorText } from '../../render/endpoints';
 import { parseSse } from './sse';
-import { httpError, jsonOf, thrownError } from './shared';
+import { filteredBy, httpError, jsonOf, thrownError } from './shared';
 import type { ConverseModel, ModelEvent, ModelMessage, ModelRequest } from './types';
 
 /** The chat-completions messages for a conversation: tool results are `tool` messages, an assistant's tool calls `tool_calls`. */
@@ -60,6 +59,7 @@ export function openAiCompatModel(o: { provider: 'inception' | 'openrouter'; mod
         return;
       }
       const calls = new Map<number, { id: string; name: string; args: string }>();
+      let emitted = 0;
       let finish: unknown = null;
       let inputTokens = 0;
       let outputTokens = 0;
@@ -114,9 +114,11 @@ export function openAiCompatModel(o: { provider: 'inception' | 'openrouter'; mod
           yield { type: 'error', kind: 'invalid', detail: `the arguments of ${c.name} were not an object` };
           return;
         }
-        yield { type: 'tool_call', id: c.id, name: c.name, args: args as Record<string, unknown> };
+        emitted++;
+        // A call the provider gave no id gets one, so its result can be paired with it.
+        yield { type: 'tool_call', id: c.id !== '' ? c.id : `call_${emitted}`, name: c.name, args: args as Record<string, unknown> };
       }
-      yield { type: 'done', stop: finish === 'tool_calls' || finish === 'function_call' ? 'tool' : finish === 'length' ? 'length' : 'end', usage: { inputTokens, outputTokens } };
+      yield { type: 'done', stop: emitted > 0 || finish === 'tool_calls' || finish === 'function_call' ? 'tool' : finish === 'length' ? 'length' : 'end', usage: { inputTokens, outputTokens } };
     },
   };
 }

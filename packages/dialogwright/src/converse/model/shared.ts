@@ -1,6 +1,13 @@
-import { apiError, safeErrorText } from '../../render/providers';
-import { filteredBy } from '../../agent/provider';
+import { apiError, safeErrorText } from '../../render/endpoints';
 import type { ModelEvent } from './types';
+
+/** Whether a failure is the provider's content filter refusing the turn (a finish reason, an error type, or a 403 with moderation reasons). */
+export function filteredBy(status: number, json: unknown, told: { type?: string }, finish?: unknown): boolean {
+  if (finish === 'content_filter') return true;
+  if (told.type !== undefined && /content[_ -]?filter/i.test(told.type)) return true;
+  const metadata = (json as { error?: { metadata?: { reasons?: unknown } } } | null)?.error?.metadata;
+  return status === 403 && Array.isArray(metadata?.reasons);
+}
 
 type ErrorEvent = Extract<ModelEvent, { type: 'error' }>;
 

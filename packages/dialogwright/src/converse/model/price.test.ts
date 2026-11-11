@@ -6,7 +6,7 @@ describe('costUsd', () => {
   it('prices the candidates', () => {
     expect(costUsd('inception:mercury-3', usage)).toBeCloseTo(0.9);
     expect(costUsd('anthropic:claude-haiku-5-5', usage)).toBeGreaterThan(0);
-    expect(costUsd('anthropic:claude-sonnet-5-5', usage)).toBeGreaterThan(0);
+    expect(costUsd('anthropic:claude-sonnet-5-5', usage)).toBeNull(); // unverified until confirmed
   });
   it('is null for an unknown model, and a model added is priced', () => {
     expect(costUsd('openrouter:vendor/unknown-test', usage)).toBeNull();

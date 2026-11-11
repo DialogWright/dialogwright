@@ -1,4 +1,4 @@
-import { KNOWN, safeErrorText } from '../../render/providers';
+import { KNOWN, safeErrorText } from '../../render/endpoints';
 import { parseSse } from './sse';
 import { httpError, jsonOf, thrownError } from './shared';
 import type { ConverseModel, ModelContent, ModelEvent, ModelRequest } from './types';

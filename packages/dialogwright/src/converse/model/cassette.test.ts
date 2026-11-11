@@ -31,4 +31,20 @@ describe('cassetteModel', () => {
   it('gives a cassette miss without an inner model', async () => {
     expect(await collect(cassetteModel({ path: path(), inner: null }).stream(req('a'), ctl()))).toEqual([{ type: 'error', kind: 'http', detail: 'cassette miss' }]);
   });
+  it('keeps the recording model id, from the file or the option, so a replay can be priced', async () => {
+    const p = path();
+    const inner = { ...fakeModel([turn('x')]), id: 'inception:mercury-3' };
+    await collect(cassetteModel({ path: p, inner }).stream(req('a'), ctl()));
+    expect(cassetteModel({ path: p, inner: null }).id).toBe('inception:mercury-3');
+    expect(cassetteModel({ path: path(), inner: null, id: 'anthropic:claude-haiku-5-5' }).id).toBe('anthropic:claude-haiku-5-5');
+  });
+  it('does not record a timeout or http failure, so the request is asked again', async () => {
+    const p = path();
+    const failing: ModelEvent[] = [{ type: 'error', kind: 'timeout', detail: 'slow' }];
+    const rec = cassetteModel({ path: p, inner: fakeModel([failing, turn('ok')]) });
+    expect(await collect(rec.stream(req('a'), ctl()))).toEqual(failing);
+    expect(await collect(cassetteModel({ path: p, inner: null }).stream(req('a'), ctl()))).toEqual([{ type: 'error', kind: 'http', detail: 'cassette miss' }]);
+    expect(await collect(rec.stream(req('a'), ctl()))).toEqual(turn('ok'));
+    expect(await collect(cassetteModel({ path: p, inner: null }).stream(req('a'), ctl()))).toEqual(turn('ok'));
+  });
 });

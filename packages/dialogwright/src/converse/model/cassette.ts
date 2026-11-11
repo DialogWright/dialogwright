@@ -12,6 +12,8 @@ export const requestKey = (req: ModelRequest): string => createHash('sha256').up
 interface Entry {
   key: string;
   attempt: number;
+  /** The id of the model that answered, kept so a replay prices the run. */
+  model?: string;
   events: ModelEvent[];
 }
 
@@ -20,11 +22,14 @@ interface Entry {
  * attempt for that key (the same request asked twice replays the first answer, then the second). With
  * `inner` a missing answer is asked and recorded; without it a miss is an `error` event.
  */
-export function cassetteModel(o: { path: string; inner: ConverseModel | null }): ConverseModel {
+export function cassetteModel(o: { path: string; inner: ConverseModel | null; id?: string }): ConverseModel {
   const attempts = new Map<string, number>();
   const read = (): Entry[] => (existsSync(o.path) ? readFileSync(o.path, 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l) as Entry) : []);
   return {
-    id: o.inner?.id ?? 'cassette',
+    // The recording model's id: the inner's, else the option's, else the one the file was recorded with.
+    get id(): string {
+      return o.inner?.id ?? o.id ?? read().find((e) => e.model !== undefined)?.model ?? 'cassette';
+    },
     async *stream(req, signal): AsyncIterable<ModelEvent> {
       const key = requestKey(req);
       const attempt = attempts.get(key) ?? 0;
@@ -43,8 +48,14 @@ export function cassetteModel(o: { path: string; inner: ConverseModel | null }):
         events.push(e);
         yield e;
       }
+      // A transient failure is not an answer: it is not kept, so it never replays.
+      const last = events.at(-1);
+      if (last?.type === 'error' && (last.kind === 'timeout' || last.kind === 'http')) {
+        attempts.set(key, attempt);
+        return;
+      }
       mkdirSync(dirname(o.path), { recursive: true });
-      appendFileSync(o.path, `${JSON.stringify({ key, attempt, events } satisfies Entry)}\n`);
+      appendFileSync(o.path, `${JSON.stringify({ key, attempt, model: o.inner.id, events } satisfies Entry)}\n`);
     },
   };
 }

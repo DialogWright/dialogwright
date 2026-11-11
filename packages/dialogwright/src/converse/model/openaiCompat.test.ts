@@ -82,4 +82,11 @@ describe('openAiCompatModel', () => {
     ac.abort();
     expect(await p).toMatchObject([{ type: 'error', kind: 'timeout' }]);
   });
+  it('reports stop tool when tool calls were emitted, whatever the finish reason, and gives an id-less call one', async () => {
+    const f = stubFetch(() => sseResponse([chunk({ tool_calls: [{ index: 0, function: { name: 'book', arguments: '{}' } }] }, 'stop'), sse('[DONE]')]));
+    expect(await collect(openAiCompatModel({ provider: 'inception', model: 'm', apiKey: KEY, fetch: f.fetch }).stream(req, ctl()))).toMatchObject([
+      { type: 'tool_call', id: 'call_1', name: 'book', args: {} },
+      { type: 'done', stop: 'tool' },
+    ]);
+  });
 });

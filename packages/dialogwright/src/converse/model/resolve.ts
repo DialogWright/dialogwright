@@ -1,4 +1,4 @@
-import { KNOWN } from '../../render/providers';
+import { KNOWN } from '../../render/endpoints';
 import { anthropicModel } from './anthropic';
 import { openAiCompatModel } from './openaiCompat';
 import type { ConverseModel } from './types';

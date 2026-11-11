@@ -9,8 +9,7 @@ const PRICES = new Map<string, ModelPrice>([
   ['inception:mercury-3', { input: 0.2, output: 0.7 }],
   // Claude Haiku 5.5: the engine's default render price (render/types.ts DEFAULT_RENDER_PRICE), as of 2026-11-11.
   ['anthropic:claude-haiku-5-5', { input: 0.1, output: 0.5 }],
-  // Claude Sonnet 5.5: the figure the bake-off's --price help gives as its example (harness-text/renderBakeoff.ts), 2026-11-11; confirm against Anthropic's pricing page before quoting a cost.
-  ['anthropic:claude-sonnet-5-5', { input: 1, output: 5 }],
+  // Claude Sonnet 5.5: no verified price, so its cost is null. Confirm against Anthropic's pricing page (anthropic.com/pricing), then add it here (the bake-off's --price help gives 1 and 5 only as an example).
 ]);
 
 /** Add the price of a model (an OpenRouter id, say) to the table: from its listing page, noted by the caller. */

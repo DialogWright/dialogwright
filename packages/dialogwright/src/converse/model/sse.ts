@@ -20,6 +20,8 @@ export async function* parseSse(stream: ReadableStream<Uint8Array>): AsyncIterab
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
       let i: number;
       while ((i = buffer.search(/\r\n|\n|\r/)) >= 0) {
+        // A lone CR at the end may be the first half of a CRLF split across chunks: wait for the next one.
+        if (!done && buffer[i] === '\r' && i === buffer.length - 1) break;
         const l = buffer.slice(0, i);
         buffer = buffer.slice(i + (buffer.startsWith('\r\n', i) ? 2 : 1));
         const out = line(l);
