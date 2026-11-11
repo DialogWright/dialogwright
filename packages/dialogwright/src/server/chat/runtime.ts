@@ -47,6 +47,13 @@ export interface ChatIo {
    * values as `app` records them); kept in the frame log as dropped when no socket is open.
    */
   send(m: ServerMessage, scrub?: Scrub | null, app?: App | null): void;
+  /**
+   * One message to the chat's socket now, its frame log line written only when the call it returns is made,
+   * scrubbed by the `scrub` known then: a line sent before its turn knows every value its records mask (the
+   * converse runtime's reply, said before the check after speaking reads it). Kept in the frame log as
+   * dropped, then, where no socket was open.
+   */
+  sendLogLater(m: ServerMessage): (scrub: Scrub | null) => void;
   /** The `ready` a client is sent: the chat's id, its resume token now, and the language it speaks. */
   ready(locale: string): ServerMessage;
   /** A line in the chat's frame log; a failure to write it is logged, never thrown. */

@@ -245,4 +245,18 @@ describe('the run artifacts', () => {
     });
     expect(modelUseOfCall(traces, 'c9')).toEqual({ turns: [], tokens: null, checks: { read: 0, corrected: 0, unread: 0 } });
   });
+
+  it('counts a correction that failed as not corrected, and keeps a correction\'s requests out of the turn\'s timing', () => {
+    const traces = mkdtempSync(join(tmpdir(), 'traces-correction-'));
+    mkdirSync(join(traces, 'example'));
+    const check = (o: object) => ({ contradicted: 0.9, notDone: 0.1, gap: 0.1, flagged: ['contradicted'], ms: 300, corrected: true, correction: 0, ...o });
+    writeFileSync(join(traces, 'example', 'c1.jsonl'), [
+      JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', said: 'open Saturday?', model: { usage: { inputTokens: 1, outputTokens: 1 }, requests: [{ firstMs: 100, ms: 300 }, { firstMs: null, ms: 4000, error: 'timeout: x', correction: true }] }, check: check({ correctionFailed: true, correctionError: 'timeout: x' }) }),
+      JSON.stringify({ v: 3, kind: 'converse', sessionId: 'c1', said: 'and Sunday?', model: { usage: { inputTokens: 1, outputTokens: 1 }, requests: [{ firstMs: 100, ms: 300 }, { firstMs: 90, ms: 200, correction: true }] }, check: check({ correction: 1 }) }),
+    ].join('\n'));
+    expect(modelUseOfCall(traces, 'c1')).toMatchObject({
+      turns: [{ requests: [{ firstMs: 100, ms: 300 }] }, { requests: [{ firstMs: 100, ms: 300 }] }],
+      checks: { read: 2, corrected: 1, unread: 0 },
+    });
+  });
 });

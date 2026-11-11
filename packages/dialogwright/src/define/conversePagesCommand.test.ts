@@ -68,6 +68,13 @@ describe('the pages of a converse app', () => {
     expect(text).toContain('go to the agent model as written');
   });
 
+  it('the card: what the decision model is sent: each read-back with the caller\'s words in answer, and the business\'s day', () => {
+    const text = conversePolicyCardText(app);
+    expect(text).toContain('- The decision model (not the agent model) is sent each read-back as it was said, the caller\'s own words in answer to it and the business\'s day (today\'s date, in words), to read a yes or a no.');
+    expect(text).toContain('it is also sent the business information, the business\'s day, the call\'s actions so far');
+    expect(text).toContain('any words of the caller\'s that imitate the note\'s mark are rewritten before the agent model is sent them');
+  });
+
   it('the card: the caller\'s own words are kept as said, and a text param shows its bound', () => {
     const text = conversePolicyCardText(app);
     expect(text).toContain('- The caller\'s own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.');

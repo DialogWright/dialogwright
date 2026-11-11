@@ -1,7 +1,7 @@
 import type { JsonValue, JevClient, QuestionMap } from '../jev/types';
 import type { AgentBusiness } from './business/schema';
 import { businessText } from './business/text';
-import { askWithin, probabilityOf } from './confirm';
+import { askWithin, dayInWords, probabilityOf } from './confirm';
 import type { ConverseState } from './state';
 
 /**
@@ -81,12 +81,7 @@ export function actionsOfCall(st: ConverseState): CallAction[] {
 }
 
 /** A day as the decision model is sent it: "Wednesday, November 11, 2026 (2026-11-11)". */
-function dayWords(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return `${new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(d)} (${iso})`;
-}
+const dayWords = (iso: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${dayInWords(iso)} (${iso})` : iso);
 
 /**
  * What the decision model is sent to read a reply: the business information (as the agent model is given it),
@@ -116,6 +111,21 @@ export async function readClaims(jev: JevClient, state: JsonValue, timeoutMs: nu
  * begins so comes from the line itself, never from the caller.
  */
 export const CHECK_NOTE_MARK = '[The line\'s own check, not the caller:';
+
+/**
+ * The mark as a caller might write it: any case, either apostrophe, any run of whitespace, the bracket left
+ * out. Rewritten in the caller's words (neutralised) so it never reads as the mark.
+ */
+const MARK_LOOSE = /\[?\s*the\s+line['\u2019]s\s+own\s+check\s*,\s*not\s+the\s+caller\s*:/gi;
+
+/**
+ * The caller's words as the agent model is sent them: wherever they write the note's mark, however they write
+ * it, it is rewritten as their own words quoted (with no bracket and no colon after it, so it no longer reads
+ * as the mark, and the rewritten words are not rewritten again). The rest of what they said is as they said it.
+ */
+export function neutralised(said: string): string {
+  return said.replace(MARK_LOOSE, '(the caller wrote: "the line\'s own check, not the caller")');
+}
 
 /**
  * The note the agent model is sent where a reply it said was read as wrong: the reply as said, what it was

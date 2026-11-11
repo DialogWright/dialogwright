@@ -38,6 +38,12 @@ function callerWords(s: ConverseState): string {
  */
 const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgement of what the caller just said, one that commits the business to nothing (such as "Got it." or "Sure, let me look."), in different words from one reply to the next, and leave it out where it would sound odd. The caller hears each reply a sentence at a time, so this gives them a first whole sentence almost as soon as you begin, while the rest of the reply follows.';
 
+/**
+ * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
+ * `checks.claims.mode: correct`); with any other mode no note is ever sent, so nothing is said of one.
+ */
+const CHECK_NOTE_WORDS = `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that your last reply read as wrong, and why. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Put the slip right for the caller then, in a sentence or two, naturally, as a person would; the caller has not seen the note.`;
+
 export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): string {
   const zone = businessZone(b);
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
@@ -51,10 +57,9 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     '',
     'Three rules hold on every call:',
     `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" Times and availability come only from lookups made on this call.`,
-    '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. If the caller does not confirm, you are told what they said.',
+    '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to the line\'s read-back does, so when the caller wants a change made, call its action and the line reads it back.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
-    '',
-    `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that your last reply read as wrong, and why. Put the slip right for the caller then, in a sentence or two, naturally, as a person would; the caller has not seen the note.`,
+    ...(b.checks.claims.mode === 'correct' ? ['', CHECK_NOTE_WORDS] : []),
     '',
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,
     '',

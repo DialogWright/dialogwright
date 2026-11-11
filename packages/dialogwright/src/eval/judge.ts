@@ -366,9 +366,10 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
 
 /**
  * A converse call's model use, from its traces: each caller turn's requests to the model with their true
- * times (ModelRequestTime), the tokens summed over the call (null where no turn records any), and the
- * replies the check after speaking read (converse/trace.ts `check`), corrected on the call, and could not
- * read (its readings null: the decision model failed or was late).
+ * times (ModelRequestTime: the reply's, never a correction's), the tokens summed over the call (null where
+ * no turn records any), and the replies the check after speaking read (converse/trace.ts `check`), corrected
+ * on the call (a correction that failed said nothing, so it is none), and could not read (its readings null:
+ * the decision model failed or was late).
  */
 export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null; checks: CheckCounts } {
   const turns: TurnTiming[] = [];
@@ -384,12 +385,13 @@ export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnT
       outputTokens += usage.outputTokens;
       found = true;
     }
-    if (typeof r.said === 'string' && Array.isArray(r.model?.requests)) turns.push({ requests: r.model.requests as ModelRequestTime[] });
+    // The reply's requests: a correction's (the check after speaking's) are not what the caller waited for, and its failure is silent.
+    if (typeof r.said === 'string' && Array.isArray(r.model?.requests)) turns.push({ requests: (r.model.requests as ModelRequestTime[]).filter((q) => q.correction !== true) });
     const check = r.check;
     if (check !== null && typeof check === 'object') {
       if (typeof check.contradicted === 'number') checks.read += 1;
       else checks.unread += 1;
-      if (check.corrected === true) checks.corrected += 1;
+      if (check.corrected === true && check.correctionFailed !== true) checks.corrected += 1;
     }
   }
   return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null, checks };

@@ -18,6 +18,8 @@ export interface ModelRequestTime {
   firstMs: number | null;
   ms: number;
   error?: string;
+  /** The request was the check after speaking's correction, not the reply the caller waited for. */
+  correction?: true;
 }
 
 export interface ConverseTraceRecord {
@@ -44,9 +46,12 @@ export interface ConverseTraceRecord {
    * The check after speaking (docs/designs/2026-11-11-claims-check.md), where the turn's reply was read: the
    * decision model's readings (null each where the check was unread: the model failed or was late), the
    * readings at or over their bars (agent.yaml `checks.claims`), the reading's time, whether the model was
-   * asked to correct the reply, and how many of `replies`, at their end, are its correction.
+   * asked to correct the reply, and how many of `replies`, at their end, are its correction. A correction
+   * that failed (the model erred, was late, or kept calling actions) said nothing more and counted no failure
+   * of the call: `correctionFailed`, with how it failed (`correctionError`); `model.error` and
+   * `model.retried` stay the reply's own.
    */
-  check?: { contradicted: number | null; notDone: number | null; gap: number | null; flagged: ('contradicted' | 'notDone' | 'gap')[]; ms: number; corrected: boolean; correction: number };
+  check?: { contradicted: number | null; notDone: number | null; gap: number | null; flagged: ('contradicted' | 'notDone' | 'gap')[]; ms: number; corrected: boolean; correction: number; correctionFailed?: true; correctionError?: string };
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
 }

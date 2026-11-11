@@ -9,8 +9,8 @@ import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
-import { checkNote, claimsState, readClaims } from './claims';
-import { isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
+import { checkNote, claimsState, neutralised, readClaims } from './claims';
+import { dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
@@ -43,6 +43,9 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  * - once the model's own words of a turn have been said, the decision model reads them (the check after
  *   speaking, docs/designs/2026-11-11-claims-check.md, agent.yaml `checks.claims`); a reply read as wrong
  *   goes back to the model with a note marked as the line's own, and its correction is said after the reply.
+ *   A correction that fails says nothing more and counts no failure: the reply was fine to leave as it was;
+ * - the caller's words reach the model with the note's mark rewritten wherever they write it (neutralised),
+ *   so a caller can never pass for the line's own check.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
@@ -77,14 +80,19 @@ export interface ConverseDeps {
  * ready, never an empty one: whole sentences of the model's text (`final` false), and last the piece that
  * ends the turn's reply (`final` true: the rest of the model's text, or a fixed line). A turn that says
  * anything has one final piece, or two where the check after speaking corrects the reply: the correction's
- * pieces follow the reply's final one, its own last piece final again. A turn that says nothing (the
- * caller left) calls neither. The chat runtime sends every piece of a turn in one `say` (and each as a
- * `say_delta` as it comes), so a correction appears after the reply in the same message; the phone (plan 2
- * of the runtime's design) is to say it once the reply has played, unless the caller has begun to speak.
+ * pieces follow the reply's final one, its own last piece final again. A correction that fails after saying
+ * part of itself leaves its pieces with no final one after them: the turn's end closes them. A turn that
+ * says nothing (the caller left) calls neither. The chat runtime sends a `say` at each final piece (the
+ * reply's at once, before the check reads it, and a correction's as a second `say`), and each piece as a
+ * `say_delta` as it comes; the phone (plan 2 of the runtime's design) is to say a correction once the reply
+ * has played, unless the caller has begun to speak. `scrubbed`, where a channel keeps what it sent, is given
+ * at the turn's end how the trace masks what the line said (each value the records mask), before the
+ * turn's trace record is written.
  */
 export interface Out {
   say(text: string, final: boolean): void;
   end(how: 'closing' | 'handoff'): void;
+  scrubbed?(scrub: (text: string) => string): void;
 }
 
 export type Input = { kind: 'start' } | { kind: 'text'; text: string } | { kind: 'left' };
@@ -123,6 +131,8 @@ interface Turn {
   own: string[];
   /** The check after speaking's reading of the turn's reply, where it was read. */
   check?: ConverseTraceRecord['check'];
+  /** The model is being asked for the check after speaking's correction: its requests are marked so in the trace. */
+  correcting: boolean;
 }
 
 /** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
@@ -416,7 +426,7 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
   } finally {
     const ms = Date.now() - started;
     t.model.ms += ms;
-    (t.model.requests ??= []).push({ firstMs, ms, ...(failed !== undefined ? { error: failed } : {}) });
+    (t.model.requests ??= []).push({ firstMs, ms, ...(failed !== undefined ? { error: failed } : {}), ...(t.correcting ? { correction: true as const } : {}) });
   }
   if (text.trim() === '' && calls.length === 0) {
     const r = fail('empty: the model said nothing and called nothing');
@@ -487,8 +497,12 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
   }
 }
 
-/** The model asked, round after round, until it replies with no call, a change is read back, or it fails. */
-async function converse(t: Turn, sp: Speaker): Promise<void> {
+/**
+ * The model asked, round after round, until it replies with no call, a change is read back, or it fails.
+ * A failure says the recovery line (failed), but `silent` (the check after speaking's correction): then
+ * nothing more is said and nothing counted, and the failure is returned.
+ */
+async function converse(t: Turn, sp: Speaker, silent = false): Promise<{ ok: true } | { ok: false; error: string }> {
   for (let i = 0; i < MAX_ROUNDS; i++) {
     const r = await round(t, sp);
     if (!r.ok) {
@@ -497,8 +511,8 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
         add(t.st, 'assistant', [{ type: 'text', text: said }]);
         t.own.push(said);
       }
-      failed(t, sp);
-      return;
+      if (!silent) failed(t, sp);
+      return { ok: false, error: r.error };
     }
     const final = r.calls.length === 0;
     const said = sp.endRound(final);
@@ -508,12 +522,12 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
       t.confirmedRan = false;
       t.own.push(said);
     }
-    if (final) return;
+    if (final) return { ok: true };
     const { results, readBack } = await runCalls(t, r.calls);
     add(t.st, 'user', results);
     if (readBack !== null) {
       sp.line(readBack);
-      return;
+      return { ok: true };
     }
     if (t.ending) {
       const closing = t.deps.business.lines.closing.en;
@@ -521,11 +535,12 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
       add(t.st, 'assistant', [{ type: 'text', text: closing }]);
       t.st.ended = 'closing';
       t.out.end('closing');
-      return;
+      return { ok: true };
     }
   }
   // Its rounds used up on calls: the caller asked nothing that needs saying again.
-  failed(t, sp, 'stuck');
+  if (!silent) failed(t, sp, 'stuck');
+  return { ok: false, error: `stuck: still calling actions after ${MAX_ROUNDS} rounds` };
 }
 
 /**
@@ -538,7 +553,12 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
  * and may call actions, gated and read back as on any turn. The correction is not read again. While a
  * read-back waits for the caller's yes, the reading is recorded and nothing is corrected: the model may not
  * be asked again until the caller has answered it. A reading that fails or comes late is an unread check:
- * nothing is corrected.
+ * nothing is corrected. A correction that fails (the model errs, is late, or keeps calling actions) is
+ * silent: no recovery line, no failure counted, no handoff, for the reply it would have corrected has been
+ * said and stands. Where it said nothing, the note (and whatever the correction called) is taken out of the
+ * conversation, as if the model had never been asked; where it said part of itself, what it said closes the
+ * conversation. The reply's own model error and retry stay the turn's: the correction's failure is the
+ * check's (`correctionFailed`, `correctionError`), and its requests are marked as the correction's.
  */
 async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
   const claims = t.deps.business.checks.claims;
@@ -552,17 +572,28 @@ async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
     if (reading.notDone >= claims.correctAt) flagged.push('notDone');
     if (reading.gap >= claims.gapAt) flagged.push('gap');
   }
-  const check = { contradicted: reading?.contradicted ?? null, notDone: reading?.notDone ?? null, gap: reading?.gap ?? null, flagged, ms: Date.now() - started, corrected: false, correction: 0 };
+  const check: NonNullable<ConverseTraceRecord['check']> = { contradicted: reading?.contradicted ?? null, notDone: reading?.notDone ?? null, gap: reading?.gap ?? null, flagged, ms: Date.now() - started, corrected: false, correction: 0 };
   t.check = check;
   const wrong = flagged.includes('contradicted') || flagged.includes('notDone');
   if (reading === null || !wrong || claims.mode !== 'correct' || t.st.pending !== null) return;
   // The note is a message of its own on the caller's side (a model is sent a conversation that ends there),
   // marked as the line's own check; the system prompt says what such a note is.
+  const before = { replies: t.replies.length, messages: t.st.messages.length, error: t.model.error, retried: t.model.retried };
   add(t.st, 'user', [{ type: 'text', text: checkNote(reply, reading, claims.correctAt) }]);
-  const before = t.replies.length;
-  await converse(t, sp);
+  t.correcting = true;
+  const corrected = await converse(t, sp, true);
+  t.correcting = false;
   check.corrected = true;
-  check.correction = t.replies.length - before;
+  check.correction = t.replies.length - before.replies;
+  // The turn's model error and retry are the reply's own: the correction's go to the check.
+  if (before.error === undefined) delete t.model.error;
+  else t.model.error = before.error;
+  if (before.retried === undefined) delete t.model.retried;
+  else t.model.retried = before.retried;
+  if (corrected.ok) return;
+  check.correctionFailed = true;
+  check.correctionError = corrected.error;
+  if (check.correction === 0) t.st.messages.length = before.messages;
 }
 
 /** A confirmed action through the gate with the hash of exactly its own values (the read-back's, or a follow-on's own), run when allowed. */
@@ -578,25 +609,33 @@ async function runConfirmed(t: Turn, name: string, params: Record<string, string
   return ran.ok ? { outcome: 'ran', text: resultText(ran.result) } : { outcome: 'failed', text: `Failed: ${ran.error}`, why: ran.error };
 }
 
+/**
+ * What a read-back the caller did not confirm leaves the model to know: the goal (a yes to the read-back) and
+ * what a yes elsewhere is worth, never words for it to say.
+ */
+const ONLY_THE_READ_BACK = 'Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them.';
+
 /** The caller answered a read-back: a clear yes runs the action and its follow-ons; anything else goes back to the model. */
 async function answered(t: Turn, said: string): Promise<void> {
   const p = t.st.pending!;
   t.st.pending = null;
   const b = t.deps.business;
   const spec = b.actions[p.action];
-  const reading = await readYesNo(t.deps.jev, p.text, said, t.deps.jevTimeoutMs);
+  const reading = await readYesNo(t.deps.jev, p.text, said, t.deps.jevTimeoutMs, dayInWords(t.todayIso));
   const yes = isConfirmed(reading);
   t.readBack = { text: p.text, ...(reading !== null ? { yes: reading.yes, no: reading.no } : {}), confirmed: yes };
   const heard = `The line read back: "${p.text}"`;
+  // The caller's words as the model is sent them: the note's mark rewritten wherever they wrote it.
+  const words = neutralised(said);
   if (reading === null) {
     // The decision model timed out or failed: what the caller meant is not known, and nothing runs.
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed: ask them again. They said: '${said}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return;
   }
   if (!yes) {
     traceTool(t, spec, p.action, p.params, 'notConfirmed');
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller did not confirm; they said: '${said}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return;
   }
   await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });
@@ -622,7 +661,7 @@ async function answered(t: Turn, said: string): Promise<void> {
     traceTool(t, follow, name, checked.params, ran.outcome, ran.why);
     done.push(`${name}: ${ran.text}`);
   }
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${said}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
 }
 
 export async function converseTurn(s: ConverseState, input: Input, deps: ConverseDeps, out: Out): Promise<ConverseState> {
@@ -642,6 +681,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     confirmedRan: false,
     ending: false,
     own: [],
+    correcting: false,
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
@@ -656,13 +696,14 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     await record(t, { type: 'converse_left', detail: { pending } });
   } else {
     if (st.pending !== null) await answered(t, input.text);
-    else add(st, 'user', [{ type: 'text', text: input.text }]);
+    else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
     await converse(t, sp);
     await checkAfterSpeaking(t, sp);
   }
   // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
   const scrub = scrubberOfValues(t.masked);
   const scrubbed = (text: string): string => (scrub === null ? text : scrub(text));
+  out.scrubbed?.(scrubbed);
   deps.trace({
     v: 3,
     kind: 'converse',

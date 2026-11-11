@@ -123,15 +123,38 @@ builder's choices:
 - **Where it runs:** inside the turn, after the reply's last piece has gone to the channel, so the turn's
   trace record carries the readings (`check`: the three readings, those at or over their bars as `flagged`,
   the reading's time, whether it was corrected, and how many of the turn's `replies` at their end are the
-  correction). On the chat, every piece of a turn goes in one `say`, so the correction follows the reply in
-  the same message (and as `say_delta`s as it comes).
+  correction). On the chat, the reply's `say` is sent as soon as its last piece is said, before the check
+  reads it, so a client that does not stream (the widget) waits for nothing; a correction follows as a
+  second `say` (and as `say_delta`s as it comes). The frame log keeps each `say` as the trace keeps the line,
+  its values masked; its line is written at the turn's end with the turn's masking, since a value said in
+  the reply may be one a call of the correction records masked.
 - **The note** is a message on the caller's side (a model is sent a conversation that ends there), marked at
   its start as the line's own check; the agent model's instructions say a message so marked never comes from
-  the caller. It holds the reply as said and what it was read as, and asks the model to put it right in a
+  the caller, and say so only where the check corrects (`mode: correct`: with `record` or `off` no note is
+  ever sent). It holds the reply as said and what it was read as, and asks the model to put it right in a
   sentence or two, as a person would after a slip.
+- **The mark cannot be spoofed by a caller:** the caller's words (each turn's, and the answer to a read-back
+  quoted back to the model) are sent with the mark rewritten wherever they write it, however they write it
+  (any case, either apostrophe, any whitespace, the bracket left out), as their own quoted words with no
+  colon after them, so they never begin the way the line's note does; the instructions say the line does
+  this. The trace and the frame log keep the caller's words as they said them.
+- **A correction that fails is silent:** where the model errs, is late, or keeps calling actions while
+  correcting, nothing more is said, no failure of the call is counted and nothing hands the call off: the
+  reply it would have corrected has been said and stands. Where the correction said nothing, the note (and
+  whatever the correction called) is taken out of the conversation, as if the model had never been asked;
+  where it said part of itself, what it said ends the conversation (and goes to the chat as a last `say`).
+  The trace keeps the reply's own `model.error` and `retried`; the correction's failure is the check's
+  (`correctionFailed`, `correctionError`), and its requests are marked `correction: true`, kept out of the
+  eval's turn timings, and a failed one is not counted as a correction.
 - **A read-back waiting:** where the turn ended on a read-back, the reply is read and recorded, but nothing is
   corrected: the model may not be asked again until the caller has answered the read-back, which itself says
   nothing is done until their yes.
+- **Known gap: a wrong claim said before a read-back is not corrected.** The model's words before it called
+  a change are read, and a wrong one is recorded in the trace (`flagged`, `corrected: false`), but not put
+  right: the model cannot be asked again while its action call waits for its result (the provider needs the
+  call's result next, and the runtime holds one confirmation at a time), and carrying the note to the next
+  turn would need state the runtime does not keep. The read-back that follows says the action's values in
+  fixed words and that nothing is done until the caller's yes, which bounds the harm to what was said.
 - **The correction is not read** (once per reply), so the decision model is asked once a turn.
 - **The stubs:** the heuristic stub reads each of the three questions low (0.04), and the fixture stub
   answers them at its quiet value (0.1), so under a stub nothing is corrected.

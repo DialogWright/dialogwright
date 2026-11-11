@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditSink } from '../../audit/sink';
 import type { AuditDraft } from '../../audit/types';
+import type { ServerMessage } from '../../channel/chat/protocol';
 import { fakeModel } from '../../converse/model/fake';
+import type { ModelEvent } from '../../converse/model/types';
 import { newConverseState, type ConverseState } from '../../converse/state';
-import type { JevClient } from '../../jev/types';
+import type { AnswerMap, JevClient } from '../../jev/types';
 import { converseFixture } from '../../testing/converse/app';
+import { BOOKING, CALLER, DAY, done, text } from '../../testing/converse/chat';
 import type { StoredChat } from '../stores/types';
 import { CONVERSE_SCHEMA, converseChatRuntime } from './converseRuntime';
+import type { ChatIo } from './runtime';
 
-/** A converse chat's end with no turn of its own: a chat saved before a restart and never resumed. */
+/** A converse chat's end with no turn of its own: a chat saved before a restart and never resumed; and a chat's words on the wire, turn by turn. */
 
 function runtime() {
   const rows: { callId: string; row: AuditDraft }[] = [];
@@ -44,5 +48,117 @@ describe('converseChatRuntime: a chat abandoned', () => {
     const { rt, rows } = runtime();
     rt.abandoned(saved(newConverseState({ appId: 'visits', callId: 'chat-2', channel: 'chat' })));
     expect(rows.map((r) => r.row.type)).toEqual(['call_ended']);
+  });
+});
+
+/** A chat's transport as the runtime sees it: what is sent, in order, and the frame log's lines as written. */
+function fakeIo(id: string) {
+  const sent: ServerMessage[] = [];
+  const frames: { dir: string; msg: unknown }[] = [];
+  const io: ChatIo = {
+    id, frames: { write: (dir, msg) => void frames.push({ dir, msg }) }, restores: 0, movedAway: false, ended: false, lastActivityMs: 0,
+    send(m, scrub) {
+      sent.push(m);
+      frames.push({ dir: 'out', msg: m.type === 'say' && scrub ? { ...m, text: scrub(m.text) } : m });
+    },
+    sendLogLater(m) {
+      sent.push(m);
+      return (scrub) => void frames.push({ dir: 'out', msg: m.type === 'say' && scrub ? { ...m, text: scrub(m.text) } : m });
+    },
+    ready: (locale) => ({ type: 'ready', session: id, resume: 'r', locale }),
+    record: (dir, msg) => void frames.push({ dir, msg }),
+    connected: () => true,
+    save() {},
+    finish() {},
+  };
+  return { io, sent, frames, says: () => sent.flatMap((m) => (m.type === 'say' ? [m.text] : [])) };
+}
+
+const SLIP = 'We are open Saturdays too.';
+const CORRECTION = 'Sorry, I should correct that: we are open every day, 9 to 5.';
+
+/**
+ * A decision model that reads every reply as `claims`, `lateMs` after it is asked, keeping how many `say`s had
+ * been sent when it was asked (`saysWhenAsked`); and a read-back's answer as a yes.
+ */
+function claimsJev(claims: { contradicted: number; notDone: number; gap: number }, says: () => string[], lateMs = 0): JevClient & { saysWhenAsked: number[] } {
+  const saysWhenAsked: number[] = [];
+  return {
+    saysWhenAsked,
+    async ask(req) {
+      const reading = Object.hasOwn(req.questions, 'contradicted');
+      if (reading) {
+        saysWhenAsked.push(says().length);
+        await new Promise((r) => setTimeout(r, lateMs));
+      }
+      const answers: AnswerMap = reading
+        ? { contradicted: { type: 'noul', noul: claims.contradicted }, notDone: { type: 'noul', noul: claims.notDone }, gap: { type: 'noul', noul: claims.gap } }
+        : { confirmsYes: { type: 'noul', noul: 0.95 }, confirmsNo: { type: 'noul', noul: 0.05 } };
+      return { answers, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
+    },
+  };
+}
+
+/** A chat on the fixture app, opened (the greeting said), with the model's side `turns` and a decision model reading replies as `claims`. */
+async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0) {
+  const t = fakeIo('chat-9');
+  const jev = claimsJev(claims, t.says, lateMs);
+  const { app } = converseFixture(() => new Date('2030-01-14T15:00:00Z'));
+  const traced: unknown[] = [];
+  const rt = converseChatRuntime({
+    app, model: fakeModel(turns), jev, jevTimeoutMs: 2000, audit: { append: (callId, channel, row) => ({ ...row, seq: 1, at: '2030-01-14T15:00:00.000Z', callId, channel, prevHash: '', hash: '' }) },
+    texts: null, now: () => Date.parse('2030-01-14T15:00:00Z'), log: () => {},
+    resources: () => ({ trace: { write: (r) => void traced.push(r) }, frames: t.io.frames }),
+  });
+  rt.prepare('chat-9');
+  rt.create('chat-9', t.io);
+  await rt.open('chat-9', { context: { callerNumber: CALLER }, stream: false }, t.io);
+  return { ...t, rt, jev };
+}
+
+describe('converseChatRuntime: a reply on the wire', () => {
+  const WRONG = { contradicted: 0.9, notDone: 0.1, gap: 0.1 };
+  const FINE = { contradicted: 0.1, notDone: 0.1, gap: 0.1 };
+
+  it('sends a reply\'s say at once, before the check after speaking has answered, and its correction as a second say', async () => {
+    const c = await chat([[text(SLIP), done()], [text(CORRECTION), done()]], WRONG, 150);
+    expect(c.says()).toEqual(['Example Visits, how can I help?']);
+    const started = Date.now();
+    let firstAt: number | null = null;
+    const sent = c.sent.length;
+    const watch = setInterval(() => {
+      if (firstAt === null && c.sent.slice(sent).some((m) => m.type === 'say')) firstAt = Date.now() - started;
+    }, 5);
+    await c.rt.text('chat-9', 'Are you open Saturday?', c.io);
+    clearInterval(watch);
+    expect(c.says().slice(1)).toEqual([SLIP, CORRECTION]);
+    // The reply was on the wire when the decision model was asked, and well before its late answer.
+    expect(c.jev.saysWhenAsked).toEqual([2]);
+    expect(firstAt).not.toBeNull();
+    expect(firstAt!).toBeLessThan(100);
+  });
+
+  it('sends one say for a reply the check reads as fine', async () => {
+    const c = await chat([[text(SLIP), done()]], FINE);
+    await c.rt.text('chat-9', 'Are you open Saturday?', c.io);
+    expect(c.says().slice(1)).toEqual([SLIP]);
+    expect(c.sent.filter((m) => m.type === 'say')).toHaveLength(2);
+  });
+
+  it('sends what a failing correction said of itself as a last say at the turn\'s end, and nothing more', async () => {
+    const c = await chat([[text(SLIP), done()], [text('Sorry, I misspoke. We are'), { type: 'error', kind: 'timeout', detail: 'late' }]], WRONG);
+    await c.rt.text('chat-9', 'Are you open Saturday?', c.io);
+    expect(c.says().slice(1)).toEqual([SLIP, 'Sorry, I misspoke.']);
+    expect(c.sent.some((m) => m.type === 'end')).toBe(false);
+  });
+
+  it('keeps each say in the frame log as the trace keeps the line: each value the records mask, masked', async () => {
+    const c = await chat([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!], FINE);
+    await c.rt.text('chat-9', `Is there a visit free on ${DAY}?`, c.io);
+    await c.rt.text('chat-9', 'The morning please, for Sam Example, on this number.', c.io);
+    expect(c.says().at(-1)).toContain('Sam Example');
+    const logged = c.frames.filter((f) => f.dir === 'out' && (f.msg as ServerMessage).type === 'say').map((f) => (f.msg as { text: string }).text);
+    expect(logged.at(-1)).toBe('A visit • for <11 chars>, on ...0123. Is that right?');
+    expect(JSON.stringify(c.frames)).not.toContain('Sam Example');
   });
 });

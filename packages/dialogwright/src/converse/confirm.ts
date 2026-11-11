@@ -50,6 +50,14 @@ function phoneShown(value: string, callerNumber: string | undefined): string {
   return ten === null ? value : `${ten.slice(0, 3)} ${ten.slice(3, 6)} ${ten.slice(6)}`;
 }
 
+/** The business's day as a person says it, with its year: "Wednesday, November 11, 2026". A value that is no day is said as it is. */
+export function dayInWords(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(d);
+}
+
 /** A param's value as its type displays it: a date as its day, a slot by its label, a phone as phoneShown. */
 function shown(b: AgentBusiness, spec: ParamSpec | undefined, value: string, lang: Lang, seen: Seen, callerNumber: string | undefined): string {
   if (value === '' || spec === undefined) return value;
@@ -149,11 +157,13 @@ export function probabilityOf(a: Answer | undefined): number | null {
 
 /**
  * The decision model's reading of what the caller said to the read-back, in one request: how much it
- * reads as a yes and as a no. Null when the model errs, gives no answer to either, or has not answered
- * within `timeoutMs` (the request is then aborted). It never throws.
+ * reads as a yes and as a no. `today`, the business's day in words (dayInWords), is in its state where
+ * given, so an answer that names a day ("tomorrow", "Thursday") is read against the day the read-back
+ * says rather than as a value that replaces it. Null when the model errs, gives no answer to either, or
+ * has not answered within `timeoutMs` (the request is then aborted). It never throws.
  */
-export async function readYesNo(jev: JevClient, readBack: string, said: string, timeoutMs: number): Promise<{ yes: number; no: number } | null> {
-  const answers = await askWithin(jev, { readBack, said }, YES_NO, timeoutMs);
+export async function readYesNo(jev: JevClient, readBack: string, said: string, timeoutMs: number, today?: string): Promise<{ yes: number; no: number } | null> {
+  const answers = await askWithin(jev, { readBack, said, ...(today !== undefined ? { today } : {}) }, YES_NO, timeoutMs);
   if (answers === null) return null;
   const yes = probabilityOf(answers.confirmsYes);
   const no = probabilityOf(answers.confirmsNo);

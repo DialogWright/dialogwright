@@ -215,20 +215,26 @@ export function chatTransport(deps: ChatTransportDeps, runtime: ChatRuntime): Ch
     }
   };
 
+  /** Puts one message on `ws`: 'sent', or why not ('closed': no socket open; 'stalled': the client is not reading, and the socket is closed). */
+  const put = (ws: WebSocket | null, m: ServerMessage): 'sent' | 'closed' | 'stalled' => {
+    if (ws === null || ws.readyState !== WebSocket.OPEN) return 'closed';
+    if (ws.bufferedAmount > MAX_BUFFERED) {
+      ws.close(1008, 'not reading');
+      return 'stalled';
+    }
+    ws.send(serializeServerMessage(m));
+    return 'sent';
+  };
+  /** A message's frame log line, as it went: sent, or dropped (stalled where the client was not reading). */
+  const logPut = (frames: FrameSink | null, how: 'sent' | 'closed' | 'stalled', logged: Record<string, unknown>): void => {
+    if (how === 'sent') record(frames, 'out', logged);
+    else record(frames, 'log', { dropped: logged, ...(how === 'stalled' ? { stalled: true } : {}) });
+  };
+
   /** Send one message on `ws`, and log it to the session's frame log when there is one. */
   const send = (ws: WebSocket | null, frames: FrameSink | null, m: ServerMessage, scrub: Scrub | null = null, app: App | null = null): void => {
     const logged = loggedOut(m, scrub, app);
-    if (ws === null || ws.readyState !== WebSocket.OPEN) {
-      record(frames, 'log', { dropped: logged });
-      return;
-    }
-    if (ws.bufferedAmount > MAX_BUFFERED) {
-      record(frames, 'log', { dropped: logged, stalled: true });
-      ws.close(1008, 'not reading');
-      return;
-    }
-    ws.send(serializeServerMessage(m));
-    record(frames, 'out', logged);
+    logPut(frames, put(ws, m), logged);
   };
   const sendTo = (e: ChatEntry, m: ServerMessage): void => send(e.socket, e.frames, m);
 
@@ -299,6 +305,10 @@ export function chatTransport(deps: ChatTransportDeps, runtime: ChatRuntime): Ch
       id: o.id, frames: o.frames, resume: o.resume, socket: o.socket, createdAtMs: o.createdAtMs, restores: o.restores, movedAway: false,
       ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, lastActivityMs: now(),
       send: (m, scrub = null, app = null) => send(e.socket, e.frames, m, scrub, app),
+      sendLogLater: (m) => {
+        const how = put(e.socket, m);
+        return (scrub) => logPut(e.frames, how, loggedOut(m, scrub));
+      },
       ready: (locale) => ({ type: 'ready', session: e.id, resume: e.resume, locale }),
       record: (dir, msg) => record(e.frames, dir, msg),
       connected: () => e.socket !== null,

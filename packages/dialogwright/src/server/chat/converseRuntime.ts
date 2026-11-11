@@ -6,7 +6,6 @@ import { policyOf } from '../../converse/policy';
 import { accountOf } from '../../converse/sources/accounts';
 import { converseTexts } from '../../converse/sources/texts';
 import { newConverseState, type ConverseState } from '../../converse/state';
-import type { ConverseTraceRecord } from '../../converse/trace';
 import { converseTurn, type ConverseDeps, type Input, type Out } from '../../converse/turn';
 import { E164 } from '../../core/numberLocales';
 import type { JevClient } from '../../jev/types';
@@ -22,9 +21,12 @@ import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
  * runtime's (kind 'converse'), its audit the app's chain. The transport (chat/socket.ts) holds the socket,
  * the resume token and the saves; this holds each chat's state.
  *
- * - A reply goes to the client as one `say` (the whole of what the line said that turn: the model's
- *   sentences and any fixed line, joined), once the turn is done. A client whose start says
- *   `stream: true` is also sent each sentence as `say_delta` as soon as it is ready, before the `say`.
+ * - A reply goes to the client as a `say` as soon as its last piece is said (the model's sentences and any
+ *   fixed line, joined), before the check after speaking reads it; a correction the check asks for follows
+ *   as a second `say`. A client whose start says `stream: true` is also sent each sentence as `say_delta` as
+ *   soon as it is ready, before its `say`. The frame log keeps each `say` as the trace keeps the line (each
+ *   value the records mask, masked): its line is written at the turn's end, with the turn's own masking,
+ *   since a value said in a reply may be one a call later in the turn records masked.
  * - The call's end: the closing line (the model's end_call), then `end`; a handoff (the model failed past
  *   the business's budget), the handoff line, then `transfer` where agent.yaml names a transfer number,
  *   and `end`. Each end is recorded in the audit as `call_ended`, as a scripted chat's is.
@@ -111,8 +113,8 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
     }
   };
 
-  /** A turn's dependencies: the app's, its texts recorded in the chat's audit, each trace record written and handed to `traced`. */
-  const turnDeps = (id: string, c: ConverseChat, traced: (r: ConverseTraceRecord) => void = () => {}): ConverseDeps => ({
+  /** A turn's dependencies: the app's, its texts recorded in the chat's audit, each trace record written to the chat's trace. */
+  const turnDeps = (id: string, c: ConverseChat): ConverseDeps => ({
     business: app.business,
     model: deps.model,
     jev: deps.jev,
@@ -124,43 +126,52 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       if (chained instanceof Promise) chained.catch((err: unknown) => log(`chat ${id}: a text's audit entry failed: ${describeError(err)}`));
     }),
     now: () => new Date(deps.now()),
-    trace: (r) => {
-      traced(r);
-      c.trace.write(r);
-    },
+    trace: (r) => c.trace.write(r),
     jevTimeoutMs: deps.jevTimeoutMs,
     ...(deps.env !== undefined ? { env: deps.env } : {}),
   });
 
   /** One turn: its words sent, the chat ended where the turn ended it, else saved. Whether it ended. */
   const run = async (id: string, c: ConverseChat, input: Input, io: ChatIo): Promise<boolean> => {
-    const pieces: string[] = [];
-    let record: ConverseTraceRecord | null = null;
+    let pieces: string[] = [];
+    /** Each `say` sent this turn, with the call that writes its frame log line. */
+    const sent: { text: string; log: (scrub: ((text: string) => string) | null) => void }[] = [];
+    let scrub: ((text: string) => string) | null = null;
+    /** The pieces said since the last `say`, sent as one. */
+    const flush = (): void => {
+      const text = joined(pieces);
+      pieces = [];
+      if (text !== '') sent.push({ text, log: io.sendLogLater({ type: 'say', text, lang: LANG }) });
+    };
     const out: Out = {
-      say(text) {
+      say(text, final) {
         pieces.push(text);
         if (c.stream) io.send({ type: 'say_delta', text });
+        if (final) flush();
       },
       // The end is read from the state the turn returns (ConverseState.ended).
       end() {},
+      scrubbed(s) {
+        scrub = s;
+      },
     };
     io.lastActivityMs = deps.now();
     try {
-      c.state = await converseTurn(c.state, input, turnDeps(id, c, (r) => (record = r)), out);
+      c.state = await converseTurn(c.state, input, turnDeps(id, c), out);
     } catch (err) {
       log(`chat ${id}: turn failed: ${describeError(err)}`);
+      // What was sent before the failure is kept in the frame log by its length alone, never whole.
+      for (const s of sent) s.log(() => `<${s.text.length} chars>`);
       io.send({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
       io.record('log', { turnFailed: describeError(err) });
       return false;
     }
-    if (pieces.length > 0) {
-      // The frame log keeps the line as the trace does: each value the records mask, masked. A turn with no
-      // trace record of what it said (none is expected) keeps the line by its length alone, never whole.
-      const text = joined(pieces);
-      const recorded = (record as ConverseTraceRecord | null)?.replies;
-      const shown = recorded !== undefined && recorded.length > 0 ? joined(recorded) : `<${text.length} chars>`;
-      io.send({ type: 'say', text, lang: LANG }, () => shown);
-    }
+    // Pieces with no final piece after them (a correction that failed after saying part of itself) go as a last `say`.
+    flush();
+    // The frame log keeps each line as the trace does: each value the records mask, masked. A turn that gave
+    // no masking (none is expected) keeps each line by its length alone, never whole.
+    const masked = scrub as ((text: string) => string) | null;
+    for (const s of sent) s.log(masked ?? (() => `<${s.text.length} chars>`));
     const ended = c.state.ended;
     if (ended === 'closing' || ended === 'handoff') {
       if (ended === 'handoff' && app.business.transfer !== undefined) io.send({ type: 'transfer', reason: 'handoff' });
