@@ -55,6 +55,8 @@ export interface ConverseChatDeps {
   audit: AuditSink;
   /** The app's text sender (TEXT_FROM), or null. */
   texts: TurnTexts | null;
+  /** The app's settings by name, as its actions' code reads them (ctx.env): on a host its own file over the server's. */
+  env?: (name: string) => string | undefined;
   now: () => number;
   log: (line: string) => void;
   /** A chat's trace and frame log, by its id. */
@@ -127,6 +129,7 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       c.trace.write(r);
     },
     jevTimeoutMs: deps.jevTimeoutMs,
+    ...(deps.env !== undefined ? { env: deps.env } : {}),
   });
 
   /** One turn: its words sent, the chat ended where the turn ended it, else saved. Whether it ended. */

@@ -40,8 +40,13 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
 export const MAX_ROUNDS = 4;
 
-/** An action's code: it does the work with the checked params; the gate has already decided it may. */
-export type ToolImpl = (params: Record<string, string>, ctx: { key: string; texts: Texts | null; caller: ConverseState['caller'] }) => Promise<unknown>;
+/**
+ * An action's code: it does the work with the checked params; the gate has already decided it may. `key` is
+ * the write's idempotency key, `texts` the app's sender (null where the server has none), `caller` what is
+ * known of the caller (the number whole), and `env` one of the app's settings by name, read at call time (on
+ * a host its own settings file over the server's): the app's code reads its settings here, never process.env.
+ */
+export type ToolImpl = (params: Record<string, string>, ctx: { key: string; texts: Texts | null; caller: ConverseState['caller']; env: (name: string) => string | undefined }) => Promise<unknown>;
 
 export interface ConverseDeps {
   business: AgentBusiness;
@@ -55,6 +60,8 @@ export interface ConverseDeps {
   trace: (r: ConverseTraceRecord) => void;
   /** How long the decision model may take to read the caller's answer to a read-back. */
   jevTimeoutMs: number;
+  /** The app's settings by name, as its actions' code reads them (ToolImpl's ctx.env); absent, none is set. */
+  env?: (name: string) => string | undefined;
 }
 
 /**
@@ -211,7 +218,7 @@ async function runTool(t: Turn, name: string, params: Record<string, string>): P
   const impl = Object.hasOwn(t.deps.tools, name) ? t.deps.tools[name] : undefined;
   if (impl === undefined) return { ok: false, error: `the action "${name}" has no code` };
   try {
-    return { ok: true, result: await impl(params, { key: idempotencyKey(t.st.callId, name, params), texts: t.deps.texts, caller: t.st.caller }) };
+    return { ok: true, result: await impl(params, { key: idempotencyKey(t.st.callId, name, params), texts: t.deps.texts, caller: t.st.caller, env: t.deps.env ?? (() => undefined) }) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

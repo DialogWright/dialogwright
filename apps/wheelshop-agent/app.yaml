@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
+# Example Wheel Works on the converse runtime (docs/designs/2026-11-11-agent-runtime.md): a model holds the
+# conversation from agent.yaml; the runtime reads every change back, runs it on the caller's yes and puts
+# every action through the gate. Its code is src/app.ts. Invented throughout.
+id: wheelshop-agent
+mode: converse
+chat:
+  # For testing only (the simulated callers' dealership persona, recognised by the number it names): a chat
+  # names the number it calls from in its start's context. A real client's public chat keeps this false,
+  # or any page could claim a dealership's account (DESIGN.md, "The chat and the number calling").
+  callerNumberFromContext: true

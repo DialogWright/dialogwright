@@ -109,3 +109,9 @@ export { stubRenderer } from '../render/harness';
 // JSON before every turn, against the same run as it is (sessionRoundTrip.ts).
 export { sessionRoundTrip, jsonTrip } from './sessionRoundTrip';
 export type { RoundTripMismatch, RoundTripReport } from './sessionRoundTrip';
+// A converse app's tests (src/converse): one conversation with the app's agent.yaml, code and gate, its model
+// a script and its decision model the test's, run as the server runs it (converseCall.ts).
+export { converseTestCall } from './converseCall';
+export type { ConverseTestCall, ConverseTestCallOptions } from './converseCall';
+export { fakeModel as fakeConverseModel } from '../converse/model/fake';
+export type { ConverseModel, ModelEvent as ConverseModelEvent } from '../converse/model/types';

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { E164 } from '../core/numberLocales';
 
 /**
  * A simulated caller's persona: what they want, what is true of them, how they speak, and what the call
@@ -17,6 +18,7 @@ export const personaSchema = z.strictObject({
   expects: z.enum(['request', 'booking', 'callback', 'answer', 'none']).describe('What the call should come to: a request or booking taken, a callback note left, a question answered, or nothing done.'),
   adversarial: text.optional().describe('What the caller tries that they should not get (a free job, the line ignoring its instructions...).'),
   asksIfHuman: z.boolean().optional().describe('The caller asks, at some point, whether they are talking to a person.'),
+  callingFrom: z.string().regex(E164, { error: 'must be an E.164 number like +15555550142' }).optional().describe('The number the caller calls from (E.164): the chat names it in its start\'s context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none.'),
 });
 export type Persona = z.infer<typeof personaSchema>;
 

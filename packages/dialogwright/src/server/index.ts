@@ -975,6 +975,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const chatOf = (a: (typeof hosted)[number]): ChatEndpoint => (isConverseApp(a.app) ? converseChatOf(a as AppRun<ConverseApp>) : scriptedChatOf(a as AppRun<App>));
   const converseChatOf = (a: AppRun<ConverseApp>): ChatEndpoint => chatTransport(transportOf(a), converseChatRuntime({
     app: a.app, model: converseModels.get(a.id)!, jev: clientOf(a.id), jevTimeoutMs: thresholds.JEV_TIMEOUT_MS, audit: auditOf(a.id), texts: textsOf(a.id), now, log,
+    env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined),
     resources: (id) => {
       const startedAtMs = now();
       // Its turns are its records (turnIndex), held here from its start: no session for the trace's names to read.

@@ -1,0 +1,25 @@
+{
+  "name": "@dialogwright/example-wheelshop-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Example Wheel Works on the converse runtime: a fictional wheel repair shop's line, a model holding the conversation from agent.yaml, every change read back, confirmed and gated.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "serve": "tsx src/serve.ts"
+  },
+  "dependencies": {
+    "dialogwright": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

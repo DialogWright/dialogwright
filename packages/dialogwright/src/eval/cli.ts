@@ -241,7 +241,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     rmSync(work, { recursive: true, force: true });
   }
   const limits = [
-    'The chat carries no caller number, so a persona who would be recognized by the number they call from can only name who they are; a booking that needs the number recognized is not reachable here.',
+    'A chat carries a caller number only where the persona names one (callingFrom) and the app takes it from the chat\'s context (app.yaml chat.callerNumberFromContext); any other persona who would be recognized by the number they call from can only name who they are.',
     'A reply is every line the server says until 2 s pass with none (the chat wire has no end-of-turn marker), so a filler followed by an answer slower than that is split across two caller turns.',
     'The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.',
     ...(stoppedByBudget ? [`The run stopped when the budget was spent, after ${records.length} of ${plan.length} planned calls.`] : []),

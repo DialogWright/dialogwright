@@ -109,7 +109,8 @@ export async function driveChat(o: {
       socket.once('open', () => resolve());
       socket.once('error', (e) => reject(e));
     });
-    socket.send(JSON.stringify({ type: 'start', v: 1 }));
+    // The number the persona calls from, where it has one: the start's context, as a test page's would name it.
+    socket.send(JSON.stringify({ type: 'start', v: 1, ...(o.persona.callingFrom !== undefined ? { context: { callerNumber: o.persona.callingFrom } } : {}) }));
     const ready = await next(o.timeoutMs);
     if (ready === null || ready.type !== 'ready') throw new Error(`the chat did not start (${ready?.type ?? 'silence'})`);
     call.callId = ready.session;

@@ -1,0 +1,175 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/agent.schema.json
+# Example Wheel Works on the converse runtime: everything about the shop the agent may say and do. A model
+# holds the conversation from this file; the runtime reads every change back in the shop's fixed words,
+# runs it only on the caller's yes, and puts every action through the gate. Invented throughout: no real
+# business, place, person or number.
+#
+# The demo is a real, working example, so it needs answers only the owner can give. Where it needs one,
+# the file makes a reasonable assumption, marked "assumption: the owner corrects these". When the owner
+# hears something that isn't how the shop works, the fix is an edit to this file (DESIGN.md, "The demo's
+# assumptions"). After an edit: pnpm check, then the app's tests.
+business:
+  name: Example Wheel Works
+  about: >-
+    A wheel repair and refinishing shop: curb rash, scratches and scuffs, face damage, diamond cut
+    wheels and worn or faded finishes. Dealerships send their trade-ins; anyone else can bring a car in.
+  where: Inside the detailing shop at 400 Commerce Drive, Rivergate.
+  hours: Monday to Friday, with two drop-off windows a day. # assumption: the owner corrects these
+  timezone: America/New_York
+
+# The ballpark prices are assumptions for the owner to correct; the caveat below is said with any of them.
+services: # assumption: the owner corrects these
+  - name: curb rash repair
+    about: Scrapes and gouges on the rim's edge from a curb.
+    price: { from: 125, to: 175, per: wheel }
+  - name: diamond cut wheel refinishing
+    about: >-
+      For wheels whose face is bright bare metal with fine machined lines, often two-tone. Cut on a
+      lathe in the shop, with the tyre left on.
+    price: { from: 175, to: 250, per: wheel }
+  - name: powder coat
+    about: A new painted finish on the whole wheel, in a colour the customer picks.
+    price: { from: 150, to: 200, per: wheel }
+  - name: scratch and scuff repair
+    about: Light marks on the face or the rim.
+  - name: face damage repair
+    about: Deeper damage on the face of the wheel.
+  - name: refinishing worn or faded finishes
+    about: A tired finish brought back.
+priceCaveat:
+  en: "That's a ballpark; the shop confirms the price once it sees the damage, so send us a photo and we'll firm it up."
+notOffered: # assumption: the owner corrects these
+  - cracked wheels
+  - straightening bent wheels
+  - tyres, paint, headlights or anything that isn't a wheel
+  - mobile service (the work is done at the shop)
+facts:
+  - Most curb rash and scratches can be fixed.
+  - We see this kind of damage every day.
+  - Diamond cut wheels are what our lathe is for.
+  - A diamond cut face is bright bare machined metal with fine lines; a two-tone face, machined metal with painted sections between, is diamond cut too; a face painted all over is not.
+  - Curb rash on a diamond cut wheel is usually a same-day fix. # assumption: the owner corrects these
+  - How long any other job takes depends on the damage; the shop says once it has seen it. # assumption: the owner corrects these
+  - "Cars are dropped off in a window: the morning window, drop off by 8, ready by about noon; or the afternoon window, drop off by noon, ready by about 5." # assumption: the owner corrects these
+  - Dealerships on Commerce Drive send their trade-ins here.
+  - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window. # assumption: the owner corrects these
+  - Dealership work is billed at the rates agreed with the shop. # assumption: the owner corrects these
+  - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
+  - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them.
+  - There is no live transfer; a caller who wants to speak with someone can leave a callback note, and someone from the shop calls back as soon as they can.
+persona:
+  style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
+lines:
+  greeting: { en: "Example Wheel Works, how can we help?" }
+  closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
+  recovery: { en: "Sorry, could you say that again?" }
+  handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
+  done: { en: "That's done." }
+model:
+  default: inception:mercury-3 # until the model comparison (plan 1, Task 10) decides
+  # Mercury 3 is sent no reasoning effort yet, so it reasons by default and its reasoning counts toward this
+  # limit: at 400 (the default) a reply was cut short or empty (DESIGN.md, Findings 1). Room for both until the
+  # runtime sends an effort.
+  maxTokens: 1500
+sources:
+  calendar:
+    kind: fake # the shop's stand-in calendar (src/shop.ts), from these days and windows
+    days: [monday, tuesday, wednesday, thursday, friday] # assumption: the owner corrects these
+    windows: # assumption: the owner corrects these (each holds up to three cars)
+      - { name: morning, label: "morning, by 8", capacity: 3 }
+      - { name: afternoon, label: "afternoon, by noon", capacity: 3 }
+  accounts: # regular dealership accounts, recognised by the number they call from
+    - name: Rivergate Motors
+      # env.DEALER_TEST_LINE: a tester's own phone, set privately in the app's settings (never this file), so
+      # the dealer flow can be tried from a real phone. Unset, it is left out.
+      numbers: ["+15555550142", "+15555550143", env.DEALER_TEST_LINE]
+    - name: Northside Auto Sales
+      numbers: ["+15555550150"]
+    - name: Lakeview Imports
+      numbers: ["+15555550161"]
+actions:
+  check_availability:
+    about: The drop-off windows with room on a day, each with how many cars it can still take. The only source of what is free.
+    kind: lookup
+    params:
+      day: { type: date, about: The day the car would be dropped off. }
+    audit: { day: keep }
+  send_request:
+    about: >-
+      Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a
+      dealership account. Ask whether we may text them at their number before calling it. Call it as soon as
+      you have every detail: the line then reads the request back to the customer and sends it on their yes,
+      so it is not in until this is called and confirmed.
+    kind: change
+    params:
+      name: { type: text, about: The customer's name. }
+      vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
+      wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
+      damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
+      finish: { type: choice, options: [diamond cut, painted all over, not sure], about: "The wheel's face as the customer describes it: diamond cut (bright bare machined metal with fine lines, two-tone included), painted all over, or not sure." }
+      slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
+      callbackNumber: { type: phone, about: The best number to reach them on. }
+      textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
+    readBack:
+      en: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on the number {callbackNumber}, and texts there are OK: {textOk}. Is that right?"
+    then: [send_photo_request, notify_shop_request]
+    audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep }
+  send_photo_request:
+    about: Runs by itself after send_request, only with the customer's yes to texts; never call it yourself.
+    kind: change
+    params:
+      callbackNumber: { type: phone, about: The customer's number. }
+      textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to be texted there. }
+    readBack:
+      en: "We'll text the number {callbackNumber} asking for a photo of the damage. Is that right?"
+    rules:
+      - oneOf: { field: textOk, values: ["yes"], reason: no-consent }
+    audit: { callbackNumber: last4, textOk: keep }
+  notify_shop_request:
+    about: Runs by itself after send_request, texting the shop a summary; never call it yourself.
+    kind: change
+    params:
+      name: { type: text, about: The customer's name. }
+      vehicle: { type: text, about: The car. }
+      wheels: { type: choice, options: [one, two, three, four], about: How many wheels. }
+      damage: { type: text, about: The damage. }
+      finish: { type: choice, options: [diamond cut, painted all over, not sure], about: The wheel's face. }
+      slot: { type: slot, from: check_availability, about: The drop-off window. }
+      callbackNumber: { type: phone, about: The customer's number. }
+      textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to texts. }
+    readBack:
+      en: "We'll text the shop a summary of the request from {name}. Is that right?"
+    audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep }
+  book_dealer:
+    about: >-
+      Book a dealership account's cars straight into a drop-off window, only for the account the caller's
+      number is on file for; anyone else sends a request instead.
+    kind: change
+    params:
+      account: { type: choice, options: [Rivergate Motors, Northside Auto Sales, Lakeview Imports], about: The account the caller's number is on file for. }
+      cars: { type: choice, options: [one, two, three, four, five, six], about: How many cars they are dropping off. }
+      slot: { type: slot, from: check_availability, about: "The drop-off window they picked from check_availability's results, with room for all the cars." }
+    readBack:
+      en: "So that's {account}, {cars} in all, dropping off {slot}. Shall we book it?"
+    then: [notify_shop_booking]
+    audit: { account: keep, cars: keep, slot: keep }
+  notify_shop_booking:
+    about: Runs by itself after book_dealer, texting the shop a summary; never call it yourself.
+    kind: change
+    params:
+      account: { type: choice, options: [Rivergate Motors, Northside Auto Sales, Lakeview Imports], about: The account. }
+      cars: { type: choice, options: [one, two, three, four, five, six], about: How many cars. }
+      slot: { type: slot, from: check_availability, about: The drop-off window. }
+    readBack:
+      en: "We'll text the shop a summary of the booking for {account}. Is that right?"
+    audit: { account: keep, cars: keep, slot: keep }
+  leave_callback:
+    about: Leave the shop a note to call the customer back, for someone who wants to speak with a person.
+    kind: change
+    params:
+      name: { type: text, about: The customer's name. }
+      callbackNumber: { type: phone, about: The best number to call them back on. }
+      about: { type: text, about: "What they want to talk about, as a short lowercase phrase the read-back says after the word about (for example: the wheel they left last week)." }
+    readBack:
+      en: "We'll have someone from the shop call {name} back on the number {callbackNumber} about {about}. Is that right?"
+    audit: { name: mask, callbackNumber: last4, about: keep }

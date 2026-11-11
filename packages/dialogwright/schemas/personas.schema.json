@@ -53,6 +53,11 @@
           "asksIfHuman": {
             "description": "The caller asks, at some point, whether they are talking to a person.",
             "type": "boolean"
+          },
+          "callingFrom": {
+            "description": "The number the caller calls from (E.164): the chat names it in its start's context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none.",
+            "type": "string",
+            "pattern": "^\\+\\d{8,15}$"
           }
         },
         "required": [

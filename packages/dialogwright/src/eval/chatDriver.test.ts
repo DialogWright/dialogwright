@@ -57,3 +57,34 @@ describe('driveChat', () => {
     expect(call.firstWordMs).toHaveLength(1);
   });
 });
+
+describe('driveChat: the number a persona calls from', () => {
+  /** A chat server that keeps each start it is sent, answers ready and a greeting, then ends. */
+  async function recorder(): Promise<{ url: string; starts: Record<string, unknown>[]; close: () => Promise<void> }> {
+    const { WebSocketServer } = await import('ws');
+    const starts: Record<string, unknown>[] = [];
+    const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
+    wss.on('connection', (ws) => {
+      ws.once('message', (d) => {
+        starts.push(JSON.parse(d.toString()) as Record<string, unknown>);
+        ws.send(JSON.stringify({ type: 'ready', session: 's1' }));
+        ws.send(JSON.stringify({ type: 'say', text: 'Hello.' }));
+        ws.send(JSON.stringify({ type: 'end' }));
+      });
+    });
+    const port = (wss.address() as { port: number }).port;
+    return { url: `ws://127.0.0.1:${port}/chat`, starts, close: () => new Promise((resolve) => wss.close(() => resolve())) };
+  }
+
+  it('names it in the start\'s context (callerNumber) where the persona has one, and names none otherwise', async () => {
+    const r = await recorder();
+    try {
+      await driveChat({ url: r.url, origin: ORIGIN, persona: { ...persona, callingFrom: '+15555550142' }, maxTurns: 1, timeoutMs: 2000, settleMs: 50, caller: async () => null });
+      await driveChat({ url: r.url, origin: ORIGIN, persona, maxTurns: 1, timeoutMs: 2000, settleMs: 50, caller: async () => null });
+    } finally {
+      await r.close();
+    }
+    expect(r.starts).toEqual([{ type: 'start', v: 1, context: { callerNumber: '+15555550142' } }, { type: 'start', v: 1 }]);
+  });
+});

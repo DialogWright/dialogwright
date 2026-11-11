@@ -455,6 +455,25 @@ describe('converseTurn: the caller\'s number', () => {
   });
 });
 
+describe('converseTurn: the app\'s settings', () => {
+  it('gives an action\'s code the app\'s settings as ctx.env, and none where the deps name none', async () => {
+    const seen: (string | undefined)[] = [];
+    const tools = { leave_note: async (_p: Record<string, string>, ctx: { env: (name: string) => string | undefined }) => (seen.push(ctx.env('NOTE_DESK')), 'left') };
+    const script = (): ModelEvent[][] => [[call('c1', 'leave_note', { note: 'the lamp' }), done('tool')], [text('Done.'), done()]];
+    const h = harness(script(), { tools });
+    h.deps.env = (name) => (name === 'NOTE_DESK' ? 'desk-2' : undefined);
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'leave a note about the lamp' });
+    await h.run(s, { kind: 'text', text: 'yes' });
+    const bare = harness(script(), { tools });
+    delete bare.deps.env;
+    s = await bare.run(fresh(), { kind: 'start' });
+    s = await bare.run(s, { kind: 'text', text: 'leave a note about the lamp' });
+    await bare.run(s, { kind: 'text', text: 'yes' });
+    expect(seen).toEqual(['desk-2', undefined]);
+  });
+});
+
 describe('converseTurn: ending the call', () => {
   it('says the closing line once when the model calls end_call, records it and ends', async () => {
     const h = harness([[text('Glad to help.'), call('c1', 'end_call', {}), done('tool')]]);

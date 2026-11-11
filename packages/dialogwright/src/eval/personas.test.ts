@@ -42,4 +42,10 @@ describe('loadPersonas', () => {
     const one = `    goal: g\n    truth: { a: b }\n    manner: m\n    expects: none\n`;
     expect(() => loadPersonas(write(`personas:\n  - id: same\n${one}  - id: same\n${one}`))).toThrow(/persona same: id is used twice/);
   });
+
+  it('takes the number a persona calls from, E.164 only', () => {
+    const one = (from: string): string => `personas:\n  - id: regular\n    goal: Book in.\n    truth: { name: Pat Example }\n    manner: Quick.\n    expects: booking\n    callingFrom: "${from}"\n`;
+    expect(loadPersonas(write(one('+15555550142')))[0]!.callingFrom).toBe('+15555550142');
+    expect(() => loadPersonas(write(one('555 555 0142')))).toThrow(/persona regular: callingFrom/);
+  });
 });

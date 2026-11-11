@@ -235,6 +235,28 @@ describe('the web chat on the converse runtime', () => {
     expect(await res.text()).toBe('hello from the app');
   });
 
+  it('gives a converse app\'s actions its settings (ctx.env), the app\'s own over the server\'s', async () => {
+    const dir = folder();
+    const read: (string | undefined)[] = [];
+    const app = defineConverseApp(CONVERSE_FIXTURE_DIR, {
+      tools: {
+        availability: async () => [{ id: SLOT, label: '9 to 12' }],
+        book: async (_p, ctx) => (read.push(ctx.env('VISIT_DESK'), ctx.env('NOT_SET')), 'booked'),
+      },
+    });
+    const env = settings(dir, { VISIT_DESK: 'desk-2' });
+    const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env, settings: { ...env, VISIT_DESK: 'desk-own' }, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env });
+    const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: yesJev(), log: () => {}, env, apps, converseModel: () => fakeModel(BOOKING) });
+    servers.push(server);
+    const c = await Chat.open(`http://127.0.0.1:${server.port}`, sockets);
+    c.send({ type: 'start', v: 1, context: { callerNumber: CALLER } });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    await c.say(`Is there a visit free on ${DAY}?`);
+    await c.say('The morning please, for Sam Example, on this number.');
+    await c.say('yes');
+    expect(read).toEqual(['desk-own', undefined]);
+  });
+
   it('ends a chat the person ends: the read-back waiting is dropped, and the end recorded', async () => {
     const dir = folder();
     const { app, booked } = converseFixture();
