@@ -67,10 +67,12 @@ interface Call {
   last: TurnRun;
 }
 
-async function call(script: Scripted, steps: string[], opts: { chat?: boolean; noEarly?: boolean; retry?: false } = {}): Promise<Call> {
+async function call(script: Scripted, steps: string[], opts: { chat?: boolean; noEarly?: boolean; retry?: false; jevDelayMs?: number } = {}): Promise<Call> {
   const early: string[][] = [];
+  const stub = new HeuristicStubClient({ todayIso: TODAY, app });
+  const jev = opts.jevDelayMs === undefined ? stub : { ask: async (req: Parameters<typeof stub.ask>[0]) => (await new Promise((r) => setTimeout(r, opts.jevDelayMs)), stub.ask(req)) };
   const runOpts = {
-    client: new HeuristicStubClient({ todayIso: TODAY, app }),
+    client: jev,
     thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier },
     agent: { client: slowAgent(script), timeoutMs: { voice: 300, chat: 300 }, ...(opts.retry === false ? { retry: false } : {}) },
     ...(opts.noEarly === true ? {} : { early: (lines: readonly Action[]) => (early.push(lines.map((l) => JSON.stringify(l))), true) }),
@@ -94,6 +96,13 @@ const lineTexts = (c: Call): string => JSON.stringify(c.early);
 describe('a line while the agent model is slow on a call (business.yaml waiting)', () => {
   it('an answer in time says nothing meanwhile, and waits no differently', async () => {
     const c = await call(nameAfter(0), [HOLD, 'Avery Lane']);
+    expect(c.early).toEqual([]);
+    expect(c.last.record.agent).toMatchObject({ use: 'used' });
+    expect(c.last.record.agent!.filler).toBeUndefined();
+  });
+
+  it('an answer in time, the decision model slower: the model was not slow, nothing said', async () => {
+    const c = await call(nameAfter(0), [HOLD, 'Avery Lane'], { jevDelayMs: 250 });
     expect(c.early).toEqual([]);
     expect(c.last.record.agent).toMatchObject({ use: 'used' });
     expect(c.last.record.agent!.filler).toBeUndefined();

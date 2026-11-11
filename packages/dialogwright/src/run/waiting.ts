@@ -128,6 +128,13 @@ function showWaiting(session: Session, event: SessionEvent, provisional: TurnRes
  */
 export interface AgentFiller {
   stop(): void;
+  /**
+   * The model's answer is in, and the turn waits on something else (the decision model, a tool): no line comes
+   * due meanwhile. `resume` arms it again for an asking of the model the turn waits on (asked again, or shown a
+   * tool's result), due at once where `afterMs` has passed. Neither changes a line already said: one a turn at most.
+   */
+  pause(): void;
+  resume(): void;
   /** The line due, its index among the lines, when (ms from the model first asked), and whether the channel said it; null where none came due. */
   record(): { promptId: string; index: number; atMs: number; said: boolean } | null;
 }
@@ -152,12 +159,26 @@ export function agentFiller(session: Session, waiting: { afterMs: number; lines:
     }
     said = { promptId: lineId, index, atMs: Math.round(performance.now() - startedAt), said: ok };
   };
-  const timer = setTimeout(due, Math.max(0, waiting.afterMs - (performance.now() - startedAt)));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (): void => {
+    if (stopped || said !== null || timer !== undefined) return;
+    timer = setTimeout(() => {
+      timer = undefined;
+      due();
+    }, Math.max(0, waiting.afterMs - (performance.now() - startedAt)));
+  };
+  const disarm = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  arm();
   return {
     stop: () => {
       stopped = true;
-      clearTimeout(timer);
+      disarm();
     },
+    pause: disarm,
+    resume: arm,
     record: () => said,
   };
 }

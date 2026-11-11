@@ -620,7 +620,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const agentBudgetMs = opts.agent != null ? Math.max(agentBudget(opts.agent, session.caps.speech), agentWait?.upToMs ?? 0) : 0;
   const filler = agentWait !== null ? agentFiller(session, agentWait, { ...(opts.early !== undefined ? { early: opts.early } : {}), render: opts.render ?? null }, agentAskedAt) : null;
   try {
-    const agentAsked: Promise<AgentResult | null> = agentCtx === null ? Promise.resolve(null) : askAgent(opts.agent ?? null, agentCtx, session.caps.speech, agentBudgetMs);
+    // Its answer in, the line waits: a turn still waiting on the decision model or a tool is not the model being slow.
+  const agentAsked: Promise<AgentResult | null> = agentCtx === null ? Promise.resolve(null) : askAgent(opts.agent ?? null, agentCtx, session.caps.speech, agentBudgetMs).then((r) => (filler?.pause(), r));
     const askJev = async (): Promise<void> => {
       if (p.needsModel && words !== null) {
         try {
@@ -697,7 +698,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     // as it first stood: the fallback.
     let retry: AgentResult | null = null;
     if (agentCtx !== null && opts.agent != null && agentResult !== null && resolved.agent?.use === 'failed' && resolved.agent.fallback === 'invalid') {
-      retry = await retryAgent(opts.agent, agentCtx, agentBudgetMs, agentAskedAt, agentResult);
+      filler?.resume();
+    retry = await retryAgent(opts.agent, agentCtx, agentBudgetMs, agentAskedAt, agentResult);
+    filler?.pause();
       if (retry !== null && retry.ok) {
         turnTc = { ...turnTc, agent: retry };
         const next = await resolveWaiting(session, event, turnAnswers, turnTc, error, screen, channel, toolTimeout, first.memo);
@@ -716,7 +719,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       const seen = resolved.agentAgain.seen;
       // A choice held to the result (`freeFrom`) is offered with its free options only, for the day the turn now holds (call 54).
       const narrowed: AgentContext = { ...agentCtx, fields: narrowedFields(appOf(session), resolved.session, agentCtx.fields, seen) };
-      const asked = await askAgain(opts.agent, narrowed, seen, session.caps.speech, agentAskedAt, agentBudgetMs);
+      filler?.resume();
+    const asked = await askAgain(opts.agent, narrowed, seen, session.caps.speech, agentAskedAt, agentBudgetMs);
+    filler?.pause();
       again = { result: asked.result, tools: [...new Set(seen.map((x) => x.tool))] };
       if (asked.result.ok) {
         // The first answer's accepted values the second leaves out are kept (call 39), a free-from field's only while the result lists it.
