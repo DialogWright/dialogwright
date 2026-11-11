@@ -39,6 +39,8 @@ export const END_CALL = 'end_call';
 
 /** Param types the runtime checks a value by. */
 export const PARAM_TYPES = ['date', 'slot', 'choice', 'number', 'text', 'phone'] as const;
+/** The most characters a text param may have where it sets no `max` of its own. */
+export const TEXT_MAX = 120;
 /** How a param may be recorded (the same words as policy.yaml's audit). */
 export const AUDIT_MASKS = ['last4', 'mask', 'length', 'secret', 'keep'] as const;
 /** The providers a model is named through. */
@@ -59,6 +61,7 @@ const param = z
     options: z.array(text()).optional().describe('For a choice: the values it may take.'),
     from: identifier().optional().describe('For a slot: the lookup action whose results the value must come from.'),
     optional: z.boolean().optional().describe('The model may leave the value out. Default: the value is required.'),
+    max: z.number().int().positive().optional().describe(`For a text: the most characters it may have (it is said in the read-back as it was given). Default: ${TEXT_MAX}.`),
   })
   .describe('One parameter of an action.');
 
@@ -119,6 +122,9 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   }
   const actions = isMap(root.actions) ? root.actions : {};
   const kindOf = (name: string): unknown => (isMap(actions[name]) ? (actions[name] as Record<string, unknown>).kind : undefined);
+  /** The actions another names in its `then`: follow-ons, never offered to the model and never read back themselves. */
+  const followed = new Set<string>();
+  for (const [name, a] of Object.entries(actions)) if (isMap(a) && Array.isArray(a.then)) for (const t of a.then) if (typeof t === 'string' && t !== name) followed.add(t);
   for (const [name, a] of Object.entries(actions)) {
     if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which says the closing line and ends the call`);
     if (!isMap(a)) continue;
@@ -130,9 +136,18 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
       issue(ctx, ['actions', name, 'readBack'], `the lookup "${name}" has a read-back`, 'delete readBack: only a change is read back');
     }
     if (isMap(a.readBack) && typeof a.readBack.en === 'string') {
+      const named = new Set<string>();
       for (const m of a.readBack.en.matchAll(/\{([^{}]*)\}/g)) {
         const key = m[1]!;
+        named.add(key);
         if (!Object.hasOwn(params, key)) issue(ctx, ['actions', name, 'readBack', 'en'], `the placeholder {${key}} is no param of "${name}"`, `write one of its params (${Object.keys(params).join(', ') || 'it has none'}) in the braces, or add the param`);
+      }
+      // The caller's yes confirms every value the change runs with, so its read-back says each one the change must have.
+      // A follow-on's read-back is never said (it runs on its parent's yes, with values its parent read back), so it is not held to this.
+      if (a.kind === 'change' && !followed.has(name)) {
+        for (const [pname, p] of Object.entries(params)) {
+          if (isMap(p) && p.optional !== true && !named.has(pname)) issue(ctx, ['actions', name, 'readBack', 'en'], `the read-back of "${name}" does not say {${pname}}, so the caller's yes would confirm it unheard`, `write {${pname}} in the read-back, or mark it optional`);
+        }
       }
     }
     if (Array.isArray(a.then)) {
@@ -152,6 +167,13 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
             const theirs = typeOf((follow as Record<string, Record<string, unknown>>).params![p]);
             const ours = typeOf(params[p]);
             if (theirs !== ours) issue(ctx, ['actions', t, 'params', p], `"${p}" is a ${String(theirs)} in the follow-on "${t}" and a ${String(ours)} in "${name}", whose value it takes`, `make "${p}" a ${String(ours)} in "${t}", as in "${name}"`);
+            else if (ours === 'text') {
+              // The follow-on is checked again with the parent's value: a shorter bound would refuse what the caller said yes to.
+              const maxOf = (m: unknown): number => (isMap(m) && typeof m.max === 'number' ? m.max : TEXT_MAX);
+              const theirMax = maxOf((follow as Record<string, Record<string, unknown>>).params![p]);
+              const ourMax = maxOf(params[p]);
+              if (theirMax < ourMax) issue(ctx, ['actions', t, 'params', p], `"${p}" may have ${ourMax} characters in "${name}" and only ${theirMax} in the follow-on "${t}", which takes its value`, `give "${p}" max: ${ourMax} in "${t}", as in "${name}"`);
+            }
           }
         }
       });
@@ -164,6 +186,9 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
         else if (kindOf(p.from) !== 'lookup') issue(ctx, ['actions', name, 'params', pname, 'from'], `"${p.from}" is not a lookup`, 'a slot must come from a lookup: set that action\'s kind to lookup, or name another');
       } else if (p.from !== undefined) {
         issue(ctx, ['actions', name, 'params', pname, 'from'], `"from" belongs to a slot param, and "${pname}" is a ${String(p.type)}`, 'delete "from", or make the param a slot');
+      }
+      if (p.max !== undefined && p.type !== 'text') {
+        issue(ctx, ['actions', name, 'params', pname, 'max'], `"max" belongs to a text param, and "${pname}" is a ${String(p.type)}`, 'delete "max", or make the param a text');
       }
       if (p.type === 'choice' && !(Array.isArray(p.options) && p.options.length > 0)) {
         issue(ctx, ['actions', name, 'params', pname], `the choice param "${pname}" has no options`, 'add options: [..], the values it may take');
@@ -214,6 +239,7 @@ export const agentBusinessSchema = z
         handoff: worded('The line said when the call goes to a person'),
         notConfirmed: worded('The line said when the caller did not confirm a read-back').optional(),
         done: worded('The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done').default({ en: "That's done." }),
+        stuck: worded('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
       })
       .describe('The lines said word for word.'),
     model: z

@@ -990,6 +990,17 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
   } catch (e) {
     out.push({ id: 'host', status: 'fail', message: `${e instanceof Error ? e.message : String(e)}: the server will not start`, fix: 'set the number in the server\'s settings file' });
   }
+  // A converse app takes no calls yet: on a host with a scripted app and a carrier, the start refuses a
+  // number (or the default) that would put a call through to one (server/index.ts), and so does this.
+  const converses = host.apps.filter((a) => loadAppFolder(a.dir).converse === true).map((a) => a.id);
+  if (converses.length > 0 && converses.length < host.apps.length && (serverConfigOf(env)?.voiceProviders.length ?? 0) > 0) {
+    for (const id of converses) {
+      const listed = host.numbers.filter((n) => n.app === id).map((n) => n.variable);
+      const why = id === host.defaultApp ? 'it is host.yaml\'s defaultApp, which takes every call to a number no app is listed for'
+        : listed.length > 0 ? `host.yaml lists ${listed.join(', ')} for it` : null;
+      if (why !== null) out.push({ id: 'host', status: 'fail', message: `app ${id} is a converse app, which takes no calls yet (its chat only), but ${why}: the server will not start`, fix: `make a scripted app the default and list no number for "${id}", or set VOICE_PROVIDERS=none` });
+    }
+  }
   const signIn = env.CHAT?.trim() === 'on' && env.CHAT_SIGNIN?.trim() === 'jwt';
   const audiences = new Map<string, string[]>();
   for (const app of host.apps) {
@@ -1007,7 +1018,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     out.push(...agentChecks(app.dir, read.env).map(tag));
     out.push(...textChecks(read.env).map(tag));
     const server = serverConfigOf(env);
-    // On a host the start itself refuses a number that would put a call through to a converse app.
+    // On a host a number that would put a call through to a converse app is the host's check (above), as the start refuses it.
     out.push(...converseChecks(app.dir, read.env, server === null ? null : { ...server, voiceProviders: [] }).map(tag));
     if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.

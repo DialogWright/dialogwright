@@ -77,6 +77,38 @@ describe('what is refused', () => {
     expect(p!.fix).toMatch(/day, window, item, details, phone/);
   });
 
+  it('a change whose read-back leaves out a required param, which the yes would confirm unheard', () => {
+    const [p, ...rest] = problemsOf(changed(' We will call the number {phone}.', ''));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.book.readBack.en' });
+    expect(p!.message).toMatch(/does not say \{phone\}/);
+    expect(p!.fix).toBe('write {phone} in the read-back, or mark it optional');
+  });
+
+  it('a read-back may leave out an optional param, and a follow-on\'s read-back, never said, is not held to it', () => {
+    expect(problemsOf(changed('phone: { type: phone, about:', 'phone: { type: phone, optional: true, about:').replace(' We will call the number {phone}.', ''))).toEqual([]);
+    expect(problemsOf(changed('en: "Tell the office about the {item}."', 'en: "Tell the office."'))).toEqual([]);
+    // Once it is no follow-on, its read-back is said, and so held to it.
+    const [p] = problemsOf(changed('then: [notify]', 'then: []').replace('en: "Tell the office about the {item}."', 'en: "Tell the office."'));
+    expect(p).toMatchObject({ path: 'actions.notify.readBack.en' });
+  });
+
+  it('max on a param that is not a text', () => {
+    const [p, ...rest] = problemsOf(changed('day: { type: date, about: The day of the visit. }', 'day: { type: date, max: 10, about: The day of the visit. }'));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.book.params.day.max' });
+  });
+
+  it('a follow-on whose text is bounded shorter than its parent\'s, which would refuse the value the caller said yes to', () => {
+    const note = '      item: { type: choice, options: [kettle, toaster, lamp], about: The item. }';
+    const shorter = changed(note, `${note}\n      details: { type: text, optional: true, max: 20, about: What is wrong. }`);
+    const [p, ...rest] = problemsOf(shorter);
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.notify.params.details' });
+    expect(p!.message).toBe('"details" may have 120 characters in "book" and only 20 in the follow-on "notify", which takes its value');
+    expect(problemsOf(shorter.replace('details: { type: text, optional: true, about:', 'details: { type: text, optional: true, max: 20, about:'))).toEqual([]);
+  });
+
   it('then naming an unknown action', () => {
     const [p] = problemsOf(changed('then: [notify]', 'then: [notifyy]'));
     expect(p).toMatchObject({ path: 'actions.book.then[0]' });

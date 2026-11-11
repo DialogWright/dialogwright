@@ -158,7 +158,10 @@ runtime gets plain frames.
   - the turn is asked once more if time allows;
   - otherwise the line says one short fixed recovery line from the business's information ("Sorry, could
     you say that again?") and the conversation goes on;
-  - the call is handed off only after a per-call failure budget the business sets, never on two in a row.
+  - the call is handed off only after a per-call failure budget the business sets, never on two in a row;
+  - a model still calling actions after the turn's last round fails the turn the same way, with the
+    business's stuck line ("Let me have someone follow up on that.") in place of the recovery line, or
+    the done line where an action the caller confirmed has just run.
 
 ### Business information (per business)
 
@@ -198,7 +201,8 @@ assumptions for the owner to correct.
 
 1. **The call.** The model calls a tool by name with arguments. The runtime checks the arguments by type: a
    date is a real date, a choice is one of its options, a time slot is one the calendar lookup returned on
-   this call, a phone number is a number.
+   this call, a phone number is a number, a text is one line within its bound (120 characters, or the
+   param's own `max`), since the read-back says it as given.
    - A failed check goes back to the model as the tool's result, with a reason it can act on.
    - The model then asks the caller or looks again.
 2. **The gate.** Every call then goes through the gate, which checks the business's rules and writes its
@@ -210,17 +214,21 @@ assumptions for the owner to correct.
 4. **Actions that change something** (book, send the request, text the caller, leave a callback note)
    need confirmation:
    - The runtime says the business's read-back frame, filled with **exactly** the call's arguments as each
-     type displays them.
+     type displays them. The frame names every required argument (`pnpm check` refuses one that leaves
+     one out), so the yes never confirms a value the caller did not hear.
    - The decision model (Jev) reads the caller's answer: yes, no, or neither.
    - **A yes** runs the tool, with an audit row tying the yes to the hash of exactly those arguments. The
      gate refuses a confirming action without that row.
    - **Anything else** goes back to the model as "the caller did not confirm; they said: '…'". The model
      handles the correction conversationally and calls the tool again with the new arguments, which
-     brings a fresh read-back. The runtime never runs a correction flow of its own.
+     brings a fresh read-back. The runtime never runs a correction flow of its own. An answer the decision
+     model could not read (it timed out or failed) runs nothing either, and the model is told the answer
+     could not be read, not that the caller said no.
    - **Interruption.** The read-back can be interrupted. A yes counts only if the read-back played to its
      end, or nearly (the builder sets "nearly" from the playback reports).
 5. **Limits.** After a number of refusals of the same action (set in the business's information), the
-   model is told to offer a person rather than keep trying.
+   model is told to offer a person rather than keep trying. A call held only because another read-back is
+   waiting for its answer (one confirmation at a time) is no refusal.
 
 **Claims.**
 - **Prices, services, hours and policies** may be stated only from the business's information, and a

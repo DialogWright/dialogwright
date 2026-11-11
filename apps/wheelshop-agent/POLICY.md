@@ -9,7 +9,7 @@
 - Every action is open to a caller nobody has proven (level 0): this app has no identity. The number a caller calls from may recognise a known account; it is never proof of who is speaking.
 - The rules of an action run in the order shown, and the first one that fails decides.
 - Every change is read back in the business's fixed words with exactly the values it will run with. The caller's answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate's `confirmed` rule, over all of the change's params, runs last). A lookup is never confirmed.
-- One confirmation at a time: a call made while a read-back waits for its answer is not run.
+- One confirmation at a time: a call made while a read-back waits for its answer is not run, and is no refusal of its action (it counts toward no limit below).
 - Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.
 - A follow-on action runs only after its parent ran on the caller's yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.
 - After 3 refusals of the same action on a call (`limits.refusalsPerAction`), the agent model is told to offer the caller a person rather than try again.
@@ -21,6 +21,7 @@
 - The caller's number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions' code (a phone param the model writes as `caller` is resolved by the runtime).
 - Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call's values were not valid for their types, and the words an action failed with, go to the agent model as written.
 - The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below). Only the audit records an action's result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.
+- The caller's own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.
 
 ## Actions
 
@@ -69,10 +70,10 @@ After the caller's yes it is followed by `send_photo_request` and `notify_shop_r
 
 | Param | Type | Recorded |
 | --- | --- | --- |
-| `name` | text | hidden (`•`) |
-| `vehicle` | text | as it is |
+| `name` | text (one line, at most 120 characters) | hidden (`•`) |
+| `vehicle` | text (one line, at most 120 characters) | as it is |
 | `wheels` | choice (one, two, three, four) | as it is |
-| `damage` | text | as it is |
+| `damage` | text (one line, at most 120 characters) | as it is |
 | `finish` | choice (diamond cut, painted, not sure) | as it is |
 | `slot` | slot from `check_availability` | as it is |
 | `callbackNumber` | phone | by its last four |
@@ -106,10 +107,10 @@ Rules, in the order they run:
 
 | Param | Type | Recorded |
 | --- | --- | --- |
-| `name` | text | hidden (`•`) |
-| `vehicle` | text | as it is |
+| `name` | text (one line, at most 120 characters) | hidden (`•`) |
+| `vehicle` | text (one line, at most 120 characters) | as it is |
 | `wheels` | choice (one, two, three, four) | as it is |
-| `damage` | text | as it is |
+| `damage` | text (one line, at most 120 characters) | as it is |
 | `finish` | choice (diamond cut, painted, not sure) | as it is |
 | `slot` | slot from `check_availability` | as it is |
 | `callbackNumber` | phone | by its last four |
@@ -131,7 +132,7 @@ After the caller's yes it is followed by `notify_shop_booking`, each through the
 | --- | --- | --- |
 | `account` | slot from `recognise_caller` | as it is |
 | `cars` | choice (one, two, three) | as it is |
-| `vehicles` | text | as it is |
+| `vehicles` | text (one line, at most 240 characters) | as it is |
 | `slot` | slot from `check_availability` | as it is |
 
 ### `notify_shop_booking`: a change
@@ -148,7 +149,7 @@ Rules, in the order they run:
 | --- | --- | --- |
 | `account` | slot from `recognise_caller` | as it is |
 | `cars` | choice (one, two, three) | as it is |
-| `vehicles` | text | as it is |
+| `vehicles` | text (one line, at most 240 characters) | as it is |
 | `slot` | slot from `check_availability` | as it is |
 
 ### `leave_callback`: a change
@@ -163,6 +164,6 @@ Rules, in the order they run:
 
 | Param | Type | Recorded |
 | --- | --- | --- |
-| `name` | text | hidden (`•`) |
+| `name` | text (one line, at most 120 characters) | hidden (`•`) |
 | `callbackNumber` | phone | by its last four |
-| `about` | text | as it is |
+| `about` | text (one line, at most 120 characters) | as it is |

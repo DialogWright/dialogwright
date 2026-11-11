@@ -67,6 +67,7 @@ lines:
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
   done: { en: "That's done." }
+  stuck: { en: "Let me get someone from the shop to follow up on that." }
 model:
   # The model comparison of 2026-11-11 (docs/designs/eval/2026-11-model-comparison.md) found no model that clears
   # the bars; Mercury, the fastest, stays until the maintainer decides.
@@ -158,7 +159,8 @@ actions:
     params:
       account: { type: slot, from: recognise_caller, about: The account recognise_caller returned for the number calling. }
       cars: { type: choice, options: [one, two, three], about: "How many cars they are dropping off: a window holds three at most, so more go in another window as a booking of their own." }
-      vehicles: { type: text, about: "The cars and which wheels need work, as the caller gives them (makes, models or stock numbers)." }
+      # Up to three cars, each with which wheels need work: longer than one car's description, so a bound of its own.
+      vehicles: { type: text, max: 240, about: "The cars and which wheels need work, as the caller gives them (makes, models or stock numbers)." }
       slot: { type: slot, from: check_availability, about: "The drop-off window they picked from check_availability's results, with room for all the cars." }
     readBack:
       en: "So that's {account}, {cars} in all: {vehicles}, dropping off {slot}. Shall we book it?"
@@ -170,7 +172,7 @@ actions:
     params:
       account: { type: slot, from: recognise_caller, about: The account. }
       cars: { type: choice, options: [one, two, three], about: How many cars. }
-      vehicles: { type: text, about: The cars and wheels. }
+      vehicles: { type: text, max: 240, about: The cars and wheels. }
       slot: { type: slot, from: check_availability, about: The drop-off window. }
     readBack:
       en: "We'll text the shop a summary of the booking for {account}. Is that right?"

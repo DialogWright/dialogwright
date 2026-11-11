@@ -16,8 +16,8 @@ const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'business', 'fixtu
 /** The fixture business, its read-back naming every param of the booking. */
 function business(): AgentBusiness {
   const text = readFileSync(FIXTURE, 'utf8').replace(
-    'en: "A visit on {day}, {window}, for the {item}. Is that right?"',
-    'en: "A visit on {day}, {window}, for the {item} ({details}). We will call the number {phone}. Is that right?"',
+    'for the {item}. We',
+    'for the {item} ({details}). We',
   );
   const { value, problems } = agentBusinessProblems(text);
   if (!value) throw new Error(problems.map((p) => p.message).join('\n'));

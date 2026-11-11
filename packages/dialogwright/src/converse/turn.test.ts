@@ -307,6 +307,21 @@ describe('converseTurn: a booking', () => {
     expect(h.traces.at(-1)!.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?', yes: 0.9, no: 0.6, confirmed: false });
   });
 
+  it('where the caller\'s answer could not be read (the decision model timed out or failed), runs nothing and tells the model so, not that the caller said no', async () => {
+    const h = harness([...lookupThenBook, [text('Sorry, was that a yes?'), done()]]);
+    h.deps.jev = { ask: async () => { throw new Error('the decision model is down'); } };
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes please' });
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(s.pending).toBeNull();
+    expect(lastMessage(h)).toContain('Not done: nothing was changed, booked or sent. The caller\'s answer could not be read, so it is not known whether they confirmed: ask them again.');
+    expect(lastMessage(h)).not.toContain('did not confirm');
+    expect(lastMessage(h)).toContain('yes please');
+    expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
+    expect(h.traces.at(-1)!.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed', reason: 'the answer could not be read' }]);
+    expect(h.traces.at(-1)!.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?', confirmed: false });
+  });
+
   it('refuses a slot the lookup never returned, naming the lookup, and reads nothing back', async () => {
     const h = harness([
       [call('c1', 'check_availability', { day: FRIDAY }), done('tool')],
@@ -348,7 +363,8 @@ describe('converseTurn: a booking', () => {
     expect(h.said.filter(([, f]) => f).map(([t]) => t)).toEqual(['Example Menders, how can I help?', READ_BACK]);
     expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['check_availability:ran', 'book:readBack', 'leave_note:refused']);
     expect(h.traces.at(-1)!.tools[2]!.reason).toMatch(/one confirmation at a time/);
-    expect(s.refusals).toEqual({ leave_note: 1 });
+    // A call held for the read-back is no refusal of the action: parallel calls never steer the caller to a person.
+    expect(s.refusals).toEqual({});
     s = await h.run(s, { kind: 'text', text: 'yes' });
     // Both calls of that round have their results in the message after it: the refusal, then the yes.
     const results = (h.model.requests.at(-1)!.messages.at(-1) as { content: { type: string; id: string; isError?: boolean }[] }).content;
@@ -735,13 +751,36 @@ describe('converseTurn: the model\'s failures', () => {
     expect(s.failures).toBe(1);
   });
 
-  it(`stops after ${MAX_ROUNDS} rounds of calls with the recovery line`, async () => {
+  it(`stops after ${MAX_ROUNDS} rounds of calls with the line for a model that kept looking things up (the engine's default), never the recovery line`, async () => {
     const lookups = Array.from({ length: MAX_ROUNDS }, (_, i) => [call(`c${i}`, 'check_availability', { day: FRIDAY }), done('tool')]);
     const h = harness(lookups);
     const s = await h.run(fresh(), { kind: 'text', text: 'hi' });
     expect(h.model.requests).toHaveLength(MAX_ROUNDS);
-    expect(h.said).toEqual([['Sorry, could you say that again?', true]]);
+    expect(h.said).toEqual([['Let me have someone follow up on that.', true]]);
     expect(s.failures).toBe(1);
+    expect(s.ended).toBeUndefined();
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Let me have someone follow up on that.' }] });
+  });
+
+  it(`after ${MAX_ROUNDS} rounds says the business's own stuck line, the done line where a confirmed action ran, and past the budget hands off as a failure does`, async () => {
+    const lookups = (n: number): ModelEvent[][] => Array.from({ length: MAX_ROUNDS }, (_, i) => [call(`r${n}-${i}`, 'check_availability', { day: FRIDAY }), done('tool')]);
+    const stuck = (t: string): string => t.replace('  handoff: { en: "Let me get a person to call you back." }', '  handoff: { en: "Let me get a person to call you back." }\n  stuck: { en: "Let me get someone from the counter to follow up." }');
+    const own = harness(lookups(0), { edit: stuck });
+    await own.run(fresh(), { kind: 'text', text: 'hi' });
+    expect(own.said).toEqual([['Let me get someone from the counter to follow up.', true]]);
+    // A yes ran the booking, then the model kept looking things up: the done line, not the stuck line.
+    const ran = harness([...lookupThenBook, ...lookups(1)]);
+    let s = await upToReadBack(ran);
+    s = await ran.run(s, { kind: 'text', text: 'yes' });
+    expect(ran.calendar.bookings).toHaveLength(1);
+    expect(ran.said.at(-1)).toEqual(["That's done.", true]);
+    // The failure budget (2) spent: the handoff line, and the call goes to a person.
+    const spent = harness([...lookups(2), ...lookups(3)]);
+    s = await spent.run(fresh(), { kind: 'text', text: 'hi' });
+    s = await spent.run(s, { kind: 'text', text: 'hello?' });
+    expect(spent.said.at(-1)).toEqual(['Let me get a person to call you back.', true]);
+    expect(s.ended).toBe('handoff');
+    expect(spent.ended).toEqual(['handoff']);
   });
 });
 

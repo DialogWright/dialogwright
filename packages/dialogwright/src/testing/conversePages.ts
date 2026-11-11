@@ -1,6 +1,6 @@
 import type { ConverseApp } from '../converse/app';
 import type { ActionSpec, AgentBusiness } from '../converse/business/schema';
-import { END_CALL } from '../converse/business/schema';
+import { END_CALL, TEXT_MAX } from '../converse/business/schema';
 import { confirmedFields, CALLER, NO_LOOKUPS, policyOf } from '../converse/policy';
 import { readRule } from '../define/ruleEntry';
 import type { RuleEntryYaml } from '../define/schema/policy';
@@ -186,6 +186,14 @@ function recordedWords(spec: ActionSpec, param: string): string {
   return RECORDED[spec.audit?.[param] ?? 'mask']!;
 }
 
+/** A param's type as the card shows it: a slot with its lookup, a choice with its options, a text with its bound. */
+function typeWords(s: ActionSpec['params'][string]): string {
+  if (s.type === 'slot') return `slot from ${code(s.from ?? '')}`;
+  if (s.type === 'choice') return `choice (${(s.options ?? []).join(', ')})`;
+  if (s.type === 'text') return `text (one line, at most ${s.max ?? TEXT_MAX} characters)`;
+  return s.type;
+}
+
 /** The rules of an action as agent.yaml wrote them (the gate adds `confirmed` for a change, shown apart). */
 function writtenRules(spec: ActionSpec): Rule[] {
   return (spec.rules ?? []).map((entry) => readRule(entry as RuleEntryYaml));
@@ -213,7 +221,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     `- ${identityLine}`,
     '- The rules of an action run in the order shown, and the first one that fails decides.',
     '- Every change is read back in the business\'s fixed words with exactly the values it will run with. The caller\'s answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate\'s `confirmed` rule, over all of the change\'s params, runs last). A lookup is never confirmed.',
-    '- One confirmation at a time: a call made while a read-back waits for its answer is not run.',
+    '- One confirmation at a time: a call made while a read-back waits for its answer is not run, and is no refusal of its action (it counts toward no limit below).',
     '- Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.',
     '- A follow-on action runs only after its parent ran on the caller\'s yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.',
     `- After ${b.limits.refusalsPerAction} refusals of the same action on a call (\`limits.refusalsPerAction\`), the agent model is told to offer the caller a person rather than try again.`,
@@ -225,6 +233,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '- The caller\'s number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions\' code (a phone param the model writes as `caller` is resolved by the runtime).',
     '- Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call\'s values were not valid for their types, and the words an action failed with, go to the agent model as written.',
     '- The trace and the audit record each action\'s params as its `audit` says, hidden (`•`) where it says nothing (see each action\'s table below). Only the audit records an action\'s result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.',
+    '- The caller\'s own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.',
     '',
     '## Actions',
     '',
@@ -249,7 +258,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     const params = Object.entries(spec.params);
     if (params.length > 0) {
       lines.push('', '| Param | Type | Recorded |', '| --- | --- | --- |');
-      for (const [p, s] of params) lines.push(`| ${code(p)} | ${s.type}${s.type === 'slot' ? ` from ${code(s.from ?? '')}` : s.type === 'choice' ? ` (${(s.options ?? []).join(', ')})` : ''} | ${recordedWords(spec, p)} |`);
+      for (const [p, s] of params) lines.push(`| ${code(p)} | ${typeWords(s)} | ${recordedWords(spec, p)} |`);
     }
   }
   return `${lines.join('\n')}\n`;

@@ -34,7 +34,11 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  * - a model that errs or says nothing is asked once more while half its time is left, and one that has
  *   not begun to answer within half its time is stopped and asked once more; else the line says the
  *   recovery line (the done line instead, where an action the caller confirmed has just run), and once
- *   the call's failure budget is spent, the handoff line.
+ *   the call's failure budget is spent, the handoff line;
+ * - a model still calling actions after MAX_ROUNDS rounds fails the turn the same way, with the stuck line
+ *   (lines.stuck) in place of the recovery line;
+ * - an answer to a read-back the decision model could not read (it timed out or failed) runs nothing, and
+ *   the model is told the answer could not be read.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
@@ -267,11 +271,12 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     }
     if (t.st.pending !== null) {
       // One confirmation at a time: nothing else runs while the caller answers a read-back, and the call is
-      // not ended under it. Only a change counts toward the action's refusals.
+      // not ended under it. It counts toward no action's refusals: the action was only held, so calls made
+      // together never steer the caller to a person.
       const why = `Not run: one confirmation at a time. The caller is answering the read-back of "${t.st.pending.action}"; ${c.name === END_CALL ? 'end the call after their answer' : 'call this again after their answer'}.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'one-confirmation-at-a-time', pending: t.st.pending.action } });
       traceTool(t, spec, c.name, c.args, 'refused', why);
-      error(c.id, spec?.kind === 'change' ? refused(t, c.name, why) : why);
+      error(c.id, why);
       continue;
     }
     if (c.name === END_CALL) {
@@ -447,9 +452,11 @@ async function round(t: Turn, sp: Speaker): Promise<Round> {
 /**
  * The model failed the turn: the recovery line, or past the call's budget the handoff line, and the call
  * ends with a person. Where an action the caller confirmed has just run, the caller hears the done line
- * first, and it stands for the recovery line: they need not say anything again.
+ * first, and it stands for the recovery line: they need not say anything again. A model that used up its
+ * rounds (`stuck`: it kept calling actions) is not asked to be heard again: the stuck line stands for the
+ * recovery line.
  */
-function failed(t: Turn, sp: Speaker): void {
+function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void {
   const lines = t.deps.business.lines;
   t.st.failures += 1;
   const handoff = t.st.failures >= t.deps.business.limits.failuresPerCall;
@@ -459,7 +466,7 @@ function failed(t: Turn, sp: Speaker): void {
     said.push(lines.done.en);
   }
   if (handoff) said.push(lines.handoff.en);
-  else if (said.length === 0) said.push(lines.recovery.en);
+  else if (said.length === 0) said.push(why === 'stuck' ? lines.stuck.en : lines.recovery.en);
   said.forEach((line, i) => sp.line(line, i === said.length - 1));
   add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
   if (handoff) {
@@ -499,7 +506,8 @@ async function converse(t: Turn, sp: Speaker): Promise<void> {
       return;
     }
   }
-  failed(t, sp);
+  // Its rounds used up on calls: the caller asked nothing that needs saying again.
+  failed(t, sp, 'stuck');
 }
 
 /** A confirmed action through the gate with the hash of exactly its own values (the read-back's, or a follow-on's own), run when allowed. */
@@ -525,6 +533,12 @@ async function answered(t: Turn, said: string): Promise<void> {
   const yes = isConfirmed(reading);
   t.readBack = { text: p.text, ...(reading !== null ? { yes: reading.yes, no: reading.no } : {}), confirmed: yes };
   const heard = `The line read back: "${p.text}"`;
+  if (reading === null) {
+    // The decision model timed out or failed: what the caller meant is not known, and nothing runs.
+    traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed: ask them again. They said: '${said}'` }]);
+    return;
+  }
   if (!yes) {
     traceTool(t, spec, p.action, p.params, 'notConfirmed');
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller did not confirm; they said: '${said}'` }]);

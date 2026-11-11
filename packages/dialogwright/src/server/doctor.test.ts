@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { agentChecks, converseChecks, formatResult, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { agentChecks, converseChecks, formatResult, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { BUSINESS_FIXTURE_DIR } from '../define/__fixtures__/business/app';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
+import { CALLBACK_DIR } from '../testing/callback/app';
 import { loadConfig } from './config';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
@@ -1009,6 +1010,21 @@ describe('a converse app (pnpm diagnose)', () => {
     expect(converseChecks(dir, {}, null)).toEqual([{ id: 'converse', status: 'fail', message: 'a converse app whose app.yaml and agent.yaml have 1 problem: the server will not start', fix: 'run pnpm check on the app folder, and fix each line it prints' }]);
     rmSync(dir, { recursive: true, force: true });
     expect(converseChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {}, null)).toEqual([]);
+  });
+
+  it('on a host with a phone line, fails a number or a default that would put a call through to a converse app, as the start refuses it', () => {
+    const app = (dir: string, id: string) => ({ label: dir, dir, id, envFile: join(dir, 'no-such.env'), envNamed: false, services: {} });
+    const host = (numbers: { variable: string; app: string }[], defaultApp: string) => ({ file: join(CALLBACK_DIR, 'host.yaml'), dir: CALLBACK_DIR, apps: [app(CALLBACK_DIR, 'callback'), app(CONVERSE_FIXTURE_DIR, 'converse')], numbers, defaultApp });
+    const env = { PUBLIC_HOST: 'ivr.example.com', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com', VISIT_LINE: '+15555550105' };
+    const refusals = (h: ReturnType<typeof host>, e: Record<string, string> = env) => hostChecks(h, e).filter((r) => r.id === 'host' && r.status === 'fail').map((r) => [r.message, r.fix]);
+    expect(refusals(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'))).toEqual([[
+      'app converse is a converse app, which takes no calls yet (its chat only), but host.yaml lists VISIT_LINE for it: the server will not start',
+      'make a scripted app the default and list no number for "converse", or set VOICE_PROVIDERS=none',
+    ]]);
+    expect(refusals(host([], 'converse'))[0]![0]).toBe('app converse is a converse app, which takes no calls yet (its chat only), but it is host.yaml\'s defaultApp, which takes every call to a number no app is listed for: the server will not start');
+    // No carrier, or no number and not the default: nothing refused.
+    expect(refusals(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'), { ...env, VOICE_PROVIDERS: 'none' })).toEqual([]);
+    expect(refusals(host([{ variable: 'VISIT_LINE', app: 'callback' }], 'callback'))).toEqual([]);
   });
 });
 

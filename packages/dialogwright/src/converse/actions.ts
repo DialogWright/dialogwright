@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { E164 } from '../core/numberLocales';
-import type { ActionSpec, ParamSpec } from './business/schema';
+import { TEXT_MAX, type ActionSpec, type ParamSpec } from './business/schema';
 
 /**
  * The arguments of an action the model calls, checked by each param's type before the gate sees them
  * (docs/designs/2026-11-11-agent-runtime.md, "Tools, the gate and confirmation"): a date is a real day,
- * a choice one of its options, a slot one the named lookup returned on this call, a phone a number. A
+ * a choice one of its options, a slot one the named lookup returned on this call, a phone a number, a
+ * text one line within its length (TEXT_MAX characters, or the param's own max). A
  * failure goes back to the model as the tool's result, so its reason says what to do instead; it holds
  * no value but the one the model sent.
  */
@@ -76,8 +77,12 @@ function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: See
       const n = asE164(text);
       return n !== null ? { value: n } : { reason: `${name} must be a phone number with its area code (ten digits, or + and the country code), or "${CALLER_TOKEN}" for the number the caller is calling from; "${text}" is not one` };
     }
-    case 'text':
-      return { value: text };
+    case 'text': {
+      // A text is said in the read-back as it was given, so it is held to a line's length and to one line.
+      if (/[\r\n\u2028\u2029]/.test(text)) return { reason: `keep ${name} on one line, in the caller's own words` };
+      const max = spec.max ?? TEXT_MAX;
+      return text.length <= max ? { value: text } : { reason: `keep ${name} under ${max} characters, in the caller's own words` };
+    }
   }
 }
 

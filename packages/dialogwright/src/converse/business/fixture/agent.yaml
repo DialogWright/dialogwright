@@ -56,7 +56,7 @@ actions:
       details: { type: text, optional: true, about: What is wrong with it. }
       phone: { type: phone, about: The number to confirm on. }
     readBack:
-      en: "A visit on {day}, {window}, for the {item}. Is that right?"
+      en: "A visit on {day}, {window}, for the {item}. We will call the number {phone}. Is that right?"
     then: [notify]
     rules:
       - oneOf: { field: item, values: [kettle, toaster, lamp], reason: not-offered }

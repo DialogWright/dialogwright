@@ -72,6 +72,14 @@ describe('dialogwright: one command line', () => {
     expect(verify).toEqual({ code: 0, lines: [`no audit files in ${join(dir, 'none')}`] });
   });
 
+  it('check: a clean converse app prints its ok line and nothing else', async () => {
+    const run = io();
+    const app = join(ROOT, 'apps', 'wheelshop-agent');
+    expect(await main(['check', app], run.io)).toBe(0);
+    expect(run.out).toEqual([`${app}: ok`]);
+    expect(run.err).toEqual([]);
+  });
+
   it('regress: refuses a folder with no app.yaml, and with no folder one it is not in', async () => {
     const dir = mkdtempSync(join(SHORT_TMP, 'dialogwright-regress-'));
     scratch.push(dir);

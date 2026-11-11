@@ -374,8 +374,8 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
     if (json) continue;
     for (const problem of problems) io.out(formatProblem(problem));
     io.out(problems.length === 0 ? `${label}: ok` : `${problems.length} problem${problems.length === 1 ? '' : 's'} in ${label}`);
-    if (converse === true && problems.length === 0) io.err(`${label}: a converse app: app.yaml and agent.yaml checked together; its code is checked as defineConverseApp joins it to them, where the server or its tests build it`);
-    else if (!codeChecked && problems.length === 0) io.err(`${label}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`);
+    // A converse app's code is checked as defineConverseApp joins it to its YAML, where the server or its tests build it: a clean check says nothing more of it.
+    if (converse !== true && !codeChecked && problems.length === 0) io.err(`${label}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`);
   }
   if (json) io.out(JSON.stringify(dirs.length === 1 && hosts.length === 0 && !discovered ? results[dirs[0]!.label] : results, null, 2));
   return Object.values(results).some((problems) => problems.length > 0) ? 1 : 0;

@@ -68,6 +68,15 @@ describe('the pages of a converse app', () => {
     expect(text).toContain('go to the agent model as written');
   });
 
+  it('the card: the caller\'s own words are kept as said, and a text param shows its bound', () => {
+    const text = conversePolicyCardText(app);
+    expect(text).toContain('- The caller\'s own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.');
+    expect(text).toContain('| `name` | text (one line, at most 120 characters) | ');
+    const { app: bounded } = converseFixture(); // a fresh copy, given its own bound
+    bounded.business.actions.book!.params.name!.max = 40;
+    expect(conversePolicyCardText(bounded)).toContain('| `name` | text (one line, at most 40 characters) | ');
+  });
+
   it('the map: the actions and where a slot value must come from', () => {
     const text = converseAppMapText(app);
     expect(text).toContain('```mermaid');

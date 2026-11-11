@@ -216,7 +216,25 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
     },
 
     abandoned(saved) {
-      audited(saved.id, 'abandoned');
+      // A read-back that was waiting for its answer is dropped, nothing having run: recorded as a caller leaving
+      // records it (converse_left), before the end.
+      const state = saved.schema === CONVERSE_SCHEMA ? stateOf(saved.session) : null;
+      if (state?.pending == null) return void audited(saved.id, 'abandoned');
+      let left: unknown;
+      try {
+        left = deps.audit.append(saved.id, 'chat', { type: 'converse_left', detail: { pending: state.pending.action } });
+      } catch (err) {
+        log(`chat ${saved.id}: the dropped read-back's audit entry failed: ${describeError(err)}`);
+      }
+      if (left instanceof Promise) {
+        left.then(
+          () => audited(saved.id, 'abandoned'),
+          (err: unknown) => {
+            log(`chat ${saved.id}: the dropped read-back's audit entry failed: ${describeError(err)}`);
+            audited(saved.id, 'abandoned');
+          },
+        );
+      } else audited(saved.id, 'abandoned');
     },
 
     judge(saved) {

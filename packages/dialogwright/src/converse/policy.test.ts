@@ -20,7 +20,7 @@ const TEXT_ACTION = `  send_text:
       phone: { type: phone, about: The number to text. }
       consent: { type: choice, options: ["yes", "no"], about: Whether the caller agreed to a text. }
     readBack:
-      en: "A text to the number {phone}. Is that right?"
+      en: "A text to the number {phone}; texts are OK: {consent}. Is that right?"
     rules:
       - oneOf: { field: consent, values: ["yes"], reason: no-consent }
 `;
