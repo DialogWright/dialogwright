@@ -1,6 +1,6 @@
 import type { ConverseModel, ModelMessage, ModelTool } from '../converse/model/types';
 import type { Budget } from './budget';
-import type { CallerFn, SimTurn } from './chatDriver';
+import type { CallerEnd, CallerFn, SimTurn } from './chatDriver';
 import type { Persona } from './personas';
 
 const HANG_UP: ModelTool = {
@@ -37,9 +37,13 @@ function messagesOf(turns: readonly SimTurn[]): ModelMessage[] {
   return out;
 }
 
-/** A caller played by a model; its tokens are added to the budget. A model's failure is thrown. */
+/**
+ * A caller played by a model; its tokens are added to the budget. A model's failure is thrown. It ends the call as
+ * `hang_up` (its goodbye, if it said one, is kept and not sent) or as `empty`: a reply with no text and no hang_up
+ * is asked for again once (the same request), and only a second empty one ends the call. Both requests are spent.
+ */
 export function modelCaller(model: ConverseModel, spend: Budget): CallerFn {
-  return async (persona, turns) => {
+  const ask = async (persona: Persona, turns: readonly SimTurn[]): Promise<{ said: string; hungUp: boolean }> => {
     let text = '';
     let hungUp = false;
     for await (const ev of model.stream({ system: callerSystem(persona), messages: messagesOf(turns), tools: [HANG_UP], maxTokens: 300 }, AbortSignal.timeout(30_000))) {
@@ -48,8 +52,13 @@ export function modelCaller(model: ConverseModel, spend: Budget): CallerFn {
       else if (ev.type === 'done') spend.add(model.id, ev.usage);
       else if (ev.type === 'error') throw new Error(`the caller model failed (${ev.kind}): ${ev.detail}`);
     }
-    const said = text.trim();
-    // A goodbye said with the hang-up is not sent: the call ends there.
-    return hungUp || said === '' ? null : said;
+    return { said: text.trim(), hungUp };
+  };
+  return async (persona, turns) => {
+    let r = await ask(persona, turns);
+    if (!r.hungUp && r.said === '') r = await ask(persona, turns);
+    // A goodbye said with the hang-up is not sent: the call ends there, and the goodbye is kept.
+    if (r.hungUp) return { how: 'hang_up', ...(r.said !== '' ? { goodbye: r.said } : {}) };
+    return r.said === '' ? { how: 'empty' } : r.said;
   };
 }

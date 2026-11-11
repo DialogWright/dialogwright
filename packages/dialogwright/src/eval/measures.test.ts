@@ -28,6 +28,21 @@ describe('summarize', () => {
     expect(s.failures).toEqual({ 'turn limit': 2, 'judge failed': 1 });
   });
 
+  it('leaves a call the simulation ended out of the completed and cooperative rates, and counts it', () => {
+    const sim = (j: Partial<Judged>, coop: boolean): RunResult => ({ ...result(j, [100], null), cooperative: coop, call: { persona: 'p', turns: [], ended: 'caller', firstWordMs: [100], callerEnded: { how: 'empty' } } });
+    const s = summarize([
+      { ...result({}, [100], null), cooperative: true },
+      sim({ completed: false, correct: false, unsupportedClaims: ['a price'] }, true),
+      { ...result({ completed: false }, [100], null), cooperative: true, call: { persona: 'p', turns: [], ended: 'caller', firstWordMs: [100], callerEnded: { how: 'hang_up' } } },
+    ]);
+    expect(s.endedBySimulation).toBe(1);
+    expect(s.completedRate).toBe(0.5);
+    expect(s.cooperativeJudged).toBe(2);
+    expect(s.cooperativeCorrectRate).toBe(0.5);
+    expect(s.unsupportedClaims).toBe(1);
+    expect(s.judged).toBe(3);
+  });
+
   it('leaves a judge failure out of the rates and says how many calls were judged', () => {
     const s = summarize([
       result({}, [100], null),

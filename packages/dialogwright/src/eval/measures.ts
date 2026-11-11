@@ -9,6 +9,8 @@ export interface RunSummary {
   runs: number;
   /** The calls the judge gave a verdict on (not one it failed to give, nor one still waiting for it); the rates are over these. */
   judged: number;
+  /** The judged calls the caller's model ended by giving no reply twice (a fault of the simulation); left out of the completed and cooperative rates, kept in every other count. */
+  endedBySimulation: number;
   completedRate: number;
   correctRate: number;
   /** The cooperative calls the judge gave a verdict on (personas.ts isCooperative). */
@@ -109,7 +111,10 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     Object.fromEntries(MATERIAL_KINDS.map((k) => [k, verdicts.reduce((s, r) => s + (r.judged.materialClaims ?? []).filter((c) => c.kind === k && which(c)).length, 0)])) as Record<MaterialKind, number>;
   const isGap = (c: Claim): boolean => !countsAgainstBar(c);
   const rate = (f: (r: RunResult) => boolean): number => (verdicts.length === 0 ? 0 : verdicts.filter(f).length / verdicts.length);
-  const cooperative = verdicts.filter((r) => r.cooperative === true);
+  // A call the simulation ended is no sign of what the line could do: out of the completed rates only.
+  const endedBySim = (r: RunResult): boolean => r.call.callerEnded?.how === 'empty';
+  const completable = verdicts.filter((r) => !endedBySim(r));
+  const cooperative = completable.filter((r) => r.cooperative === true);
   const firstWords = results.flatMap((r) => r.call.firstWordMs);
   const costs = results.map((r) => r.agentCostUsd).filter((c): c is number => c !== null);
   const tokens = results.map((r) => r.agentTokens).filter((t): t is { inputTokens: number; outputTokens: number } => t !== undefined && t !== null);
@@ -120,7 +125,8 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
   return {
     runs: n,
     judged: verdicts.length,
-    completedRate: rate((r) => r.judged.completed),
+    endedBySimulation: verdicts.length - completable.length,
+    completedRate: completable.length === 0 ? 0 : completable.filter((r) => r.judged.completed).length / completable.length,
     correctRate: rate((r) => r.judged.correct),
     cooperativeJudged: cooperative.length,
     cooperativeCorrectRate: cooperative.length === 0 ? 0 : cooperative.filter((r) => r.judged.completed && r.judged.correct).length / cooperative.length,

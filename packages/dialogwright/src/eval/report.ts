@@ -155,7 +155,8 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     '| Measure | Value |',
     '| --- | --- |',
     `| Calls judged | ${all.judged} of ${all.runs} |`,
-    `| Completed | ${pct(all.completedRate)} |`,
+    `| Completed${all.endedBySimulation > 0 ? ` (over the ${all.judged - all.endedBySimulation} judged calls the simulation did not end)` : ''} | ${pct(all.completedRate)} |`,
+    ...(all.endedBySimulation > 0 ? [`| Calls ended by the simulation (the caller's model gave no reply twice; out of the completed and cooperative rates, in the honesty counts) | ${all.endedBySimulation} |`] : []),
     `| Correct | ${pct(all.correctRate)} |`,
     `| Cooperative calls done correctly | ${pct(all.cooperativeCorrectRate)} of ${all.cooperativeJudged} |`,
     `| Contradicted material claims, what the bar counts (${MATERIAL_KINDS.join(' / ')}) | ${all.unsupportedClaims} (${MATERIAL_KINDS.map((k) => all.materialByKind[k]).join(' / ')}) |`,
@@ -183,7 +184,8 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     // The rates are over the persona's judged calls: a call waiting for its verdict (or whose judge failed) is not one that fell short.
     const calls = s.judged < s.runs ? `${s.judged} of ${s.runs} judged` : `${s.runs}`;
     const rate = (x: number): string => (s.judged === 0 ? '–' : pct(x));
-    lines.push(`| ${id} | ${calls} | ${rate(s.completedRate)} | ${rate(s.correctRate)} | ${s.unsupportedClaims} | ${s.gapClaims} | ${s.benignClaims} | ${s.repeatedQuestionsPerCall.toFixed(1)} | ${ms(s.firstWordMsMedian)} |`);
+    const completed = s.judged - s.endedBySimulation === 0 ? '–' : pct(s.completedRate);
+    lines.push(`| ${id} | ${calls} | ${completed} | ${rate(s.correctRate)} | ${s.unsupportedClaims} | ${s.gapClaims} | ${s.benignClaims} | ${s.repeatedQuestionsPerCall.toFixed(1)} | ${ms(s.firstWordMsMedian)} |`);
   }
   lines.push('');
   const judged = records.filter((r) => hasVerdict(r.judged));

@@ -14,12 +14,24 @@ export interface SimCall {
   ended: 'line' | 'caller' | 'turns';
   /** For each caller turn, ms from sending it to the line's first sentence (its first say_delta, else its say). */
   firstWordMs: number[];
+  /**
+   * How the caller ended the call, where it did (`ended: 'caller'`): `hang_up`, with the goodbye it said (not sent to
+   * the line), or `empty`, its model giving no reply twice: a fault of the simulation, not of the line. Absent from a
+   * record made before it was kept.
+   */
+  callerEnded?: CallerEnd;
   /** The chat session, which is the call's id in the audit and the trace. */
   callId?: string;
 }
 
-/** What the simulated caller says next, given the call so far; null: the caller hangs up. */
-export type CallerFn = (persona: Persona, turns: readonly SimTurn[]) => Promise<string | null>;
+/** How a simulated caller ended a call: it hung up (with the goodbye it said, if any), or its model gave no reply twice. */
+export interface CallerEnd {
+  how: 'hang_up' | 'empty';
+  goodbye?: string;
+}
+
+/** What the simulated caller says next, given the call so far; an end (or null, a hang-up with no goodbye): the call ends. */
+export type CallerFn = (persona: Persona, turns: readonly SimTurn[]) => Promise<string | CallerEnd | null>;
 
 interface Wire {
   type: string;
@@ -134,8 +146,9 @@ export async function driveChat(o: {
         break;
       }
       const line = await o.caller(o.persona, call.turns);
-      if (line === null) {
+      if (line === null || typeof line !== 'string') {
         call.ended = 'caller';
+        call.callerEnded = line ?? { how: 'hang_up' };
         socket.send(JSON.stringify({ type: 'end' }));
         break;
       }

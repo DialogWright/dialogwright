@@ -19,6 +19,18 @@ describe('the summary page', () => {
     expect(text).toContain('| c | 1 | 100% | 100% |');
   });
 
+  it('says how many calls the simulation ended and leaves them out of the completed rate', () => {
+    const ok = { completed: true, correct: true, unsupportedClaims: [], materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' };
+    const base = record('', []);
+    const info = { app: 'x', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 2, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] };
+    const simEnded: RunRecord = { ...base, run: 1, call: { ...base.call, callerEnded: { how: 'empty' } }, judged: { ...ok, completed: false } };
+    const text = summaryMarkdown([{ ...base, judged: ok }, simEnded], info);
+    expect(text).toContain('| Calls ended by the simulation');
+    expect(text).toMatch(/\| Completed[^|]*\| 100% \|/);
+    expect(text).toContain('| p | 2 | 100% | 100% |');
+    expect(summaryMarkdown([{ ...base, judged: ok }], info)).not.toContain('ended by the simulation');
+  });
+
   it('scrubs phone numbers and long digit runs from the judge\'s words, and names the decision model and the calls judged', () => {
     const text = summaryMarkdown([record('The number +15555550142 and 5555550111 and 555-555-0112 were used.', ['called (555) 555 0113'])], { app: 'a', callerModel: 'c', judgeModel: 'j', decisionClient: 'the heuristic stub', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] });
     expect(text).not.toMatch(/\d{7}/);

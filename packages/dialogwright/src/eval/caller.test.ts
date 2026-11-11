@@ -20,11 +20,35 @@ describe('modelCaller', () => {
     expect(model.requests[0]!.messages[0]).toEqual({ role: 'user', content: [{ type: 'text', text: 'Welcome.' }] });
   });
 
-  it('hangs up (null) on the hang_up tool, and adds its tokens to the budget', async () => {
+  it('hangs up on the hang_up tool, with no goodbye where it said none', async () => {
     const spend = new Budget(1, () => {});
     const model = fakeModel([[{ type: 'tool_call', id: 't1', name: 'hang_up', args: {} }, { type: 'done', stop: 'tool', usage: { inputTokens: 1_000_000, outputTokens: 0 } }]]);
     // the fake's id is not priced, so the budget stays 0 but the call is made
-    expect(await modelCaller(model, spend)(persona, [])).toBeNull();
+    expect(await modelCaller(model, spend)(persona, [])).toEqual({ how: 'hang_up' });
+  });
+
+  it('keeps the goodbye said with the hang-up', async () => {
+    const model = fakeModel([[{ type: 'text', delta: 'Thanks, bye.' }, { type: 'tool_call', id: 't1', name: 'hang_up', args: {} }, done]]);
+    expect(await modelCaller(model, new Budget(1, () => {}))(persona, [])).toEqual({ how: 'hang_up', goodbye: 'Thanks, bye.' });
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it('asks again, the same request, after an empty reply, and uses the second', async () => {
+    const model = fakeModel([[done], [{ type: 'text', delta: 'Is it in stock?' }, done]]);
+    expect(await modelCaller(model, new Budget(1, () => {}))(persona, [{ who: 'line', text: 'Which part?', atMs: 0 }])).toBe('Is it in stock?');
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]).toEqual(model.requests[0]);
+  });
+
+  it('ends as empty after two empty replies, both requests spent', async () => {
+    const used: string[] = [];
+    const model = fakeModel([[done], [{ type: 'text', delta: '  ' }, done]]);
+    const spend = new Budget(1, () => {});
+    const add = spend.add.bind(spend);
+    spend.add = (id, usage) => { used.push(id); return add(id, usage); };
+    expect(await modelCaller(model, spend)(persona, [])).toEqual({ how: 'empty' });
+    expect(model.requests).toHaveLength(2);
+    expect(used).toHaveLength(2);
   });
 
   it('throws where the model fails', async () => {

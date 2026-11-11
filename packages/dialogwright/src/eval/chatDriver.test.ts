@@ -44,6 +44,7 @@ describe('driveChat', () => {
     expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line', 'caller', 'line']);
     expect(call.turns[1]!.text).toBe('I want to check a hold');
     expect(call.ended).toBe('caller');
+    expect(call.callerEnded).toEqual({ how: 'hang_up' });
     expect(call.firstWordMs).toHaveLength(2);
     expect(call.firstWordMs.every((m) => m >= 0 && m < 5000)).toBe(true);
     expect(call.callId).toMatch(/\S/);

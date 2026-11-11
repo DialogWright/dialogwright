@@ -27,6 +27,18 @@ describe('judgeCall', () => {
     expect(model.requests[0]!.tools[0]!.name).toBe('verdict');
   });
 
+  it('shows how the caller ended the call after the transcript, and says a simulation fault is judged on the line alone', () => {
+    const plain = judgeInput('b', persona, call, []);
+    expect(plain).not.toMatch(/hung up|gave no reply/);
+    const hung = judgeInput('b', persona, { ...call, callerEnded: { how: 'hang_up', goodbye: 'Never mind, bye.' } }, []);
+    expect(hung).toContain("The caller hung up, saying: 'Never mind, bye.'");
+    expect(hung.indexOf('hung up')).toBeGreaterThan(hung.indexOf('When are you open?'));
+    expect(hung.indexOf('hung up')).toBeLessThan(hung.indexOf('## The actions'));
+    const empty = judgeInput('b', persona, { ...call, callerEnded: { how: 'empty' } }, []);
+    expect(empty).toContain("The caller's model gave no reply twice; the call ended there (a fault of the simulation, not of the line)");
+    expect(judgeSystem()).toMatch(/ended by the simulation/);
+  });
+
   it('gives a failed judgement, never throwing, for a malformed verdict', async () => {
     const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: 'yes' } }, done]]);
     const j = await judgeCall(model, new Budget(1), 'b', persona, call, []);
