@@ -9,6 +9,7 @@ import type { ConverseModel } from '../converse/model/types';
 import { inCi } from '../define/ci';
 import { loadFolderApp } from '../define/pageCommand';
 import { REPO_ROOT } from '../define/home';
+import { fakeTextProvider } from '../texts/record';
 import { loadConfig } from '../server/config';
 import { readEnvFile } from '../server/envFile';
 import { startServer } from '../server/index';
@@ -20,11 +21,12 @@ import { loadPersonas, type Persona } from './personas';
 import { appendResult, writeSummary, type RunRecord } from './report';
 
 export const EVAL_USAGE = [
-  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced]',
+  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model>] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision]',
   '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire,',
   '  a model playing the caller and a model judging the call; writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
   '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-haiku-5-5, --budget 5 (US dollars; the run stops, keeping what it has, once it is spent)',
   '  a caller or judge model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
+  '  the decision model (TYPESAFE_API_KEY) is required, as on a real line; --stub-decision runs with the heuristic stub instead, and the summary says so',
   '  the keys: from the environment, then the app\'s .env, then the repository\'s .env; never printed. Refused in CI.',
 ].join('\n');
 
@@ -73,6 +75,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
         port: { type: 'string', default: '0' },
         parallel: { type: 'string', default: '1' },
         'allow-unpriced': { type: 'boolean', default: false },
+        'stub-decision': { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -146,18 +149,30 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
   } catch {
     registerApp(app);
   }
+  const decision = values['stub-decision'] ? 'stub' : 'jev';
+  if (decision === 'jev' && !env.TYPESAFE_API_KEY) {
+    io.err('dialogwright eval: TYPESAFE_API_KEY is unset, so the decision model would not be the real one: set it, or pass --stub-decision to run with the stub (the summary says which ran)');
+    return 1;
+  }
   const outDir = resolve(io.invokedFrom, values.out ?? join('eval-results', new Date().toISOString().replace(/[:.]/g, '-')));
   const work = mkdtempSync(join(tmpdir(), 'dialogwright-eval-'));
   const auditDir = join(work, 'audit');
   const traceDir = join(work, 'traces');
-  // A text is never sent: the sender's settings are taken out, so the app's code prints or skips it.
-  const serverEnv: Record<string, string | undefined> = { ...env, TEXT_FROM: undefined, TWILIO_ACCOUNT_SID: undefined, TELNYX_API_KEY: undefined };
-  for (const k of Object.keys(serverEnv)) if (serverEnv[k] === undefined) delete serverEnv[k];
+  // Texts go to a fake sender: the real texting path runs (and is audited), and nothing is sent.
+  const serverEnv: Record<string, string | undefined> = { ...env };
   Object.assign(serverEnv, {
     PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: CHAT_ORIGIN, PORT: String(port),
-    TRACE_DIR: traceDir, AUDIT_DIR: auditDir, AUDIO_DIR: work, DASHBOARD: 'off', JEV_CLIENT: env.TYPESAFE_API_KEY ? 'jev' : 'stub',
+    TRACE_DIR: traceDir, AUDIT_DIR: auditDir, AUDIO_DIR: work, DASHBOARD: 'off', JEV_CLIENT: decision,
+    TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}`, TWILIO_AUTH_TOKEN: 'eval-not-a-token',
   });
-  const running = await startServer(loadConfig(serverEnv), { host: '127.0.0.1', log: () => {}, env: serverEnv });
+  let running;
+  try {
+    running = await startServer(loadConfig(serverEnv), { host: '127.0.0.1', log: () => {}, env: serverEnv, textProvider: fakeTextProvider() });
+  } catch (e) {
+    rmSync(work, { recursive: true, force: true });
+    io.err(`dialogwright eval: the app's server did not start: ${e instanceof Error ? e.message : String(e)}`);
+    return 1;
+  }
   const businessFile = join(appDir, 'business.yaml');
   const businessText = existsSync(businessFile) ? readFileSync(businessFile, 'utf8') : '(this app has no business.yaml: judge by what its own answers say)';
   const spend = new Budget(budgetUsd, (l) => io.err(l));
@@ -181,7 +196,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
     const judged = call.turns.length === 0 ? failedJudgement('no call was held') : await judgeCall(judgeModel, spend, businessText, p, call, actions);
     if (judged.notes.startsWith(JUDGE_FAILED)) failures.push(JUDGE_FAILED);
-    return { persona: p.id, run, call, judged, agentCostUsd: callId === '' ? null : agentCostOfCall(traceDir, callId), failures };
+    return { persona: p.id, run, call, judged, actions, agentCostUsd: callId === '' ? null : agentCostOfCall(traceDir, callId), failures };
   };
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -208,7 +223,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     'The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.',
     ...(stoppedByBudget ? [`The run stopped when the budget was spent, after ${records.length} of ${plan.length} planned calls.`] : []),
   ];
-  const text = writeSummary(outDir, records, { app: app.id, callerModel: callerModel.id, judgeModel: judgeModel.id, runsPerPersona: runs, spentUsd: spend.spent(), budgetUsd, stoppedByBudget, limits });
+  const text = writeSummary(outDir, records, { app: app.id, callerModel: callerModel.id, decisionClient: decision === 'jev' ? 'the real decision model (Jev)' : 'the heuristic stub', judgeModel: judgeModel.id, runsPerPersona: runs, spentUsd: spend.spent(), budgetUsd, stoppedByBudget, limits });
   io.out(text);
   io.out(`results: ${outDir}`);
   return 0;

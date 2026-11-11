@@ -1,8 +1,10 @@
-import type { Judged } from './judge';
+import { JUDGE_FAILED, type Judged } from './judge';
 import type { SimCall } from './chatDriver';
 
 export interface RunSummary {
   runs: number;
+  /** The calls the judge gave a verdict on; the rates are over these. */
+  judged: number;
   completedRate: number;
   correctRate: number;
   unsupportedClaims: number;
@@ -29,17 +31,20 @@ export function percentile(values: readonly number[], p: number): number {
 
 export function summarize(results: readonly RunResult[]): RunSummary {
   const n = results.length;
-  const rate = (f: (r: RunResult) => boolean): number => (n === 0 ? 0 : results.filter(f).length / n);
+  // A judge that failed gave no verdict: its calls are out of the rates, not counted as failures of the line.
+  const verdicts = results.filter((r) => !r.judged.notes.startsWith(JUDGE_FAILED));
+  const rate = (f: (r: RunResult) => boolean): number => (verdicts.length === 0 ? 0 : verdicts.filter(f).length / verdicts.length);
   const firstWords = results.flatMap((r) => r.call.firstWordMs);
   const costs = results.map((r) => r.agentCostUsd).filter((c): c is number => c !== null);
   const failures: Record<string, number> = {};
   for (const r of results) for (const f of r.failures) failures[f] = (failures[f] ?? 0) + 1;
   return {
     runs: n,
+    judged: verdicts.length,
     completedRate: rate((r) => r.judged.completed),
     correctRate: rate((r) => r.judged.correct),
-    unsupportedClaims: results.reduce((s, r) => s + r.judged.unsupportedClaims.length, 0),
-    repeatedQuestionsPerCall: n === 0 ? 0 : results.reduce((s, r) => s + r.judged.repeatedQuestions, 0) / n,
+    unsupportedClaims: verdicts.reduce((s, r) => s + r.judged.unsupportedClaims.length, 0),
+    repeatedQuestionsPerCall: verdicts.length === 0 ? 0 : verdicts.reduce((s, r) => s + r.judged.repeatedQuestions, 0) / verdicts.length,
     firstWordMsMedian: percentile(firstWords, 0.5),
     firstWordMsP90: percentile(firstWords, 0.9),
     agentCostPerCallUsd: costs.length === 0 ? null : costs.reduce((s, c) => s + c, 0) / costs.length,

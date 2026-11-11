@@ -28,6 +28,18 @@ describe('summarize', () => {
     expect(s.failures).toEqual({ 'turn limit': 2, 'judge failed': 1 });
   });
 
+  it('leaves a judge failure out of the rates and says how many calls were judged', () => {
+    const s = summarize([
+      result({}, [100], null),
+      result({ completed: false, correct: false, notes: 'judge failed: the judge gave no verdict' }, [100], null, ['judge failed']),
+      result({ completed: false, correct: false, notes: 'x' }, [100], null),
+    ]);
+    expect(s.runs).toBe(3);
+    expect(s.judged).toBe(2);
+    expect(s.completedRate).toBe(0.5);
+    expect(s.correctRate).toBe(0.5);
+  });
+
   it('has no agent cost where none is known', () => {
     expect(summarize([result({}, [1], null)]).agentCostPerCallUsd).toBeNull();
   });

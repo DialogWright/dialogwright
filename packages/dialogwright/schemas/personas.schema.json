@@ -27,7 +27,7 @@
               "type": "string",
               "minLength": 1
             },
-            "description": "What is true of the caller and what they will say when asked (name, vehicle, damage, a number...), by short key. The caller states only these facts."
+            "description": "What is true of the caller and what they will say when asked (their name, the item, the details of the matter, a number...), by short key. The caller states only these facts."
           },
           "manner": {
             "type": "string",

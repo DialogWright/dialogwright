@@ -59,6 +59,41 @@ describe('the run artifacts', () => {
     expect(actionsOfCall(join(dir, 'missing'), 'c1')).toEqual([]);
   });
 
+  it('keeps a comma inside a value, pairs a gate row with the row that follows it, and includes handoffs and cancelled forms', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'audit-'));
+    const row = (type: string, detail: object, callId = 'c1') => JSON.stringify({ type, detail, seq: 1, at: 't', callId, channel: 'chat', prevHash: '0', hash: 'h' });
+    writeFileSync(join(dir, '2026-11-11.jsonl'), [
+      row('gate', { tool: 'request', call: 'request(note=curb rash, front right, day=2026-11-17)', verdict: 'ALLOW', reason: null }),
+      row('tool_result', { tool: 'request', summary: 'recorded' }),
+      row('gate', { tool: 'notify', call: 'notify(to=...0100)', verdict: 'ALLOW', reason: null }),
+      'not json at all c1',
+      row('gate', { tool: 'send', call: 'send(x=1)', verdict: 'REFUSE', reason: 'no-consent' }),
+      row('form_cancelled', { form: 'request', at: 'read-back' }),
+      row('handoff', { reason: 'caller asked for a person', completed: [], queued: [] }),
+      row('call_ended', { reason: 'handoff' }),
+    ].join('\n') + '\n');
+    expect(actionsOfCall(dir, 'c1')).toEqual([
+      { tool: 'request', params: { note: 'curb rash, front right', day: '2026-11-17' }, verdict: 'ALLOW', result: 'recorded' },
+      { tool: 'notify', params: { to: '...0100' }, verdict: 'ALLOW' },
+      { tool: 'send', params: { x: '1' }, verdict: 'REFUSE', reason: 'no-consent' },
+      { tool: 'form_cancelled', params: { form: 'request' }, verdict: 'CANCELLED', reason: 'at read-back' },
+      { tool: 'handoff', params: {}, verdict: 'HANDOFF', reason: 'caller asked for a person' },
+    ]);
+  });
+
+  it('tells the judge what came back, that an allow is not a success, and the reasons', async () => {
+    const model = fakeModel([[{ type: 'tool_call', id: 'v', name: 'verdict', args: { completed: true, correct: true, unsupportedClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } }, done]]);
+    await judgeCall(model, new Budget(1, () => {}), 'b', persona, call, [
+      { tool: 'request', params: {}, verdict: 'ALLOW', result: 'recorded' },
+      { tool: 'notify', params: {}, verdict: 'ALLOW' },
+      { tool: 'send', params: {}, verdict: 'REFUSE', reason: 'no-consent' },
+      { tool: 'handoff', params: {}, verdict: 'HANDOFF', reason: 'asked for a person' },
+    ]);
+    const asked = JSON.stringify(model.requests[0]!.messages);
+    for (const part of ['result: recorded', 'notify(): ALLOW; no result recorded', 'REFUSE (no-consent)', 'HANDOFF (asked for a person)']) expect(asked).toContain(part);
+    expect(model.requests[0]!.system).toMatch(/ALLOW means the gate allowed the action to run, not that it succeeded/);
+  });
+
   it('sums the agent cost of a call from the traces', () => {
     const dir = mkdtempSync(join(tmpdir(), 'traces-'));
     writeFileSync(join(dir, 'a.jsonl'), [JSON.stringify({ sessionId: 'c1', agent: { costUsd: 0.01 } }), JSON.stringify({ sessionId: 'c1', agent: { costUsd: 0.02 } }), JSON.stringify({ sessionId: 'c2', agent: { costUsd: 5 } })].join('\n'));

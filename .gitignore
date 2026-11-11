@@ -25,3 +25,5 @@ deploy/compose/logs/
 packages/*/dist/
 packages/dialogwright/docs/
 packages/dialogwright/skills/
+# dialogwright eval's default output folder
+/eval-results/
