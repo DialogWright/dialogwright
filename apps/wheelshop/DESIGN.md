@@ -168,6 +168,7 @@ So a quote reads: "Example Wheel Works: your quote for the wheel on your 2020 BM
 - `live-call-porsche`: the turns of a live call on Telnyx (call 59), with invented values. "It's a it's a Porsche nine eleven." is held as "Porsche 911" at once (a number said in groups is the groups written together, and a text value's figures are free); a reply with a piece of the answer's keys run onto its end ("... Monday through Friday. wevalues") is replaced by the day's question; at the day the agent times out (on the stubs), and the day is asked again, not the form's first empty field (the name). Held to the request's values.
 - `live-call-infinity`: the turns of a live call on Telnyx (call 58), with invented values: "Infinity two eighty", "All four.", "They're scraped up.", "No. They're painted.", "Tomorrow,"; the read-back in its new frame ("your Infiniti 280, damage: scraped up, on four of its wheels, ..."), which src/app.test.ts holds on the stubs.
 - `no-at-anything-else`: a callback note left, then a bare "no" at "Is there anything else I can help with?" ends the call with the closing (call 54: a live call's "no" read done 0.54 against none 0.46, and the line asked "Just to check, do you want to finish up?").
+- `live-call-bent-wheel`: the turns of a live call on Telnyx (call 61), with invented values. The opening gives the name, the car, the wheels, the damage and the finish at once (on the stubs its first answer is refused by the provider's content filter, `filtered`, and asked again); after the request is done, "What if I have a wheel that's bent?" (heard over the line, read as the request's intent: the recording's decision model 0.78, the live call's 0.82) is answered from the facts with no form opened, "Is there anything else I can help with?" still the question open; then "No. That's it." (over the line, read done) ends the call with the closing, never set aside and nothing reopened. Held to the request's values.
 
 Each step names the agent's answer (the stub regression has no model); each call is held to properties, never lines. Two findings shaped the scripted answers:
 
@@ -346,6 +347,12 @@ What the runs found:
 - A reply ended "What should I call you?," with a stray comma, said (no check reads punctuation after a question).
 
 Baseline edits (`fixtures/expected/`, entries added by hand from `regress --json`, none changed): corpus `rq-39` to `rq-44` and `cn-01` to `cn-05`, and the scripted calls `live-call-friday-morning` and `never-mind-cancels`.
+
+### Call 61's call, recorded on top of the thirteenth
+
+Call 61 (a live call on Telnyx, 2026-11-10) changed nothing the agent model is sent, so the thirteenth recording stands, and only the new scripted call, `live-call-bent-wheel`, and its corpus lines (`rq-59` to `rq-63`, `dn-05`) were recorded on top (`--client record`: 7 agent answers and 16 decision-model answers): corpus 78/82 (the four known gaps), scenarios 17/17, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage. On the recording, "What if I have a wheel that's bent?" read as the request at 0.78 (the live call's 0.82); the reply, "We can't fix bent wheels, sorry. That's something we don't do. Anything else going on with your wheels?", was said (the judge 0.15) with no form opened, and "No. That's it." read done at 0.99. The opening's reply, "Thanks, Jordan. Curb rash on painted wheels is something we see every day. We can take care of that for you. ...", passed the judge at 0.36 (the claims say most curb rash can be fixed: for the owner to read). No answer was refused by the content filter on the recording; the stubs hold the asking again.
+
+Baseline edits (`regress --update`, its diff read: only new entries): corpus `rq-59` to `rq-63` and `dn-05`, and the scripted call `live-call-bent-wheel`.
 
 ### The thirteenth recording (calls 57 to 59, live calls on Telnyx), the one committed
 

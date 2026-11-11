@@ -74,3 +74,9 @@
 {"id":"rq-56","text":"Nora Quill.","intent":"none","context":"request","prompted":"request_callerName"}
 {"id":"rq-57","text":"No. They're painted.","intent":"none","context":"request","prompted":"request_diamondCut"}
 {"id":"rq-58","text":"Tomorrow,","intent":"none","context":"request","prompted":"request_day"}
+{"id":"rq-59","text":"Hi, this is Jordan Ellis. I curbed two of my wheels on my Toyota Camry, and they're pretty scratched up. They're painted, not shiny.","intent":"request","context":"no_form"}
+{"id":"rq-60","text":"How about next Monday? The afternoon works better for me.","intent":"none","context":"request","prompted":"request_day"}
+{"id":"rq-61","text":"Yeah. Yeah. That's a good number.","intent":"none","context":"request","confirm":"yes","prompted":"request_callbackNumber"}
+{"id":"rq-62","text":"Yeah. That's right.","intent":"none","context":"confirm_request","confirm":"yes"}
+{"id":"rq-63","text":"What if I have a wheel that's bent?","intent":"request","context":"anything_else"}
+{"id":"dn-05","text":"No. That's it.","intent":"done","context":"anything_else"}
