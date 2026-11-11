@@ -79,6 +79,23 @@ describe('checkArgs', () => {
     expect(!odd.ok && odd.reason).toMatch(/not known/);
   });
 
+  it('refuses "caller" (any case, trimmed) as the value of any param that is not a phone, saying it stands only for the caller\'s number and to ask the caller', () => {
+    for (const [param, value] of [['details', 'Caller'], ['details', '  caller '], ['item', 'CALLER'], ['day', 'caller'], ['window', 'caller'], ['count', 'caller']] as const) {
+      const reason = reasonOf({ ...good, [param]: value });
+      expect(reason, param).toMatch(new RegExp(`^${param}: "caller" stands only for the phone number the caller is calling from`));
+      expect(reason, param).toMatch(new RegExp(`ask the caller for the ${param}$`));
+    }
+    // The word inside other words is the caller's own text.
+    const named = checkArgs(book, { ...good, details: 'the caller dropped it' }, seen, TODAY);
+    expect(named.ok && named.params.details).toBe('the caller dropped it');
+    // A choice that lists the word among its options takes it as that option; a phone takes it as the number.
+    const who: ActionSpec = { about: 'Who brings it.', kind: 'change', params: { who: { type: 'choice', options: ['Caller', 'someone else'], about: 'Who brings it.' } } };
+    const chosen = checkArgs(who, { who: 'caller' }, seen, TODAY);
+    expect(chosen.ok && chosen.params.who).toBe('Caller');
+    const phone = checkArgs(book, { ...good, phone: 'caller' }, seen, TODAY, '+15555550177');
+    expect(phone.ok && phone.params.phone).toBe('+15555550177');
+  });
+
   it('normalises a phone number to E.164, or refuses it', () => {
     const as = (phone: unknown): string | null => {
       const r = checkArgs(book, { ...good, phone }, seen, TODAY);

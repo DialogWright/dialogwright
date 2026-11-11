@@ -155,7 +155,10 @@ runtime gets plain frames.
   runtime adds no join windows, speech-over-line rules, held replies or filler lines. If a short debounce
   proves necessary, the simulated and live calls must show it.
 - **Failures** (a provider error, a timeout, a refusal by the provider's content filter):
-  - the turn is asked once more if time allows;
+  - the turn is asked once more if time allows; a request the provider refused for its rate limit (an HTTP
+    429) is asked again after a wait (its Retry-After where that leaves half the model's time, else 250 ms
+    doubling), up to two more times, each only while half the model's time is left after the wait, and the
+    trace counts each (`model.rateLimited`);
   - otherwise the line says one short fixed recovery line from the business's information ("Sorry, could
     you say that again?") and the conversation goes on;
   - the call is handed off only after a per-call failure budget the business sets, never on two in a row;

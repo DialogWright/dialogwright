@@ -11,8 +11,19 @@ import { TEXT_MAX, type ActionSpec, type ParamSpec } from './business/schema';
  * no value but the one the model sent.
  */
 
-/** What the model writes in a phone param for the number the caller is calling from. */
+/** What the model writes in a phone param for the number the caller is calling from, and for nothing else. */
 export const CALLER_TOKEN = 'caller';
+
+/**
+ * The token given bare (any case, trimmed) as the value of a param that is not a phone: refused, for it stands
+ * only for the caller's number (a call once sent a request under the name "Caller"). A choice that lists the
+ * word among its own options takes it as that option.
+ */
+function tokenMisused(name: string, spec: ParamSpec, raw: string | number): string | null {
+  if (spec.type === 'phone' || String(raw).trim().toLowerCase() !== CALLER_TOKEN) return null;
+  if (spec.type === 'choice' && (spec.options ?? []).some((o) => o.toLowerCase() === CALLER_TOKEN)) return null;
+  return `${name}: "${CALLER_TOKEN}" stands only for the phone number the caller is calling from, never for any other value; ask the caller for the ${name}`;
+}
 
 /** What each lookup returned on this call, by the lookup's name, and when (ms since the epoch). */
 export interface Seen {
@@ -93,7 +104,8 @@ function checkOne(name: string, spec: ParamSpec, raw: string | number, seen: See
  * come back as strings, as the gate and the tools take them. `todayIso` is the call's today, which a
  * refused date's reason names so the model can work out the day it meant. A phone param written as
  * "caller" (CALLER_TOKEN) is the number the caller is calling from, `callerNumber`, which the model
- * is never sent whole; it is refused where the call has none.
+ * is never sent whole; it is refused where the call has none, and as the value of any param that is not a
+ * phone (but a choice that lists it).
  */
 export function checkArgs(spec: ActionSpec, args: Record<string, unknown>, seen: Seen, todayIso: string, callerNumber?: string): CheckedArgs {
   const names = Object.keys(spec.params);
@@ -112,6 +124,8 @@ export function checkArgs(spec: ActionSpec, args: Record<string, unknown>, seen:
       return { ok: false, reason: `${name} is missing: ${p.about}` };
     }
     if (typeof raw !== 'string' && typeof raw !== 'number') return { ok: false, reason: `${name} must be given as text, not ${Array.isArray(raw) ? 'a list' : typeof raw}` };
+    const misused = tokenMisused(name, p, raw);
+    if (misused !== null) return { ok: false, reason: misused };
     const checked = checkOne(name, p, raw, seen, todayIso, callerNumber);
     if ('reason' in checked) return { ok: false, reason: checked.reason };
     params[name] = checked.value;

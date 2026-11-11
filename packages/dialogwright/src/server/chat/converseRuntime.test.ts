@@ -9,7 +9,7 @@ import type { AnswerMap, JevClient } from '../../jev/types';
 import { converseFixture } from '../../testing/converse/app';
 import { BOOKING, CALLER, DAY, done, text } from '../../testing/converse/chat';
 import type { StoredChat } from '../stores/types';
-import { CONVERSE_SCHEMA, converseChatRuntime } from './converseRuntime';
+import { CONVERSE_SCHEMA, converseChatRuntime, stateOf } from './converseRuntime';
 import type { ChatIo } from './runtime';
 
 /** A converse chat's end with no turn of its own: a chat saved before a restart and never resumed; and a chat's words on the wire, turn by turn. */
@@ -32,6 +32,18 @@ function runtime() {
 }
 
 const saved = (state: ConverseState): StoredChat => ({ id: state.callId, schema: CONVERSE_SCHEMA, session: state, resumeHash: 'h', createdAtMs: 0, lastActivityMs: 0, auditTail: [] });
+
+describe('converseChatRuntime: a saved state', () => {
+  it('loads a state saved before the carried note was kept (no note waits), keeps one that was, and drops one that is not text', () => {
+    const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-3', channel: 'chat' }))) as unknown;
+    expect(stateOf(before)).not.toBeNull();
+    expect(stateOf(before)!.carriedNote).toBeUndefined();
+    const carried = { ...newConverseState({ appId: 'visits', callId: 'chat-4', channel: 'chat' }), carriedNote: '[a note]' };
+    expect(stateOf(JSON.parse(JSON.stringify(carried)))!.carriedNote).toBe('[a note]');
+    const odd = { ...newConverseState({ appId: 'visits', callId: 'chat-5', channel: 'chat' }), carriedNote: 7 };
+    expect(stateOf(odd)!.carriedNote).toBeUndefined();
+  });
+});
 
 describe('converseChatRuntime: a chat abandoned', () => {
   it('with a read-back waiting for its answer records that it was dropped, as a caller leaving does, then the end', () => {

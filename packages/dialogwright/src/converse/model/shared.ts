@@ -11,7 +11,24 @@ export function filteredBy(status: number, json: unknown, told: { type?: string 
 
 type ErrorEvent = Extract<ModelEvent, { type: 'error' }>;
 
-/** A failed request as an `error` event: the API's own words made safe (never the key); `filtered` where its content filter refused. */
+/**
+ * How long a response asks to be left before the next request, in ms: its `retry-after-ms` header, else its
+ * `Retry-After` (seconds, or an HTTP date from `nowMs`); undefined where it says neither, or nothing readable.
+ */
+export function retryAfterMsOf(headers: Headers, nowMs: number = Date.now()): number | undefined {
+  const ms = headers.get('retry-after-ms');
+  if (ms !== null && ms.trim() !== '' && Number.isFinite(Number(ms)) && Number(ms) >= 0) return Math.round(Number(ms));
+  const after = headers.get('retry-after');
+  if (after === null || after.trim() === '') return undefined;
+  if (Number.isFinite(Number(after))) return Number(after) >= 0 ? Math.round(Number(after) * 1000) : undefined;
+  const at = Date.parse(after);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - nowMs);
+}
+
+/**
+ * A failed request as an `error` event: the API's own words made safe (never the key); `filtered` where its
+ * content filter refused; `rate_limited` for an HTTP 429, with the wait its Retry-After asks for where it gives one.
+ */
 export async function httpError(res: Response, key: string): Promise<ErrorEvent> {
   let json: unknown = null;
   try {
@@ -21,6 +38,10 @@ export async function httpError(res: Response, key: string): Promise<ErrorEvent>
   }
   const told = apiError(json, key);
   const detail = `HTTP ${res.status}${told.type ? ` ${told.type}` : ''}${told.message ? `: ${told.message}` : ''}`;
+  if (res.status === 429) {
+    const retryAfterMs = retryAfterMsOf(res.headers);
+    return { type: 'error', kind: 'rate_limited', detail, ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) };
+  }
   return { type: 'error', kind: filteredBy(res.status, json, told) ? 'filtered' : 'http', detail };
 }
 

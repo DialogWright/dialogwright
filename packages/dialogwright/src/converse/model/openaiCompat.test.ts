@@ -120,4 +120,27 @@ describe('openAiCompatModel', () => {
       { type: 'done', stop: 'tool' },
     ]);
   });
+
+  it('sends a user message holding tool results then text as the tool messages, then one user message with the text, each block a paragraph', async () => {
+    const f = stubFetch(toolStream);
+    const withNote: ModelRequest = { ...req, messages: [...req.messages.slice(0, 2), { role: 'user', content: [{ type: 'tool_result', id: 'c0', content: 'free' }, { type: 'text', text: 'yes please' }, { type: 'text', text: 'A note.' }] }] };
+    await collect(openAiCompatModel({ provider: 'inception', model: 'mercury-3', apiKey: KEY, fetch: f.fetch }).stream(withNote, ctl()));
+    const body = JSON.parse(String(f.calls[0]!.init.body));
+    expect(body.messages.slice(3)).toEqual([
+      { role: 'tool', tool_call_id: 'c0', content: 'free' },
+      { role: 'user', content: 'yes please\n\nA note.' },
+    ]);
+  });
+
+  it('maps an HTTP 429 to rate_limited, with the wait its retry-after-ms or Retry-After asks for (seconds or a date), and an error coded 429 in the stream the same way', async () => {
+    const run = async (headers: Record<string, string>) => collect(openAiCompatModel({ provider: 'openrouter', model: 'm', apiKey: KEY, fetch: stubFetch(() => new Response('{}', { status: 429, headers })).fetch }).stream(req, ctl()));
+    expect(await run({ 'retry-after-ms': '750' })).toEqual([{ type: 'error', kind: 'rate_limited', detail: 'HTTP 429', retryAfterMs: 750 }]);
+    expect(await run({ 'retry-after': '1.5' })).toEqual([{ type: 'error', kind: 'rate_limited', detail: 'HTTP 429', retryAfterMs: 1500 }]);
+    const dated = (await run({ 'retry-after': new Date(Date.now() + 60_000).toUTCString() }))[0] as { kind: string; retryAfterMs?: number };
+    expect(dated.kind).toBe('rate_limited');
+    expect(dated.retryAfterMs).toBeGreaterThan(50_000);
+    expect(await run({ 'retry-after': 'soon' })).toEqual([{ type: 'error', kind: 'rate_limited', detail: 'HTTP 429' }]);
+    const inStream = stubFetch(() => sseResponse([sse({ error: { code: 429, message: 'Rate limit exceeded' } })]));
+    expect(await collect(openAiCompatModel({ provider: 'openrouter', model: 'm', apiKey: KEY, fetch: inStream.fetch }).stream(req, ctl()))).toMatchObject([{ type: 'error', kind: 'rate_limited' }]);
+  });
 });

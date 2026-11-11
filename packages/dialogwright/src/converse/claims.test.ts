@@ -3,7 +3,7 @@ import type { JevClient, JevRequest, JevResponse } from '../jev/types';
 import { agentBusinessProblems } from './business/load';
 import type { AgentBusiness } from './business/schema';
 import { businessText } from './business/text';
-import { actionsOfCall, CHECK_NOTE_MARK, checkNote, CLAIM_QUESTIONS, claimsState, readClaims } from './claims';
+import { actionsOfCall, CHECK_NOTE_MARK, checkNote, CLAIM_QUESTIONS, claimsState, CORRECTION_DECLINE, CORRECTION_GOAL, readClaims } from './claims';
 import { newConverseState, type ConverseState } from './state';
 
 /**
@@ -171,5 +171,27 @@ describe('the note the agent model is sent', () => {
     const both = checkNote('Your note is left.', { contradicted: 0.8, notDone: 0.9, gap: 0.1 }, 0.7);
     expect(both).toContain('the business information or what the call\'s actions returned');
     expect(both).toContain('done that the call\'s actions do not show as done');
+  });
+
+  it('gives the correction its goal: to speak to the caller as the business would, never of the line\'s workings; and to answer with nothing at all where the reply was right after all', () => {
+    const note = checkNote('We are open Saturdays.', { contradicted: 0.9, notDone: 0.1, gap: 0.1 }, 0.7);
+    expect(note).toContain(CORRECTION_GOAL);
+    expect(CORRECTION_GOAL).toMatch(/as the business would/);
+    for (const working of ['actions', 'read-backs', 'checks', 'notes', 'tools', 'the line itself']) expect(CORRECTION_GOAL).toContain(working);
+    expect(note).toContain(CORRECTION_DECLINE);
+    expect(CORRECTION_DECLINE).toMatch(/right after all, answer with nothing at all: no words and no action/);
+  });
+
+  it('carried to the next message, says the reply was said earlier, that what came since may have made it right, and to answer that message, saying nothing of the reply where it is right', () => {
+    const note = checkNote('Your note is left.', { contradicted: 0.1, notDone: 0.9, gap: 0.1 }, 0.7, true);
+    expect(note.startsWith(CHECK_NOTE_MARK)).toBe(true);
+    expect(note).toContain('"Your note is left."');
+    expect(note).toMatch(/said to the caller earlier on this call/);
+    expect(note).toMatch(/What has happened since, what comes before this note included, may have made it right/);
+    expect(note).toMatch(/Answer what comes before this note as you would/);
+    expect(note).toMatch(/Where it was right, or is right now, say nothing of it/);
+    expect(note).toContain(CORRECTION_GOAL);
+    // Its answer to the message is still said: it is never told to answer with nothing at all.
+    expect(note).not.toContain(CORRECTION_DECLINE);
   });
 });

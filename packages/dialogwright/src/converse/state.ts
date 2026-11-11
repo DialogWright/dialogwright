@@ -30,6 +30,13 @@ export interface ConverseState {
   caller: { number?: string; account?: string | null };
   /** The next turn's index in the trace. */
   turnIndex: number;
+  /**
+   * The check after speaking's note for a reply read as wrong while a read-back waited for the caller's yes
+   * (docs/designs/2026-11-11-claims-check.md): it could not be sent then, so it goes with the next message the
+   * model is sent, after that message's own content, and is taken out of here once sent. Absent (as in a state
+   * saved before it was kept): no note waits. A call that ends first drops it.
+   */
+  carriedNote?: string;
   /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
   ended?: 'closing' | 'handoff' | 'left';
 }

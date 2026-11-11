@@ -100,7 +100,8 @@ export function anthropicModel(o: { model: string; apiKey: string; fetch?: typeo
               break;
             case 'error': {
               const type = String(ev.error?.type ?? '');
-              yield { type: 'error', kind: /content[_ -]?filter/i.test(type) ? 'filtered' : 'http', detail: safeErrorText(`${type}: ${String(ev.error?.message ?? '')}`, o.apiKey) };
+              // A rate limit told in the stream (Anthropic's rate_limit_error) is one as a 429 is, with no wait named.
+              yield { type: 'error', kind: /content[_ -]?filter/i.test(type) ? 'filtered' : type === 'rate_limit_error' ? 'rate_limited' : 'http', detail: safeErrorText(`${type}: ${String(ev.error?.message ?? '')}`, o.apiKey) };
               return;
             }
           }

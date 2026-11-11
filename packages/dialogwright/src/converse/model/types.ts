@@ -39,7 +39,11 @@ export type ModelEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
   | { type: 'done'; stop: 'end' | 'tool' | 'length'; usage: { inputTokens: number; outputTokens: number } }
-  | { type: 'error'; kind: 'timeout' | 'filtered' | 'http' | 'invalid'; detail: string };
+  /**
+   * A failure. `rate_limited` is the provider's HTTP 429 (or its stream's rate-limit error), with how long it
+   * asked to be left before the next request (`retryAfterMs`, from its Retry-After) where it said.
+   */
+  | { type: 'error'; kind: 'timeout' | 'filtered' | 'http' | 'invalid' | 'rate_limited'; detail: string; retryAfterMs?: number };
 
 export interface ConverseModel {
   readonly id: string;

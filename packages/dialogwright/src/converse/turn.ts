@@ -42,8 +42,10 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   the model is told the answer could not be read;
  * - once the model's own words of a turn have been said, the decision model reads them (the check after
  *   speaking, docs/designs/2026-11-11-claims-check.md, agent.yaml `checks.claims`); a reply read as wrong
- *   goes back to the model with a note marked as the line's own, and its correction is said after the reply.
- *   A correction that fails says nothing more and counts no failure: the reply was fine to leave as it was;
+ *   goes back to the model with a note marked as the line's own, and its correction is said after the reply;
+ *   while a read-back waits for the caller's yes, the note goes with the next message the model is sent. A
+ *   correction the model declines (it answers with nothing at all) or that fails says nothing more and counts
+ *   no failure: the reply was fine to leave as it was;
  * - the caller's words reach the model with the note's mark rewritten wherever they write it (neutralised),
  *   so a caller can never pass for the line's own check.
  */
@@ -133,6 +135,8 @@ interface Turn {
   check?: ConverseTraceRecord['check'];
   /** The model is being asked for the check after speaking's correction: its requests are marked so in the trace. */
   correcting: boolean;
+  /** A note the check after speaking carried from an earlier turn went with this turn's message to the model. */
+  carriedNote: boolean;
 }
 
 /** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
@@ -357,8 +361,13 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
   return { results, readBack };
 }
 
-/** A request's outcome; a failure says whether anything of it was said, and whether it never began (stalled). */
-type Round = { ok: true; calls: Extract<ModelEvent, { type: 'tool_call' }>[]; text: string } | { ok: false; error: string; spoke: boolean; stalled: boolean };
+/**
+ * A request's outcome; a failure says whether anything of it was said, whether it never began (stalled), and
+ * whether the provider refused it for its rate limit (`rateLimited`, with the wait it asked for where it named one).
+ */
+type Round =
+  | { ok: true; calls: Extract<ModelEvent, { type: 'tool_call' }>[]; text: string }
+  | { ok: false; error: string; spoke: boolean; stalled: boolean; rateLimited?: { retryAfterMs?: number } };
 
 const TIMED_OUT = Symbol('timed out');
 
@@ -375,10 +384,11 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
 /**
  * One request to the model, streamed: its text to the speaker until its first call (text after a call is
  * written without the call's result, and is dropped), its calls collected. It fails on an error event, a
- * thrown stream, nothing at all, a reply cut off at the token limit, or no event within `firstWaitMs` at first
- * and the model's time after.
+ * thrown stream, nothing at all (but where `emptyOk`: the first answer to the check after speaking's note, for
+ * which nothing at all is a correction declined), a reply cut off at the token limit, or no event within
+ * `firstWaitMs` at first and the model's time after.
  */
-async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number): Promise<Round> {
+async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number, emptyOk: boolean): Promise<Round> {
   const controller = new AbortController();
   const started = Date.now();
   const iter = t.deps.model.stream(req, controller.signal)[Symbol.asyncIterator]();
@@ -387,11 +397,11 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
   let first = true;
   let firstMs: number | null = null;
   let failed: string | undefined;
-  const fail = (error: string, stalled = false): Round => {
+  const fail = (error: string, stalled = false, rateLimited?: { retryAfterMs?: number }): Round => {
     failed = error;
     controller.abort();
     void Promise.resolve(iter.return?.()).catch(() => undefined);
-    return { ok: false, error, spoke: sp.spoke, stalled };
+    return { ok: false, error, spoke: sp.spoke, stalled, ...(rateLimited !== undefined ? { rateLimited } : {}) };
   };
   try {
     for (;;) {
@@ -421,14 +431,14 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
         // Cut off at the token limit: what it was writing is unfinished, so the turn fails (its last sentence, never said, is dropped).
         if (ev.stop === 'length') return fail(`length: the reply reached the ${t.deps.business.model.maxTokens}-token limit`);
         break;
-      } else return fail(`${ev.kind}: ${ev.detail}`);
+      } else return fail(`${ev.kind}: ${ev.detail}`, false, ev.kind === 'rate_limited' ? (ev.retryAfterMs !== undefined ? { retryAfterMs: ev.retryAfterMs } : {}) : undefined);
     }
   } finally {
     const ms = Date.now() - started;
     t.model.ms += ms;
     (t.model.requests ??= []).push({ firstMs, ms, ...(failed !== undefined ? { error: failed } : {}), ...(t.correcting ? { correction: true as const } : {}) });
   }
-  if (text.trim() === '' && calls.length === 0) {
+  if (text.trim() === '' && calls.length === 0 && !emptyOk) {
     const r = fail('empty: the model said nothing and called nothing');
     // The request is timed already; its failure is this.
     t.model.requests!.at(-1)!.error = failed;
@@ -448,25 +458,54 @@ function requestMessages(st: ConverseState): ModelMessage[] {
   return [{ role: 'user', content: [{ type: 'text', text: st.channel === 'voice' ? '[The call is connected.]' : '[The chat is open.]' }] }, ...messages];
 }
 
+/** The most times a request refused for the provider's rate limit is asked again, within a round. */
+export const RATE_LIMIT_RETRIES = 2;
+/** The first wait before a request refused for its rate limit is asked again, where the provider names none or one too long; it doubles each time. */
+export const RATE_LIMIT_BACKOFF_MS = 250;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
 /**
- * One round: the request, and once more with the time left if it failed before saying anything: when it
- * had not begun within half the model's time (it is stopped then), or failed with half or more left.
+ * One round: the request, and again where it failed before saying anything. A request the provider refused
+ * for its rate limit is asked again after a wait (its Retry-After where it named one that leaves half the
+ * model's time, else RATE_LIMIT_BACKOFF_MS doubling), up to RATE_LIMIT_RETRIES more times, each only while half
+ * the model's time is left after the wait; each such answer is counted in the trace (`model.rateLimited`). Any
+ * other failure is asked once more with the time left: when it had not begun within half the model's time (it
+ * is stopped then), or failed with half or more left. `emptyOk` is streamOnce's, for the round's first request
+ * and its asks again alike.
  */
-async function round(t: Turn, sp: Speaker): Promise<Round> {
+async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
   const b = t.deps.business;
   const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
-  let r = await streamOnce(t, sp, req, budget / 2, deadline);
-  if (r.ok) return r;
-  t.model.error = r.error;
-  if (!r.spoke && (r.stalled || deadline - Date.now() >= budget / 2)) {
+  let limited = 0;
+  let retried = false;
+  let r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk);
+  while (!r.ok) {
+    t.model.error = r.error;
+    if (r.spoke) break;
+    if (r.rateLimited !== undefined) {
+      t.model.rateLimited = (t.model.rateLimited ?? 0) + 1;
+      if (limited >= RATE_LIMIT_RETRIES) break;
+      const left = (wait: number): number => deadline - Date.now() - wait;
+      const asked = r.rateLimited.retryAfterMs;
+      const wait = asked !== undefined && left(asked) >= budget / 2 ? asked : RATE_LIMIT_BACKOFF_MS * 2 ** limited;
+      if (left(wait) < budget / 2) break;
+      limited += 1;
+      sp.abandon();
+      t.model.retried = true;
+      await sleep(wait);
+      r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk);
+      continue;
+    }
+    if (retried || !(r.stalled || deadline - Date.now() >= budget / 2)) break;
     // Nothing was said: the words of a sentence not yet finished are dropped, and the model asked again.
+    retried = true;
     sp.abandon();
     t.model.retried = true;
-    r = await streamOnce(t, sp, req, deadline - Date.now(), deadline);
-    if (!r.ok) t.model.error = r.error;
+    r = await streamOnce(t, sp, req, deadline - Date.now(), deadline, emptyOk);
   }
   return r;
 }
@@ -500,11 +539,18 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
 /**
  * The model asked, round after round, until it replies with no call, a change is read back, or it fails.
  * A failure says the recovery line (failed), but `silent` (the check after speaking's correction): then
- * nothing more is said and nothing counted, and the failure is returned.
+ * nothing more is said and nothing counted, and the failure is returned. With `silent`, a first answer of
+ * nothing at all (no text and no call) is the correction declined: the model read its reply again and found
+ * it right, so nothing is said or added to the conversation, and it is no failure (`declined`).
  */
-async function converse(t: Turn, sp: Speaker, silent = false): Promise<{ ok: true } | { ok: false; error: string }> {
+async function converse(t: Turn, sp: Speaker, silent = false): Promise<{ ok: true; declined?: true } | { ok: false; error: string }> {
   for (let i = 0; i < MAX_ROUNDS; i++) {
-    const r = await round(t, sp);
+    const r = await round(t, sp, silent && i === 0);
+    if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
+      // Only a first answer to the note may be empty (streamOnce's emptyOk): the correction declined.
+      sp.abandon();
+      return { ok: true, declined: true };
+    }
     if (!r.ok) {
       const said = sp.abandon();
       if (said !== '') {
@@ -550,15 +596,21 @@ async function converse(t: Turn, sp: Speaker, silent = false): Promise<{ ok: tru
  * nothing of its own, is not read, nor with agent.yaml's `checks.claims.mode` off. A reply read as
  * contradicted or not done at or over `correctAt` (with mode correct) goes back to the model with a note
  * marked as the line's own check, and the model is asked once more: its correction is said after the reply,
- * and may call actions, gated and read back as on any turn. The correction is not read again. While a
- * read-back waits for the caller's yes, the reading is recorded and nothing is corrected: the model may not
- * be asked again until the caller has answered it. A reading that fails or comes late is an unread check:
- * nothing is corrected. A correction that fails (the model errs, is late, or keeps calling actions) is
- * silent: no recovery line, no failure counted, no handoff, for the reply it would have corrected has been
- * said and stands. Where it said nothing, the note (and whatever the correction called) is taken out of the
- * conversation, as if the model had never been asked; where it said part of itself, what it said closes the
- * conversation. The reply's own model error and retry stay the turn's: the correction's failure is the
- * check's (`correctionFailed`, `correctionError`), and its requests are marked as the correction's.
+ * and may call actions, gated and read back as on any turn. The correction is not read again. A reading that
+ * fails or comes late is an unread check: nothing is corrected.
+ *
+ * - **Declined:** the model, reading its reply again, may find it right after all and answer with nothing at
+ *   all: nothing is said, it is no failure, the note is taken out of the conversation as if never sent (a
+ *   model may not be sent an empty turn of its own), and the check says `declined`.
+ * - **Failed:** a correction that fails (the model errs, is late, or keeps calling actions) is silent: no
+ *   recovery line, no failure counted, no handoff, for the reply it would have corrected has been said and
+ *   stands. Where it said nothing, the note (and whatever the correction called) is taken out of the
+ *   conversation; where it said part of itself, what it said closes the conversation. The reply's own model
+ *   error and retry stay the turn's: the correction's failure is the check's (`correctionFailed`,
+ *   `correctionError`), and its requests are marked as the correction's.
+ * - **Carried:** while a read-back waits for the caller's yes the model may not be asked now, so the note is
+ *   kept in the call's state (ConverseState.carriedNote) and goes with the next message the model is sent
+ *   (converseTurn), worded as about a reply said earlier; the check says `carried`.
  */
 async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
   const claims = t.deps.business.checks.claims;
@@ -575,7 +627,13 @@ async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
   const check: NonNullable<ConverseTraceRecord['check']> = { contradicted: reading?.contradicted ?? null, notDone: reading?.notDone ?? null, gap: reading?.gap ?? null, flagged, ms: Date.now() - started, corrected: false, correction: 0 };
   t.check = check;
   const wrong = flagged.includes('contradicted') || flagged.includes('notDone');
-  if (reading === null || !wrong || claims.mode !== 'correct' || t.st.pending !== null) return;
+  if (reading === null || !wrong || claims.mode !== 'correct') return;
+  if (t.st.pending !== null) {
+    // A read-back waits for the caller's yes: the note goes with the next message the model is sent.
+    t.st.carriedNote = checkNote(reply, reading, claims.correctAt, true);
+    check.carried = true;
+    return;
+  }
   // The note is a message of its own on the caller's side (a model is sent a conversation that ends there),
   // marked as the line's own check; the system prompt says what such a note is.
   const before = { replies: t.replies.length, messages: t.st.messages.length, error: t.model.error, retried: t.model.retried };
@@ -590,7 +648,13 @@ async function checkAfterSpeaking(t: Turn, sp: Speaker): Promise<void> {
   else t.model.error = before.error;
   if (before.retried === undefined) delete t.model.retried;
   else t.model.retried = before.retried;
-  if (corrected.ok) return;
+  if (corrected.ok) {
+    if (corrected.declined === true) {
+      check.declined = true;
+      t.st.messages.length = before.messages;
+    }
+    return;
+  }
   check.correctionFailed = true;
   check.correctionError = corrected.error;
   if (check.correction === 0) t.st.messages.length = before.messages;
@@ -682,6 +746,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ending: false,
     own: [],
     correcting: false,
+    carriedNote: false,
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
@@ -692,11 +757,20 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     // The caller left: a read-back waiting for an answer is dropped, and nothing runs.
     const pending = st.pending?.action ?? null;
     st.pending = null;
+    // A note carried for the model is dropped with the call.
+    delete st.carriedNote;
     st.ended = 'left';
     await record(t, { type: 'converse_left', detail: { pending } });
   } else {
     if (st.pending !== null) await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
+    if (st.carriedNote !== undefined) {
+      // The check after speaking's note carried from a turn that ended on a read-back: after this message's
+      // own content (the caller's words, or what came of the read-back), in the same message, never neutralised.
+      add(st, 'user', [{ type: 'text', text: st.carriedNote }]);
+      delete st.carriedNote;
+      t.carriedNote = true;
+    }
     await converse(t, sp);
     await checkAfterSpeaking(t, sp);
   }
@@ -716,6 +790,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     model: { ...t.model, costUsd: input.kind === 'text' ? costUsd(deps.model.id, t.model.usage) : null },
     ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
     ...(t.check !== undefined ? { check: t.check } : {}),
+    ...(t.carriedNote ? { carriedNote: true as const } : {}),
   });
   st.turnIndex += 1;
   return st;

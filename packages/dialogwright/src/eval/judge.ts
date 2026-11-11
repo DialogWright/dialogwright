@@ -371,7 +371,7 @@ export function agentCostOfCall(traceDir: string, callId: string): number | null
  * A converse call's model use, from its traces: each caller turn's requests to the model with their true
  * times (ModelRequestTime: the reply's, never a correction's), the tokens summed over the call (null where
  * no turn records any), and the replies the check after speaking read (converse/trace.ts `check`), corrected
- * on the call (a correction that failed said nothing, so it is none), and could not read (its readings null:
+ * on the call (a correction that failed or was declined said nothing, so it is none), and could not read (its readings null:
  * the decision model failed or was late).
  */
 export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnTiming[]; tokens: { inputTokens: number; outputTokens: number } | null; checks: CheckCounts } {
@@ -394,7 +394,8 @@ export function modelUseOfCall(traceDir: string, callId: string): { turns: TurnT
     if (check !== null && typeof check === 'object') {
       if (typeof check.contradicted === 'number') checks.read += 1;
       else checks.unread += 1;
-      if (check.corrected === true && check.correctionFailed !== true) checks.corrected += 1;
+      // A correction that failed or that the model declined said nothing: none was made on the call.
+      if (check.corrected === true && check.correctionFailed !== true && check.declined !== true) checks.corrected += 1;
     }
   }
   return { turns, tokens: found && inputTokens + outputTokens > 0 ? { inputTokens, outputTokens } : null, checks };

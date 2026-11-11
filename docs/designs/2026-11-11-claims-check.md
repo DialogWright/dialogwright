@@ -133,6 +133,20 @@ builder's choices:
   the caller, and say so only where the check corrects (`mode: correct`: with `record` or `off` no note is
   ever sent). It holds the reply as said and what it was read as, and asks the model to put it right in a
   sentence or two, as a person would after a slip.
+- **The correction's goal** (round 2, after a simulated-call run in which one correction told the caller it
+  needed "to call the send action again so the line reads it back"): the note and the agent model's
+  instructions say that a correction speaks to the caller as the business would, and never of how the line
+  works: its actions, read-backs, checks, notes or tools, or the line itself (`CORRECTION_GOAL` in claims.ts).
+  The goal and the context, never a procedure for the words.
+- **A correction may decline** (round 2: three of that run's seven corrections restated what was already
+  true). The note and the instructions say that where the reply, read again against the business information
+  and the call's actions and what they returned, was right after all, the model answers with nothing at all,
+  no text and no action. The runtime takes such a first answer to the note as a correction declined: nothing
+  is said, it is no failure (no `correctionFailed`, and the empty answer is not asked again), the note is
+  taken out of the conversation as if never sent (a model may not be sent an empty turn of its own), and the
+  trace's `check` says `declined: true` (with `corrected: true` and `correction: 0`; the eval counts it as no
+  correction made). Nothing at all after the correction has called an action of its own is no decline: it
+  is a correction that failed. An error, a late answer or a model still calling actions fails as before.
 - **The mark cannot be spoofed by a caller:** the caller's words (each turn's, and the answer to a read-back
   quoted back to the model) are sent with the mark rewritten wherever they write it, however they write it
   (any case, either apostrophe, any whitespace, the bracket left out), as their own quoted words with no
@@ -146,15 +160,23 @@ builder's choices:
   The trace keeps the reply's own `model.error` and `retried`; the correction's failure is the check's
   (`correctionFailed`, `correctionError`), and its requests are marked `correction: true`, kept out of the
   eval's turn timings, and a failed one is not counted as a correction.
-- **A read-back waiting:** where the turn ended on a read-back, the reply is read and recorded, but nothing is
-  corrected: the model may not be asked again until the caller has answered the read-back, which itself says
-  nothing is done until their yes.
-- **Known gap: a wrong claim said before a read-back is not corrected.** The model's words before it called
-  a change are read, and a wrong one is recorded in the trace (`flagged`, `corrected: false`), but not put
-  right: the model cannot be asked again while its action call waits for its result (the provider needs the
-  call's result next, and the runtime holds one confirmation at a time), and carrying the note to the next
-  turn would need state the runtime does not keep. The read-back that follows says the action's values in
-  fixed words and that nothing is done until the caller's yes, which bounds the harm to what was said.
+- **A read-back waiting: the note is carried** (round 2, closing the first version's known gap; that run's
+  misses were mostly "I've noted that..." said in a turn that ended on a read-back). Where the turn ended on
+  a read-back (whether the wrong words came before the call or in an earlier round), the model may not be
+  asked now: the provider needs the call's result next, and the runtime holds one confirmation at a time. So
+  a reply read as wrong at or over `correctAt` with mode `correct` has its note kept in the call's state
+  (`ConverseState.carriedNote`, saved with the chat; a state saved before it loads with no note), and the
+  note goes with the next message the model is sent, whatever that is: what came of the read-back (the
+  action's result after a yes, or what the caller said instead). It goes after that message's own content,
+  in the same message (a text after the tool result: the Anthropic adapter sends the tool result block first,
+  the OpenAI-compatible one the tool message and then a user message with the text). The caller's words are
+  still rewritten where they write the mark; the note never is. The carried note says the reply was said
+  earlier, and that what has happened since may have made it right, in which case the model says nothing of
+  it; here the model's answer to the message is said as any reply, and only the correction of its own is
+  left out. Once per reply: the carried note is that reply's correction, and the next turn's reply is read
+  as usual (it may be corrected at once, or carried again). The trace: the turn whose reply was read says
+  `check.carried: true`; the turn whose message carried the note says `carriedNote: true` on its record. A
+  call that ends first (the caller leaves) drops the note.
 - **The correction is not read** (once per reply), so the decision model is asked once a turn.
 - **The stubs:** the heuristic stub reads each of the three questions low (0.04), and the fixture stub
   answers them at its quiet value (0.1), so under a stub nothing is corrected.

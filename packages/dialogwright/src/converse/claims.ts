@@ -128,12 +128,31 @@ export function neutralised(said: string): string {
 }
 
 /**
- * The note the agent model is sent where a reply it said was read as wrong: the reply as said, what it was
- * read as, in plain words, and the goal: to put it right for the caller now, briefly and naturally.
+ * What a correction is for, and what it never says, in the note and in the agent model's instructions alike
+ * (prompt.ts): the goal and the context, never a procedure for the words. A correction speaks to the caller as
+ * the business would; the line's workings are not the caller's concern.
  */
-export function checkNote(reply: string, reading: ClaimsReading, correctAt: number): string {
+export const CORRECTION_GOAL = 'speaking to the caller as the business would, and never of how the line works (its actions, read-backs, checks, notes or tools, or the line itself)';
+
+/** What the model does where its reply, read again, was right after all: nothing at all, which the line takes as a correction declined. */
+export const CORRECTION_DECLINE = 'Where, read again against the business information and the call\'s actions and what they returned, it was right after all, answer with nothing at all: no words and no action.';
+
+/**
+ * The note the agent model is sent where a reply it said was read as wrong: the reply as said, what it was
+ * read as, in plain words, and the goal: to put it right for the caller now, briefly and naturally, as the
+ * business would, never speaking of the line's workings; or, where the reply was right after all, to answer
+ * with nothing at all (turn.ts takes that as a correction declined). `carried`: the note could not be sent
+ * when the reply was read (a read-back was waiting for the caller's yes), so it goes with the next message the
+ * model is sent, after that message's own content: it says the reply was said earlier, and that what has
+ * happened since may have made it right, in which case the model answers that message alone and says nothing
+ * of the reply.
+ */
+export function checkNote(reply: string, reading: ClaimsReading, correctAt: number, carried = false): string {
   const read: string[] = [];
   if (reading.contradicted >= correctAt) read.push('it states something that the business information or what the call\'s actions returned say otherwise');
   if (reading.notDone >= correctAt) read.push('it tells the caller something was done that the call\'s actions do not show as done');
-  return `${CHECK_NOTE_MARK} your reply has been said to the caller, and the decision model read it after: "${reply}". It reads as wrong: ${read.join('; and ')}. Put it right for the caller now, in a sentence or two, naturally, as a person would after a slip; where something is not done, say so, and offer what can be done.]`;
+  if (carried) {
+    return `${CHECK_NOTE_MARK} a reply of yours was said to the caller earlier on this call, and the decision model read it after: "${reply}". It may have been wrong: ${read.join('; and ')}. What has happened since, what comes before this note included, may have made it right. Answer what comes before this note as you would; where that earlier reply, read again against the business information and the call's actions and what they returned, is still wrong, put it right in that answer, in a sentence or two, naturally, ${CORRECTION_GOAL}. Where it was right, or is right now, say nothing of it.]`;
+  }
+  return `${CHECK_NOTE_MARK} your reply has been said to the caller, and the decision model read it after: "${reply}". It may be wrong: ${read.join('; and ')}. Where it is wrong, put it right for the caller now, in a sentence or two, naturally, as a person would after a slip, ${CORRECTION_GOAL}; where something is not done, say so, and offer what can be done. ${CORRECTION_DECLINE}]`;
 }

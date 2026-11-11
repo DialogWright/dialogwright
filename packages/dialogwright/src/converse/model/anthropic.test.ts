@@ -89,4 +89,22 @@ describe('anthropicModel', () => {
     expect(bodies.map((b) => b.output_config)).toEqual([{ effort: 'low' }, { effort: 'medium' }, undefined]);
     expect(String(f.calls[0]!.init.body)).not.toContain('reasoning');
   });
+
+  it('sends a user message holding tool results then text (a note after what came of a read-back) as one message, the tool results first', async () => {
+    const f = stubFetch(stream);
+    const withNote: ModelRequest = { ...req, messages: [...req.messages.slice(0, 2), { role: 'user', content: [{ type: 'tool_result', id: 't0', content: 'free' }, { type: 'text', text: 'A note.' }] }] };
+    await collect(anthropicModel({ model: 'claude-haiku-5-5', apiKey: KEY, fetch: f.fetch }).stream(withNote, ctl()));
+    const body = JSON.parse(String(f.calls[0]!.init.body));
+    expect(body.messages).toHaveLength(3);
+    expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 't0', content: 'free' }, { type: 'text', text: 'A note.' }] });
+  });
+
+  it('maps an HTTP 429 to rate_limited, with the wait its Retry-After asks for, and a rate_limit_error in the stream the same way', async () => {
+    const limited = (headers: Record<string, string>) => stubFetch(() => new Response(JSON.stringify({ error: { type: 'rate_limit_error', message: 'slow down' } }), { status: 429, headers }));
+    const run = async (headers: Record<string, string>) => collect(anthropicModel({ model: 'm', apiKey: KEY, fetch: limited(headers).fetch }).stream(req, ctl()));
+    expect(await run({ 'retry-after': '2' })).toEqual([{ type: 'error', kind: 'rate_limited', detail: 'HTTP 429 rate_limit_error: slow down', retryAfterMs: 2000 }]);
+    expect(await run({})).toEqual([{ type: 'error', kind: 'rate_limited', detail: 'HTTP 429 rate_limit_error: slow down' }]);
+    const inStream = stubFetch(() => sseResponse([sse({ type: 'message_start', message: { usage: { input_tokens: 1 } } }), sse({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } })]));
+    expect(await collect(anthropicModel({ model: 'm', apiKey: KEY, fetch: inStream.fetch }).stream(req, ctl()))).toEqual([{ type: 'error', kind: 'rate_limited', detail: 'rate_limit_error: slow down' }]);
+  });
 });

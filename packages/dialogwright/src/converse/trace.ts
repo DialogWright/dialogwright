@@ -37,9 +37,11 @@ export interface ConverseTraceRecord {
   /**
    * The model's requests of the turn: their time, the first text's time from the turn's start, usage and cost
    * summed over them; and each request on its own (`requests`): ms to its first event (null: none came), ms to
-   * its end, and how it failed where it did.
+   * its end, and how it failed where it did. `rateLimited`: how many of the turn's answers (the reply's and a
+   * correction's alike) were the provider's refusal for its rate limit, each asked again after a wait while
+   * half the model's time was left (turn.ts `round`); absent where none was.
    */
-  model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; requests?: ModelRequestTime[] };
+  model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; rateLimited?: number; requests?: ModelRequestTime[] };
   /** The read-back said, or answered, this turn: the decision model's reading of the answer and whether it confirmed. */
   readBack?: { text: string; yes?: number; no?: number; confirmed?: boolean };
   /**
@@ -49,9 +51,18 @@ export interface ConverseTraceRecord {
    * asked to correct the reply, and how many of `replies`, at their end, are its correction. A correction
    * that failed (the model erred, was late, or kept calling actions) said nothing more and counted no failure
    * of the call: `correctionFailed`, with how it failed (`correctionError`); `model.error` and
-   * `model.retried` stay the reply's own.
+   * `model.retried` stay the reply's own. A correction the model declined (asked, it answered with nothing at
+   * all, having found its reply right after all): `corrected` true, `correction` 0, `declined`, and no failure.
+   * A reply read as wrong while a read-back waited for the caller's yes: `carried`, its note kept for the next
+   * message the model is sent (`corrected` false here; the record of the turn that sends it says `carriedNote`).
    */
-  check?: { contradicted: number | null; notDone: number | null; gap: number | null; flagged: ('contradicted' | 'notDone' | 'gap')[]; ms: number; corrected: boolean; correction: number; correctionFailed?: true; correctionError?: string };
+  check?: { contradicted: number | null; notDone: number | null; gap: number | null; flagged: ('contradicted' | 'notDone' | 'gap')[]; ms: number; corrected: boolean; correction: number; correctionFailed?: true; correctionError?: string; declined?: true; carried?: true };
+  /**
+   * The check after speaking's note carried from an earlier turn (whose `check` says `carried`) went with this
+   * turn's message to the model, after the caller's words or what came of the read-back. This turn's reply is
+   * that note's answer, and is read on its own as usual (`check`).
+   */
+  carriedNote?: true;
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
 }

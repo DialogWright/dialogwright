@@ -88,10 +88,14 @@ function describeError(err: unknown): string {
 /** A reply's pieces as one line of text: each trimmed, joined by a space. */
 const joined = (pieces: readonly string[]): string => pieces.map((p) => p.trim()).filter((p) => p !== '').join(' ');
 
-/** A saved converse state as it was written (newConverseState's shape), or null. */
-function stateOf(session: unknown): ConverseState | null {
+/**
+ * A saved converse state as it was written (newConverseState's shape), or null. A state saved before a field
+ * was kept loads as it is: a carried note absent is none (and one that is not text is dropped).
+ */
+export function stateOf(session: unknown): ConverseState | null {
   const s = session as Partial<ConverseState> | null;
   if (typeof s !== 'object' || s === null || s.kind !== 'converse' || s.v !== 1 || typeof s.appId !== 'string' || !Array.isArray(s.messages)) return null;
+  if (s.carriedNote !== undefined && typeof s.carriedNote !== 'string') delete s.carriedNote;
   return s as ConverseState;
 }
 

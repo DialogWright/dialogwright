@@ -2,7 +2,7 @@ import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText } from './business/text';
-import { CHECK_NOTE_MARK } from './claims';
+import { CHECK_NOTE_MARK, CORRECTION_DECLINE, CORRECTION_GOAL } from './claims';
 import type { ModelTool } from './model/types';
 import { businessZone, type ConverseState } from './state';
 
@@ -10,7 +10,8 @@ import { businessZone, type ConverseState } from './state';
  * What the agent model is told (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and
  * "Claims"): the business's information, its persona's style, agent mode's rules (claim only what the
  * information or a lookup on this call supports; nothing changes without the caller's yes; nothing is said
- * to be done that no action's result says was done), the honesty
+ * to be done that no action's result says was done; nothing is said to be noted that no confirmed action's
+ * params carry), the honesty
  * rule, the date and time in the business's zone, and what is known of the caller (the account, and the
  * number by its last four only). It gives context and goals, never a procedure for the words.
  */
@@ -26,7 +27,7 @@ function nowWords(now: Date, zone: string): string {
 function callerWords(s: ConverseState): string {
   const parts: string[] = [];
   if (s.caller.account) parts.push(`The number they are calling from is on file for the account "${s.caller.account}" (a number on file recognises an account; it does not prove who is speaking).`);
-  if (s.caller.number && lastFour(s.caller.number).length === 4) parts.push(`They are calling from a number ending in ${lastFour(s.caller.number)}; only the business's actions see the whole number. Where an action takes a phone number and the caller means this one, write "${CALLER_TOKEN}" for it.`);
+  if (s.caller.number && lastFour(s.caller.number).length === 4) parts.push(`They are calling from a number ending in ${lastFour(s.caller.number)}; only the business's actions see the whole number. Where an action takes a phone number and the caller means this one, write "${CALLER_TOKEN}" for it. The word stands for that number and for nothing else: never write it for the caller's name or any other value, which you ask the caller for.`);
   else if (s.channel === 'voice') parts.push('Their number is not known.');
   if (parts.length === 0) parts.push('Nothing is known about them yet.');
   return parts.join(' ');
@@ -42,7 +43,7 @@ const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgeme
  * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
  * `checks.claims.mode: correct`); with any other mode no note is ever sent, so nothing is said of one.
  */
-const CHECK_NOTE_WORDS = `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that your last reply read as wrong, and why. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Put the slip right for the caller then, in a sentence or two, naturally, as a person would; the caller has not seen the note.`;
+const CHECK_NOTE_WORDS = `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that a reply of yours may have been wrong, and why; the caller has not seen it. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Where the reply was wrong, put the slip right for the caller in a sentence or two, naturally, ${CORRECTION_GOAL}. ${CORRECTION_DECLINE} A note that follows the caller's words, or what came of a read-back, is about a reply said earlier: answer what comes before it as you would, and put the earlier reply right in that answer only where it is still wrong.`;
 
 export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): string {
   const zone = businessZone(b);
@@ -55,10 +56,11 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),
     '',
-    'Three rules hold on every call:',
+    'Four rules hold on every call:',
     `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" Times and availability come only from lookups made on this call.`,
     '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to the line\'s read-back does, so when the caller wants a change made, call its action and the line reads it back.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
+    '4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, say you will pass it on, never that it is noted.',
     ...(b.checks.claims.mode === 'correct' ? ['', CHECK_NOTE_WORDS] : []),
     '',
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,

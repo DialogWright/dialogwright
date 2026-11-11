@@ -13,8 +13,10 @@ function messagesOf(system: string, messages: ModelMessage[]): Record<string, un
       out.push({ role: 'assistant', content: text === '' && calls.length > 0 ? null : text, ...(calls.length > 0 ? { tool_calls: calls } : {}) });
       continue;
     }
+    // A user message's tool results go first, as tool messages; its text (the caller's words, a note of the
+    // line's own) follows as one user message, each block a paragraph of its own.
     for (const c of m.content) if (c.type === 'tool_result') out.push({ role: 'tool', tool_call_id: c.id, content: c.content });
-    const text = m.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
+    const text = m.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n\n');
     if (text !== '') out.push({ role: 'user', content: text });
   }
   return out;
@@ -93,7 +95,9 @@ export function openAiCompatModel(o: { provider: OpenAiCompatProvider; model: st
           if (ev === null) continue;
           if (ev.error !== undefined) {
             const told = apiError(ev, o.apiKey);
-            yield { type: 'error', kind: filteredBy(200, ev, told) ? 'filtered' : 'http', detail: `${told.type ?? 'error'}${told.message ? `: ${told.message}` : ''}` };
+            // A rate limit told in the stream (an error whose code is 429, as OpenRouter sends) is one as a 429 is, with no wait named.
+            const limited = ev.error?.code === 429 || ev.error?.code === '429';
+            yield { type: 'error', kind: filteredBy(200, ev, told) ? 'filtered' : limited ? 'rate_limited' : 'http', detail: `${told.type ?? 'error'}${told.message ? `: ${told.message}` : ''}` };
             return;
           }
           if (ev.usage) {
