@@ -220,8 +220,15 @@ export { candidateSpans, candidateWordSpans, FILLER_WORDS, MAX_WORD_NGRAM } from
 
 // The server: the phone line, the console and the app's own routes.
 export { startServer, main as serverMain } from './server/index';
-export { loadHost } from './server/host';
-export type { HostApp, HostRouting } from './server/host';
+export { loadHost, hostRouting } from './server/host';
+export type { HostApp, HostedApp, HostRouting } from './server/host';
+
+// A converse app (docs/designs/2026-11-11-agent-runtime.md): agent.yaml joined with its actions' code,
+// served by startServer (overrides.apps, a host of one or more apps) on the chat, its model holding the conversation.
+export { defineConverseApp, isConverseApp, businessCalendar } from './converse/app';
+export type { ConverseApp, ConverseChatSettings, Calendar as ConverseCalendar, Slot as ConverseSlot } from './converse/app';
+export type { ToolImpl as ConverseToolImpl } from './converse/turn';
+export type { ConverseTraceRecord } from './converse/trace';
 export type { RunningServer, ServerOverrides, Sidecars } from './server/index';
 export { appPagesBase, mountAppPages, routeOwns, validateRoutes } from './server/appRoutes';
 export type { AppPageDeps, AppPagesFactory, AppRoute, AppRoutes, AppRouteDeps, AppRoutesFactory } from './server/appRoutes';

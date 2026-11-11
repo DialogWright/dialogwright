@@ -1,5 +1,7 @@
 import { identityOf } from '../../core/app/lookup';
 import type { App, ConsoleFact, ConsoleLink, ServiceNoteWording } from '../../core/app/types';
+import { isConverseApp, type ConverseApp } from '../../converse/app';
+import type { HostedApp } from '../host';
 
 /**
  * Everything the console's page (page.html, view.js) knows about the app, as plain JSON: the app's
@@ -124,6 +126,47 @@ export function consoleMetaOf(app: App): ConsoleMeta {
     heardBy: c.heardBy ?? 'the caller',
     links: [...(c.links ?? [])],
   };
+}
+
+/**
+ * The console's words for a converse app (agent.yaml): its business's name, and the neutral words for
+ * everything else, as it has no forms, slots or identity levels (its calls are shown by their own view).
+ */
+export function converseMetaOf(app: ConverseApp): ConsoleMeta {
+  const name = app.business.business.name;
+  const initials = name.split(/\s+/).filter(Boolean).map((w) => w[0]!.toUpperCase()).join('').slice(0, 2);
+  return {
+    brand: { name, mark: initials || app.id.slice(0, 2).toUpperCase(), key: app.id },
+    formSlots: {},
+    slotOrder: [],
+    stepUp: [],
+    chipStyle: {},
+    slotAttempts: {},
+    formLabels: {},
+    slotLabels: {},
+    questionPrefixes: {},
+    detectQuestions: [],
+    summaryQuestions: [],
+    levels: [...NEUTRAL_LEVELS],
+    handoffReasons: {},
+    facts: [],
+    goodAuditTypes: [],
+    serviceNote: NEUTRAL_SERVICE_NOTE,
+    signIn: { marker: 'signed in · portal', role: null },
+    chatPrefixes: [],
+    heardBy: 'the caller',
+    links: [],
+  };
+}
+
+/** The console's words for any app the server runs: a scripted app's (consoleMetaOf), or a converse app's (converseMetaOf). */
+export function metaOfHosted(app: HostedApp): ConsoleMeta {
+  return isConverseApp(app) ? converseMetaOf(app) : consoleMetaOf(app);
+}
+
+/** An app's name as the console shows it: its brand's (a scripted app), its business's (a converse app), else its id. */
+export function nameOfHosted(app: HostedApp): string {
+  return isConverseApp(app) ? app.business.business.name : app.brand?.name ?? app.id;
 }
 
 const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };

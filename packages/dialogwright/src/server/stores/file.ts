@@ -131,7 +131,7 @@ export function storedCallProblem(v: unknown): string | null {
 export function storedChatProblem(v: unknown): string | null {
   if (!isRecord(v)) return 'not an object';
   if (typeof v.id !== 'string' || v.id === '') return 'no id';
-  if (!isNumber(v.schema)) return 'no schema';
+  if (!isNumber(v.schema) && (typeof v.schema !== 'string' || v.schema === '')) return 'no schema';
   if (!isRecord(v.session)) return 'no session';
   if (typeof v.resumeHash !== 'string' || !/^[0-9a-f]{64}$/.test(v.resumeHash)) return 'no resumeHash';
   if (!isNumber(v.createdAtMs) || !isNumber(v.lastActivityMs)) return 'a counter is missing';

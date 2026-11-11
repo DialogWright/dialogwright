@@ -2061,3 +2061,120 @@ export function wordingRows(w) {
     prompts: w.prompts.map((p) => ({ app: p.app, cells: [p.promptId, String(p.tried), String(p.generated), percentText(p.fallbackRate), p.meanMs === null ? '–' : `${p.meanMs} ms`] })),
   };
 }
+
+// ---------- a converse call (src/converse: kind 'converse' trace records) ----------
+
+/** A converse trace's own records: its turns, in order, without those a server wrote after it let the chat go. */
+function converseRecords(records) {
+  return (records ?? []).filter((r) => r && typeof r === 'object' && r.kind === 'converse' && r.outlivedHold !== true);
+}
+
+const msOfTs = (ts) => {
+  const t = typeof ts === 'string' ? Date.parse(ts) : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
+/** How a converse chat ended, from its frame log's end (`{ended}`: closing, handoff, caller, idle). */
+function converseEnding(reason) {
+  if (reason === null) return null;
+  if (reason === 'closing') return { kind: 'handled', text: 'handled' };
+  if (reason === 'handoff') return { kind: 'person', reason: 'handoff', text: 'to a person' };
+  if (reason === 'caller') return { kind: 'hangup', text: 'left the chat' };
+  if (reason === 'idle') return { kind: 'hangup', text: 'left the chat (idle)' };
+  return { kind: 'error', text: 'ended in an error' };
+}
+
+/**
+ * A converse call as the Calls page lists it (the CallRow callRow makes of a scripted call): a chat, its
+ * turns (what the caller said), the actions the caller confirmed as its tasks, how it ended (its frame
+ * log's end), and the model's cost (each turn's, where its price is known). No value a caller gave.
+ */
+export function converseRow(records, frames) {
+  const list = converseRecords(records);
+  const first = list[0] ?? null;
+  let lastAt = list.length > 0 ? msOfTs(list.at(-1).ts) : null;
+  let endReason = null;
+  let endedAt = null;
+  for (const f of frames ?? []) {
+    const at = msOfTs(f?.ts);
+    if (at !== null) lastAt = lastAt === null ? at : Math.max(lastAt, at);
+    const m = f?.msg;
+    if (f?.dir === 'log' && m && typeof m === 'object' && typeof m.ended === 'string') {
+      endReason = m.ended;
+      endedAt = at;
+    }
+  }
+  const tasks = [];
+  for (const r of list) {
+    for (const t of Array.isArray(r.tools) ? r.tools : []) {
+      if (t?.outcome === 'confirmed' && typeof t.name === 'string' && !tasks.some((x) => x.id === t.name)) tasks.push({ id: t.name, label: t.name });
+    }
+  }
+  const cost = list.reduce((s, r) => s + (typeof r.model?.costUsd === 'number' ? r.model.costUsd : 0), 0);
+  return {
+    callSid: first?.sessionId ?? null,
+    app: null,
+    from: 'web chat',
+    caller: null,
+    channel: 'chat',
+    provider: null,
+    startedAt: first ? msOfTs(first.ts) : null,
+    lastAt,
+    endedAt,
+    turns: list.filter((r) => typeof r.said === 'string').length,
+    task: { form: null, label: null },
+    step: null,
+    tasks,
+    status: endReason === 'handoff' ? 'with-person' : endReason !== null ? 'ended' : 'on-track',
+    frustrated: false,
+    handoffReason: endReason === 'handoff' ? 'handoff' : null,
+    ending: converseEnding(endReason),
+    costUsd: Math.round(cost * 1e6) / 1e6,
+  };
+}
+
+/**
+ * A converse call's detail, turn by turn: what the caller said (null for the start and a caller leaving),
+ * the line (each reply and fixed line, joined), each action called with its params as recorded and its
+ * outcome, the read-back said or answered (and how the decision model read the answer), and the model's
+ * time, first text, tokens and cost (null on a turn that asked no model). Plain text, for the page to escape.
+ */
+export function converseCall(records) {
+  const list = converseRecords(records);
+  const turns = list.map((r) => {
+    const m = r.model ?? null;
+    const asked = m !== null && (m.ms > 0 || (m.usage?.inputTokens ?? 0) > 0 || typeof m.error === 'string');
+    const rb = r.readBack ?? null;
+    const answer = rb === null ? null
+      : rb.confirmed === true ? `confirmed (yes ${rb.yes?.toFixed(2) ?? '–'}, no ${rb.no?.toFixed(2) ?? '–'})`
+        : rb.confirmed === false ? (rb.yes === undefined ? 'not confirmed (no reading)' : `not confirmed (yes ${rb.yes.toFixed(2)}, no ${rb.no?.toFixed(2) ?? '–'})`)
+          : 'waiting for the answer';
+    return {
+      index: r.turnIndex,
+      at: msOfTs(r.ts),
+      said: typeof r.said === 'string' ? r.said : null,
+      line: (Array.isArray(r.replies) ? r.replies : []).join(' '),
+      tools: (Array.isArray(r.tools) ? r.tools : []).map((t) => ({
+        name: String(t.name),
+        outcome: String(t.outcome),
+        args: Object.entries(t.args ?? {}).map(([k, v]) => `${k}=${v}`).join(', '),
+        reason: typeof t.reason === 'string' ? t.reason : null,
+      })),
+      readBack: rb === null ? null : { text: String(rb.text ?? ''), answer },
+      model: asked
+        ? { id: String(m.id), ms: m.ms, firstTextMs: m.firstTextMs ?? null, tokens: `${m.usage?.inputTokens ?? 0} in, ${m.usage?.outputTokens ?? 0} out`, costUsd: typeof m.costUsd === 'number' ? m.costUsd : null, error: typeof m.error === 'string' ? m.error : null, retried: m.retried === true }
+        : null,
+    };
+  });
+  const models = [];
+  for (const t of turns) if (t.model && !models.includes(t.model.id)) models.push(t.model.id);
+  return {
+    turns,
+    totals: {
+      turns: turns.filter((t) => t.said !== null).length,
+      modelMs: list.reduce((s, r) => s + (typeof r.model?.ms === 'number' ? r.model.ms : 0), 0),
+      costUsd: Math.round(turns.reduce((s, t) => s + (t.model?.costUsd ?? 0), 0) * 1e6) / 1e6,
+      models,
+    },
+  };
+}

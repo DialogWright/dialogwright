@@ -456,6 +456,13 @@
   @media (prefers-reduced-motion: reduce) {
     .nchip.glow, .level.pulse, .gate.fresh, .turn.arrive, .dot.on, .summary.wait, .bar.pending i { animation:none !important; }
   }
+  /* A converse call's detail (showConverse). */
+  .converse { margin:12px; }
+  .converse .cturn { padding:8px 12px; border-top:1px solid var(--border); display:grid; gap:4px; }
+  .converse .who { color:var(--muted); font-weight:600; margin-right:6px; }
+  .converse .who.caller { color:var(--caller); }
+  .converse .who.sys { color:var(--sys); }
+  .converse .tool { color:var(--muted); }
 </style></head>
 <body>
 <header>
@@ -556,6 +563,8 @@
   <span class="hint">← → step · space play · Home start · End end · R live/replay · S script</span>
   <span id="note" class="mono"></span>
 </div>
+<!-- A converse call (src/converse) is shown by its own view, in place of the replay's panels. -->
+<div class="card conv converse" id="converse" hidden></div>
 <main>
   <section class="col">
     <div class="card now s-idle" id="now"></div>
@@ -578,7 +587,7 @@
   // './dashboard/view.js' would resolve differently when the page is opened at '/dashboard/'.
   import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, traceName, replayHref, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK,
     STATUS_TEXT, isAlert, liveList, liveStrip, alertCount, alertsRaised, pageTitle, durationText, callsQuery,
-    insightsRange, callsSeries, peakOf, barsSvg, splitSvg, percentText, moneyText, lengthBucketText, bytesText, wordingRows } from '/dashboard/view.js';
+    insightsRange, callsSeries, peakOf, barsSvg, splitSvg, percentText, moneyText, lengthBucketText, bytesText, wordingRows, converseCall } from '/dashboard/view.js';
 
   /** The app this console serves (src/server/dashboard/meta.ts ConsoleMeta), put in by the server as it serves the page. */
   const PAGE = {{meta}};
@@ -1274,6 +1283,7 @@
    */
   function startLive(sid = state.followSid) {
     stopPlay();
+    showConverse(null);
     state.mode = 'live';
     state.followSid = sid ?? null;
     state.events = []; state.lastSeq = -1; state.callSid = null;
@@ -1444,6 +1454,14 @@
     const records = data && Array.isArray(data.records) ? data.records : [];
     const frames = data && Array.isArray(data.frames) ? data.frames : [];
     const deliveries = data && Array.isArray(data.deliveries) ? data.deliveries : [];
+    // A converse call is shown whole by its own view: nothing to step through.
+    if (records.length > 0 && records[0] && records[0].kind === 'converse') {
+      state.all = []; state.stops = [0]; state.totalTurns = 0; state.resume = null;
+      showConverse(converseCall(records));
+      el('pos').textContent = '';
+      return;
+    }
+    showConverse(null);
     state.all = replayEvents(records, frames, { from: 'replay', thresholds: DEFAULTS, deliveries });
     state.stops = replayStops(state.all);
     state.totalTurns = reduce(state.all).turnCount;
@@ -1451,6 +1469,34 @@
     if (state.resume && state.resume.sid === sid) state.cursor = Math.max(0, Math.min(state.all.length, Number(state.resume.cursor) || 0));
     state.resume = null;
     draw();
+  }
+
+  /**
+   * A converse call's detail (view.js converseCall): each turn's caller words and line, the actions with
+   * their outcomes, the read-back and how it was answered, and the model's time and cost, in place of the
+   * replay's panels; null puts the panels back.
+   */
+  function showConverse(view) {
+    const box = el('converse');
+    const panels = document.querySelector('#page-call main');
+    if (view === null) {
+      box.hidden = true;
+      box.innerHTML = '';
+      if (panels) panels.hidden = false;
+      return;
+    }
+    if (panels) panels.hidden = true;
+    box.hidden = false;
+    const money = (v) => (v === null ? '–' : `$${v.toFixed(4)}`);
+    const t = view.totals;
+    const head = `<div class="card-head"><span class="card-title">Conversation</span><span class="aside">${t.turns} turns · ${esc(t.models.join(', ') || 'no model')} · ${esc(durationText(t.modelMs))} · ${esc(money(t.costUsd))}</span></div>`;
+    box.innerHTML = head + view.turns.map((turn) => '<div class="cturn">'
+      + (turn.said !== null ? `<div><b class="who caller">Caller</b> ${esc(turn.said)}</div>` : '')
+      + turn.tools.map((x) => `<div class="mono tool">${esc(x.name)}(${esc(x.args)}) · ${esc(x.outcome)}${x.reason !== null ? ` · ${esc(x.reason)}` : ''}</div>`).join('')
+      + (turn.readBack !== null ? `<div><b class="who">Read-back</b> ${esc(turn.readBack.text)} <span class="aside">${esc(turn.readBack.answer)}</span></div>` : '')
+      + (turn.line !== '' ? `<div><b class="who sys">Line</b> ${esc(turn.line)}</div>` : '')
+      + (turn.model !== null ? `<div class="aside mono">${esc(turn.model.id)} · ${turn.model.ms} ms${turn.model.firstTextMs !== null ? `, first text ${turn.model.firstTextMs} ms` : ''} · ${esc(turn.model.tokens)} · ${esc(money(turn.model.costUsd))}${turn.model.retried ? ' · asked again' : ''}${turn.model.error !== null ? ` · ${esc(turn.model.error)}` : ''}</div>` : '')
+      + '</div>').join('');
   }
 
   /** Cursor 0 shows nothing, 1 shows `call_started`; stepping back re-reduces from the start. */
@@ -1693,6 +1739,7 @@
 
   function leaveCall() {
     stopPlay();
+    showConverse(null);
     if (state.es) { state.es.close(); state.es = null; }
     state.mode = 'live';
     usePage();

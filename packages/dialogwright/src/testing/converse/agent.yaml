@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../../../schemas/agent.schema.json
+# A small invented business for the converse chat's tests: a visit booked into a window.
+business:
+  name: Example Visits
+  about: We visit homes in the area to look at small household items.
+  where: Millbrook
+  hours: Every day, 9 to 5.
+  timezone: America/New_York
+services:
+  - name: home visit
+    about: A visit to look at one item and mend it where possible.
+    price: { from: 60, to: 120, per: visit }
+priceCaveat:
+  en: The price is confirmed once the item has been seen.
+persona:
+  style: Plain, warm and brief.
+lines:
+  greeting: { en: "Example Visits, how can I help?" }
+  closing: { en: "Thanks for getting in touch. Goodbye." }
+  recovery: { en: "Sorry, could you say that again?" }
+  handoff: { en: "Let me get a person to call you back." }
+model:
+  default: anthropic:claude-haiku-5-5
+sources:
+  calendar:
+    kind: fake
+    days: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+    windows:
+      - { name: morning, label: "9 to 12", capacity: 2 }
+      - { name: afternoon, label: "1 to 5", capacity: 2 }
+actions:
+  availability:
+    about: List the windows still free on a day.
+    kind: lookup
+    params:
+      day: { type: date, about: The day to look at. }
+  book:
+    about: Book a visit into a free window.
+    kind: change
+    params:
+      window: { type: slot, from: availability, about: A window the availability lookup returned. }
+      name: { type: text, about: The name the visit is booked under. }
+      phone: { type: phone, about: The number to reach the caller on. }
+    readBack:
+      en: "A visit {window} for {name}, on {phone}. Is that right?"
+    audit: { name: length, phone: last4 }

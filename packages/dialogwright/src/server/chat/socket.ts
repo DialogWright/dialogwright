@@ -1,39 +1,31 @@
-import { randomBytes, type KeyObject } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
-import { WEB_CHAT } from '../../channel/caps';
-import { signedInEvent, startEvent, textEvent, withCallData, type SessionEvent } from '../../channel/events';
-import { callDataFrom, recordedContext } from '../../channel/callData';
-import type { CallDataKey } from '../../core/app/types';
-import { actionsToChatMessages, parseClientMessage, serializeServerMessage, type ClientMessage, type ServerMessage } from '../../channel/chat/protocol';
-import { appOf } from '../../core/app/registry';
-import { codeLengthOf } from '../../core/app/lookup';
-import { defaultLocaleOf, localeOf } from '../../core/locale';
+import { recordedContext } from '../../channel/callData';
+import type { App, CallDataKey } from '../../core/app/types';
+import { parseClientMessage, serializeServerMessage, type ClientMessage, type ServerMessage } from '../../channel/chat/protocol';
 import type { Scrub } from '../../core/recording';
-import { newSession, SESSION_SCHEMA } from '../../core/session';
 import { tokenHash, type ChatStateStore, type StoredChat } from '../stores/types';
-import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
-import { isAnonymous, type Party } from '../../gate/types';
-import { whenChained, type RunOptions, type TurnRun } from '../../run/turn';
-import { framesMaskWords, redactCollected, redactSent, summaryTexts, turnScrubber } from '../../trace/redact';
-import type { App } from '../../core/app/types';
-import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
-import type { EarlyLines } from '../../render/turn';
+import { redactCollected, redactSent } from '../../trace/redact';
 import type { ChatSettings } from '../config';
-import type { ObservedCalls } from '../dashboard/observer';
 import type { FrameSink } from '../frameLog';
 import { originAllowed } from './origins';
-import { jwksKeys } from './jwks';
-import { isDelegate, principalForToken, type ChatSignIn } from './signin';
+import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
+import { scriptedChatRuntime, type ScriptedChatDeps } from './scriptedRuntime';
+
+export { CHAT_TURN_ERROR } from './runtime';
+export type { ChatResources } from './scriptedRuntime';
 
 /**
  * The engine's web chat endpoint: `/chat`, a WebSocket speaking the chat wire
- * (src/channel/chat/protocol.ts), served when CHAT=on to the sites CHAT_ALLOWED_ORIGINS lists. Each
- * chat is a session on the web chat channel (WEB_CHAT), run turn by turn through the same path an
- * app's own chat takes (chatTurn.ts), with its trace, audit, console and handoff summary. A session
- * outlives its socket: a client that drops reconnects with the resume token `ready` gave it, until
- * the session has been idle for CHAT_IDLE_MS.
+ * (src/channel/chat/protocol.ts), served when CHAT=on to the sites CHAT_ALLOWED_ORIGINS lists. This is
+ * its transport: the socket, the wire, each chat's queue, its resume token and its saves in the session
+ * store, the idle sweep and a stop's drain. Each chat's turns are its app's runtime's (chat/runtime.ts):
+ * the scripted runtime (chat/scriptedRuntime.ts: the engine's turn, through the path an app's own chat
+ * takes, with its trace, audit, console and handoff summary) or the converse runtime
+ * (chat/converseRuntime.ts). A session outlives its socket: a client that drops reconnects with the
+ * resume token `ready` gave it, until the session has been idle for CHAT_IDLE_MS.
  */
 
 /** The path the endpoint answers upgrades on. */
@@ -52,18 +44,9 @@ export const CHAT_MAX_WAITING = 5;
 export const CHAT_START_TIMEOUT_MS = 10_000;
 /** What a client that stops reading may leave unsent before its socket is closed. */
 const MAX_BUFFERED = 1024 * 1024;
-/** Who the console says a chat's handoff goes to: the site decides (a live-chat desk, a phone number, a form). */
-const HANDOFF_TO = 'the site';
-/** What a chat is told when a turn throws: a retry, rather than silence. */
-export const CHAT_TURN_ERROR = 'Sorry, something went wrong on our side. Please send that again.';
 
-/** What the server makes for a new chat session: its run options (client, tools, trace, audit, console) and its frame log. */
-export interface ChatResources {
-  opts: RunOptions;
-  frames: FrameSink;
-}
-
-export interface ChatDeps extends ChatTurnDeps {
+/** What the transport needs, whichever runtime runs the chats. */
+export interface ChatTransportDeps {
   settings: ChatSettings;
   /**
    * The app this endpoint's chats are in, on a server of several apps (host.yaml: each app's chat at
@@ -71,17 +54,9 @@ export interface ChatDeps extends ChatTurnDeps {
    */
   appId?: string;
   now: () => number;
-  /** A new session's resources, by its id; `sessions` is where the console's observer finds it. */
-  resources(id: string, sessions: ObservedCalls): ChatResources;
+  log: (line: string) => void;
   /** Tests use a short deadline so a connection that never starts does not hold the suite open. */
   startTimeoutMs?: number;
-  /** How the identity provider's published keys are fetched (CHAT_SIGNIN=jwt); tests serve their own. */
-  fetch?: typeof fetch;
-  /**
-   * The key lookup for a JWKS URL (CHAT_SIGNIN=jwt), shared by the endpoints of a server of several apps
-   * so each URL's keys are fetched and cached once; absent, this endpoint's own.
-   */
-  keysFor?: (url: string) => (kid: string) => Promise<KeyObject | null>;
   /**
    * Where each chat is saved after every turn, and found by its resume token after a restart
    * (SESSION_STORE=file, server/stores/file.ts). Absent or null (memory, the default), nowhere.
@@ -95,6 +70,9 @@ export interface ChatDeps extends ChatTurnDeps {
   peers?: ChatPeers | null;
 }
 
+/** What the scripted chat endpoint needs: the transport's, and the scripted runtime's. */
+export interface ChatDeps extends ChatTransportDeps, ScriptedChatDeps {}
+
 /** How the servers on one database tell each other a chat was resumed elsewhere. */
 export interface ChatPeers {
   /** This server has taken the chat over from the store: resolves to the announcement's place among all servers' (its notice id), or null. */
@@ -103,12 +81,11 @@ export interface ChatPeers {
   onTaken(fn: (id: string, generation: number) => void): void;
 }
 
-/** One chat session, whichever socket it is on now. */
-interface ChatEntry extends ChatTurnEntry {
+/** One chat session, whichever socket it is on now: what its runtime sees of it (ChatIo), and the transport's own. */
+interface ChatEntry extends ChatIo {
   /** The token `ready` gave the client, to reopen the session after a drop; a new one each time it is used. */
   resume: string;
   socket: WebSocket | null;
-  readonly frames: FrameSink;
   ended: boolean;
   tail: Promise<void>;
   inFlight: number;
@@ -119,7 +96,7 @@ interface ChatEntry extends ChatTurnEntry {
   /** How many times a server restored it from the store (StoredChat.restores); 0 for a chat that never moved. */
   readonly restores: number;
   /** Let go to a server that restored it later: what this server still writes for it is late. */
-  movedAway?: boolean;
+  movedAway: boolean;
   /**
    * With several servers: the place of this server's announcement that it restored the chat (0 for a
    * chat that started here). Another server's announcement lets the chat go here only when it is later.
@@ -176,6 +153,7 @@ function loggedIn(m: ClientMessage, text?: string, spec?: Readonly<Record<string
     case 'start':
       return {
         type: 'start', v: m.v, ...(m.locale !== undefined ? { locale: m.locale } : {}), ...(m.token !== undefined ? { token: true } : {}), ...(m.resume !== undefined ? { resume: true } : {}),
+        ...(m.stream !== undefined ? { stream: m.stream } : {}),
         // The page's context, each key an app's callData reads as that key's redact says, every other one redacted.
         ...(m.context !== undefined ? { context: recordedContext(spec, m.context) } : {}),
       };
@@ -190,9 +168,13 @@ function loggedIn(m: ClientMessage, text?: string, spec?: Readonly<Record<string
   }
 }
 
-/** A server message as the frame log keeps it: a line scrubbed as voice text frames are (adapter.ts loggedFrame), the resume token left out. */
+/**
+ * A server message as the frame log keeps it: a line scrubbed as voice text frames are (adapter.ts
+ * loggedFrame), the resume token left out, a streamed piece by its length (the reply's `say` holds its words).
+ */
 function loggedOut(m: ServerMessage, scrub: Scrub | null, app: App | null = null): Record<string, unknown> {
   if (m.type === 'say' && scrub !== null) return { ...m, text: scrub(m.text) };
+  if (m.type === 'say_delta') return { type: 'say_delta', chars: m.text.length };
   // A transfer delivers what the app sends; the frame log writes it as the trace does (each value masked by where it came from).
   if (m.type === 'transfer' && app !== null && (m.data !== undefined || m.slots !== undefined)) {
     return { ...m, ...(m.data !== undefined ? { data: redactSent(app, 'chat', m.data, 'length') } : {}), ...(m.slots !== undefined ? { slots: redactCollected(app, m.slots, 'length') } : {}) };
@@ -201,23 +183,14 @@ function loggedOut(m: ServerMessage, scrub: Scrub | null, app: App | null = null
   return m;
 }
 
-/** A token checked: the principal it names, or the error the client is sent (with a reason that never carries the token). */
-type Verified = { ok: true; principal: Party } | { ok: false; error: ServerMessage };
-
-const refusal = (reason: string): ServerMessage => ({ type: 'error', code: 'sign_in_failed', message: `the sign-in was refused (${reason})` });
-
-/** Whether the session is now signed in as `p`: the core took the sign-in (core/turn.ts auth.signed_in). */
-function signedInAs(e: { session: { principal: unknown } }, p: Party): boolean {
-  const q = e.session.principal as Partial<Party>;
-  return q.kind === p.kind && q.id === p.id && q.level === p.level;
+/** The engine's web chat over the scripted runtime: the endpoint of a scripted app. */
+export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
+  return chatTransport(deps, scriptedChatRuntime(deps));
 }
 
-export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
+/** The chat transport over `runtime`, the runtime of the app whose chats these are. */
+export function chatTransport(deps: ChatTransportDeps, runtime: ChatRuntime): ChatEndpoint {
   const { log, now } = deps;
-  const how = deps.settings.signIn;
-  const signIn: ChatSignIn = how.method === 'jwt'
-    ? { method: 'jwt', keyFor: deps.keysFor ? deps.keysFor(how.jwksUrl) : jwksKeys({ url: how.jwksUrl, fetch: deps.fetch, nowMs: now, log }), issuer: how.issuer, audience: how.audience }
-    : how;
   const sessions = new Map<string, ChatEntry>();
   /** Whether the refusal for CHAT_MAX_SESSIONS has been logged since a session last ended (said once, not per refusal). */
   let fullLogged = false;
@@ -257,7 +230,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     ws.send(serializeServerMessage(m));
     record(frames, 'out', logged);
   };
-  const sendTo = (e: ChatEntry, m: ServerMessage, scrub: Scrub | null = null): void => send(e.socket, e.frames, m, scrub, appOf(e.session));
+  const sendTo = (e: ChatEntry, m: ServerMessage): void => send(e.socket, e.frames, m);
 
   /** Run `fn` after everything already queued for the session; an ended session skips it, an error is logged and the queue goes on. */
   const enqueue = (e: ChatEntry, fn: (e: ChatEntry) => Promise<void>): Promise<void> => {
@@ -299,9 +272,10 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   /** Save the chat as it is now (after a turn, a resume); nothing without a session store. */
   const save = (e: ChatEntry): void => {
     if (state === null || e.ended) return;
+    const own = runtime.snapshot(e.id);
     const chat: StoredChat = {
-      id: e.id, schema: SESSION_SCHEMA, session: e.session, resumeHash: tokenHash(e.resume),
-      createdAtMs: e.createdAtMs, lastActivityMs: e.lastActivityMs, auditTail: [...e.auditEntries],
+      id: e.id, schema: own.schema, session: own.session, resumeHash: tokenHash(e.resume),
+      createdAtMs: e.createdAtMs, lastActivityMs: e.lastActivityMs, auditTail: [...own.auditTail],
       ...(e.restores > 0 ? { restores: e.restores } : {}),
     };
     queueWrite(e.id, 'save the session', (st) => st.save(chat));
@@ -311,6 +285,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   const finish = (e: ChatEntry, reason: string): void => {
     e.ended = true;
     sessions.delete(e.id);
+    runtime.forget(e.id);
     queueWrite(e.id, 'remove the saved session', (st) => st.remove(e.id));
     fullLogged = false;
     resumeIds.delete(e.resume);
@@ -318,124 +293,36 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     e.socket?.close(1000, 'chat ended');
   };
 
+  /** A chat held here, as its runtime sees it (ChatIo) and as the transport keeps it. */
+  const entryOf = (o: { id: string; frames: FrameSink; resume: string; socket: WebSocket | null; createdAtMs: number; restores: number }): ChatEntry => {
+    const e: ChatEntry = {
+      id: o.id, frames: o.frames, resume: o.resume, socket: o.socket, createdAtMs: o.createdAtMs, restores: o.restores, movedAway: false,
+      ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, lastActivityMs: now(),
+      send: (m, scrub = null, app = null) => send(e.socket, e.frames, m, scrub, app),
+      ready: (locale) => ({ type: 'ready', session: e.id, resume: e.resume, locale }),
+      record: (dir, msg) => record(e.frames, dir, msg),
+      connected: () => e.socket !== null,
+      save: () => save(e),
+      finish: (reason) => finish(e, reason),
+    };
+    return e;
+  };
+
   /**
-   * The person ended the chat (an `end` from the client): recorded as a voice caller's hangup is (the
-   * audit's call_ended, reason hangup, with the tasks completed; the console's ended), told `end`, and
-   * forgotten with its saved session.
+   * The chat ends without a turn: the person ended it (an `end` from the client), or it went idle. Its
+   * runtime records the end (a voice caller's hangup, or an abandoned call); the client is told `end`; the
+   * chat is forgotten with its saved session, whatever failed before.
    */
-  const endedByCaller = (e: ChatEntry): void => {
-    log(`chat ${e.id}: ended by the person`);
+  const endWithoutTurn = (e: ChatEntry, why: 'caller' | 'idle'): void => {
+    if (why === 'caller') log(`chat ${e.id}: ended by the person`);
+    const failed = (err: unknown): void => log(`chat ${e.id}: ${why === 'caller' ? 'the end' : 'idle end'} failed: ${describeError(err)}`);
     try {
-      whenChained(deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'hangup', completed: [...e.session.completed] } }), (entry) => e.auditEntries.push(entry),
-        (err: unknown) => log(`chat ${e.id}: the end's audit entry failed: ${describeError(err)}`));
-      deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'hangup' });
+      void runtime.left(e.id, why).catch(failed);
       sendTo(e, { type: 'end' });
     } catch (err) {
-      log(`chat ${e.id}: the end failed: ${describeError(err)}`);
+      failed(err);
     }
-    // Forgotten whatever failed above, as an idle chat is.
-    finish(e, 'caller');
-  };
-
-  /**
-   * One turn (and any a downstream service's answer runs after it), with what it said sent; the
-   * session finished if it ended. `before` is sent ahead of the turn's lines, read once the turn has
-   * run (the opening turn's ready names the language the turn chose).
-   */
-  const turn = async (e: ChatEntry, event: SessionEvent, ahead?: (e: ChatEntry) => ServerMessage[]): Promise<void> => {
-    const before = ahead ?? ((): ServerMessage[] => []);
-    // A knowledge answer still being worded when its line's budget ran out (render/turn.ts): the lines
-    // before it and the hold line are shown now, and the answer when it is ready. Not on a turn that sends
-    // something ahead of its lines (the opening, a sign-in), which is read only once the turn has run.
-    const early: EarlyLines | undefined = ahead !== undefined ? undefined : (lines, result) => {
-      if (e.socket === null) return false;
-      const app = appOf(result.session);
-      const scrub = turnScrubber(result.session, result.decision, 'length', app, []);
-      for (const m of actionsToChatMessages(lines, defaultLocaleOf(app), { slots: false })) sendTo(e, m, scrub);
-      return true;
-    };
-    let runs: TurnRun[];
-    try {
-      runs = await runChatTurnRuns(deps, e, event, now, HANDOFF_TO, early);
-    } catch (err) {
-      log(`chat ${e.id}: turn failed: ${describeError(err)}`);
-      // The client is told first, whatever the log can take.
-      for (const m of before(e)) sendTo(e, m);
-      sendTo(e, { type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
-      record(e.frames, 'log', { turnFailed: describeError(err) });
-      return;
-    }
-    // The app's start hook threw (App.onStart): said by its kind, never its message; the chat went on.
-    for (const r of runs) {
-      if (r.result.startHookFailed === undefined) continue;
-      log(`chat ${e.id}: the app's start hook failed (${r.result.startHookFailed}); the chat goes on`);
-      record(e.frames, 'log', { startHookFailed: r.result.startHookFailed });
-    }
-    for (const m of before(e)) sendTo(e, m);
-    let last: ServerMessage['type'] | null = null;
-    for (const r of runs) {
-      const app = appOf(r.result.session);
-      // Built from the session after the turn and its decision, as the voice frame log's is.
-      const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app, summaryTexts(r.record.render, app));
-      // The collected slots go with a transfer only where the app's handoff data says (handoff.data.chat: send).
-      // The lines shown before the turn ended (a hold line and those before it) are not shown again.
-      for (const m of actionsToChatMessages(r.result.actions.slice(r.early ?? 0), defaultLocaleOf(app), { slots: app.handoff?.data?.chat === 'send' })) {
-        sendTo(e, m, scrub);
-        last = m.type;
-      }
-    }
-    if (e.session.ended) {
-      // A transfer ends the session too: the client is told it is over either way.
-      if (last !== 'end') sendTo(e, { type: 'end' });
-      finish(e, runs.at(-1)?.result.decision.kind ?? 'ended');
-    } else save(e);
-  };
-
-  /** A token checked against the deployment's method and the app's rule; a refusal logged by its reason, never the token. */
-  const verify = async (e: ChatEntry, token: string): Promise<Verified> => {
-    if (signIn.method === 'none') return { ok: false, error: { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' } };
-    let r: Awaited<ReturnType<typeof principalForToken>>;
-    try {
-      r = await principalForToken(appOf(e.session), signIn, token, Math.floor(now() / 1000));
-    } catch (err) {
-      // The app's own code (principals.fromClaims, subjectPrincipal) threw: a refusal, not a chat that never opens.
-      log(`chat ${e.id}: sign-in failed in the app's code: ${describeError(err)}`);
-      r = { ok: false, reason: 'the app could not read the token' };
-    }
-    if (!r.ok) {
-      log(`chat ${e.id}: sign-in refused (${r.reason})`);
-      record(e.frames, 'log', { signInRefused: r.reason });
-      return { ok: false, error: refusal(r.reason) };
-    }
-    return { ok: true, principal: r.principal };
-  };
-
-  /** A subject signs in: the core's auth.signed_in turn, and signed_in ahead of its lines only if the core took it. */
-  const signInTurn = async (e: ChatEntry, p: Party): Promise<void> => {
-    if (!isAnonymous(e.session.principal)) {
-      sendTo(e, refusal('the chat is already signed in'));
-      return;
-    }
-    await turn(e, signedInEvent(p), (s) => {
-      if (!signedInAs(s, p)) return [refusal('the chat could not take this sign-in')];
-      log(`chat ${s.id}: signed in (${p.kind}, level ${p.level})`);
-      record(s.frames, 'log', { signedIn: p.level, kind: p.kind });
-      return [{ type: 'signed_in', level: p.level }];
-    });
-  };
-
-  /** A sign-in after the start (a sign_in message, or a resume's token on a chat still anonymous): a subject only, since a delegate's chat begins as theirs. */
-  const laterSignIn = async (e: ChatEntry, token: string): Promise<void> => {
-    const r = await verify(e, token);
-    if (!r.ok) {
-      sendTo(e, r.error);
-      return;
-    }
-    if (isDelegate(appOf(e.session), r.principal)) {
-      sendTo(e, refusal('a delegate signs in as the chat starts'));
-      return;
-    }
-    await signInTurn(e, r.principal);
+    finish(e, why);
   };
 
   /** A new session for a start, its opening turn queued: ready, then the opening lines. */
@@ -455,46 +342,18 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       return;
     }
     const id = fresh();
-    const { opts, frames } = deps.resources(id, { get: (sid) => sessions.get(sid) });
-    const e: ChatEntry = {
-      id, session: deps.appId === undefined ? newSession(id, now(), WEB_CHAT) : newSession(id, now(), WEB_CHAT, undefined, deps.appId), auditEntries: [], opts, lastActivityMs: now(),
-      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: now(), restores: 0,
-    };
+    const frames = runtime.prepare(id);
+    const e = entryOf({ id, frames, resume: fresh(), socket: conn.ws, createdAtMs: now(), restores: 0 });
     sessions.set(id, e);
     resumeIds.set(e.resume, id);
     conn.id = id;
-    record(e.frames, 'in', loggedIn(m, undefined, appOf(e.session).callData));
-    // Ahead of the opening turn, and it is what resets the console's history: the page follows this chat now.
-    deps.bus?.publish({ type: 'call_started', callSid: id, at: now(), from: 'web chat', todayIso: opts.todayIso, thresholds: opts.thresholds, channel: 'chat', caller: null, ...(deps.appId !== undefined ? { app: deps.appId } : {}) });
-    void enqueue(e, async (s) => {
-      // A token on start: a delegate's chat begins as theirs (as the harness's `as` does); a subject signs
-      // in through the core once the chat has opened, as a later sign-in does.
-      let refused: ServerMessage | null = null;
-      let subject: Party | null = null;
-      let delegate: Party | null = null;
-      if (m.token !== undefined) {
-        const r = await verify(s, m.token);
-        if (!r.ok) refused = r.error;
-        else if (isDelegate(appOf(s.session), r.principal)) delegate = r.principal;
-        else subject = r.principal;
-      }
-      if (delegate !== null) {
-        s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate, s.session.appId);
-        log(`chat ${s.id}: signed in (${delegate.kind}, level ${delegate.level})`);
-        record(s.frames, 'log', { signedIn: delegate.level, kind: delegate.kind });
-      }
-      const signedIn: ServerMessage[] = delegate === null ? [] : [{ type: 'signed_in', level: delegate.level }];
-      // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
-      // and ready names the one the session speaks.
-      // The page's context, by the app's callData keys (chat.<key>); none for an app that names none.
-      const data = m.context !== undefined ? callDataFrom(appOf(s.session).callData, {}, m.context) : {};
-      await turn(s, withCallData(startEvent({ channel: 'chat' }, m.locale), data), (x) => [...ready(x), ...signedIn]);
-      if (refused !== null) sendTo(s, refused);
-      if (subject !== null && !s.ended) await signInTurn(s, subject);
-    });
+    runtime.create(id, e);
+    record(e.frames, 'in', loggedIn(m, undefined, runtime.callData(id)));
+    const start = { context: m.context ?? {}, stream: m.stream === true, ...(m.locale !== undefined ? { locale: m.locale } : {}), ...(m.token !== undefined ? { token: m.token } : {}) };
+    void enqueue(e, (s) => runtime.open(s.id, start, s));
   };
 
-  const ready = (e: ChatEntry): ServerMessage[] => [{ type: 'ready', session: e.id, resume: e.resume, locale: localeOf(e.session) }];
+  const ready = (e: ChatEntry): ServerMessage[] => [e.ready(runtime.locale(e.id))];
 
   /** Reopen a live session on this connection: a fresh resume token, the old socket closed, ready sent. */
   const resumeOn = (conn: ChatConnection, e: ChatEntry, m: Extract<ClientMessage, { type: 'start' }>): void => {
@@ -508,7 +367,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     e.lastActivityMs = now();
     conn.id = e.id;
     // A resume's context is the page's again, and changes nothing: the chat keeps what it started with.
-    record(e.frames, 'in', loggedIn(m, undefined, appOf(e.session).callData));
+    record(e.frames, 'in', loggedIn(m, undefined, runtime.callData(e.id)));
     // Saved with its new token, so the one just used opens nothing after a restart either.
     save(e);
     // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the
@@ -518,18 +377,15 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     // starts if this one has ended (below), so a client can ask for both without knowing which it
     // gets: it signs in a chat still anonymous, and is not used (nor refused) on one signed in.
     const token = m.token;
-    if (token !== undefined) {
-      void enqueue(e, async (s) => {
-        if (isAnonymous(s.session.principal)) await laterSignIn(s, token);
-      });
-    }
+    const signIn = runtime.signIn;
+    if (token !== undefined && signIn !== undefined) void enqueue(e, (s) => signIn(s.id, token, s, true));
   };
 
   /**
    * A chat this server does not hold, saved by the one before it (SESSION_STORE=file), found by the
    * hash of its resume token: a live session again, or null when there is none to resume (never saved,
-   * idle past CHAT_IDLE_MS, or saved under another SESSION_SCHEMA or for an app this server does not
-   * run, which is then forgotten).
+   * idle past CHAT_IDLE_MS, or saved under another schema or for an app this server does not run, which
+   * is then forgotten).
    */
   const restore = async (resume: string): Promise<ChatEntry | null> => {
     if (state === null) return null;
@@ -544,25 +400,20 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const held = sessions.get(c.id);
     if (held !== undefined) return held.ended ? null : held;
     // On a host, a chat is resumed only at its own app's path: another app's is not this endpoint's to take.
-    if (deps.appId !== undefined && c.session.appId !== deps.appId) return null;
-    let readable = c.schema === SESSION_SCHEMA;
-    if (readable) {
-      try {
-        appOf(c.session);
-      } catch {
-        readable = false;
-      }
-    }
-    if (!readable || c.session.ended || now() - c.lastActivityMs >= deps.settings.idleMs) {
-      if (!readable) log(`chat ${c.id}: not resumed: saved under session schema ${c.schema} or for an app this server does not run`);
-      queueWrite(c.id, 'remove the saved session', (st) => st.remove(c.id));
+    const whose = runtime.judge(c);
+    if (whose === 'other') return null;
+    if (whose !== 'mine' || now() - c.lastActivityMs >= deps.settings.idleMs) {
+      if (whose === 'unreadable') log(`chat ${c.id}: not resumed: saved under session schema ${c.schema} or for an app this server does not run`);
+      const gone = c.id;
+      queueWrite(gone, 'remove the saved session', (st) => st.remove(gone));
       return null;
     }
-    const { opts, frames } = deps.resources(c.id, { get: (sid) => sessions.get(sid) });
-    const e: ChatEntry = {
-      id: c.id, session: c.session, auditEntries: [...c.auditTail], opts, lastActivityMs: now(), resume: resume, socket: null, frames,
-      ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: c.createdAtMs, restores: (c.restores ?? 0) + 1,
-    };
+    const frames = runtime.prepare(c.id);
+    const e = entryOf({ id: c.id, frames, resume, socket: null, createdAtMs: c.createdAtMs, restores: (c.restores ?? 0) + 1 });
+    if (!runtime.restore(c.id, c, e)) {
+      runtime.forget(c.id);
+      return null;
+    }
     sessions.set(e.id, e);
     resumeIds.set(e.resume, e.id);
     log(`chat ${e.id}: restored from the session store`);
@@ -589,6 +440,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     e.ended = true;
     e.movedAway = true;
     sessions.delete(id);
+    runtime.forget(id);
     resumeIds.delete(e.resume);
     log(`chat ${id}: resumed on another server; let go here`);
     record(e.frames, 'log', { resumedElsewhere: true });
@@ -676,23 +528,27 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       return;
     }
     if (m.type === 'text') {
-      // A one-time code typed at the code prompt is masked before the frame log sees it, as a spoken one is (adapter.ts maskCodeFrame).
-      // An app with a slot the records mask whose words a model summarizes keeps no typed words in the frame log (trace/redact.ts framesMaskWords).
-      const masked = framesMaskWords(appOf(entry.session)) ? `<${m.text.length} chars>` : entry.session.promptedFor === 'otp' ? maskSpokenCode(m.text, spokenCodeMinDigits(codeLengthOf(appOf(entry.session)))).text : m.text;
-      record(entry.frames, 'in', loggedIn(m, masked));
-      void enqueue(entry, (s) => turn(s, textEvent(m.text)));
+      // What the frame log keeps of typed words is the runtime's to say (a one-time code masked, say).
+      record(entry.frames, 'in', loggedIn(m, runtime.typed(entry.id, m.text)));
+      void enqueue(entry, async (s) => {
+        await runtime.text(s.id, m.text, s);
+      });
       return;
     }
     if (m.type === 'end') {
       // After what is already queued, so a reply in hand is sent first; the chat then ends as a caller's hangup.
       record(entry.frames, 'in', loggedIn(m));
-      void enqueue(entry, async (s) => endedByCaller(s));
+      void enqueue(entry, async (s) => endWithoutTurn(s, 'caller'));
       return;
     }
     // sign_in: in the session's queue, so it is taken in order with what was typed around it.
     record(entry.frames, 'in', loggedIn(m));
     const token = m.token;
-    void enqueue(entry, (s) => laterSignIn(s, token));
+    const signIn = runtime.signIn;
+    void enqueue(entry, async (s) => {
+      if (signIn === undefined) sendTo(s, { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' });
+      else await signIn(s.id, token, s, false);
+    });
   };
 
   const onConnection = (ws: WebSocket): void => {
@@ -739,11 +595,10 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         const c = await state.load(id);
         if (c === null || sessions.has(id) || c.lastActivityMs > cutoff) continue;
         // On a host, another app's chat is its own endpoint's to end.
-        if (deps.appId !== undefined && c.session.appId !== deps.appId) continue;
+        if (runtime.judge(c) === 'other') continue;
         queueWrite(id, 'remove the saved session', (st) => st.remove(id));
         log(`chat ${id}: saved before a restart and never resumed; ended after ${deps.settings.idleMs} ms idle`);
-        whenChained(deps.audit.append(id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } }), () => {},
-          (err: unknown) => log(`chat ${id}: the abandoned chat's audit entry failed: ${describeError(err)}`));
+        runtime.abandoned(c);
       }
     } catch (err) {
       log(`chat: could not sweep the session store: ${describeError(err)}`);
@@ -766,16 +621,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       for (const e of [...sessions.values()]) {
         if (e.ended || e.inFlight > 0 || e.lastActivityMs > cutoff) continue;
         log(`chat ${e.id}: ended after ${deps.settings.idleMs} ms idle`);
-        try {
-          whenChained(deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } }), (entry) => e.auditEntries.push(entry),
-            (err: unknown) => log(`chat ${e.id}: the idle end's audit entry failed: ${describeError(err)}`));
-          deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'abandoned' });
-          sendTo(e, { type: 'end' });
-        } catch (err) {
-          log(`chat ${e.id}: idle end failed: ${describeError(err)}`);
-        }
-        // Forgotten whatever failed above: an idle session is never kept for want of a log line.
-        finish(e, 'idle');
+        // Forgotten whatever fails: an idle session is never kept for want of a log line.
+        endWithoutTurn(e, 'idle');
       }
       // The chats saved before a restart that no one resumed, once idle as long: forgotten, and their end recorded.
       if (state !== null) void sweepSaved(cutoff);

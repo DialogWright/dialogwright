@@ -1,0 +1,245 @@
+import type { AuditSink } from '../../audit/sink';
+import type { ServerMessage } from '../../channel/chat/protocol';
+import type { ConverseApp } from '../../converse/app';
+import type { ConverseModel } from '../../converse/model/types';
+import { policyOf } from '../../converse/policy';
+import { accountOf } from '../../converse/sources/accounts';
+import { converseTexts } from '../../converse/sources/texts';
+import { newConverseState, type ConverseState } from '../../converse/state';
+import type { ConverseTraceRecord } from '../../converse/trace';
+import { converseTurn, type ConverseDeps, type Input, type Out } from '../../converse/turn';
+import { E164 } from '../../core/numberLocales';
+import type { JevClient } from '../../jev/types';
+import { textAuditRow } from '../../texts/record';
+import type { TurnTexts } from '../../texts/types';
+import type { TraceSink } from '../../trace/writer';
+import type { FrameSink } from '../frameLog';
+import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
+
+/**
+ * The web chat of a converse app (src/converse, docs/designs/2026-11-11-agent-runtime.md): each chat a
+ * ConverseState, each turn converseTurn, its words sent on the chat wire, its trace records the converse
+ * runtime's (kind 'converse'), its audit the app's chain. The transport (chat/socket.ts) holds the socket,
+ * the resume token and the saves; this holds each chat's state.
+ *
+ * - A reply goes to the client as one `say` (the whole of what the line said that turn: the model's
+ *   sentences and any fixed line, joined), once the turn is done. A client whose start says
+ *   `stream: true` is also sent each sentence as `say_delta` as soon as it is ready, before the `say`.
+ * - The call's end: the closing line (the model's end_call), then `end`; a handoff (the model failed past
+ *   the business's budget), the handoff line, then `transfer` where agent.yaml names a transfer number,
+ *   and `end`. Each end is recorded in the audit as `call_ended`, as a scripted chat's is.
+ * - A chat has no calling number. Where app.yaml says `chat.callerNumberFromContext: true`, the start's
+ *   context `callerNumber` (E.164) is taken as the number the chat calls from: the account it is
+ *   recognised as, and the "caller" token of a phone param.
+ * - The state is saved after every turn under the schema 'converse-1', so a restart resumes the chat
+ *   where it was (a read-back waiting for its answer included); a reply still streaming is not resumed.
+ * - No sign-in: a token on a start or a sign_in is refused, as on a chat whose sign-in is off.
+ */
+
+/** The schema a converse chat is saved under (StoredChat.schema). */
+export const CONVERSE_SCHEMA = 'converse-1';
+/** The language a converse chat speaks (agent.yaml's lines are English for now). */
+const LANG = 'en';
+/** What a chat that names a token is told: a converse app takes no sign-in. */
+const NO_SIGN_IN: ServerMessage = { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' };
+
+export interface ConverseChatDeps {
+  app: ConverseApp;
+  /** The model that holds the conversation: agent.yaml's `model.default`, resolved with the app's settings (a test's fake). */
+  model: ConverseModel;
+  /** The decision model, which reads the caller's answer to a read-back. */
+  jev: JevClient;
+  jevTimeoutMs: number;
+  /** The app's audit chain. */
+  audit: AuditSink;
+  /** The app's text sender (TEXT_FROM), or null. */
+  texts: TurnTexts | null;
+  now: () => number;
+  log: (line: string) => void;
+  /** A chat's trace and frame log, by its id. */
+  resources(id: string): { trace: TraceSink; frames: FrameSink };
+}
+
+/** One chat as this runtime holds it. */
+interface ConverseChat {
+  state: ConverseState;
+  trace: TraceSink;
+  /** The client takes say_delta (its start said stream: true); a resumed chat does not stream. */
+  stream: boolean;
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
+/** A reply's pieces as one line of text: each trimmed, joined by a space. */
+const joined = (pieces: readonly string[]): string => pieces.map((p) => p.trim()).filter((p) => p !== '').join(' ');
+
+/** A saved converse state as it was written (newConverseState's shape), or null. */
+function stateOf(session: unknown): ConverseState | null {
+  const s = session as Partial<ConverseState> | null;
+  if (typeof s !== 'object' || s === null || s.kind !== 'converse' || s.v !== 1 || typeof s.appId !== 'string' || !Array.isArray(s.messages)) return null;
+  return s as ConverseState;
+}
+
+export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
+  const { app, log } = deps;
+  const policy = policyOf(app.business);
+  const chats = new Map<string, ConverseChat>();
+  /** Each chat's trace, made with its frame log (prepare) and taken when the chat is held. */
+  const prepared = new Map<string, TraceSink>();
+  const take = (id: string): TraceSink => {
+    const trace = prepared.get(id);
+    if (trace === undefined) throw new Error(`chat ${id}: no resources prepared`);
+    prepared.delete(id);
+    return trace;
+  };
+  const held = (id: string): ConverseChat => {
+    const c = chats.get(id);
+    if (c === undefined) throw new Error(`chat ${id}: not held by this runtime`);
+    return c;
+  };
+  const audited = (id: string, reason: string): void => {
+    try {
+      const r = deps.audit.append(id, 'chat', { type: 'call_ended', detail: { reason } });
+      if (r instanceof Promise) r.catch((err: unknown) => log(`chat ${id}: the end's audit entry failed: ${describeError(err)}`));
+    } catch (err) {
+      log(`chat ${id}: the end's audit entry failed: ${describeError(err)}`);
+    }
+  };
+
+  /** A turn's dependencies: the app's, its texts recorded in the chat's audit, each trace record written and handed to `traced`. */
+  const turnDeps = (id: string, c: ConverseChat, traced: (r: ConverseTraceRecord) => void = () => {}): ConverseDeps => ({
+    business: app.business,
+    model: deps.model,
+    jev: deps.jev,
+    policy,
+    audit: deps.audit,
+    tools: app.tools,
+    texts: converseTexts(deps.texts, (r) => {
+      const chained = deps.audit.append(id, 'chat', textAuditRow(r));
+      if (chained instanceof Promise) chained.catch((err: unknown) => log(`chat ${id}: a text's audit entry failed: ${describeError(err)}`));
+    }),
+    now: () => new Date(deps.now()),
+    trace: (r) => {
+      traced(r);
+      c.trace.write(r);
+    },
+    jevTimeoutMs: deps.jevTimeoutMs,
+  });
+
+  /** One turn: its words sent, the chat ended where the turn ended it, else saved. Whether it ended. */
+  const run = async (id: string, c: ConverseChat, input: Input, io: ChatIo): Promise<boolean> => {
+    const pieces: string[] = [];
+    let record: ConverseTraceRecord | null = null;
+    const out: Out = {
+      say(text) {
+        pieces.push(text);
+        if (c.stream) io.send({ type: 'say_delta', text });
+      },
+      // The end is read from the state the turn returns (ConverseState.ended).
+      end() {},
+    };
+    io.lastActivityMs = deps.now();
+    try {
+      c.state = await converseTurn(c.state, input, turnDeps(id, c, (r) => (record = r)), out);
+    } catch (err) {
+      log(`chat ${id}: turn failed: ${describeError(err)}`);
+      io.send({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+      io.record('log', { turnFailed: describeError(err) });
+      return false;
+    }
+    if (pieces.length > 0) {
+      // The frame log keeps the line as the trace does: each value the records mask, masked.
+      const recorded = (record as ConverseTraceRecord | null)?.replies;
+      const shown = recorded !== undefined && recorded.length > 0 ? joined(recorded) : null;
+      io.send({ type: 'say', text: joined(pieces), lang: LANG }, shown === null ? null : () => shown);
+    }
+    const ended = c.state.ended;
+    if (ended === 'closing' || ended === 'handoff') {
+      if (ended === 'handoff' && app.business.transfer !== undefined) io.send({ type: 'transfer', reason: 'handoff' });
+      io.send({ type: 'end' });
+      audited(id, ended === 'closing' ? 'completed' : 'handoff');
+      io.finish(ended);
+      return true;
+    }
+    io.save();
+    return false;
+  };
+
+  return {
+    prepare(id) {
+      const { trace, frames } = deps.resources(id);
+      prepared.set(id, trace);
+      return frames;
+    },
+
+    create(id) {
+      chats.set(id, { state: newConverseState({ appId: app.id, callId: id, channel: 'chat' }), trace: take(id), stream: false });
+    },
+
+    async open(id, start, io) {
+      const c = held(id);
+      c.stream = start.stream;
+      // A chat calls from no number, unless the app takes one from its context (tests, the simulated callers).
+      const named = app.chat.callerNumberFromContext ? start.context.callerNumber?.trim() : undefined;
+      const number = named !== undefined && E164.test(named) ? named : undefined;
+      if (named !== undefined && number === undefined) io.record('log', { callerNumberRefused: 'not E.164' });
+      c.state = newConverseState({ appId: app.id, callId: id, channel: 'chat', ...(number !== undefined ? { callerNumber: number, account: accountOf(app.business, number) } : {}) });
+      io.send(io.ready(LANG));
+      await run(id, c, { kind: 'start' }, io);
+      if (start.token !== undefined && !io.ended) io.send(NO_SIGN_IN);
+    },
+
+    async text(id, text, io) {
+      return { ended: await run(id, held(id), { kind: 'text', text }, io) };
+    },
+
+    async left(id, why) {
+      const c = held(id);
+      // The turn's own record of a caller leaving (converse_left, a read-back waiting dropped), then the end.
+      try {
+        await converseTurn(c.state, { kind: 'left' }, turnDeps(id, c), { say() {}, end() {} });
+      } finally {
+        audited(id, why === 'caller' ? 'hangup' : 'abandoned');
+      }
+    },
+
+    abandoned(saved) {
+      audited(saved.id, 'abandoned');
+    },
+
+    judge(saved) {
+      const session = saved.session as { appId?: unknown } | null;
+      const appId = typeof session === 'object' && session !== null ? session.appId : undefined;
+      if (appId !== app.id) return 'other';
+      const state = saved.schema === CONVERSE_SCHEMA ? stateOf(saved.session) : null;
+      if (state === null) return 'unreadable';
+      return state.ended !== undefined ? 'ended' : 'mine';
+    },
+
+    restore(id, saved) {
+      const state = stateOf(saved.session);
+      if (state === null) return false;
+      chats.set(id, { state: structuredClone(state), trace: take(id), stream: false });
+      return true;
+    },
+
+    snapshot(id) {
+      return { schema: CONVERSE_SCHEMA, session: held(id).state, auditTail: [] };
+    },
+
+    locale: () => LANG,
+
+    // A converse app names no call data keys: every key of a start's context is redacted in the frame log.
+    callData: () => undefined,
+
+    // The caller's words are kept as the trace keeps them (ConverseTraceRecord.said).
+    typed: (_id, text) => text,
+
+    forget(id) {
+      chats.delete(id);
+      prepared.delete(id);
+    },
+  };
+}

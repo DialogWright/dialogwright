@@ -55,7 +55,8 @@ export function contextOf(raw: unknown, warn: (m: string) => void): Record<strin
 }
 
 export type ClientMessage =
-  | { type: 'start'; v: 1; locale?: string; token?: string; resume?: string; context?: Record<string, string> }
+  /** `stream`: the client takes a reply's sentences as they are written (`say_delta`); the widget sends none, so it gets one `say` per reply. */
+  | { type: 'start'; v: 1; locale?: string; token?: string; resume?: string; context?: Record<string, string>; stream?: boolean }
   | { type: 'text'; text: string }
   | { type: 'sign_in'; token: string }
   | { type: 'ping' }
@@ -85,6 +86,8 @@ export type ServerMessage =
    * `sources`: where a knowledge answer's words come from, where the app shows them (its chat.sources).
    */
   | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[]; sources?: SaySource[] }
+  /** A sentence of a reply still being written: sent only to a client whose start said `stream: true` (never the widget); the reply's `say` follows. */
+  | { type: 'say_delta'; text: string }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * transfer.send.chat), for the page's own handover; absent unless the app writes it. `slots` (with

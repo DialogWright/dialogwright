@@ -1,3 +1,4 @@
+import type { ConverseApp } from '../converse/app';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -30,9 +31,17 @@ import { serverSettingNames } from './serverSettings';
  */
 
 /** One app a host runs. */
-export interface HostApp {
+/**
+ * An app a server runs: a scripted app (App, the engine's turn) or a converse app (ConverseApp, whose
+ * model holds the conversation: src/converse). The server dispatches by it: a converse app's chat runs on
+ * the converse runtime, and it takes no calls yet.
+ */
+export type HostedApp = App | ConverseApp;
+
+/** One app of a host: `A`, a scripted app (App) as host.yaml loads them, or any hosted app a server takes (ServerOverrides.apps). */
+export interface HostApp<A extends HostedApp = App> {
   readonly id: string;
-  readonly app: App;
+  readonly app: A;
   /** The app's folder, when it has one (a host file's apps all do). */
   readonly dir?: string;
   /** The environment the app's references are read from: the server's, with the app's own file's values of its variables over it. */
@@ -91,9 +100,9 @@ export interface HostNumber {
 }
 
 /** The apps a host runs and how a call finds its app. */
-export interface HostRouting {
+export interface HostRouting<A extends HostedApp = App> {
   /** The apps, the default first, then in the order host.yaml lists them. */
-  readonly apps: readonly HostApp[];
+  readonly apps: readonly HostApp<A>[];
   readonly defaultApp: string;
   readonly numbers: readonly HostNumber[];
   /** The app a call to `called` reaches: the one its number points at, else the default. */
@@ -108,7 +117,7 @@ export interface HostRouting {
   /** Whether the host runs an app of this id. */
   has(id: string): boolean;
   /** The app of this id; throws for one the host does not run. */
-  get(id: string): HostApp;
+  get(id: string): HostApp<A>;
 }
 
 /**
@@ -116,7 +125,7 @@ export interface HostRouting {
  * value read from `env` (the server's settings). Throws, with the fix, for a number unset or not E.164,
  * and for two variables holding one number: a call to it could reach either app.
  */
-export function hostRouting(o: { apps: readonly HostApp[]; numbers: readonly { variable: string; app: string }[]; defaultApp: string; env: Env }): HostRouting {
+export function hostRouting<A extends HostedApp = App>(o: { apps: readonly HostApp<A>[]; numbers: readonly { variable: string; app: string }[]; defaultApp: string; env: Env }): HostRouting<A> {
   const byId = new Map(o.apps.map((a) => [a.id, a]));
   if (!byId.has(o.defaultApp)) throw new Error(`host: the default app "${o.defaultApp}" is not one of the apps (${[...byId.keys()].join(', ')})`);
   const numbers = hostNumbers(o.numbers, [...byId.keys()], o.env);
@@ -290,7 +299,7 @@ async function hostApp(ref: HostAppRef, server: Env): Promise<HostApp> {
 }
 
 /** What a server's log says of a host, a line each: the apps, and which numbers reach each. Names only, never a number. */
-export function describeHost(host: HostRouting): string[] {
+export function describeHost(host: HostRouting<HostedApp>): string[] {
   return host.apps.map((a) => {
     const numbers = host.numbers.filter((n) => n.app === a.id).map((n) => n.variable);
     const reached = numbers.length > 0 ? `numbers ${numbers.join(', ')}` : 'no number';

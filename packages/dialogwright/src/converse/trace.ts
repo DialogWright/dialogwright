@@ -29,6 +29,8 @@ export interface ConverseTraceRecord {
   model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean };
   /** The read-back said, or answered, this turn: the decision model's reading of the answer and whether it confirmed. */
   readBack?: { text: string; yes?: number; no?: number; confirmed?: boolean };
+  /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
+  outlivedHold?: true;
 }
 
 /** An action as the shared recording reads it: no slots, and each param recorded as its `audit` says (mask by default). */

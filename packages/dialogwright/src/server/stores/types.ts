@@ -87,8 +87,13 @@ export interface StoredCall {
 /** A web chat's server-side state, as stored (server/chat/socket.ts). */
 export interface StoredChat {
   readonly id: string;
-  readonly schema: number;
-  readonly session: Session;
+  /**
+   * What reads the session: the scripted engine's SESSION_SCHEMA (a number), or a runtime's own (the
+   * converse runtime's 'converse-1'). The store keeps it as it is; the chat's runtime judges it.
+   */
+  readonly schema: number | string;
+  /** The chat's session as its runtime saves it (a scripted Session, or a converse state): plain JSON the store keeps whole. */
+  readonly session: unknown;
   /** sha256 of the resume token `ready` last gave the client (tokenHash): never the token itself. */
   readonly resumeHash: string;
   readonly createdAtMs: number;

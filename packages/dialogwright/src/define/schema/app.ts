@@ -607,6 +607,10 @@ export const appSchema = z
           .enum(['on', 'off'])
           .optional()
           .describe('Where a knowledge answer comes from, on a chat: "on" shows under an answer from the knowledge base the document and section its words come from (the sections an answer was worded from, those whose lines a fallback said, or the section an approved passage cites), with the page where the document has pages. Never spoken on a call. "off", the default: none.'),
+        callerNumberFromContext: z
+          .boolean({ error: 'must be true or false' })
+          .optional()
+          .describe('A converse app only (agent.yaml): a chat has no calling number, so with true a chat whose start\'s context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the "caller" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.'),
         page: z
           .strictObject({
             serve: z

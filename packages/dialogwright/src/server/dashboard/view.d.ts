@@ -454,3 +454,18 @@ export function wordingRows(w: import('./wordingFigures').WordingInsights): { co
 
 /** Whether a record is a turn set aside as speech over a line (SPEECH_OVER_LINE): words taken as not the caller's. */
 export function setAsideOverLine(record: { gates?: readonly { gate: string; outcome: string; decided: boolean }[] } | null | undefined): boolean;
+
+/** A converse call as the Calls page lists it, from its trace (kind 'converse' records) and its frame log. */
+export function converseRow(records: readonly unknown[], frames: readonly FrameLogLine[] | null | undefined): CallRow;
+/** One turn of a converse call's detail. */
+export interface ConverseTurnView {
+  index: number;
+  at: number | null;
+  said: string | null;
+  line: string;
+  tools: { name: string; outcome: string; args: string; reason: string | null }[];
+  readBack: { text: string; answer: string } | null;
+  model: { id: string; ms: number; firstTextMs: number | null; tokens: string; costUsd: number | null; error: string | null; retried: boolean } | null;
+}
+/** A converse call's detail: its turns, and the totals of its model. */
+export function converseCall(records: readonly unknown[]): { turns: ConverseTurnView[]; totals: { turns: number; modelMs: number; costUsd: number; models: string[] } };

@@ -16,6 +16,19 @@ import type { RouteTaken } from '../core/routes';
 import type { RenderRecord } from '../render/types';
 
 import type { AgentSentRecord, AgentTurnRecord } from '../core/agentTurn';
+import type { ConverseTraceRecord } from '../converse/trace';
+
+/**
+ * Any record a call's trace holds: a scripted turn's (TraceRecord, v 2), or a converse runtime's turn
+ * (ConverseTraceRecord, v 3, kind 'converse': written as it is, its values already masked by its turn).
+ */
+export type AnyTraceRecord = TraceRecord | ConverseTraceRecord;
+export type { ConverseTraceRecord };
+
+/** Whether a record read from a trace is a converse runtime's turn. */
+export function isConverseRecord(r: unknown): r is ConverseTraceRecord {
+  return typeof r === 'object' && r !== null && (r as { kind?: unknown }).kind === 'converse';
+}
 
 export type TraceSource = AnswerSource | 'dtmf' | 'silence' | 'error' | 'none';
 

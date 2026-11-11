@@ -10,13 +10,15 @@ import { safeFileStem } from '../fileStem';
 import { parseFrameLog, readFrameLog, type ReadFrameLogLine } from '../frameLog';
 import type { S3TraceReader } from '../../trace/store';
 import type { Chained } from '../../audit/types';
-import type { TraceRecord } from '../../trace/types';
+import { isConverseRecord, type TraceRecord } from '../../trace/types';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import type { App } from '../../core/app/types';
 import { spokenText } from '../../prompts/render';
 import { generatedSaid } from '../../render/said';
 import { sayText } from '../../channel/actions';
-import { consoleMetaOf, renderConsolePage, type ConsoleMeta } from './meta';
+import { consoleMetaOf, metaOfHosted, nameOfHosted, renderConsolePage, type ConsoleMeta } from './meta';
+import { isConverseApp } from '../../converse/app';
+import type { HostedApp } from '../host';
 import { deliveriesOf, type DeliveryEvent } from './delivery';
 import type { ConsoleGate, ConsoleSession } from '../console/auth';
 import { listCalls, parseTraceLines, todayOf, traceLines, QUERY_ENDINGS, type CallsQuery, type CallsSource, type TodayFigures } from './calls';
@@ -74,10 +76,10 @@ export interface DashboardDeps {
   figuresRetentionDays?: number;
 }
 
-/** One app of a host, as the console reads it. */
+/** One app of a host, as the console reads it: a scripted app, or a converse app (its calls in Calls, by their own view). */
 export interface ConsoleApp {
   readonly id: string;
-  readonly app: App;
+  readonly app: HostedApp;
   readonly traceDir: string;
   readonly traces?: S3TraceReader;
   /** The app's folder (a host file's apps all have one), for the Knowledge page's drafts. */
@@ -124,13 +126,22 @@ function spokenOf(record: TraceRecord, app: App = getApp(defaultAppId())): strin
  * from the frame log, so a reloaded call shows the same delivery notes; a page from before them reads
  * none.
  */
-function readTrace(traceDir: string, sid: string, app?: App): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
+function readTrace(traceDir: string, sid: string, app?: HostedApp): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
   const framesPath = join(traceDir, `${sid}.frames.jsonl`);
   return replayOf(traceLines(join(traceDir, `${sid}.jsonl`)), existsSync(framesPath) ? readFrameLog(framesPath) : [], sid, app);
 }
 
-/** A trace as the replay route answers it: its records redacted with the line each said, its frames redacted, and its delivery facts. */
-function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[], sid: string, app?: App): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
+/**
+ * A trace as the replay route answers it: its records redacted with the line each said, its frames
+ * redacted, and its delivery facts. A converse call's records are as its turns wrote them (each value its
+ * business records masked, masked), with the line they said; its frames as written (a start's context
+ * redacted, each line as its trace keeps it), and no delivery facts.
+ */
+function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[], sid: string, app?: HostedApp): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
+  if (raw.some(isConverseRecord) || (app !== undefined && isConverseApp(app))) {
+    const records = (raw as readonly unknown[]).filter(isConverseRecord).map((r) => ({ ...r, spokenText: r.replies.join(' ') }) as unknown as ReplayRecord);
+    return { records, frames: read.map((l) => ({ ...l })), deliveries: [] };
+  }
   const records = raw.map((r) => {
     const record = app === undefined ? redactRecord(r) : redactRecord(r, app);
     return { ...record, spokenText: spokenOf(record, app) };
@@ -218,7 +229,7 @@ function folderRows(traceDir: string): TraceRow[] {
 const newestFirst = (a: TraceRow, b: TraceRow): number => (b.startedAt ?? '').localeCompare(a.startedAt ?? '');
 
 /** The app's name as its console shows it. */
-const appNameOf = (app: App): string => app.brand?.name ?? app.id;
+const appNameOf = (app: HostedApp): string => nameOfHosted(app);
 
 /**
  * On a host: every app's traces (or the one `?app=` names), each row with its app, newest first, at most
@@ -280,7 +291,7 @@ function pageMeta(deps: DashboardDeps, query: URLSearchParams): ConsoleMeta {
   const wanted = query.get('app');
   const filter = wanted !== null && apps.some((a) => a.id === wanted) ? wanted : null;
   const shown = apps.find((a) => a.id === filter) ?? apps[0]!;
-  return { ...consoleMetaOf(shown.app), apps: apps.map((a) => ({ id: a.id, name: appNameOf(a.app), meta: consoleMetaOf(a.app) })), filter };
+  return { ...metaOfHosted(shown.app), apps: apps.map((a) => ({ id: a.id, name: appNameOf(a.app), meta: metaOfHosted(a.app) })), filter };
 }
 
 /** The Live list of each bus (live.ts), made on the list's first viewer and shared by every viewer after. */
@@ -295,7 +306,7 @@ function liveCallsOf(deps: DashboardDeps): LiveCalls {
     const known = metas.get(app);
     if (known) return known;
     const found = app !== null ? deps.apps?.find((a) => a.id === app)?.app : undefined;
-    const meta = consoleMetaOf(found ?? getApp(defaultAppId()));
+    const meta = found !== undefined ? metaOfHosted(found) : consoleMetaOf(getApp(defaultAppId()));
     metas.set(app, meta);
     return meta;
   };
@@ -413,11 +424,16 @@ function listFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps
 }
 
 /** Where the Calls page and today's figures read: each app's traces on a host (or the one `?app=` names), else the one app's. */
-function callsSources(deps: DashboardDeps, only: string | null): CallsSource[] {
+function callsSources(deps: DashboardDeps, only: string | null): CallsSource<HostedApp>[] {
   if (deps.apps && deps.apps.length > 0) {
     return deps.apps.filter((a) => only === null || a.id === only).map((a) => ({ id: a.id, app: a.app, traceDir: a.traceDir, ...(a.traces ? { traces: a.traces } : {}) }));
   }
   return [{ id: null, app: getApp(defaultAppId()), traceDir: deps.traceDir, ...(deps.traces ? { traces: deps.traces } : {}) }];
+}
+
+/** Where Insights and the Knowledge page read: callsSources' scripted apps (a converse app has no forms, slots or knowledge base for them). */
+function scriptedSources(deps: DashboardDeps, only: string | null): CallsSource[] {
+  return callsSources(deps, only).filter((s): s is CallsSource => !isConverseApp(s.app));
 }
 
 /** A whole number of milliseconds from a query, or undefined. */
@@ -593,7 +609,7 @@ function insightsRoute(req: IncomingMessage, res: ServerResponse, deps: Dashboar
   viewed(res, head, deps, session, 'insights', async () => {
     try {
       if (deps.holdFigures) await deps.holdFigures();
-      const sources = callsSources(deps, only);
+      const sources = scriptedSources(deps, only);
       const apps = await figuresOf(deps).range(sources, from, to);
       const withKb = sources.filter((s) => s.app.knowledge !== undefined).length;
       const answer: InsightsAnswer = { from, to, insights: insightsOf(apps, deps.carrierRates, { from, to }), lengthEdgesS: LENGTH_EDGES_S, knowledge: withKb === 0 ? null : { apps: withKb, command: 'pnpm kb:gaps' } };
@@ -619,7 +635,7 @@ const KNOWLEDGE_DAYS = [7, 30, 90];
 async function knowledgeOf(deps: DashboardDeps, query: URLSearchParams, only: string | null): Promise<{ days: number; apps: KnowledgeApp[] }> {
   const asked = Number(query.get('days'));
   const days = KNOWLEDGE_DAYS.includes(asked) ? asked : 30;
-  const sources = callsSources(deps, only);
+  const sources = scriptedSources(deps, only);
   const to = Date.now();
   const out: KnowledgeApp[] = [];
   for (const s of sources) {

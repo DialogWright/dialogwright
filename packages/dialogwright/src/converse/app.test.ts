@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { businessCalendar, defineConverseApp } from './app';
+import { businessCalendar, defineConverseApp, isConverseApp } from './app';
 import { AgentBusinessError } from './business/load';
 import type { ToolImpl } from './turn';
 
@@ -49,6 +49,26 @@ describe('defineConverseApp', () => {
     const text = readFileSync(FIXTURE, 'utf8').replace('      - oneOf: { field: item,', '      - oneOf: { field: thing,');
     writeFileSync(join(dir, 'agent.yaml'), text);
     expect(() => defineConverseApp(dir, { tools: { availability: noop, book: noop, notify: noop } })).toThrow(/"thing" is no param of "book"/);
+  });
+});
+
+describe('the chat settings of a converse app (app.yaml chat)', () => {
+  it('takes no caller number from a chat\'s context by default: with no app.yaml, or one that does not say', () => {
+    const tools = { availability: noop, book: noop, notify: noop };
+    expect(defineConverseApp(dir, { tools }).chat).toEqual({ callerNumberFromContext: false });
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\n');
+    expect(defineConverseApp(dir, { tools }).chat).toEqual({ callerNumberFromContext: false });
+  });
+
+  it('takes one where app.yaml says chat.callerNumberFromContext: true, and refuses a value that is not true or false', () => {
+    const tools = { availability: noop, book: noop, notify: noop };
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nchat:\n  callerNumberFromContext: true\n');
+    const app = defineConverseApp(dir, { tools });
+    expect(app.chat).toEqual({ callerNumberFromContext: true });
+    expect(isConverseApp(app)).toBe(true);
+    expect(isConverseApp({ id: 'scripted' })).toBe(false);
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nchat:\n  callerNumberFromContext: sometimes\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:1  chat\.callerNumberFromContext  must be true or false/);
   });
 });
 

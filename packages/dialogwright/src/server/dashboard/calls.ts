@@ -3,17 +3,19 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { S3TraceReader } from '../../trace/store';
 import { dayOf } from '../../trace/store';
-import type { TraceRecord } from '../../trace/types';
+import { isConverseRecord, type TraceRecord } from '../../trace/types';
 import { upgradeTraceRecord } from '../../trace/read';
 import type { App } from '../../core/app/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { parseFrameLog, type ReadFrameLogLine } from '../frameLog';
 import { redactFrameLine, redactRecord } from './events';
 import { maskCallerValue, recordsOf, type NumberRecords } from '../../channel/maskByName';
-import { consoleMetaOf } from './meta';
-import { callRow, replayEvents, settledRow, withMeta, ENDINGS } from './view.js';
+import { consoleMetaOf, nameOfHosted } from './meta';
+import { callRow, converseRow, replayEvents, settledRow, withMeta, ENDINGS } from './view.js';
 import type { CallRow } from './rows';
-import { factsOfTrace, type CallSummary } from './figures';
+import { converseFacts, factsOfTrace, type CallSummary } from './figures';
+import { isConverseApp } from '../../converse/app';
+import type { HostedApp } from '../host';
 import type { ReplayRecord } from './routes';
 
 /**
@@ -33,17 +35,20 @@ import type { ReplayRecord } from './routes';
  * page to ask for a narrower range. Nothing is written: no summary file, no index.
  */
 
-/** Where one app's traces are, as the console reads them; `id` null on a server of one app. */
-export interface CallsSource {
+/**
+ * Where one app's traces are, as the console reads them; `id` null on a server of one app. `A`: the
+ * Calls page reads any app's (a converse app's calls too); Insights and the Knowledge page a scripted app's.
+ */
+export interface CallsSource<A extends HostedApp = App> {
   readonly id: string | null;
-  readonly app: App;
+  readonly app: A;
   readonly traceDir: string;
   readonly traces?: S3TraceReader;
 }
 
 /** One call found by name, before its trace is read. */
 export interface Candidate {
-  source: CallsSource;
+  source: CallsSource<HostedApp>;
   sid: string;
   /** Its last write: the newer of its trace's and its frame log's mtimes, or the newest segment's (of either). */
   lastMs: number;
@@ -112,7 +117,7 @@ const yieldToOthers = (): Promise<void> => new Promise((r) => setImmediate(r));
  * socket closed, the transfer) lands in the frame log a few seconds after its last turn record, so a
  * summary read during the call is read again once the end is there (live findings, 2026-10-14).
  */
-async function folderCandidates(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
+async function folderCandidates(source: CallsSource<HostedApp>, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
   let names: string[];
   let frameLogs: Set<string>;
   try {
@@ -141,7 +146,7 @@ async function folderCandidates(source: CallsSource, fromMs: number | undefined,
 }
 
 /** The calls of one source by name: a folder's files, or the store's day folders in the range (a day either side, for the time zones). */
-export async function candidatesOf(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
+export async function candidatesOf(source: CallsSource<HostedApp>, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
   if (!source.traces) return folderCandidates(source, fromMs, toMs);
   const range = {
     ...(fromMs !== undefined ? { from: dayOf(fromMs - DAY_MS) } : {}),
@@ -166,9 +171,14 @@ function callerOf(records: readonly TraceRecord[], frames: readonly ReadFrameLog
   return found === undefined ? null : maskCallerValue(found, numbers);
 }
 
-/** A call's summary from its records and frame log, as raw on disk: redacted first, then folded as the page folds a replay. */
-export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: readonly ReadFrameLogLine[], app: App): CallRow | null {
+/**
+ * A call's summary from its records and frame log, as raw on disk: redacted first, then folded as the page
+ * folds a replay. A converse call's (records of kind 'converse', masked as its turns wrote them) is read by
+ * its own view (view.js converseRow).
+ */
+export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: readonly ReadFrameLogLine[], app: HostedApp): CallRow | null {
   if (rawRecords.length === 0) return null;
+  if (isConverseApp(app) || rawRecords.some(isConverseRecord)) return converseRow(rawRecords, rawFrames);
   const records = rawRecords.map((r) => ({ ...redactRecord(r, app), spokenText: '' })) as ReplayRecord[];
   const frames = rawFrames.map((l) => ({ ...redactFrameLine(l, app), line: l.line }));
   const meta = consoleMetaOf(app);
@@ -205,7 +215,9 @@ async function read(c: Candidate): Promise<CallSummary | null> {
   let row: CallSummary | null = null;
   const summarize = (records: TraceRecord[], frames: ReadFrameLogLine[]): CallSummary | null => {
     const summary = summaryOfTrace(records, frames, c.source.app);
-    return summary === null ? null : { row: summary, facts: factsOfTrace(records, c.source.app) };
+    if (summary === null) return null;
+    const app = c.source.app;
+    return { row: summary, facts: isConverseApp(app) || records.some(isConverseRecord) ? converseFacts(records) : factsOfTrace(records, app) };
   };
   if (c.source.traces) {
     const joined = await c.source.traces.read(c.sid, c.day);
@@ -236,7 +248,7 @@ export interface CallsQuery {
   page: number;
 }
 
-const nameOf = (app: App): string => app.brand?.name ?? app.id;
+const nameOf = (app: HostedApp): string => nameOfHosted(app);
 
 /** Whether a settled summary answers the query. */
 function fits(row: CallRow, q: CallsQuery): boolean {
@@ -252,7 +264,7 @@ function fits(row: CallRow, q: CallsQuery): boolean {
  * Walks the candidates newest first, reading summaries a few at a time, until `enough` rows fit or
  * MAX_READS calls had to be read; `partial` when it stopped at the bound.
  */
-async function walk(sources: readonly CallsSource[], fromMs: number | undefined, toMs: number | undefined, nowMs: number, keep: (row: CallsRow) => boolean, enough: number): Promise<{ rows: CallsRow[]; partial: boolean }> {
+async function walk(sources: readonly CallsSource<HostedApp>[], fromMs: number | undefined, toMs: number | undefined, nowMs: number, keep: (row: CallsRow) => boolean, enough: number): Promise<{ rows: CallsRow[]; partial: boolean }> {
   const candidates = (await Promise.all(sources.map((s) => candidatesOf(s, fromMs, toMs)))).flat().sort((a, b) => b.lastMs - a.lastMs);
   const rows: CallsRow[] = [];
   let reads = 0;
@@ -274,7 +286,7 @@ async function walk(sources: readonly CallsSource[], fromMs: number | undefined,
 }
 
 /** A page of the Calls page: the calls that fit, newest first by their last write, and whether there are more. */
-export async function listCalls(sources: readonly CallsSource[], q: CallsQuery, nowMs: number): Promise<{ rows: CallsRow[]; page: number; pageSize: number; more: boolean; partial: boolean }> {
+export async function listCalls(sources: readonly CallsSource<HostedApp>[], q: CallsQuery, nowMs: number): Promise<{ rows: CallsRow[]; page: number; pageSize: number; more: boolean; partial: boolean }> {
   const end = (q.page + 1) * PAGE_SIZE;
   const { rows, partial } = await walk(sources, q.fromMs, q.toMs, nowMs, (r) => fits(r, q), end + 1);
   return { rows: rows.slice(q.page * PAGE_SIZE, end), page: q.page, pageSize: PAGE_SIZE, more: rows.length > end, partial };
@@ -302,7 +314,7 @@ export interface TodayFigures {
   partial: boolean;
 }
 
-export async function todayOf(sources: readonly CallsSource[], sinceMs: number, nowMs: number): Promise<TodayFigures> {
+export async function todayOf(sources: readonly CallsSource<HostedApp>[], sinceMs: number, nowMs: number): Promise<TodayFigures> {
   const { rows, partial } = await walk(sources, sinceMs, undefined, nowMs, (r) => r.startedAt !== null && r.startedAt >= sinceMs, Number.POSITIVE_INFINITY);
   const ended = rows.filter((r) => r.ending !== null);
   const count = (kind: string): number => ended.filter((r) => r.ending!.kind === kind).length;

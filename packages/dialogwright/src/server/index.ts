@@ -33,7 +33,7 @@ import { defaultAppId, getApp } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { newSession, type Session } from '../core/session';
 import { ANONYMOUS } from '../gate/principal';
-import { appOfSetup, describeHost, ownSettingsLines, OWN_SERVER_SETTING_FIX, type HostRouting } from './host';
+import { appOfSetup, describeHost, ownSettingsLines, OWN_SERVER_SETTING_FIX, type HostedApp, type HostRouting } from './host';
 import type { AuditDraft } from '../audit/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
@@ -61,7 +61,11 @@ import { appPagesBase, mountAppPages, routeOwns, validateRoutes, type AppPagesFa
 import { localOnlyPaths } from './localOnly';
 import { safeFileStem } from './fileStem';
 import { VOICE_RELAY } from '../channel/caps';
-import { CHAT_PATH, chatByApp, chatEndpoint, type ChatEndpoint } from './chat/socket';
+import { CHAT_PATH, chatByApp, chatEndpoint, chatTransport, type ChatEndpoint, type ChatTransportDeps } from './chat/socket';
+import { converseChatRuntime } from './chat/converseRuntime';
+import { isConverseApp, type ConverseApp } from '../converse/app';
+import type { ConverseModel } from '../converse/model/types';
+import { resolveConverseModel } from '../converse/model/resolve';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
@@ -192,7 +196,13 @@ export interface ServerOverrides {
    * environment, and the numbers that reach each. Absent, the server runs the default app, reading its
    * references from `env`, exactly as before.
    */
-  apps?: HostRouting;
+  apps?: HostRouting<HostedApp>;
+  /**
+   * The model of each converse app's conversations, by the app's id: a test's fake (converse/model/fake.ts),
+   * so no test calls a real model. A test seam, not a setting: left out, each converse app's agent.yaml
+   * `model.default`, resolved with the app's own settings (its key from them).
+   */
+  converseModel?: (appId: string) => ConverseModel;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -339,6 +349,18 @@ function pageTexts(t: TurnTexts, sink: AuditSink): Texts {
   };
 }
 
+/** One app the server runs, with its environment (the references its YAML names) and its settings (what its code reads). */
+interface AppRun<A extends HostedApp> {
+  readonly id: string;
+  readonly app: A;
+  readonly env: Env;
+  readonly settings: Env;
+  readonly dir?: string;
+  readonly services?: Readonly<Record<string, string>>;
+  readonly ignored?: readonly string[];
+  readonly own?: readonly string[];
+}
+
 export async function startServer(config: ServerConfig, overrides: ServerOverrides = {}): Promise<RunningServer> {
   const said = overrides.log ?? ((line: string) => console.log(`[server] ${line}`));
   // With SESSION_STORE=postgres, every line is said with the connection string's password taken out,
@@ -365,12 +387,19 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const host = overrides.apps ?? null;
   // `settings` is what each app's code reads by name (AppContext.env): on a host, its own settings file over
   // the server's; on a server of one, its environment.
-  const appsRun: readonly { readonly id: string; readonly app: App; readonly env: Env; readonly settings: Env; readonly dir?: string; readonly services?: Readonly<Record<string, string>>; readonly ignored?: readonly string[]; readonly own?: readonly string[] }[] = host
+  const hosted: readonly AppRun<HostedApp>[] = host
     ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env, settings: a.settings ?? a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
     : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env, settings: overrides.env ?? process.env }];
+  // A converse app (src/converse) runs on its own runtime: its chat (chatOf, below), its audit, traces and
+  // texts. Everything else the server does per app (the phone line, the decision model's corpus, clips,
+  // generated wording, pages, the console's metadata) is a scripted app's, over `appsRun`.
+  const appsRun: readonly AppRun<App>[] = hosted.filter((a): a is AppRun<App> => !isConverseApp(a.app));
+  const conversesRun: readonly AppRun<ConverseApp>[] = hosted.filter((a): a is AppRun<ConverseApp> => isConverseApp(a.app));
   const tag = (id: string): string => (host ? `app ${id}: ` : '');
   /** A call's app: on a host, the one of this id (the default for one it does not run); on a server of one, its one app. */
   const appRun = (id: string | undefined): (typeof appsRun)[number] => (host && id !== undefined ? appsRun.find((a) => a.id === id) : undefined) ?? appsRun[0]!;
+  /** A call's or a chat's app of any runtime, as appRun: on a host, the one of this id (else the default); on a server of one, its one app. */
+  const hostedOf = (id: string | undefined): (typeof hosted)[number] => (host && id !== undefined ? hosted.find((a) => a.id === id) : undefined) ?? hosted[0]!;
   /** What an app's settings stop the server for (an unset variable, say): on a host, with the app's id in front. */
   const forApp = <T>(id: string, read: () => T): T => {
     try {
@@ -385,13 +414,31 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     for (const warning of host.warnings) log(`WARNING: ${warning}`);
     // What an app's own settings file sets and its YAML does not name: its code's (ctx.env), not the
     // server's, said by name only.
-    for (const a of appsRun) {
+    for (const a of hosted) {
       if (!a.ignored || a.ignored.length === 0) continue;
       const { warn, info } = ownSettingsLines('its own settings file', a.ignored);
       if (warn !== null) log(`WARNING: ${tag(a.id)}${warn}: ${OWN_SERVER_SETTING_FIX}`);
       if (info !== null) log(`${tag(a.id)}${info}`);
     }
   }
+  // A converse app answers chats only: its calls (the phone on the converse runtime) are not built yet. A
+  // server of converse apps alone answers no carrier, whatever VOICE_PROVIDERS says; on a host with a
+  // scripted app, a number (or the default) that would put a call through to a converse app stops it here.
+  const voiceRefused = conversesRun.length > 0 && appsRun.length === 0 && config.voiceProviders.length > 0;
+  if (host && conversesRun.length > 0 && appsRun.length > 0 && config.voiceProviders.length > 0) {
+    for (const a of conversesRun) {
+      const why = a.id === host.defaultApp ? 'it is host.yaml\'s defaultApp, which takes every call to a number no app is listed for'
+        : host.numbers.some((n) => n.app === a.id) ? `host.yaml lists ${host.numbers.filter((n) => n.app === a.id).map((n) => n.variable).join(', ')} for it` : null;
+      if (why !== null) throw new Error(`app "${a.id}" is a converse app, which takes no calls yet (its chat only), but ${why}: make a scripted app the default and list no number for "${a.id}", or set VOICE_PROVIDERS=none`);
+    }
+  }
+  for (const a of conversesRun) {
+    const how = voiceRefused ? `WARNING: ${tag(a.id)}a converse app, which takes no calls yet: its chat only, and the server answers no carrier (VOICE_PROVIDERS=${config.voiceProviders.join(',')} set aside)`
+      : `${tag(a.id)}a converse app: its chat on the converse runtime (${a.app.business.model.default}); it takes no calls yet`;
+    log(how);
+  }
+  // Each converse app's model: agent.yaml's model.default with its key from the app's own settings (a test's fake).
+  const converseModels = new Map<string, ConverseModel>(conversesRun.map((a) => [a.id, forApp(a.id, () => overrides.converseModel?.(a.id) ?? resolveConverseModel(a.app.business.model.default, a.settings))]));
   // Each app's client, when it answers by the app's own heuristics: its own fixtures' corpus for the stub
   // (from the app's package, as its regression reads it), the heuristics alone where it has none.
   const clients = new Map<string, JevClient>();
@@ -400,6 +447,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const corpus = config.jevClient === 'stub' ? corpusOf(a.app, a.dir) : null;
       if (config.jevClient === 'stub' && corpus === null) log(`${tag(a.id)}JEV_CLIENT=stub: no corpus in its fixtures, so its heuristics answer alone`);
       clients.set(a.id, buildClient(corpus === null ? 'heuristic' : 'stub', corpus ?? undefined, thresholds, undefined, config.jevProvider ?? undefined, a.app));
+    }
+    // A converse app asks the decision model only to read a caller's answer to a read-back: the heuristics
+    // read no such answer, so under a stub no read-back is ever confirmed.
+    for (const a of conversesRun) {
+      log(`WARNING: ${tag(a.id)}JEV_CLIENT=${config.jevClient}: a converse app's read-backs are read by the decision model, and the heuristics read none as a yes: run it with JEV_CLIENT=jev`);
+      clients.set(a.id, buildClient('heuristic', undefined, thresholds, undefined, config.jevProvider ?? undefined));
     }
   }
   /** The client a call in this app asks: its own (above), else the server's one. */
@@ -516,7 +569,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // sender: the app's code has none (ToolContext.texts), and no text is sent, as before.
   const textSenders = new Map<string, TurnTexts>();
   let textSecret: string | null = config.providerSecrets.twilio ?? null;
-  for (const a of appsRun) {
+  for (const a of hosted) {
     const t = forApp(a.id, () => textSettings(a.env));
     if (t === null) {
       if (a.app.onText !== undefined) log(`${tag(a.id)}texts: TEXT_FROM unset: a text that comes in (${MESSAGES_PATH}) is recorded and handed to the app, which can send none`);
@@ -527,7 +580,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     textSenders.set(a.id, { provider, from: t.from, keys: new TextKeys(), limits: new TextLimits(t.limits, now) });
     log(`${tag(a.id)}texts: sent from ...${lastFour(t.from)} through ${provider.id === 'twilio' ? 'Twilio\'s Messages API' : provider.id}; texts that come in: ${MESSAGES_PATH}`);
   }
-  const textsOf = (id: string): TurnTexts | null => textSenders.get(appRun(id).id) ?? null;
+  const textsOf = (id: string): TurnTexts | null => textSenders.get(hostedOf(id).id) ?? null;
 
   const serviceUrls = overrides.serviceUrls ?? {};
   // Each app's services' URLs: a server of one's from its launcher (ServerOverrides.serviceUrls); on a host,
@@ -601,9 +654,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // naming its app.
   const audit: AuditSink = postgresAudit ?? new AuditLog(host ? join(config.auditDir, SERVER_RECORDS) : config.auditDir, now);
   const audits = new Map<string, AuditSink>();
-  for (const a of appsRun) audits.set(a.id, host ? appAudit(postgresAudit ?? new AuditLog(join(config.auditDir, a.id), now), a.id) : audit);
+  for (const a of hosted) audits.set(a.id, host ? appAudit(postgresAudit ?? new AuditLog(join(config.auditDir, a.id), now), a.id) : audit);
   /** A call's audit chain: its app's. */
-  const auditOf = (id: string | undefined): AuditSink => audits.get(appRun(id).id)!;
+  const auditOf = (id: string | undefined): AuditSink => audits.get(hostedOf(id).id)!;
   // CONSOLE_AUTH=token: the console's sign-in, whose first link is made once the server listens. Made
   // before anything that would need closing, as it reads the sign-outs a run before kept and may refuse them.
   let consoleAuth: ConsoleAuth | undefined;
@@ -687,9 +740,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // On a host, each app's under a prefix of its own (<prefix><app id>/).
   const traceStores = new Map<string, S3TraceStore>();
   if (config.traceStore) {
-    for (const a of appsRun) {
+    for (const a of hosted) {
       const setting = host ? { ...config.traceStore, prefix: `${config.traceStore.prefix}${a.id}/` } : config.traceStore;
-      const store = new S3TraceStore(setting, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}), ...(host ? { app: a.app } : {}) });
+      // A converse app's records are written as its turns masked them: no app's slots to mask them by.
+      const scripted = isConverseApp(a.app) ? undefined : a.app;
+      const store = new S3TraceStore(setting, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}), ...(host && scripted ? { app: scripted } : {}) });
       traceStores.set(a.id, store);
       log(`${tag(a.id)}traces: ${store.label}, written as segments by this server (${serverName}) and read back joined`);
     }
@@ -704,7 +759,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (store) return store.open(file, meta);
     const dir = traceDirOf(appId);
     // On a host, each record masked by its own app's slots; on a server of one, by its one app's, as always.
-    const trace = guardTrace(() => (host ? new TraceWriter(join(dir, `${file}.jsonl`), appRun(appId).app) : new TraceWriter(join(dir, `${file}.jsonl`))), traceFailures, `the trace of ${file}`);
+    // A converse app's records are written as its turns masked them (trace/writer.ts traceLine).
+    const own = hostedOf(appId).app;
+    const trace = guardTrace(() => (host && !isConverseApp(own) ? new TraceWriter(join(dir, `${file}.jsonl`), own) : new TraceWriter(join(dir, `${file}.jsonl`))), traceFailures, `the trace of ${file}`);
     return { trace, frames: guardFrames(() => new FrameLog(join(dir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
   };
   // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
@@ -766,11 +823,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (durable) sweepSaved();
   // The app's pages share the phone line's client, book of business, audit chain and console. On a host,
   // a launcher's own pages are its default app's: that app's client, tools, audit, traces and services.
-  const routesApp = appsRun[0]!.id;
-  const mounted = overrides.routes?.({
+  // (A server of converse apps alone has no scripted app for a launcher's pages: it mounts none.)
+  const routesApp = appsRun[0]?.id;
+  const mounted = (routesApp === undefined ? undefined : overrides.routes?.({
     config, client: clientOf(routesApp), thresholds, todayIso, tools: toolsOf(routesApp), audit: auditOf(routesApp), bus, traceDir: traceDirOf(routesApp), serviceUrls: serviceUrlsOf(routesApp), log, now,
     anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-  }) ?? { routes: [] };
+  })) ?? { routes: [] };
   // Each app's own pages (App.pages), under /<app id>, on a server of one and a host's alike: each with
   // its own app's client, tools, audit, traces and services, and its own settings (ctx.env's).
   const pageWarnings: string[] = [];
@@ -798,7 +856,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     for (const w of built.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
     return [...forApp(a.id, () => mountAppPages(base, built.routes)), ...builtIn(built.routes)];
   });
-  const routes = [...mounted.routes, ...pages];
+  // A converse app's own pages (ConverseApp.pages, built by its code), under /<app id> as a scripted app's are.
+  const conversePages = conversesRun.flatMap((a) => {
+    for (const w of a.app.pages?.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
+    return a.app.pages === undefined ? [] : forApp(a.id, () => mountAppPages(appPagesBase(a.id), a.app.pages!.routes));
+  });
+  const routes = [...mounted.routes, ...pages, ...conversePages];
   validateRoutes(routes);
   if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes), routes.filter((r) => r.auth === 'console').map((r) => r.path)));
   for (const warning of [...(mounted.warnings ?? []), ...pageWarnings]) log(`WARNING: ${warning}`);
@@ -853,10 +916,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       log(`WARNING: ${tag(a.id)}no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server's HANDOFF_NUMBER, as every such app's do; set HANDOFF_NUMBER in its own settings file`);
     }
   }
-  const app = appsRun[0]!.app;
-  const startParameters = httpApps.get(appsRun[0]!.id)!.startParameters;
-  const transfer = httpApps.get(appsRun[0]!.id)!.transfer;
-  const numbers = httpApps.get(appsRun[0]!.id)!.numbers;
+  // The default app's part of the webhooks; none on a server of converse apps alone, which takes no calls.
+  const first = appsRun[0] === undefined ? undefined : httpApps.get(appsRun[0].id)!;
+  const app = first?.app;
+  const startParameters = first?.startParameters ?? {};
+  const transfer = first?.transfer ?? null;
+  const numbers = first?.numbers ?? [];
   let draining = false;
   /** Set by unready() (DRAIN_UNREADY_MS): /ready answers 503 while new calls are still answered. */
   let unready = false;
@@ -881,13 +946,28 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     return keys;
   };
-  const chatOf = (a: (typeof appsRun)[number]): ChatEndpoint => chatEndpoint({
-    settings: host ? forApp(a.id, () => chatSettingsOf(chatSettings!, a.env)) : chatSettings!, now, log, audit: auditOf(a.id), bus, serviceUrls: serviceUrlsOf(a.id),
-    ...(host ? { keysFor } : {}),
-    anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-    startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
+  /** What an app's chat transport needs, whichever runtime runs its chats. */
+  const transportOf = (a: (typeof hosted)[number]): ChatTransportDeps => ({
+    settings: host ? forApp(a.id, () => chatSettingsOf(chatSettings!, a.env)) : chatSettings!, now, log,
+    startTimeoutMs: overrides.setupTimeoutMs, state: durable?.chats ?? null,
     ...(host ? { appId: a.id } : {}),
     ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
+  });
+  /** An app's chat endpoint: the converse runtime for a converse app (each chat its model's), else the scripted. */
+  const chatOf = (a: (typeof hosted)[number]): ChatEndpoint => (isConverseApp(a.app) ? converseChatOf(a as AppRun<ConverseApp>) : scriptedChatOf(a as AppRun<App>));
+  const converseChatOf = (a: AppRun<ConverseApp>): ChatEndpoint => chatTransport(transportOf(a), converseChatRuntime({
+    app: a.app, model: converseModels.get(a.id)!, jev: clientOf(a.id), jevTimeoutMs: thresholds.JEV_TIMEOUT_MS, audit: auditOf(a.id), texts: textsOf(a.id), now, log,
+    resources: (id) => {
+      const startedAtMs = now();
+      // Its turns are its records (turnIndex), held here from its start: no session for the trace's names to read.
+      return sinksOf(safeFileStem(id), () => ({ turn: 0, gen: 0, startedAtMs, held: true }), a.id);
+    },
+  }));
+  const scriptedChatOf = (a: AppRun<App>): ChatEndpoint => chatEndpoint({
+    ...transportOf(a), audit: auditOf(a.id), bus, serviceUrls: serviceUrlsOf(a.id),
+    ...(host ? { keysFor } : {}),
+    anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
+    fetch: overrides.chatFetch,
     resources: (id, sessions) => {
       const file = safeFileStem(id);
       // As a call's (server/traceMeta.ts): the chat's last values once it leaves `sessions`, its restores as its generation.
@@ -902,13 +982,13 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       };
     },
   });
-  const chats = chatSettings && host ? chatByApp(new Map(appsRun.map((a) => [a.id, chatOf(a)])), host.defaultApp) : null;
-  const chat: ChatEndpoint | undefined = chatSettings ? (chats ?? chatOf(appsRun[0]!)) : undefined;
+  const chats = chatSettings && host ? chatByApp(new Map(hosted.map((a) => [a.id, chatOf(a)])), host.defaultApp) : null;
+  const chat: ChatEndpoint | undefined = chatSettings ? (chats ?? chatOf(hosted[0]!)) : undefined;
   // Retention, when TRACE_RETENTION_DAYS, TRACE_MAX_GB or AUDIT_RETENTION_DAYS is set, and the free-space
   // warning with DISK_WARN_FREE_GB: a sweep (and a look at the disk) now and once an hour after.
   // On a host the same settings hold for every app, each app's folders swept as a server of one's are
   // (TRACE_MAX_GB bounds each app's traces), and the server's own audit by its days.
-  const retentions: RetentionSettings[] = appsRun.map((a) => ({
+  const retentions: RetentionSettings[] = hosted.map((a) => ({
     traceDir: traceDirOf(a.id), auditDir: host ? join(config.auditDir, a.id) : config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays, ...(config.figuresRetentionDays !== undefined ? { figuresDays: config.figuresRetentionDays } : {}),
     ...(config.traceMaxBytes !== undefined ? { traceMaxBytes: config.traceMaxBytes } : {}),
   }));
@@ -920,7 +1000,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const retaining = sweeping || config.diskWarnFreeBytes !== undefined;
   const disk = retaining
     ? (host
-      ? diskUsageCache(retentions.slice(0, appsRun.length).map((r) => r.traceDir), retentions.map((r) => r.auditDir), now, undefined, config.diskWarnFreeBytes)
+      ? diskUsageCache(retentions.slice(0, hosted.length).map((r) => r.traceDir), retentions.map((r) => r.auditDir), now, undefined, config.diskWarnFreeBytes)
       : diskUsageCache(config.traceDir, config.auditDir, now, undefined, config.diskWarnFreeBytes))
     : null;
   let retentionAt = now();
@@ -1045,7 +1125,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
   };
   const deps: HttpDeps = {
-    config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    // A server of converse apps alone answers no carrier's webhook (voiceRefused).
+    config: voiceRefused ? { ...config, voiceProviders: [] } : config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     // The incoming-message webhook, only where some app takes texts in or sends them.
     ...(textSenders.size > 0 || appsRun.some((a) => a.app.onText !== undefined) ? { messages: { secret: textSecret, receive: receiveText } } : {}),
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
@@ -1072,7 +1153,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ...(host
       ? {
         host: { appFor: (called: string | null | undefined) => host.appFor(called), served: (id: string) => httpApps.get(id) },
-        consoleApps: appsRun.map((a) => ({ id: a.id, app: a.app, traceDir: traceDirOf(a.id), ...(traceStores.has(a.id) ? { traces: traceStores.get(a.id)!.reader() } : {}), ...(a.dir !== undefined ? { dir: a.dir } : {}) })),
+        consoleApps: hosted.map((a) => ({ id: a.id, app: a.app, traceDir: traceDirOf(a.id), ...(traceStores.has(a.id) ? { traces: traceStores.get(a.id)!.reader() } : {}), ...(a.dir !== undefined ? { dir: a.dir } : {}) })),
       }
       : {}),
     // The console's Health page: this server's name and counts, the servers heard from, the audit verified on demand.
@@ -1099,13 +1180,16 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   };
   const server = createServer(createRequestHandler(deps));
   if (chatSettings) {
-    const paths = host ? `${CHAT_PATH} (${host.defaultApp}), ${appsRun.map((a) => `${CHAT_PATH}/${a.id}`).join(', ')}` : CHAT_PATH;
+    const paths = host ? `${CHAT_PATH} (${host.defaultApp}), ${hosted.map((a) => `${CHAT_PATH}/${a.id}`).join(', ')}` : CHAT_PATH;
     log(`chat: ${paths} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
     // A sign-in method with nothing to sign in as: every token would be refused.
     for (const { app: one } of appsRun) {
       if (chatSettings.signIn.method !== 'none' && one.identity?.signInLevel === undefined && one.principals?.fromClaims === undefined) {
         log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${one.id}" takes no sign-in (identity.yaml has no signIn, and principals has no fromClaims): every token will be refused`);
       }
+    }
+    if (chatSettings.signIn.method !== 'none') {
+      for (const a of conversesRun) log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${a.id}" is a converse app, which takes no sign-in: every token will be refused`);
     }
     // On a host, one audience for two apps' chats means a token for one app's portal signs in at the other's.
     for (const shared of sharedAudiences(chatSettings, appsRun)) log(`WARNING: CHAT_SIGNIN=jwt: ${shared}`);
@@ -1156,7 +1240,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         : {}),
     },
     overrides.setupTimeoutMs,
-    config.voiceProviders,
+    voiceRefused ? [] : config.voiceProviders,
     chat ? { path: CHAT_PATH, handleUpgrade: (req, socket, head) => chat.handleUpgrade(req, socket, head), ...(chats ? { owns: (path: string) => chats.owns(path) } : {}) } : null,
     // Closing with the calls saved: a socket belongs to the restarted server (the handover, or a crash's close).
     () => closing && store.durable,

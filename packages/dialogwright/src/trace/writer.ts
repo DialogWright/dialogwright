@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { FollowUpRecord, RetrievalRecord, TraceRecord, TraceTiming, WaitedRecord } from './types';
+import { isConverseRecord, type AnyTraceRecord, type FollowUpRecord, type RetrievalRecord, type TraceRecord, type TraceTiming, type WaitedRecord } from './types';
 import { redactRecordSlots } from './redact';
 import type { SessionEvent } from '../channel/events';
 import type { AnsweredBy, JevResponse, JevUsage, QuestionMap } from '../jev/types';
@@ -14,15 +14,17 @@ import type { RenderRecord } from '../render/types';
 
 /** Where a call's trace records go: the file (TraceWriter), or a trace store's segments (trace/store.ts). */
 export interface TraceSink {
-  write(record: TraceRecord): void;
+  write(record: AnyTraceRecord): void;
 }
 
 /**
  * A trace record as a line is written, without its newline, wherever it is kept: its identity fields
  * masked (redactRecordSlots) by `app`'s slots, the call's own app on a server of several; left out,
- * the default app's, as always.
+ * the default app's, as always. A converse runtime's record is written as it is: its turn masked its
+ * values as its business's `audit` says (converse/trace.ts).
  */
-export function traceLine(record: TraceRecord, app?: App): string {
+export function traceLine(record: AnyTraceRecord, app?: App): string {
+  if (isConverseRecord(record)) return JSON.stringify(record);
   return JSON.stringify(app === undefined ? redactRecordSlots(record, 'length') : redactRecordSlots(record, 'length', app));
 }
 
@@ -42,7 +44,7 @@ export class TraceWriter implements TraceSink {
    * kept apart from the audit log, which holds none. The record in memory is left whole; the core
    * and the harness read it.
    */
-  write(record: TraceRecord): void {
+  write(record: AnyTraceRecord): void {
     appendFileSync(this.path, traceLine(record, this.app) + '\n');
   }
 }

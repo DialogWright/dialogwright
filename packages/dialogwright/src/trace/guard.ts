@@ -1,4 +1,4 @@
-import type { TraceRecord } from './types';
+import type { AnyTraceRecord } from './types';
 import type { TraceSink } from './writer';
 import type { FrameDir, FrameSink } from '../server/frameLog';
 
@@ -59,7 +59,7 @@ function guarded<S>(make: () => S, failures: TraceFailures, what: string): { use
 /** A trace sink whose write never throws. */
 export function guardTrace(make: () => TraceSink, failures: TraceFailures, what: string): TraceSink {
   const g = guarded(make, failures, what);
-  return { write: (record: TraceRecord) => g.use((s) => s.write(record)) };
+  return { write: (record: AnyTraceRecord) => g.use((s) => s.write(record)) };
 }
 
 /** A frame sink whose write never throws. */

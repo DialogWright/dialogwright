@@ -9,12 +9,13 @@ import { CALL_DATA_MAX_KEYS, CALL_DATA_VALUE_MAX, CHAT_CONTEXT_MAX_BYTES, CONTEX
  * widget speaks it, and so may any client a site writes; it is a public contract, so a change that
  * a client would notice is a new version.
  *
- * Client to server: `start` (v, locale?, token?, resume?, context?), `text` (text), `sign_in` (token), `ping`.
+ * Client to server: `start` (v, locale?, token?, resume?, context?, stream?), `text` (text), `sign_in` (token), `ping`.
  * `context` is the page's own data (strings by key, at most CHAT_CONTEXT_KEYS of them, each at most
  * CHAT_CONTEXT_VALUE_MAX characters, CHAT_CONTEXT_BYTES in all), of which the app keeps only the keys its callData names
  * (`chat.<key>`); optional, so a client that sends none is unchanged and the version stays 1.
  * Server to client: `ready` (session, resume, locale), `say` (text, lang, rich?, replies?, sources?), `transfer` (reason), `end`,
- * `signed_in` (level), `error` (code, message), `pong`.
+ * `signed_in` (level), `error` (code, message), `pong`; and `say_delta` (text) only to a client whose start says `stream: true`.
+ * `stream` is optional, so a client that sends none (the widget) is unchanged: one `say` per reply.
  *
  * The server sends what the core keeps for a person taking over (a transfer's collected slots) only
  * where the app says so (app.yaml's handoff.data.chat: send), and never what was completed and queued:
@@ -47,6 +48,12 @@ const clientMessage = z.discriminatedUnion('type', [
       .record(z.string().regex(CONTEXT_KEY), z.string().max(CHAT_CONTEXT_VALUE_MAX))
       .refine((o) => Object.keys(o).length <= CHAT_CONTEXT_KEYS && contextBytes(o) <= CHAT_CONTEXT_BYTES)
       .optional(),
+    /**
+     * The client shows a reply as it is written: each sentence of a reply from a model is sent as
+     * `say_delta` as soon as it is ready, and the whole reply then as its `say` (the text a client keeps).
+     * Only a chat on the converse runtime streams; every other sends its `say` alone.
+     */
+    stream: z.boolean().optional(),
   }),
   z.strictObject({ type: z.literal('text'), text: z.string().min(1).max(CHAT_TEXT_MAX) }),
   z.strictObject({ type: z.literal('sign_in'), token: z.string().min(1).max(CHAT_TOKEN_MAX) }),
@@ -80,6 +87,11 @@ export type ServerMessage =
    * an answer from its knowledge base.
    */
   | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[]; sources?: SaySource[] }
+  /**
+   * A sentence of a reply still being written, sent only to a client whose `start` said `stream: true`;
+   * the reply's `say` follows with the whole of it, so a client that shows the pieces replaces them with it.
+   */
+  | { type: 'say_delta'; text: string }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * `transfer.send.chat`), for the page's own handover; `slots` (with `unconfirmed`, the values the

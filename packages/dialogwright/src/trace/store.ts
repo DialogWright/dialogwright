@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { S3Client, S3Error, type S3ClientOptions, type S3Settings } from './s3/client';
 import { traceLine, type TraceSink } from './writer';
 import type { App } from '../core/app/types';
-import type { TraceRecord } from './types';
+import type { AnyTraceRecord, TraceRecord } from './types';
 import { frameLine, parseFrameLog, type FrameDir, type FrameSink, type ReadFrameLogLine } from '../server/frameLog';
 
 /**
@@ -192,7 +192,7 @@ class CallSegments implements TraceSink {
     return this.bytes > 0 || this.running !== null;
   }
 
-  write(record: TraceRecord): void {
+  write(record: AnyTraceRecord): void {
     const m = this.meta();
     // A record written after this server let the call go: kept, marked, in a segment of its own.
     const late = !m.held;
