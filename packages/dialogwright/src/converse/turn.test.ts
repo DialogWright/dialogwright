@@ -1271,7 +1271,7 @@ describe('systemPrompt', () => {
   it('says nothing is told as noted unless the params of an action the caller confirms carry it', () => {
     expect(prompt).toMatch(/Four rules hold on every call/);
     expect(prompt).toMatch(/4\. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms/);
-    expect(prompt).toMatch(/say you will pass it on, never that it is noted/);
+    expect(prompt).toMatch(/never say it is noted: say it goes in with the action once the caller confirms/);
   });
 
   it('says the caller token stands for the caller\'s number and for nothing else', () => {
