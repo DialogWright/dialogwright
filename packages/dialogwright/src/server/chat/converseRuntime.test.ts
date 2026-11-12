@@ -43,6 +43,15 @@ describe('converseChatRuntime: a saved state', () => {
     const odd = { ...newConverseState({ appId: 'visits', callId: 'chat-5', channel: 'chat' }), carriedNote: 7 };
     expect(stateOf(odd)!.carriedNote).toBeUndefined();
   });
+
+  it('loads a state saved before the record of what was done was kept (none ran), keeps one that was, and drops one not in its shape', () => {
+    const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-6', channel: 'chat' }))) as unknown;
+    expect(stateOf(before)!.done).toBeUndefined();
+    const done = [{ action: 'book', readBack: 'A visit. Is that right?', results: ['book: booked'] }];
+    expect(stateOf(JSON.parse(JSON.stringify({ ...newConverseState({ appId: 'visits', callId: 'chat-7', channel: 'chat' }), done })))!.done).toEqual(done);
+    expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-8', channel: 'chat' }), done: [{ action: 'book' }] })!.done).toBeUndefined();
+    expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-9', channel: 'chat' }), done: 'book' })!.done).toBeUndefined();
+  });
 });
 
 describe('converseChatRuntime: a chat abandoned', () => {

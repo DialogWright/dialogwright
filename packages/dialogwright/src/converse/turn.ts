@@ -764,6 +764,8 @@ async function answered(t: Turn, said: string): Promise<void> {
     traceTool(t, follow, name, checked.params, ran.outcome, ran.why);
     done.push(`${name}: ${ran.text}`);
   }
+  // The line's own record of what has been done, told to the model on every request from now on.
+  if (parent.outcome === 'ran') (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
   add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
 }
 

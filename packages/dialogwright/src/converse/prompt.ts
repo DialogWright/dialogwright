@@ -12,8 +12,8 @@ import { businessZone, type ConverseState } from './state';
  * information or a lookup on this call supports; nothing changes without the caller's yes; nothing is said
  * to be done that no action's result says was done; nothing is said to be noted that no confirmed action's
  * params carry; the caller's own details said back as they gave them, nothing added), the honesty
- * rule, the date and time in the business's zone, and what is known of the caller (the account, and the
- * number by its last four only). It gives context and goals, never a procedure for the words.
+ * rule, the date and time in the business's zone, what is known of the caller (the account, and the
+ * number by its last four only), and the line's record of what has been done on the call. It gives context and goals, never a procedure for the words.
  */
 
 /** The last four digits of a number, the only part of it the model is sent. */
@@ -32,6 +32,21 @@ function callerWords(s: ConverseState): string {
   // A web chat has no number the caller is calling from: said, as a model once offered to use "the number you're calling from" on the chat.
   else parts.push('They are writing on the web chat, so there is no number they are calling from: where an action needs a phone number, it is one the caller gives you.');
   return parts.join(' ');
+}
+
+/**
+ * The line's own record of the call so far, told on every request: each change that ran, with its read-back as
+ * the caller confirmed it and what it returned, and a read-back waiting for the caller's yes. It is what the
+ * runtime knows was done, so the model need not work it out from the conversation (a model said a request was
+ * "in and sent" that was only read back, and a window "held" before any request was sent).
+ */
+function callSoFar(s: ConverseState): string {
+  const done = s.done ?? [];
+  const lines = done.length === 0
+    ? ['- Nothing yet: no action that changes anything has run on this call.']
+    : done.map((d) => `- The caller said yes to "${d.readBack}", and it ran: ${d.results.join('; ')}.`);
+  if (s.pending !== null) lines.push(`Read back and waiting for the caller's yes, so not done: "${s.pending.text}"`);
+  return ['What has been done on this call (the line\'s own record, kept as each change runs; nothing else has been done, whatever has been said):', ...lines].join('\n');
 }
 
 /**
@@ -69,6 +84,8 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     '',
     `Now: ${nowWords(now, zone)} (today is ${localDateIso(now.getTime(), zone)}, in the business's time zone, ${zone}).`,
     `The caller: ${callerWords(s)}`,
+    '',
+    callSoFar(s),
   ].join('\n');
 }
 

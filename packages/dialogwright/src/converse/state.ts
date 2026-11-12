@@ -37,8 +37,21 @@ export interface ConverseState {
    * saved before it was kept): no note waits. A call that ends first drops it.
    */
   carriedNote?: string;
+  /**
+   * The changes that ran on this call, in order: each with its read-back as the caller confirmed it and what it
+   * and its follow-ons returned, the line's own record of what has been done, told to the model on every
+   * request. Absent (as in a state saved before it was kept): none ran.
+   */
+  done?: DoneChange[];
   /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
   ended?: 'closing' | 'handoff' | 'left';
+}
+
+/** A change that ran on the call: its action, its read-back as said and confirmed, and what it and each follow-on returned (`<action>: <result>`). */
+export interface DoneChange {
+  action: string;
+  readBack: string;
+  results: string[];
 }
 
 export function newConverseState(o: { appId: string; callId: string; channel: 'chat' | 'voice'; callerNumber?: string; account?: string | null }): ConverseState {

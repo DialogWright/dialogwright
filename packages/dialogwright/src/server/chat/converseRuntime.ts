@@ -101,6 +101,7 @@ export function stateOf(session: unknown): ConverseState | null {
   const s = session as Partial<ConverseState> | null;
   if (typeof s !== 'object' || s === null || s.kind !== 'converse' || s.v !== 1 || typeof s.appId !== 'string' || !Array.isArray(s.messages)) return null;
   if (s.carriedNote !== undefined && typeof s.carriedNote !== 'string') delete s.carriedNote;
+  if (s.done !== undefined && !(Array.isArray(s.done) && s.done.every((d) => typeof d === 'object' && d !== null && typeof d.action === 'string' && typeof d.readBack === 'string' && Array.isArray(d.results)))) delete s.done;
   return s as ConverseState;
 }
 

@@ -132,6 +132,11 @@ runtime gets plain frames.
 - The model receives a system prompt and the conversation so far.
   - The system prompt holds the business's information, its persona, the two agent-wide rules, the date
     and time, and what is known of the caller (caller number, a recognised account).
+  - It ends with the line's own record of the call so far (added 2026-11-12, after the measured runs found
+    replies saying a request was sent or a window held when nothing had run): each change that ran, with its
+    read-back as the caller confirmed it and what it and its follow-ons returned, or that none has, and a
+    read-back still waiting for a yes. The runtime keeps it as each change runs (`ConverseState.done`), so
+    the model need not work out from the conversation what has been done.
   - It may call the business's tools.
 - The reply is plain text, **streamed** to the caller as it is written: to the carrier as text tokens, and to
   the chat as one message or as chunks (the builder's call).

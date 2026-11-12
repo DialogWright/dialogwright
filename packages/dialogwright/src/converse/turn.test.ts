@@ -133,7 +133,7 @@ function fakeJev(reading: { yes: number; no: number }): JevClient & { asked: Jev
 
 interface Harness {
   deps: ConverseDeps;
-  model: ConverseModel & { requests: { messages: unknown[] }[] };
+  model: ConverseModel & { requests: { system: string; messages: unknown[] }[] };
   rows: AuditDraft[];
   said: [string, boolean][];
   ended: string[];
@@ -270,6 +270,11 @@ describe('converseTurn: a booking', () => {
     expect(h.notified).toEqual([{ item: 'lamp' }]);
     expect(lastMessage(h)).toContain('The caller confirmed; done');
     expect(h.said.at(-1)).toEqual(['You are booked for Friday morning.', true]);
+    // The line's own record of what was done: kept in the state, and told to the model from the next request on.
+    expect(s.done).toEqual([{ action: 'book', readBack: READ_BACK, results: [expect.stringMatching(/^book: /), expect.stringMatching(/^notify: /)] }]);
+    expect(h.model.requests[1]!.system).toContain('- Nothing yet: no action that changes anything has run on this call.');
+    expect(h.model.requests.at(-1)!.system).toContain(`- The caller said yes to "${READ_BACK}", and it ran: book: `);
+    expect(h.model.requests.at(-1)!.system).not.toContain('Nothing yet');
 
     const kinds = h.rows.map((r) => (r.type === 'gate' ? `gate ${r.detail.tool} ${r.detail.verdict}` : `${r.type} ${String(r.detail.action ?? r.detail.tool ?? '')}`.trim()));
     expect(kinds).toEqual([
@@ -1378,6 +1383,15 @@ describe('systemPrompt', () => {
     expect(chat).toMatch(/writing on the web chat, so there is no number they are calling from: where an action needs a phone number, it is one the caller gives you/);
     const voice = systemPrompt(b, { ...fresh(), channel: 'voice', caller: {} }, NOW);
     expect(voice).toMatch(/Their number is not known: where an action needs a phone number, it is one the caller gives you/);
+  });
+
+  it('ends with the line\'s record of what has been done: nothing yet, each change that ran, and a read-back waiting for a yes', () => {
+    expect(prompt).toMatch(/What has been done on this call \(the line's own record, kept as each change runs; nothing else has been done, whatever has been said\):\n- Nothing yet: no action that changes anything has run on this call\.$/);
+    const state = { ...fresh(), done: [{ action: 'book', readBack: 'A visit Friday. Is that right?', results: ['book: booked bk-1', 'notify: sent'] }], pending: { action: 'note', params: {}, hash: 'h', text: 'A note. Is that right?', id: 'c9' } };
+    const text = systemPrompt(b, state, NOW);
+    expect(text).toContain('- The caller said yes to "A visit Friday. Is that right?", and it ran: book: booked bk-1; notify: sent.');
+    expect(text).toContain('Read back and waiting for the caller\'s yes, so not done: "A note. Is that right?"');
+    expect(text).not.toContain('Nothing yet');
   });
 
   it('says the caller token stands for the caller\'s number and for nothing else', () => {
