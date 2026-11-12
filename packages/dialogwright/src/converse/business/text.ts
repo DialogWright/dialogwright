@@ -4,7 +4,7 @@ const money = (n: number): string => `$${Number.isInteger(n) ? n : n.toFixed(2)}
 
 /**
  * The business information as plain text, for the model's prompt and the judge: who the business is, its
- * services with their prices ("$from–$to per X"), the price caveat, what it does not do, the facts, the
+ * services with their prices ("$from–$to per X", or that none is given), the price caveat, what it does not do, the facts, the
  * questions callers ask with the business's answers, and its hours.
  */
 export function businessText(b: AgentBusiness): string {
@@ -12,7 +12,8 @@ export function businessText(b: AgentBusiness): string {
   if (b.business.where) out.push(`Where: ${b.business.where}`);
   if (b.services.length > 0) {
     out.push('Services:');
-    for (const s of b.services) out.push(`- ${s.name}: ${s.about}${s.price ? ` ${money(s.price.from)}–${money(s.price.to)} per ${s.price.per}.` : ''}`);
+    // A service with no price says so, as a model once gave the range of a neighbouring service for one.
+    for (const s of b.services) out.push(`- ${s.name}: ${s.about}${s.price ? ` ${money(s.price.from)}–${money(s.price.to)} per ${s.price.per}.` : ' No price range is given for it.'}`);
   }
   out.push(`Prices: ${b.priceCaveat.en}`);
   if (b.notOffered.length > 0) out.push('Not offered:', ...b.notOffered.map((n) => `- ${n}`));

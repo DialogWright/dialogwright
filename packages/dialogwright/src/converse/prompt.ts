@@ -11,7 +11,7 @@ import { businessZone, type ConverseState } from './state';
  * "Claims"): the business's information, its persona's style, agent mode's rules (claim only what the
  * information or a lookup on this call supports; nothing changes without the caller's yes; nothing is said
  * to be done that no action's result says was done; nothing is said to be noted that no confirmed action's
- * params carry), the honesty
+ * params carry; the caller's own details said back as they gave them, nothing added), the honesty
  * rule, the date and time in the business's zone, and what is known of the caller (the account, and the
  * number by its last four only). It gives context and goals, never a procedure for the words.
  */
@@ -28,8 +28,9 @@ function callerWords(s: ConverseState): string {
   const parts: string[] = [];
   if (s.caller.account) parts.push(`The number they are calling from is on file for the account "${s.caller.account}" (a number on file recognises an account; it does not prove who is speaking).`);
   if (s.caller.number && lastFour(s.caller.number).length === 4) parts.push(`They are calling from a number ending in ${lastFour(s.caller.number)}; only the business's actions see the whole number. Where an action takes a phone number and the caller means this one, write "${CALLER_TOKEN}" for it. The word stands for that number and for nothing else: never write it for the caller's name or any other value, which you ask the caller for.`);
-  else if (s.channel === 'voice') parts.push('Their number is not known.');
-  if (parts.length === 0) parts.push('Nothing is known about them yet.');
+  else if (s.channel === 'voice') parts.push('Their number is not known: where an action needs a phone number, it is one the caller gives you.');
+  // A web chat has no number the caller is calling from: said, as a model once offered to use "the number you're calling from" on the chat.
+  else parts.push('They are writing on the web chat, so there is no number they are calling from: where an action needs a phone number, it is one the caller gives you.');
   return parts.join(' ');
 }
 
@@ -56,11 +57,12 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),
     '',
-    'Four rules hold on every call:',
-    `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" Times and availability come only from lookups made on this call.`,
-    '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to the line\'s read-back does, so when the caller wants a change made, call its action and the line reads it back.',
+    'Five rules hold on every call:',
+    `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free.`,
+    '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. You give only the values an action takes; the read-back\'s own words are the business\'s, and you cannot change them. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to the line\'s read-back does, so when the caller wants a change made, call its action and the line reads it back.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
     '4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.',
+    '5. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give.',
     ...(b.checks.claims.mode === 'correct' ? ['', CHECK_NOTE_WORDS] : []),
     '',
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,

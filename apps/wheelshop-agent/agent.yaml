@@ -14,7 +14,7 @@ business:
     A wheel repair and refinishing shop: curb rash, scratches and scuffs, face damage, diamond cut
     wheels and worn or faded finishes. Dealerships send their trade-ins; anyone else can bring a car in.
   where: Inside the detailing shop at 400 Commerce Drive, Rivergate.
-  hours: Monday to Friday, with two drop-off windows a day. # assumption: the owner corrects these
+  hours: Monday to Friday, 7:30 am to 5:30 pm, with two drop-off windows a day; closed Saturday and Sunday. # assumption: the owner corrects these
   timezone: America/New_York
 
 # The ballpark prices are assumptions for the owner to correct; the caveat below is said with any of them.
@@ -57,6 +57,7 @@ facts:
   - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
   - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them. # assumption: the owner corrects these
   - There is no live transfer; a caller who wants to speak with someone can leave a callback note, and someone from the shop calls back as soon as they can.
+  - A request and a callback note each need a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
   - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
   - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
 # The questions callers ask, with the shop's answers. Each came from the simulated callers' calls, where a
@@ -103,7 +104,11 @@ questions: # assumption: the owner corrects these
     a: >-
       It depends. A repair request has no booking number: the shop texts you its price, that text is your
       confirmation of the price, and your reply to it books the drop-off. A dealership's booking is made on
-      this line once we read it back and you confirm it, and the line says it is booked.
+      this line once we read it back and you confirm it, and the line says it is booked and gives its reference.
+  - q: Is my drop-off booked once my request is in?
+    a: >-
+      Not yet. The request holds the drop-off window you picked while the shop prices the job; the drop-off is
+      booked when you reply yes to the shop's price text (or agree the price when the shop calls).
   - q: Can I call the shop directly?
     a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
   - q: Is my car ready? What's the status of my wheel?

@@ -1355,9 +1355,29 @@ describe('systemPrompt', () => {
   });
 
   it('says nothing is told as noted unless the params of an action the caller confirms carry it', () => {
-    expect(prompt).toMatch(/Four rules hold on every call/);
+    expect(prompt).toMatch(/Five rules hold on every call/);
     expect(prompt).toMatch(/4\. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms/);
     expect(prompt).toMatch(/never say it is noted: say it goes in with the action once the caller confirms/);
+  });
+
+  it('says a day no lookup has looked at is not known to be full or free, and a service with no price has none to give', () => {
+    expect(prompt).toMatch(/a day no lookup on this call has looked at is not known to be full or free/);
+    expect(prompt).toMatch(/A service the information gives no price for has none you can give/);
+  });
+
+  it('says the model gives only an action\'s values, and the read-back\'s own words cannot be changed', () => {
+    expect(prompt).toMatch(/You give only the values an action takes; the read-back's own words are the business's, and you cannot change them/);
+  });
+
+  it('says the caller\'s own details are said back as they gave them, nothing added', () => {
+    expect(prompt).toMatch(/5\. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give/);
+  });
+
+  it('on the web chat, says there is no number the caller is calling from; on a call with no number, that it is not known', () => {
+    const chat = systemPrompt(b, { ...fresh(), channel: 'chat', caller: {} }, NOW);
+    expect(chat).toMatch(/writing on the web chat, so there is no number they are calling from: where an action needs a phone number, it is one the caller gives you/);
+    const voice = systemPrompt(b, { ...fresh(), channel: 'voice', caller: {} }, NOW);
+    expect(voice).toMatch(/Their number is not known: where an action needs a phone number, it is one the caller gives you/);
   });
 
   it('says the caller token stands for the caller\'s number and for nothing else', () => {
