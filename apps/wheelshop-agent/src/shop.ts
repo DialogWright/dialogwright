@@ -129,6 +129,27 @@ export interface ShopSlot {
   readonly room: number;
 }
 
+/**
+ * A window check_availability does not offer on a day, with why: its drop-off time has passed today, or it is
+ * full. It has no id, so it is never a slot to pick; it is there so the model is told why the window is not
+ * offered (a model once said today was full when its windows' drop-off times had only passed).
+ */
+export interface ShopWindowNotOffered {
+  readonly window: string;
+  readonly offered: false;
+  readonly why: string;
+}
+
+/** A day check_availability offers nothing on as a whole, with why: the shop is closed then, or the day has passed. */
+export interface ShopDayNotOffered {
+  readonly day: string;
+  readonly offered: false;
+  readonly why: string;
+}
+
+/** What check_availability returns for a day. */
+export type ShopAvailability = ShopSlot | ShopWindowNotOffered | ShopDayNotOffered;
+
 /** The most characters a text forwarded to the shop carries: under a long SMS's 1,600, the caller's words cut to fit. */
 export const FORWARD_MAX = 1500;
 
@@ -401,6 +422,23 @@ export class Systems {
   free(day: string): ShopSlot[] {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < this.today()) return [];
     return this.freeWindows(day).map((w) => ({ id: `${day}:${w}`, label: `${dayWords(day)}, ${this.windowSays(w)}`, room: this.roomIn(day, w) }));
+  }
+
+  /**
+   * check_availability's answer: the windows with room on a day (as `free` gives them), and each window of an
+   * open day that has none with why (its drop-off time has passed today, or it is full); a day the shop is
+   * closed, or one that has passed, as one entry saying so.
+   */
+  availability(day: string): ShopAvailability[] {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return [];
+    if (day < this.today()) return [{ day: dayWords(day), offered: false, why: 'that day has passed' }];
+    if (!this.opensOn(day)) return [{ day: dayWords(day), offered: false, why: `the shop is closed that day; it takes cars on ${this.config.days.join(', ')}` }];
+    return this.windowNames.map((w): ShopAvailability => {
+      const label = `${dayWords(day)}, ${this.windowSays(w)}`;
+      if (this.windowOver(day, w)) return { window: label, offered: false, why: 'its drop-off time has passed today (the window is not full)' };
+      const room = this.roomIn(day, w);
+      return room > 0 ? { id: `${day}:${w}`, label, room } : { window: label, offered: false, why: 'full' };
+    });
   }
 }
 

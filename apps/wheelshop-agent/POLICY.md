@@ -47,7 +47,7 @@ Rules, in the order they run:
 
 ### `check_availability`: a lookup
 
-The drop-off windows with room on a day, each with how many cars it can still take (its room). The only source of what is free.
+The drop-off windows on a day: each with room has its id and how many cars it can still take (its room); each without says why (full, or its drop-off time has passed today), as does a day the shop is closed. The only source of what is free.
 
 Rules, in the order they run:
 

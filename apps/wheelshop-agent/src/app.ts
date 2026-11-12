@@ -69,7 +69,8 @@ export function shopTools(sys: Systems): Record<string, ConverseToolImpl> {
     // The account the number calling is on file for (the runtime matched it as the call started), as the lookup book_dealer's account comes from.
     recognise_caller: async (_p, ctx) => (ctx.caller.account ? [{ id: ctx.caller.account, label: ctx.caller.account }] : []),
 
-    check_availability: async (p) => sys.free(p.day ?? ''),
+    // Each window with room, and each without with why, so a window whose drop-off time has passed is never said to be full.
+    check_availability: async (p) => sys.availability(p.day ?? ''),
 
     // Kept with the caller's words, the callback number by its ten digits (as the shop page and onText read it),
     // and a place taken in the window picked until the shop quotes it.

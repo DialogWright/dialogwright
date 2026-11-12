@@ -137,6 +137,24 @@ describe('send_request', () => {
   });
 });
 
+describe('check_availability', () => {
+  it('says why a window is not offered: its drop-off time passed today (never full), or full; and a closed or past day as one entry', () => {
+    // Today, Thursday at 1 pm: both of today's windows have passed their drop-off times.
+    const { sys } = wheelshop({ now: () => Date.parse('2026-11-12T18:00:00Z') });
+    expect(sys.availability('2026-11-12')).toEqual([
+      { window: 'Thursday, November 12, morning, by 8', offered: false, why: 'its drop-off time has passed today (the window is not full)' },
+      { window: 'Thursday, November 12, afternoon, by noon', offered: false, why: 'its drop-off time has passed today (the window is not full)' },
+    ]);
+    // Friday morning is taken by the standing drop-off: full, never "passed".
+    expect(sys.availability('2026-11-13')).toEqual([
+      { window: 'Friday, November 13, morning, by 8', offered: false, why: 'full' },
+      { id: '2026-11-13:afternoon', label: 'Friday, November 13, afternoon, by noon', room: 3 },
+    ]);
+    expect(sys.availability('2026-11-14')).toEqual([{ day: 'Saturday, November 14', offered: false, why: 'the shop is closed that day; it takes cars on monday, tuesday, wednesday, thursday, friday' }]);
+    expect(sys.availability('2026-11-10')).toEqual([{ day: 'Tuesday, November 10', offered: false, why: 'that day has passed' }]);
+  });
+});
+
 describe('book_dealer', () => {
   const VEHICLES = 'a 2021 BMW 3 Series, a 2020 Audi A4 and a 2022 Kia Sorento, all four wheels';
   const dealerScript = (cars = 'three', last = 'You are booked in.'): ConverseModelEvent[][] => [
