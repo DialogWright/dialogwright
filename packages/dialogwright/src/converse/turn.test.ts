@@ -89,8 +89,14 @@ actions:
       en: "A note saying {note}. Is that right?"
 `;
 
+/**
+ * The test business, with the check after speaking correcting (it is off by default) unless an edit says its
+ * own `checks`, so these tests read the check where it runs.
+ */
 function business(edit: (t: string) => string = (t) => t): AgentBusiness {
-  const { value, problems } = agentBusinessProblems(edit(BUSINESS));
+  const edited = edit(BUSINESS);
+  const text = /^checks:/m.test(edited) ? edited : `${edited}checks:\n  claims: { mode: correct }\n`;
+  const { value, problems } = agentBusinessProblems(text);
   if (!value) throw new Error(problems.map((p) => `${p.path} ${p.message}`).join('\n'));
   return value;
 }
@@ -1003,7 +1009,7 @@ describe('converseTurn: the check after speaking', () => {
   });
 
   it('holds a reply to agent.yaml\'s correctAt', async () => {
-    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG), edit: (t) => `${t}checks:\n  claims: { correctAt: 0.95 }\n` });
+    const h = harness(replyThenCorrection, { jev: claimsJev(WRONG), edit: (t) => `${t}checks:\n  claims: { mode: correct, correctAt: 0.95 }\n` });
     await asked(h);
     expect(h.said.slice(1)).toEqual([[SLIP, true]]);
     expect(h.traces.at(-1)!.check).toMatchObject({ flagged: [], corrected: false });

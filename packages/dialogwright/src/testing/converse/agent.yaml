@@ -21,6 +21,8 @@ lines:
   handoff: { en: "Let me get a person to call you back." }
 model:
   default: anthropic:claude-haiku-5-5
+checks:
+  claims: { mode: correct }   # off by default; the fixture's tests read the check where it runs
 sources:
   calendar:
     kind: fake

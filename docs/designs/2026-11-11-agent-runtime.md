@@ -544,9 +544,10 @@ It shares the transport split above, so the split is done once, in a way that se
      call incorrect.
    - **gap:** the business information says nothing on it. These are listed for the owner to answer in
      agent.yaml's `questions`, and count against nothing.
-7. **The check after speaking.** No check holds a reply (item 1), but each reply is read once it has been
-   said, and a wrong claim is sent back to the model to correct itself to the caller:
-   [the design](2026-11-11-claims-check.md).
+7. **The check after speaking.** No check holds a reply (item 1), but each reply may be read once it has
+   been said, and a wrong claim sent back to the model to correct itself to the caller:
+   [the design](2026-11-11-claims-check.md). Off by default since 2026-11-12: measured, it did not tell the
+   real wrong replies from the right ones.
 8. **Development work is judged in the session.** Judging the simulated calls is development work, done by
    the assistant reading the stored calls (`pnpm eval --judge none`, then `eval:rejudge --verdicts`), on the
    maintainer's subscription rather than an API judge; API calls are kept for what the app does on a call.

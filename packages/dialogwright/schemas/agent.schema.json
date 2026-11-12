@@ -381,7 +381,7 @@
     "checks": {
       "default": {
         "claims": {
-          "mode": "correct",
+          "mode": "off",
           "correctAt": 0.7,
           "gapAt": 0.7
         }
@@ -391,7 +391,7 @@
       "properties": {
         "claims": {
           "default": {
-            "mode": "correct",
+            "mode": "off",
             "correctAt": 0.7,
             "gapAt": 0.7
           },
@@ -399,8 +399,8 @@
           "type": "object",
           "properties": {
             "mode": {
-              "default": "correct",
-              "description": "correct: the decision model reads each reply of the agent model once it has been said; a reply read as contradicted by the business information or the call's actions, or as saying something was done that was not, goes back to the model with a note, and its correction is said after it; a gap (a commitment the business information does not address) is recorded. record: each reply is read and its readings recorded, nothing said. off: no reply is read. Default: correct.",
+              "default": "off",
+              "description": "correct: the decision model reads each reply of the agent model once it has been said; a reply read as contradicted by the business information or the call's actions, or as saying something was done that was not, goes back to the model with a note, and its correction is said after it; a gap (a commitment the business information does not address) is recorded. record: each reply is read and its readings recorded, nothing said. off: no reply is read. Default: off (measured, it did not tell wrong replies from right ones; docs/designs/2026-11-11-claims-check.md).",
               "type": "string",
               "enum": [
                 "correct",

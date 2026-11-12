@@ -50,14 +50,15 @@ function business(extra = ''): AgentBusiness {
 }
 
 describe('agent.yaml checks.claims', () => {
-  it('defaults to correcting, with both bars at 0.7, when the file says nothing', () => {
-    expect(business().checks).toEqual({ claims: { mode: 'correct', correctAt: 0.7, gapAt: 0.7 } });
+  it('defaults to off, with both bars at 0.7, when the file says nothing', () => {
+    expect(business().checks).toEqual({ claims: { mode: 'off', correctAt: 0.7, gapAt: 0.7 } });
   });
 
   it('takes a mode and bars of its own, the rest defaulted', () => {
     expect(business('checks:\n  claims: { mode: record, correctAt: 0.8 }\n').checks.claims).toEqual({ mode: 'record', correctAt: 0.8, gapAt: 0.7 });
     expect(business('checks:\n  claims: { mode: "off" }\n').checks.claims.mode).toBe('off');
     expect(business('checks:\n  claims: { gapAt: 1 }\n').checks.claims.gapAt).toBe(1);
+    expect(business('checks:\n  claims: { mode: correct }\n').checks.claims.mode).toBe('correct');
   });
 
   it('refuses a bar out of (0, 1] and a mode it does not know', () => {

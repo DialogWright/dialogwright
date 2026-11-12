@@ -79,8 +79,9 @@ judging models). What counts as material is the eval's rubric (item 4 of the run
 `checks.claims`:
 
 - `mode`: `correct` (read every reply, correct what is wrong, record gaps), `record` (read and record only)
-  or `off`. **Default `correct`**: the runtime is not yet released, so there is no earlier behaviour to keep
-  (the designer's call).
+  or `off`. **Default `off`** (the maintainer's decision, 2026-11-12, after the measurement below: no question
+  set told the real wrong replies from the right ones, so the check costs a decision-model request a reply and
+  buys no signal). It was `correct` until then.
 - `correctAt`: the bar for contradicted and notDone (default 0.7, chosen on labelled cases, below).
 - `gapAt`: the bar for a gap (default 0.7).
 
@@ -233,3 +234,9 @@ for the check is not sent what the caller said.
 
 The decision model's score answers count from 0 (the lowest level), not from 1 as jev/types.ts said; the
 comment is corrected, and no code read the score.
+
+**Decided (2026-11-12):** the check is off by default (`checks.claims.mode: off`); the code, the settings and
+the measuring command stay, so a later checker (a larger model reading after speaking, sent the caller's words
+too) can be scored on the same labelled replies before it is turned on. The effort goes to prevention instead:
+the kinds of wrong reply the labels found are kept out where they start, by the runtime's checks of an
+action's values and by the business's own information and instructions.
