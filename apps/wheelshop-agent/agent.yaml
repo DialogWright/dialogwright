@@ -125,11 +125,13 @@ lines:
   done: { en: "That's done." }
   stuck: { en: "Let me get someone from the shop to follow up on that." }
 model:
-  # The model comparison of 2026-11-11 (docs/designs/eval/2026-11-model-comparison.md) found no model that clears
-  # the bars; Mercury, the fastest, stays until the maintainer decides.
-  default: inception:mercury-3
-  # Mercury reasons least at minimal (Inception's instant); its reasoning counts toward maxTokens, and a reply cut
-  # off at it is a failed turn, never spoken (DESIGN.md, Findings 1).
+  # Muse Ember (Meta's Standard mode, which does not train on the conversations): the model comparison of
+  # 2026-11-11 (docs/designs/eval/2026-11-model-comparison.md) found it better than Mercury on both quality bars
+  # at about half the cost, and the measured runs of 2026-11-12 (docs/designs/eval/2026-11-prevention.md) as
+  # good with the same prompt; Inception ends Mercury on 2026-12-28 (the maintainer's call, 2026-11-12).
+  default: meta:muse-ember-1.0
+  # The least reasoning, the fastest first sentence; a reply cut off at maxTokens is a failed turn, never spoken
+  # (DESIGN.md, Findings 1).
   effort: minimal
   maxTokens: 600
 sources:

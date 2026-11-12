@@ -239,4 +239,7 @@ comment is corrected, and no code read the score.
 the measuring command stay, so a later checker (a larger model reading after speaking, sent the caller's words
 too) can be scored on the same labelled replies before it is turned on. The effort goes to prevention instead:
 the kinds of wrong reply the labels found are kept out where they start, by the runtime's checks of an
-action's values and by the business's own information and instructions.
+action's values and by the business's own information and instructions. Measured in
+[the prevention runs](eval/2026-11-prevention.md): the prompt alone moved the kinds of wrong reply without a clear
+drop; a lookup that says why a window is not offered and the line's record of what has been done on the call
+halved them.
