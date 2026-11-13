@@ -711,8 +711,8 @@ export function isUnclear(r: Route): boolean; // = r.unclear
 | At the root | `question` is the top option | `root` | no |
 | At the root | `none` is the top option, or a journey below `startAt` | `root` | yes |
 | In a working journey | `fits` below 0.5, `task` neither another journey above `switchAt` nor `question` | `carry` | yes |
-| In the after phase | `fits` is not asked | — | never |
-| Anywhere | a null reading | — | no (a failed reading never ends a call) |
+| In the after phase | `fits` is not asked | (unchanged) | never |
+| Anywhere | a null reading | (unchanged) | no (a failed reading never ends a call) |
 
 - Every other row is unchanged.
 - Unclear sets `next.unclear = (j.unclear ?? 0) + 1`. Any other route sets it to 0.
