@@ -213,7 +213,15 @@ tyres. Its precision is what protects callers who are cooperating.
 
 The decision model answered in 74 ms at the median and 101 ms at the 95th percentile.
 
+**These routing figures are in-sample.** The rewording was chosen on these same labelled turns and scored on them
+again, so 0.88 to 0.90 flatters it somewhat. The calls below are the out-of-sample check. The accuracy bar in the
+design (95%) is not met.
+
 ### Wrong replies
+
+**The merge bar.** The bar was "no worse than the baseline". On the raw rate of wrong replies it is missed by 0.8
+per 100 calls (12.5 against 11.7). Severity 2 or more is level (8.3). Removing the three labels the baseline's
+labellers did not count gives 11.3. This is a labelling call, left to the maintainer.
 
 | Per 100 calls | Baseline | Journeys, first run | Journeys, after the amendment |
 | --- | --- | --- | --- |
