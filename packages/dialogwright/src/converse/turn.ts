@@ -10,14 +10,14 @@ import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
 import { checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
-import { askWithin, dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
+import { askWithinWhy, dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
 import { followOnsOf, systemPrompt, toolsOf } from './prompt';
 import { SentenceBuffer } from './sentences';
-import { businessZone, type ConverseState } from './state';
+import { businessZone, type ConverseState, type JourneyState } from './state';
 import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
 
 /**
@@ -50,8 +50,10 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  * - the caller's words reach the model with the note's mark rewritten wherever they write it (neutralised),
  *   so a caller can never pass for the line's own check;
  * - with journeys (docs/designs/2026-11-12-journeys.md), the call starts in the journey its caller starts in
- *   (else the root), and each caller turn is routed by the decision model before the model is asked (but a
- *   turn whose read-back the caller confirmed and that ran: the yes is not routed). The model is offered the
+ *   (else the root), and each caller turn is routed by the decision model (but a turn whose read-back the
+ *   caller confirmed and that ran: the yes is not routed). The model's first round is asked alongside the
+ *   routing, with the journey as it stands, its sentences held until the route is known, then said; where the
+ *   route changes the journey, that round is stopped unsaid and asked again with the new one. The model is offered the
  *   turn's journey's actions only, and a call to any other is refused as not offered, before the gate and
  *   counting toward no refusal. A journey's completing action, run on the caller's yes, moves it to its after
  *   phase. Routing never fails a turn: a decision model that errs or is late leaves the journey as it was.
@@ -159,20 +161,64 @@ interface Turn {
   journeyEnded?: ConverseTraceRecord['journeyEnded'];
 }
 
-/** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
+/**
+ * A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece
+ * of a turn is final. While held (a routed turn's first round, until its route is known), the round's sentences
+ * are kept rather than said: released, they are said in order and later ones go straight out; discarded, they
+ * are never said.
+ */
 class Speaker {
   private sentences = new SentenceBuffer();
   /** What the current round has said so far. */
   private said = '';
+  /** The sentences kept while held; null when not held. */
+  private kept: string[] | null = null;
+  /** Text came while held: the first text the caller could hear is at the release. */
+  private heldText = false;
 
   constructor(private readonly t: Turn) {}
 
   delta(d: string): void {
-    if (this.t.model.firstTextMs === null) this.t.model.firstTextMs = Date.now() - this.t.t0;
+    if (this.kept !== null) {
+      this.heldText = true;
+      this.kept.push(...this.sentences.push(d));
+      return;
+    }
+    this.heard();
     for (const s of this.sentences.push(d)) {
       this.t.out.say(s, false);
       this.said += s;
     }
+  }
+
+  /** The first text the caller could hear, timed from the turn's start. */
+  private heard(): void {
+    if (this.t.model.firstTextMs === null) this.t.model.firstTextMs = Date.now() - this.t.t0;
+  }
+
+  /** Sentences pushed after this are kept, not said. */
+  hold(): void {
+    this.kept = [];
+    this.heldText = false;
+  }
+
+  /** The kept sentences are said, in order, and later ones go straight out. */
+  release(): void {
+    const kept = this.kept;
+    if (kept === null) return;
+    this.kept = null;
+    if (this.heldText) this.heard();
+    for (const s of kept) {
+      this.t.out.say(s, false);
+      this.said += s;
+    }
+  }
+
+  /** The kept sentences are dropped, with the one not yet finished (abandon's effect on the held part), and the hold ends. */
+  discard(): void {
+    this.kept = null;
+    this.heldText = false;
+    this.sentences.rest();
   }
 
   /** Whether the current round has said anything yet. */
@@ -194,9 +240,13 @@ class Speaker {
     return all;
   }
 
-  /** The round failed: what was not yet said is dropped; what was said is returned. */
+  /** The round failed: what was not yet said is dropped (kept sentences too, the hold kept); what was said is returned. */
   abandon(): string {
     this.sentences.rest();
+    if (this.kept !== null) {
+      this.kept = [];
+      this.heldText = false;
+    }
     const all = this.said.trim();
     this.said = '';
     if (all !== '') this.t.replies.push(all);
@@ -399,6 +449,11 @@ type Round =
   | { ok: false; error: string; spoke: boolean; stalled: boolean; rateLimited?: { retryAfterMs?: number } };
 
 const TIMED_OUT = Symbol('timed out');
+const STOPPED = Symbol('stopped');
+
+/** A promise that resolves to STOPPED once `stop` is aborted. */
+const stoppedBy = (stop: AbortSignal): Promise<typeof STOPPED> =>
+  new Promise((resolve) => (stop.aborted ? resolve(STOPPED) : stop.addEventListener('abort', () => resolve(STOPPED), { once: true })));
 
 /** `p`, or TIMED_OUT once `ms` have passed first. */
 async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
@@ -414,11 +469,13 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
  * One request to the model, streamed: its text to the speaker until its first call (text after a call is
  * written without the call's result, and is dropped), its calls collected. It fails on an error event, a
  * thrown stream, nothing at all (but where `emptyOk`: the first answer to the check after speaking's note, for
- * which nothing at all is a correction declined), a reply cut off at the token limit, or no event within
- * `firstWaitMs` at first and the model's time after.
+ * which nothing at all is a correction declined), a reply cut off at the token limit, no event within
+ * `firstWaitMs` at first and the model's time after, or `stop` aborted (the route changed the journey: the
+ * request is aborted at once).
  */
-async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number, emptyOk: boolean, waitedMs = 0): Promise<Round> {
+async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number, emptyOk: boolean, waitedMs = 0, stop?: AbortSignal): Promise<Round> {
   const controller = new AbortController();
+  const stopped = stop === undefined ? null : stoppedBy(stop);
   const started = Date.now();
   const iter = t.deps.model.stream(req, controller.signal)[Symbol.asyncIterator]();
   const calls: Extract<ModelEvent, { type: 'tool_call' }>[] = [];
@@ -437,12 +494,13 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
       // The first event within firstWaitMs, and every event before the attempt's deadline: a model that
       // trickles its answer is bounded as one that never starts.
       const wait = Math.min(first ? firstWaitMs : Infinity, deadline - Date.now());
-      let next: IteratorResult<ModelEvent> | typeof TIMED_OUT;
+      let next: IteratorResult<ModelEvent> | typeof TIMED_OUT | typeof STOPPED;
       try {
-        next = await within(iter.next(), wait);
+        next = await within(stopped === null ? iter.next() : Promise.race([iter.next(), stopped]), wait);
       } catch (e) {
         return fail(`invalid: the stream threw (${e instanceof Error ? e.name : 'error'})`);
       }
+      if (next === STOPPED) return fail('aborted: the route changed the journey');
       if (next === TIMED_OUT) return first ? fail(`timeout: no answer began within ${Math.round(wait)} ms`, true) : fail(`timeout: the answer was not done within the model's ${t.deps.business.model.timeoutMs} ms`);
       if (next.done) break;
       if (first) firstMs = Date.now() - started;
@@ -492,7 +550,16 @@ export const RATE_LIMIT_RETRIES = 2;
 /** The first wait before a request refused for its rate limit is asked again, where the provider names none or one too long; it doubles each time. */
 export const RATE_LIMIT_BACKOFF_MS = 250;
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+/** Waits `ms`, or until `stop` is aborted. */
+async function sleep(ms: number, stop?: AbortSignal): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const slept = new Promise<void>((resolve) => (timer = setTimeout(resolve, Math.max(0, ms))));
+  try {
+    await (stop === undefined ? slept : Promise.race([slept, stoppedBy(stop)]));
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * One round: the request, and again where it failed before saying anything. A request the provider refused
@@ -503,9 +570,10 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * is asked once more with the time left, only while half the model's time is left: a request that had not
  * begun within half the model's time (it is stopped then) is asked again with the rest, as half is left then,
  * but not after a rate limit's wait, which has spent some of it. `emptyOk` is streamOnce's, for the round's
- * first request and its asks again alike.
+ * first request and its asks again alike. A round whose `stop` is aborted ends at once, asked no more, and
+ * its failure is not the turn's (the round is asked again with the new journey: routedRound).
  */
-async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
+async function round(t: Turn, sp: Speaker, emptyOk = false, stop?: AbortSignal): Promise<Round> {
   const b = t.deps.business;
   const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b, offeredActions(b, t.st.journey)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
@@ -513,8 +581,11 @@ async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
   const deadline = start + budget;
   let limited = 0;
   let retried = false;
-  let r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk);
+  // Read at each use: the round's stop may be aborted while it waits.
+  const stopped = (): boolean => stop?.aborted === true;
+  let r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk, 0, stop);
   while (!r.ok) {
+    if (stopped()) break;
     t.model.error = r.error;
     if (r.spoke) break;
     if (r.rateLimited !== undefined) {
@@ -528,8 +599,9 @@ async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
       sp.abandon();
       t.model.retried = true;
       t.model.rateLimitedMs = (t.model.rateLimitedMs ?? 0) + wait;
-      await sleep(wait);
-      r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk, wait);
+      await sleep(wait, stop);
+      if (stopped()) break;
+      r = await streamOnce(t, sp, req, budget / 2, deadline, emptyOk, wait, stop);
       continue;
     }
     // Half the model's time left: a stall of the round's first request leaves just that, a stall after a wait less.
@@ -539,9 +611,49 @@ async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
     retried = true;
     sp.abandon();
     t.model.retried = true;
-    r = await streamOnce(t, sp, req, deadline - Date.now(), deadline, emptyOk);
+    r = await streamOnce(t, sp, req, deadline - Date.now(), deadline, emptyOk, 0, stop);
   }
   return r;
+}
+
+/**
+ * A routed turn's first round, asked alongside its routing (docs/designs/2026-11-12-journeys.md, "Keeping latency
+ * flat"): the round starts at once with the journey as it stands, its sentences held, and its calls, if any, wait
+ * for the route (the round's result is acted on only once it is known). When the route is known (or
+ * routing.timeoutMs has passed, routeOf's limit), the call's journey is set to it and:
+ *
+ * - where it leaves the journey's active task and phase as they were, the held sentences are said and the
+ *   rest of the round goes straight out; a round that has already failed says none of what it held (the
+ *   caller has heard nothing of it), and fails as any round does;
+ * - otherwise the round's request is aborted, what it held dropped, its calls never run and nothing of it
+ *   put in the conversation, and the round asked again, once, with the new journey and the model's whole
+ *   time from then (the route's `restarted`). The stopped round's error and retry are not the turn's.
+ */
+async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Promise<Routed>): Promise<Round> {
+  const j = t.st.journey!;
+  const before = { error: t.model.error, retried: t.model.retried };
+  const stop = new AbortController();
+  sp.hold();
+  const first = round(t, sp, emptyOk, stop.signal);
+  const settled: { round?: Round } = {};
+  void first.then((r) => (settled.round = r));
+  const routed = await routing;
+  t.st.journey = routed.next;
+  t.route = routed.route;
+  if (routed.next.active === j.active && routed.next.phase === j.phase) {
+    if (settled.round !== undefined && !settled.round.ok) sp.discard();
+    else sp.release();
+    return await first;
+  }
+  stop.abort();
+  await first;
+  sp.discard();
+  if (before.error === undefined) delete t.model.error;
+  else t.model.error = before.error;
+  if (before.retried === undefined) delete t.model.retried;
+  else t.model.retried = before.retried;
+  t.route.restarted = true;
+  return round(t, sp, emptyOk);
 }
 
 /**
@@ -592,11 +704,16 @@ function dropNote(st: ConverseState, note: string): void {
  * `carried` (the turn's message carries a note from an earlier turn), a first answer of nothing at all is
  * the model taking the note's "say nothing of it" for the whole answer: the note is taken out of the
  * conversation and the model asked once more without it; that answer, empty or not, is taken as any is.
+ * With `routing` (a routed caller turn), the first round is asked alongside it (routedRound); later rounds
+ * are asked in the journey it decided.
  */
-async function converse(t: Turn, sp: Speaker, silent = false, carried?: string): Promise<{ ok: true; declined?: true } | { ok: false; error: string }> {
+async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, routing?: Promise<Routed>): Promise<{ ok: true; declined?: true } | { ok: false; error: string }> {
   let first = true;
+  let route = routing;
   for (let i = 0; i < MAX_ROUNDS; i++) {
-    const r = await round(t, sp, first && (silent || carried !== undefined));
+    const emptyOk = first && (silent || carried !== undefined);
+    const r = route !== undefined ? await routedRound(t, sp, emptyOk, route) : await round(t, sp, emptyOk);
+    route = undefined;
     first = false;
     if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
       // Only a first answer may be empty (streamOnce's emptyOk).
@@ -816,37 +933,39 @@ function lastReplyOf(st: ConverseState): string | null {
   return null;
 }
 
+/** A caller turn's route: the journey it leaves the call in, and the route as the trace keeps it. */
+interface Routed {
+  next: JourneyState;
+  route: NonNullable<Turn['route']>;
+}
+
 /**
- * Routes the caller's turn among the journeys (docs/designs/2026-11-12-journeys.md, "Routing"): the decision
- * model is asked which task the caller wants now, within routing.timeoutMs, and code decides from its reading
- * (decideRoute). The call's journey is set, and the route kept for the trace. A decision model that errs or is
- * late leaves the journey as it was (carry): routing never fails a turn. `timedOut` is told from an error by
- * a timer of the limit's own length set just before askWithin's: timers of one length fire in the order they
- * were set, so where askWithin gave up at its limit, this one has already fired.
+ * Routes the caller's turn among the journeys from `j`, the journey as it stands (docs/designs/2026-11-12-journeys.md,
+ * "Routing"): the decision model is asked which task the caller wants now, within routing.timeoutMs, and code
+ * decides from its reading (decideRoute). A decision model that errs or is late leaves the journey as it was
+ * (carry): routing never fails a turn, and `timedOut` says it was late. Nothing is set here: routedRound sets
+ * the call's journey and the turn's route once it is known.
  */
-async function routeTurn(t: Turn, said: string, lastReply: string | null): Promise<void> {
+async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string | null): Promise<Routed> {
   const b = t.deps.business;
-  const j = (t.st.journey ??= initialJourney(b, t.st.caller));
-  const limit = b.routing.timeoutMs;
   const started = Date.now();
-  let late = false;
-  const clock = setTimeout(() => (late = true), limit);
-  const answers = await askWithin(t.deps.jev, routeState(b, j, said, lastReply), routeQuestions(b, j, t.st.caller), limit);
-  clearTimeout(clock);
+  const asked = await askWithinWhy(t.deps.jev, routeState(b, j, said, lastReply), routeQuestions(b, j, t.st.caller), b.routing.timeoutMs);
   const ms = Date.now() - started;
-  const reading = readRoute(answers);
+  const reading = readRoute(asked.answers);
   const route = decideRoute(b, j, reading, openJourneys(b, t.st.caller));
-  t.st.journey = route.next;
-  t.route = {
-    from: j.active,
-    to: route.next.active,
-    outcome: route.outcome,
-    task: reading.task,
-    ...(reading.drops !== null ? { drops: reading.drops } : {}),
-    ...(reading.again !== null ? { again: reading.again } : {}),
-    ms,
-    ...(answers === null && late ? { timedOut: true as const } : {}),
-    ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),
+  return {
+    next: route.next,
+    route: {
+      from: j.active,
+      to: route.next.active,
+      outcome: route.outcome,
+      task: reading.task,
+      ...(reading.drops !== null ? { drops: reading.drops } : {}),
+      ...(reading.again !== null ? { again: reading.again } : {}),
+      ms,
+      ...(asked.answers === null && asked.why === 'late' ? { timedOut: true as const } : {}),
+      ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),
+    },
   };
 }
 
@@ -894,8 +1013,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     if (st.pending !== null) ran = await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
     // A yes that ran its action is not routed: the caller answered the read-back, and the journey moved on by it.
-    // Any other answer to a read-back is routed on the same words.
-    if (routed && !ran) await routeTurn(t, input.text, lastReply);
+    // Any other answer to a read-back is routed on the same words, alongside the model's first round.
+    const routing = routed && !ran ? routeOf(t, st.journey!, input.text, lastReply) : undefined;
     const carried = st.carriedNote;
     if (carried !== undefined) {
       // The check after speaking's note carried from a turn that ended on a read-back: after this message's
@@ -904,7 +1023,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
       delete st.carriedNote;
       t.carriedNote = true;
     }
-    await converse(t, sp, false, carried);
+    await converse(t, sp, false, carried, routing);
     await checkAfterSpeaking(t, sp);
   }
   // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.

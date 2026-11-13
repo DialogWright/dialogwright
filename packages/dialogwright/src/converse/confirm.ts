@@ -127,24 +127,33 @@ const isProbability = (n: number): boolean => Number.isFinite(n) && n >= 0 && n 
 
 /**
  * One request to the decision model, aborted once `timeoutMs` have passed: its answers, or null when the
- * model errs or has not answered in time. It never throws. The converse runtime's two readings use it: the
+ * model errs or has not answered in time. It never throws. The converse runtime's readings use it: the
  * caller's answer to a read-back (readYesNo) and the check after speaking (claims.ts readClaims).
  */
 export async function askWithin(jev: JevClient, state: JsonValue, questions: QuestionMap, timeoutMs: number): Promise<AnswerMap | null> {
+  return (await askWithinWhy(jev, state, questions, timeoutMs)).answers;
+}
+
+/**
+ * askWithin, with why it returned no answers where it did not: `late` when `timeoutMs` passed first (the
+ * request is then aborted), `error` when the model erred first. It never throws. Routing uses it, to tell a
+ * decision model that was late from one that failed (the route's `timedOut`).
+ */
+export async function askWithinWhy(jev: JevClient, state: JsonValue, questions: QuestionMap, timeoutMs: number): Promise<{ answers: AnswerMap } | { answers: null; why: 'late' | 'error' }> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const asked = Promise.resolve().then(() => jev.ask({ state, questions, timeoutMs, signal: controller.signal }));
-    const late = new Promise<null>((resolve) => {
+    const late = new Promise<'late'>((resolve) => {
       timer = setTimeout(() => {
         controller.abort();
-        resolve(null);
+        resolve('late');
       }, timeoutMs);
     });
     const res = await Promise.race([asked, late]);
-    return res === null ? null : res.answers;
+    return res === 'late' ? { answers: null, why: 'late' } : { answers: res.answers };
   } catch {
-    return null;
+    return { answers: null, why: 'error' };
   } finally {
     clearTimeout(timer);
   }

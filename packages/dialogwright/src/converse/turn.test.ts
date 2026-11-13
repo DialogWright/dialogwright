@@ -1466,9 +1466,15 @@ describe('journeys', () => {
   const VISIT = { visit: 0.9, note: 0.05, none: 0.05 };
   const NOTE = { visit: 0.05, note: 0.9, none: 0.05 };
   const GREETING = 'Example Menders, how can I help?';
+  /**
+   * The model's first round on a turn whose route changes the journey: asked alongside the routing with the
+   * journey as it stood, then stopped or dropped unsaid, and asked again with the new journey.
+   */
+  const DROPPED: ModelEvent[] = [text('Never said.'), done()];
+  const neverSaid = (h: Harness): boolean => h.said.every(([t]) => !t.includes('Never said'));
 
   it('the first caller turn at the root starts the journey the decision model reads', async () => {
-    const h = harness([[text('Which day suits you?'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }]) });
+    const h = harness([DROPPED, [text('Which day suits you?'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }]) });
     let s = await h.run(fresh(), { kind: 'start' });
     // The call starts at the root: no journey says start for a caller on no account.
     expect(s.journey).toEqual({ active: null, phase: 'working', paused: null, done: [] });
@@ -1483,12 +1489,13 @@ describe('journeys', () => {
     expect(h.traces[1]!.route!.timedOut).toBeUndefined();
     // The model's request: only the visit's actions, and the visit's goal in its prompt.
     expect(toolNames(h)).toEqual(['check_availability', 'book', 'end_call']);
-    expect(h.model.requests[0]!.system).toContain(h.deps.business.journeys!.visit!.goal);
+    expect(h.model.requests.at(-1)!.system).toContain(h.deps.business.journeys!.visit!.goal);
     expect(h.said.at(-1)).toEqual(['Which day suits you?', true]);
+    expect(neverSaid(h)).toBe(true);
   });
 
   it('a state saved before journeys gets the journey the call would have started in, then is routed', async () => {
-    const h = harness([[text('Which day suits you?'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }]) });
+    const h = harness([DROPPED, [text('Which day suits you?'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }]) });
     const started = await h.run(fresh(), { kind: 'start' });
     const before = structuredClone(started);
     delete before.journey;
@@ -1498,7 +1505,7 @@ describe('journeys', () => {
   });
 
   it('a confirmed yes is not routed: the action runs, the journey moves to its after phase, and that is recorded', async () => {
-    const h = harness([...lookupThenBook, [text('You are booked.'), done()], [text('Anything else?'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }, { task: VISIT, again: 0.1 }]) });
+    const h = harness([DROPPED, ...lookupThenBook, [text('You are booked.'), done()], [text('Anything else?'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }, { task: VISIT, again: 0.1 }]) });
     let s = await upToReadBack(h);
     expect(s.pending?.action).toBe('book');
     expect(routeAsks(h)).toHaveLength(1);
@@ -1522,7 +1529,7 @@ describe('journeys', () => {
   });
 
   it('declining a read-back routes on the same words: nothing runs, the other journey starts, and its model sees the declined read-back', async () => {
-    const h = harness([...lookupThenBook, [text('I can leave a note for a call back.'), done()]], {
+    const h = harness([DROPPED, ...lookupThenBook, DROPPED, [text('I can leave a note for a call back.'), done()]], {
       edit: withJourneys,
       jev: routeJev([{ task: VISIT }, { task: NOTE, drops: 0.2 }], { yes: 0.05, no: 0.9 }),
     });
@@ -1542,13 +1549,16 @@ describe('journeys', () => {
     expect(lastMessage(h)).toContain(`The line read back: \\"${READ_BACK}\\"`);
     expect(lastMessage(h)).toContain('The caller did not confirm');
     expect(h.said.at(-1)).toEqual(['I can leave a note for a call back.', true]);
+    expect(neverSaid(h)).toBe(true);
   });
 
   it('an action from another journey is refused not-offered: audited with the journey, counted toward no refusal, and the turn goes on', async () => {
     const WHY = 'Not run: "leave_note" is not available for what the caller is doing now.';
     const h = harness([
+      DROPPED,
       [call('c1', 'leave_note', { note: 'call me' }), done('tool')],
       [text('I can book you a visit.'), done()],
+      DROPPED,
       [call('c2', 'book', { slot: SLOT, item: 'lamp' }), done('tool')],
       [text('What can I help with?'), done()],
     ], { edit: withJourneys, jev: routeJev([{ task: VISIT }, { task: { none: 0.9 }, drops: 0.9 }]) });
@@ -1560,7 +1570,7 @@ describe('journeys', () => {
     expect(h.rows.filter((r) => r.type === 'gate')).toEqual([]);
     expect(s.refusals).toEqual({});
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'leave_note', args: { note: '•' }, outcome: 'refused', reason: WHY }]);
-    expect(h.model.requests[1]!.messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'tool_result', id: 'c1', content: WHY, isError: true }] });
+    expect(h.model.requests[2]!.messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'tool_result', id: 'c1', content: WHY, isError: true }] });
     expect(h.said.at(-1)).toEqual(['I can book you a visit.', true]);
     expect(h.ended).toEqual([]);
 
@@ -1574,8 +1584,11 @@ describe('journeys', () => {
 
   it('switch then return resumes the paused journey with its conversation', async () => {
     const h = harness([
+      DROPPED,
       [text('Which day suits you?'), done()],
+      DROPPED,
       [text('What number should we call?'), done()],
+      DROPPED,
       [text('Back to your kettle: which day suits you?'), done()],
     ], { edit: withJourneys, jev: routeJev([{ task: VISIT }, { task: NOTE, drops: 0.1 }, { task: VISIT, drops: 0.1 }]) });
     let s = await h.run(fresh(), { kind: 'start' });
@@ -1594,7 +1607,7 @@ describe('journeys', () => {
   });
 
   it('the decision model fails: the turn carries on with the active journey, and nothing errs', async () => {
-    const h = harness([[text('Which day suits you?'), done()], [text('Friday is open.'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }, 'fail']) });
+    const h = harness([DROPPED, [text('Which day suits you?'), done()], [text('Friday is open.'), done()]], { edit: withJourneys, jev: routeJev([{ task: VISIT }, 'fail']) });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
     s = await h.run(s, { kind: 'text', text: 'is Friday open?' });
@@ -1611,11 +1624,236 @@ describe('journeys', () => {
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'what do you mend?' });
     expect(h.traces.at(-1)!.route).toMatchObject({ from: null, to: null, outcome: 'carry', task: null, timedOut: true });
-    expect(h.traces.at(-1)!.route!.ms).toBeGreaterThanOrEqual(29);
     expect(s.journey).toEqual({ active: null, phase: 'working', paused: null, done: [] });
     // At the root: no action but end_call.
     expect(toolNames(h)).toEqual(['end_call']);
     expect(h.said.at(-1)).toEqual(['We mend lamps, kettles and clocks.', true]);
+  });
+
+  /**
+   * The first round alongside routing (the design's "Keeping latency flat"): the model's first round starts at
+   * once with the journey as it stands, its sentences held until the route is known, and asked again where the
+   * route changes the journey.
+   */
+  describe('the first round alongside routing', () => {
+    /** A promise the test settles. */
+    function gate(): { promise: Promise<void>; open: () => void } {
+      let open!: () => void;
+      const promise = new Promise<void>((resolve) => (open = resolve));
+      return { promise, open };
+    }
+    const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+    /** A step of a gated model's answer: an event, or a wait the test controls (its request's abort ends the stream). */
+    type Step = ModelEvent | (() => Promise<unknown>);
+    /** A model whose streams wait where the test says and stop when their request is aborted; `aborted` counts the streams stopped so. */
+    function gatedModel(turns: Step[][]): Harness['model'] & { aborted: number } {
+      const requests: Harness['model']['requests'] = [];
+      let next = 0;
+      const m = {
+        id: 'fake',
+        requests,
+        aborted: 0,
+        async *stream(req: Parameters<ConverseModel['stream']>[0], signal: AbortSignal): AsyncIterable<ModelEvent> {
+          requests.push(structuredClone(req));
+          const turn = turns[next++] ?? [{ type: 'error', kind: 'http', detail: 'no more scripted turns' } as ModelEvent];
+          for (const step of turn) {
+            if (typeof step !== 'function') {
+              yield step;
+              continue;
+            }
+            const stopped = await Promise.race([
+              step().then(() => false),
+              new Promise<boolean>((resolve) => (signal.aborted ? resolve(true) : signal.addEventListener('abort', () => resolve(true), { once: true }))),
+            ]);
+            if (stopped) {
+              m.aborted += 1;
+              return;
+            }
+          }
+        },
+      };
+      return m;
+    }
+
+    /** routeJev, each routing answer held until the test's gate for that ask opens, where it has one. */
+    function gatedJev(steps: RouteStep[], gates: (Promise<void> | undefined)[]): Harness['jev'] {
+      const inner = routeJev(steps);
+      let n = 0;
+      return {
+        asked: inner.asked,
+        async ask(req) {
+          if (Object.hasOwn(req.questions, 'task')) await gates[n++];
+          return inner.ask(req);
+        },
+      };
+    }
+
+    it('carry: nothing said before the route, then all of it, once and in order', async () => {
+      const route = gate();
+      const more = gate();
+      const model = gatedModel([
+        DROPPED,
+        [text('Which day suits you?'), done()],
+        [text('Friday is open. '), text('Mornings are best. '), () => more.promise, text('Afternoons too.'), done()],
+      ]);
+      const h = harness([], { edit: withJourneys, model, jev: gatedJev([{ task: VISIT }, { task: VISIT, drops: 0.1 }], [undefined, route.promise]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
+      const before = h.said.length;
+      const turn = h.run(s, { kind: 'text', text: 'is Friday open?' });
+      await pause(20);
+      // The model has begun, with the journey as it stands, and nothing of it is said while the route is not known.
+      expect(model.requests).toHaveLength(3);
+      expect(toolNames(h)).toEqual(['check_availability', 'book', 'end_call']);
+      expect(h.said.length).toBe(before);
+      route.open();
+      await pause(5);
+      // The route carries the journey: what was held is said, and the rest goes straight out as it comes.
+      expect(h.said.slice(before)).toEqual([['Friday is open. ', false]]);
+      more.open();
+      s = await turn;
+      expect(h.said.slice(before)).toEqual([['Friday is open. ', false], ['Mornings are best. ', false], ['Afternoons too.', true]]);
+      const r = h.traces.at(-1)!;
+      expect(r.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry' });
+      expect(r.route!.restarted).toBeUndefined();
+      expect(model.requests).toHaveLength(3);
+      expect(model.aborted).toBe(0);
+      expect(r.replies).toEqual(['Friday is open. Mornings are best. Afternoons too.']);
+      // The first text the caller could hear came once the route was known.
+      expect(r.model.firstTextMs).toBeGreaterThanOrEqual(15);
+      expect(s.journey?.active).toBe('visit');
+    });
+
+    it('switch: the first round\'s sentences are never said and the second round\'s are', async () => {
+      const route = gate();
+      const model = gatedModel([
+        [text('We mend lamps. '), text('And clocks. '), () => gate().promise, text('Anything else?'), done()],
+        [text('Which day suits you?'), done()],
+      ]);
+      const h = harness([], { edit: withJourneys, model, jev: gatedJev([{ task: VISIT }], [route.promise]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      const turn = h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
+      await pause(20);
+      expect(h.said).toHaveLength(1);
+      route.open();
+      s = await turn;
+      // The first round, asked at the root, was stopped and dropped; the second was asked in the visit.
+      expect(h.said.slice(1)).toEqual([['Which day suits you?', true]]);
+      expect(model.requests).toHaveLength(2);
+      expect(model.aborted).toBe(1);
+      expect(toolNames(h, 0)).toEqual(['end_call']);
+      expect(toolNames(h, 1)).toEqual(['check_availability', 'book', 'end_call']);
+      expect(model.requests[1]!.system).toContain(h.deps.business.journeys!.visit!.goal);
+      expect(model.requests[1]!.messages).toEqual(model.requests[0]!.messages);
+      const r = h.traces.at(-1)!;
+      expect(r.route).toMatchObject({ from: null, to: 'visit', outcome: 'start', restarted: true });
+      expect(r.replies).toEqual(['Which day suits you?']);
+      expect(r.model.requests).toHaveLength(2);
+      expect(r.model.error).toBeUndefined();
+      expect(JSON.stringify(s.messages)).not.toContain('We mend lamps');
+      expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Which day suits you?' }] });
+      expect(s.failures).toBe(0);
+    });
+
+    it('the decision model hangs: at routing.timeoutMs the held sentences are said, the route timed out, and nothing waits longer', async () => {
+      const MODEL_MS = 20;
+      const model = gatedModel([[text('We mend lamps. '), () => pause(MODEL_MS), text('And clocks.'), done()]]);
+      const h = harness([], { edit: (t) => `${withJourneys(t)}routing: { timeoutMs: 50 }\n`, model, jev: routeJev(['hang']) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      const started = Date.now();
+      s = await h.run(s, { kind: 'text', text: 'what do you mend?' });
+      const took = Date.now() - started;
+      const r = h.traces.at(-1)!;
+      expect(r.route).toMatchObject({ from: null, to: null, outcome: 'carry', timedOut: true });
+      expect(r.route!.restarted).toBeUndefined();
+      expect(h.said.slice(1)).toEqual([['We mend lamps. ', false], ['And clocks.', true]]);
+      // Held until the routing limit, and no longer.
+      expect(r.model.firstTextMs).toBeGreaterThanOrEqual(40);
+      expect(took).toBeLessThan(50 + MODEL_MS + 50);
+      expect(model.requests).toHaveLength(1);
+      expect(s.journey?.active).toBeNull();
+    });
+
+    it('a tool call in a held round that is restarted never runs', async () => {
+      let looked = 0;
+      const route = gate();
+      const model = gatedModel([
+        DROPPED,
+        [text('Which day suits you?'), done()],
+        [call('c1', 'check_availability', { day: FRIDAY }), done('tool')],
+        [text('What number should we call?'), done()],
+      ]);
+      const h = harness([], {
+        edit: withJourneys,
+        model,
+        tools: {
+          check_availability: async () => {
+            looked += 1;
+            return [];
+          },
+        },
+        jev: gatedJev([{ task: VISIT }, { task: NOTE, drops: 0.1 }], [undefined, route.promise]),
+      });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
+      const rows = h.rows.length;
+      const turn = h.run(s, { kind: 'text', text: 'actually, can someone call me back?' });
+      await pause(20);
+      // The round has called the lookup; it waits for the route.
+      expect(model.requests).toHaveLength(3);
+      expect(looked).toBe(0);
+      route.open();
+      s = await turn;
+      expect(looked).toBe(0);
+      expect(h.rows.slice(rows)).toEqual([]);
+      const r = h.traces.at(-1)!;
+      expect(r.tools).toEqual([]);
+      expect(r.route).toMatchObject({ from: 'visit', to: 'note', outcome: 'switch', restarted: true });
+      expect(toolNames(h)).toEqual(['callback', 'leave_note', 'end_call']);
+      expect(JSON.stringify(s.messages)).not.toContain('check_availability');
+      expect(s.seen).toEqual({});
+      expect(h.said.at(-1)).toEqual(['What number should we call?', true]);
+    });
+
+    it('a held round that fails before the route is known says nothing of what it held: the recovery line alone', async () => {
+      const route = gate();
+      const model = gatedModel([
+        DROPPED,
+        [text('Which day suits you?'), done()],
+        [text('Half a reply. '), text('And more'), timeout],
+        [text('Again half. '), text('And'), timeout],
+      ]);
+      const h = harness([], { edit: withJourneys, model, jev: gatedJev([{ task: VISIT }, { task: VISIT, drops: 0.1 }], [undefined, route.promise]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
+      const before = h.said.length;
+      const turn = h.run(s, { kind: 'text', text: 'is Friday open?' });
+      await pause(20);
+      route.open();
+      s = await turn;
+      expect(h.said.slice(before)).toEqual([['Sorry, could you say that again?', true]]);
+      expect(h.traces.at(-1)!.route).toMatchObject({ outcome: 'carry' });
+      expect(h.traces.at(-1)!.model.retried).toBe(true);
+      expect(JSON.stringify(s.messages)).not.toMatch(/half/i);
+      expect(s.failures).toBe(1);
+    });
+
+    it('an app without journeys never holds: the first sentence goes out as soon as it is whole', async () => {
+      const more = gate();
+      const model = gatedModel([[text('Friday is open. '), text('Mornings are best.'), () => more.promise, text(' Afternoons too.'), done()]]);
+      const h = harness([], { edit: (t) => `${t}${CHECKS_OFF}`, model });
+      const s = await h.run(fresh(), { kind: 'start' });
+      const turn = h.run(s, { kind: 'text', text: 'is Friday open?' });
+      await pause(10);
+      expect(h.said.slice(1)).toEqual([['Friday is open. ', false]]);
+      more.open();
+      await turn;
+      expect(h.said.slice(1)).toEqual([['Friday is open. ', false], ['Mornings are best. ', false], ['Afternoons too.', true]]);
+      expect(h.jev.asked).toEqual([]);
+      expect(h.traces.at(-1)!.route).toBeUndefined();
+      expect(h.traces.at(-1)!.model.firstTextMs).toBeLessThan(10);
+    });
   });
 
   it('an app without journeys asks the decision model nothing but the read-back', async () => {
