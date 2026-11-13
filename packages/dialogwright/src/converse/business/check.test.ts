@@ -105,6 +105,30 @@ describe('journeys', () => {
     expect(p.fix).toMatch(/add "leave_note" to a journey/);
   });
 
+  it('startAt below switchAt is refused; at it, or alone with no journeys, is not', () => {
+    const p = only(withJourneys + 'routing:\n  switchAt: 0.7\n  startAt: 0.6\n');
+    expect(p.path).toBe('routing.startAt');
+    expect(p.fix).toMatch(/raise startAt/);
+    expect(problemsOf(withJourneys + 'routing:\n  switchAt: 0.7\n  startAt: 0.7\n')).toEqual([]);
+    expect(problemsOf(base + 'routing:\n  switchAt: 0.9\n')).toEqual([]);
+  });
+
+  it('a journey greeting needs a start', () => {
+    const t = base + LEAVE_NOTE_ACTION + ACCOUNT_JOURNEYS_YAML;
+    expect(problemsOf(changed('    start: { account: recognised }\n', '    start: { account: recognised }\n    greeting: { en: "Welcome back." }\n', t))).toEqual([]);
+    const p = only(changed('    for: { account: none }\n', '    for: { account: none }\n    greeting: { en: "Hello." }\n', t));
+    expect(p.path).toBe('journeys.visit.greeting');
+    expect(p.fix).toMatch(/add start/);
+  });
+
+  it('journeys need lines.unclear; without journeys it is optional, and business.line is optional text', () => {
+    const p = only(changed(/^ {2}unclear:.*\n/m.exec(withJourneys)![0], '', withJourneys));
+    expect(p.path).toBe('lines.unclear');
+    expect(p.fix).toMatch(/lines\.unclear/);
+    expect(problemsOf(base.replace(/^ {2}unclear:.*\n/m, '') + LEAVE_NOTE_ACTION)).toEqual([]);
+    expect(problemsOf(changed('  name: ', '  line: This line is how we book.\n  name: ', withJourneys))).toEqual([]);
+  });
+
   it('an unnamed change is no problem where there are no journeys', () => {
     expect(problemsOf(base + LEAVE_NOTE_ACTION)).toEqual([]);
   });
@@ -138,8 +162,8 @@ describe('journeys', () => {
     expect(r.problems).toEqual([]);
     expect(r.value).not.toHaveProperty('journeys');
     expect(r.value).not.toHaveProperty('root');
-    expect(r.value!.routing).toEqual({ switchAt: 0.6, timeoutMs: 400 });
-    expect(ROUTING_DEFAULTS).toEqual({ switchAt: 0.6, timeoutMs: 400 });
+    expect(r.value!.routing).toEqual({ switchAt: 0.6, startAt: 0.8, timeoutMs: 400 });
+    expect(ROUTING_DEFAULTS).toEqual({ switchAt: 0.6, startAt: 0.8, timeoutMs: 400 });
   });
 
   it('a journey with an empty when or goal is refused', () => {

@@ -272,7 +272,7 @@ describe('journeys', () => {
     await c.say('three trade-ins for tomorrow');
     expect(toolNames(model)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'end_call']);
     // The repair request is closed to an account, so it is not among the options the decision model is asked.
-    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['dealer_booking', 'callback', 'none']);
+    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['dealer_booking', 'callback', 'question', 'none']);
   });
 
   it('never offers book_dealer to a caller on no account, nor asks about the dealer booking', async () => {
@@ -286,7 +286,7 @@ describe('journeys', () => {
     expect(c.state.journey).toMatchObject({ active: 'repair_request' });
     expect(toolNames(model)).not.toContain('book_dealer');
     expect(toolNames(model)).not.toContain('recognise_caller');
-    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['repair_request', 'callback', 'none']);
+    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['repair_request', 'callback', 'question', 'none']);
   });
 
   it('refuses a book_dealer the model calls in a request, as not offered, and sends nothing', async () => {

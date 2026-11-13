@@ -46,6 +46,7 @@ lines:
   closing: { en: "Thanks for calling. Goodbye." }
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Let me get a person to call you back." }
+  unclear: { en: "Sorry, I can't follow that. Please call back any time." }
 model:
   default: anthropic:claude-haiku-5-5
 limits: { failuresPerCall: 2, refusalsPerAction: 2 }
@@ -1541,7 +1542,7 @@ describe('journeys', () => {
     // The read-back is answered first, then the same words are routed, with the read-back as the line's last words.
     const asks = h.jev.asked.slice(-2);
     expect(Object.hasOwn(asks[0]!.questions, 'confirmsYes')).toBe(true);
-    expect(Object.keys(asks[1]!.questions)).toEqual(['task', 'drops']);
+    expect(Object.keys(asks[1]!.questions)).toEqual(['task', 'drops', 'fits']);
     expect(asks[1]!.state).toMatchObject({ said: 'no, actually, just have someone call me', lastReply: READ_BACK, active: h.deps.business.journeys!.visit!.when });
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'note', outcome: 'switch', task: NOTE, drops: 0.2 });
     expect(s.journey).toEqual({ active: 'note', phase: 'working', paused: 'visit', done: [] });

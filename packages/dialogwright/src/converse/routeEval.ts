@@ -59,7 +59,7 @@ function perfectReading(b: AgentBusiness, j: JourneyState, label: RouteLabel, op
   for (const id of open) task[id] = 0;
   task[label.task] = 1;
   const active = j.active !== null;
-  return { task, drops: active && j.phase === 'working' ? (label.drops === true ? 1 : 0) : null, again: active && j.phase === 'after' ? (label.again === true ? 1 : 0) : null };
+  return { task, drops: active && j.phase === 'working' ? (label.drops === true ? 1 : 0) : null, again: active && j.phase === 'after' ? (label.again === true ? 1 : 0) : null, fits: null };
 }
 
 const callerOf = (c: RouteCall): { number: string; account: string | null } => ({ number: CALLER_NUMBER, account: c.account ? ACCOUNT_NAME : null });

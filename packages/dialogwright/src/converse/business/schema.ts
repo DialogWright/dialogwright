@@ -111,8 +111,8 @@ const question = z.strictObject({ q: text().describe('A question callers ask, in
 /** What a journey may ask of the caller's account, a fact of the call the runtime already has (a recognised account is not an identity). */
 export const ACCOUNT_FACTS = ['recognised', 'none'] as const;
 export type AccountFact = (typeof ACCOUNT_FACTS)[number];
-/** Routing's defaults: the bar a switch to another journey must reach, and how long the decision model may take. */
-export const ROUTING_DEFAULTS = { switchAt: 0.6, timeoutMs: 400 } as const;
+/** Routing's defaults: the bar a switch to another journey must reach, the stricter bar a start from the root must reach, and how long the decision model may take. */
+export const ROUTING_DEFAULTS = { switchAt: 0.6, startAt: 0.8, timeoutMs: 400 } as const;
 
 const journey = z
   .strictObject({
@@ -123,6 +123,7 @@ const journey = z
     questions: z.array(question).default([]).describe('This journey\'s own questions callers ask, with the business\'s answers, added to the base\'s for this journey only.'),
     actions: z.array(identifier()).default([]).describe('The actions it may use, named from the top-level actions. Each action is defined once and may be named by several journeys.'),
     for: z.strictObject({ account: z.enum(ACCOUNT_FACTS).describe('recognised: open only where the number calling is on an account. none: open only where it is on none.') }).optional().describe('Which callers the journey is open to, by a fact of the call. A journey closed to the caller is never one of the decision model\'s options. Absent: open to every caller.'),
+    greeting: worded('What the line says first where this journey starts the call (it has `start`), instead of lines.greeting').optional(),
     start: z.strictObject({ account: z.literal('recognised').describe('Start where the number calling is on an account.') }).optional().describe('A fact of the call that starts the journey before the caller speaks. At most one journey says it.'),
     completes: z.array(identifier()).optional().describe('The change actions whose confirmed run ends the journey. Default: all the change actions it names that are not follow-ons.'),
     after: text().optional().describe('What the line helps with once the journey is done, in one sentence. Default: "<goal>: done on this call. Answer the caller\'s questions about it."'),
@@ -244,6 +245,11 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
     }
   }
 
+  const routing = isMap(root.routing) ? root.routing : {};
+  const switchAt = typeof routing.switchAt === 'number' ? routing.switchAt : ROUTING_DEFAULTS.switchAt;
+  const startAt = typeof routing.startAt === 'number' ? routing.startAt : ROUTING_DEFAULTS.startAt;
+  if (isMap(root.journeys) && startAt < switchAt) issue(ctx, ['routing', 'startAt'], `startAt (${startAt}) is below switchAt (${switchAt})`, 'a start from the root is the stricter bar: raise startAt, or lower switchAt');
+
   if (isMap(root.root) && Array.isArray(root.root.actions)) {
     root.root.actions.forEach((n, i) => {
       if (typeof n !== 'string') return;
@@ -270,11 +276,14 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
           else if (kindOf(n) !== 'change') issue(ctx, ['journeys', id, 'completes', i], `"${n}" is not a change`, 'only a confirmed change ends a journey: name a change action, or delete the entry');
         });
       }
+      if (isMap(j.greeting) && !isMap(j.start)) issue(ctx, ['journeys', id, 'greeting'], `the journey "${id}" has a greeting and no start`, 'a journey greets only where it starts the call: add start, or delete the greeting');
       if (isMap(j.start)) {
         starters.push(id);
         if (isMap(j.for) && j.for.account === 'none') issue(ctx, ['journeys', id, 'start'], `the journey "${id}" starts where the number is on an account and is open only where it is on none`, 'delete "start", or make "for" account: recognised');
       }
     }
+    const lines = isMap(root.lines) ? root.lines : {};
+    if (!isMap(lines.unclear)) issue(ctx, ['lines', 'unclear'], 'the business has journeys and no line for a call it cannot follow', 'add lines.unclear: { en: "..." }, said word for word when a third turn in a row is unclear, before the call ends');
     if (starters.length > 1) issue(ctx, ['journeys', starters[1]!, 'start'], `${starters.join(' and ')} both say start, and two would race at the call's start`, `keep "start" on one journey and delete it from ${starters.slice(1).join(', ')}`);
     for (const [name, a] of Object.entries(actions)) {
       if (isMap(a) && a.kind === 'change' && !followed.has(name) && !named.has(name)) issue(ctx, ['actions', name], `the change "${name}" is named by no journey, so it could never be offered`, `add "${name}" to a journey's actions, or delete it`);
@@ -294,6 +303,7 @@ export const agentBusinessSchema = z
           .refine((z) => { try { new Intl.DateTimeFormat('en-CA', { timeZone: z }); return true; } catch { return false; } }, 'not an IANA time zone name')
           .optional()
           .describe('The business\'s IANA time zone (for example America/New_York): what "today" means for its calendar. Default: UTC.'),
+        line: text().optional().describe('The business\'s reason for the line, said to a caller who is not giving what it asks for (for example "This line is how we price repairs and set up drop-offs while we are busy in the shop"). Used only with journeys.'),
       })
       .describe('Who the business is.'),
     services: z
@@ -325,6 +335,7 @@ export const agentBusinessSchema = z
         handoff: worded('The line said when the call goes to a person'),
         notConfirmed: worded('The line said when the caller did not confirm a read-back').optional(),
         done: worded('The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done').default({ en: "That's done." }),
+        unclear: worded('The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys)').optional(),
         stuck: worded('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
       })
       .describe('The lines said word for word.'),
@@ -374,6 +385,7 @@ export const agentBusinessSchema = z
     routing: z
       .strictObject({
         switchAt: bar('The bar the decision model\'s reading must reach for the line to move to another journey.', ROUTING_DEFAULTS.switchAt),
+        startAt: bar('The bar the decision model\'s reading must reach for a journey to start from the root; below it the turn is unclear. At least switchAt.', ROUTING_DEFAULTS.startAt),
         timeoutMs: z.number().int().positive().default(ROUTING_DEFAULTS.timeoutMs).describe(`How long the decision model may take to read a turn before the turn goes on with the active journey (or the root). Default: ${ROUTING_DEFAULTS.timeoutMs}.`),
       })
       .default({ ...ROUTING_DEFAULTS })

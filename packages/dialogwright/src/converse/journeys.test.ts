@@ -6,7 +6,7 @@ import type { AnswerMap } from '../jev/types';
 import { ACCOUNT_JOURNEYS_YAML, JOURNEYS_YAML, LEAVE_NOTE_ACTION } from '../testing/converse/journeys';
 import { agentBusinessProblems } from './business/load';
 import type { AgentBusiness } from './business/schema';
-import { completeJourney, decideRoute, hasJourneys, initialJourney, NONE_TASK, openJourneys, readRoute, routeQuestions, routeState, type RouteReading } from './journeys';
+import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, NONE_TASK, openJourneys, QUESTION_TASK, readRoute, routeQuestions, routeState, type RouteReading } from './journeys';
 import type { JourneyState } from './state';
 
 const base = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'testing', 'converse', 'agent.yaml'), 'utf8');
@@ -21,7 +21,7 @@ const recognised = { number: '+15555550100', account: 'Example Account' };
 const anon = { number: '+15555550100', account: null };
 const root: JourneyState = { active: null, phase: 'working', paused: null, done: [] };
 const inVisit: JourneyState = { ...root, active: 'visit' };
-const reading = (r: Partial<RouteReading>): RouteReading => ({ task: null, drops: null, again: null, ...r });
+const reading = (r: Partial<RouteReading>): RouteReading => ({ task: null, drops: null, again: null, fits: null, ...r });
 const open = ['visit', 'note'];
 
 describe('open journeys and the start', () => {
@@ -51,9 +51,9 @@ describe('routeQuestions', () => {
     const q = routeQuestions(acct, root, anon).task!;
     expect(q.type).toBe('choice');
     if (q.type !== 'choice') throw new Error('choice');
-    expect(Object.keys(q.criteria)).toEqual(['visit', 'note', NONE_TASK]);
+    expect(Object.keys(q.criteria)).toEqual(['visit', 'note', QUESTION_TASK, NONE_TASK]);
     expect(q.criteria.visit).toBe(acct.journeys!.visit!.when);
-    expect(q.criteria[NONE_TASK]).toBe('none of these: a question, small talk, or something else');
+    expect(q.criteria[NONE_TASK]).toBe('none of these: unclear, unrelated, or something the line does not do');
     expect(Object.keys(q.criteria)).not.toContain('visit_account');
   });
   it('task asks what the caller wants done, not what they ask about', () => {
@@ -63,7 +63,7 @@ describe('routeQuestions', () => {
   });
   it('drops is asked only in a working journey', () => {
     expect(Object.keys(routeQuestions(plain, root, anon))).toEqual(['task']);
-    expect(Object.keys(routeQuestions(plain, inVisit, anon))).toEqual(['task', 'drops']);
+    expect(Object.keys(routeQuestions(plain, inVisit, anon))).toEqual(['task', 'drops', 'fits']);
     expect(Object.keys(routeQuestions(plain, { ...inVisit, phase: 'after', done: ['visit'] }, anon))).toEqual(['task', 'again']);
   });
   it('again names the active journey goal', () => {
@@ -91,7 +91,7 @@ describe('routeState', () => {
 
 describe('readRoute', () => {
   it('a missing answer set is all null, and decides carry', () => {
-    expect(readRoute(null)).toEqual({ task: null, drops: null, again: null });
+    expect(readRoute(null)).toEqual({ task: null, drops: null, again: null, fits: null });
     expect(decideRoute(plain, inVisit, readRoute(null), open)).toEqual({ outcome: 'carry', next: inVisit });
     expect(decideRoute(plain, root, readRoute(null), open)).toEqual({ outcome: 'carry', next: root });
   });
@@ -100,7 +100,7 @@ describe('readRoute', () => {
       task: { type: 'choice', choice: 'note', probabilities: { note: 0.7, none: 0.3 }, confidence: 0.9 },
       drops: { type: 'noul', noul: 0.8 },
     };
-    expect(readRoute(answers)).toEqual({ task: { note: 0.7, none: 0.3 }, drops: 0.8, again: null });
+    expect(readRoute(answers)).toEqual({ task: { note: 0.7, none: 0.3 }, drops: 0.8, again: null, fits: null });
   });
 });
 
@@ -109,17 +109,18 @@ describe('decideRoute', () => {
     const r = decideRoute(plain, root, reading({ task: { visit: 0.9, none: 0.1 } }), open);
     expect(r).toEqual({ outcome: 'start', next: { ...root, active: 'visit' } });
   });
-  it('at the root, none of these (or below the bar) stays at the root', () => {
-    expect(decideRoute(plain, root, reading({ task: { visit: 0.2, none: 0.8 } }), open)).toEqual({ outcome: 'root', next: root });
-    expect(decideRoute(plain, root, reading({ task: { visit: 0.59, none: 0.41 } }), open)).toEqual({ outcome: 'root', next: root });
+  it('at the root, none of these (or below the start bar) stays at the root, unclear', () => {
+    const unclear = { outcome: 'root', unclear: true, next: { ...root, unclear: 1 } };
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.2, none: 0.8 } }), open)).toEqual(unclear);
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.79, none: 0.21 } }), open)).toEqual(unclear);
   });
-  it('a probability exactly at the bar counts as above it', () => {
-    expect(decideRoute(plain, root, reading({ task: { visit: 0.6, none: 0.4 } }), open).outcome).toBe('start');
+  it('a probability exactly at the start bar counts as a start', () => {
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.8, none: 0.2 } }), open).outcome).toBe('start');
   });
   it('a closed journey named by Jev is never routed to', () => {
     const o = openJourneys(acct, anon);
     const r = reading({ task: { visit_account: 0.95, visit: 0.02, none: 0.03 } });
-    expect(decideRoute(acct, root, r, o)).toEqual({ outcome: 'root', next: root });
+    expect(decideRoute(acct, root, r, o)).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 1 } });
     expect(decideRoute(acct, { ...root, active: 'note' }, r, o).outcome).toBe('carry');
   });
   it('active A, task A or none: carry', () => {
@@ -179,6 +180,71 @@ describe('decideRoute', () => {
   });
   it('anything else carries', () => {
     expect(decideRoute(plain, inVisit, reading({ task: null, drops: 0.9 }), open)).toEqual({ outcome: 'carry', next: inVisit });
+  });
+});
+
+describe('unclear turns', () => {
+  const unclearOf = (n: number): JourneyState => ({ ...inVisit, unclear: n });
+  const fit = (task: Record<string, number>, fits: number | null, extra: Partial<RouteReading> = {}): RouteReading => reading({ task, fits, drops: 0.1, ...extra });
+
+  it('task has a question option, and fits is asked only in a working journey', () => {
+    const q = routeQuestions(plain, root, anon).task!;
+    if (q.type !== 'choice') throw new Error('choice');
+    expect(q.criteria[QUESTION_TASK]).toBe("a question about the business: its hours, prices, where it is, what it does or doesn't do");
+    expect(Object.keys(routeQuestions(plain, root, anon))).toEqual(['task']);
+    expect(Object.keys(routeQuestions(plain, { ...inVisit, phase: 'after', done: ['visit'] }, anon))).not.toContain('fits');
+    expect(routeQuestions(plain, inVisit, anon).fits).toMatchObject({ type: 'noul' });
+    expect(routeQuestions(plain, inVisit, anon).fits!.instructions).toMatch(/give what the line just asked for/);
+  });
+  it('readRoute reads fits', () => {
+    expect(readRoute({ fits: { type: 'noul', noul: 0.3 } }).fits).toBe(0.3);
+  });
+  it('at the root, a question about the business is answered, not unclear', () => {
+    const r = decideRoute(plain, { ...root, unclear: 2 }, reading({ task: { question: 0.7, visit: 0.2, none: 0.1 } }), open);
+    expect(r).toEqual({ outcome: 'root', next: root });
+    expect(isUnclear(r)).toBe(false);
+  });
+  it('at the root, a journey below the start bar (but above the switch bar) is unclear and counted', () => {
+    const r = decideRoute(plain, root, reading({ task: { visit: 0.7, none: 0.3 } }), open);
+    expect(isUnclear(r)).toBe(true);
+    expect(r).toMatchObject({ outcome: 'root', next: { ...root, unclear: 1 } });
+    expect(decideRoute(plain, { ...root, unclear: 1 }, reading({ task: { none: 0.9, visit: 0.1 } }), open).next.unclear).toBe(2);
+  });
+  it('a switch between journeys still uses switchAt, not startAt', () => {
+    const r = decideRoute(plain, inVisit, fit({ note: 0.7, none: 0.3 }, 0.1), open);
+    expect(r.outcome).toBe('switch');
+    expect(isUnclear(r)).toBe(false);
+  });
+  it('a start from the root clears the count', () => {
+    const r = decideRoute(plain, { ...root, unclear: 2 }, reading({ task: { visit: 0.9, none: 0.1 } }), open);
+    expect(r).toEqual({ outcome: 'start', next: { ...root, active: 'visit' } });
+  });
+  it('in a working journey, a turn that does not fit and is no switch or question is unclear, counting on', () => {
+    const r = decideRoute(plain, inVisit, fit({ none: 0.9, visit: 0.1 }, 0.2), open);
+    expect(isUnclear(r)).toBe(true);
+    expect(r).toEqual({ outcome: 'carry', unclear: true, next: { ...inVisit, unclear: 1 } });
+    expect(decideRoute(plain, unclearOf(1), fit({ none: 0.9, visit: 0.1 }, 0.2), open).next.unclear).toBe(2);
+  });
+  it('in a working journey, fits exactly 0.5 fits; a question or a fitting turn clears the count', () => {
+    expect(isUnclear(decideRoute(plain, inVisit, fit({ none: 0.9, visit: 0.1 }, 0.5), open))).toBe(false);
+    const asked = decideRoute(plain, unclearOf(2), fit({ question: 0.8, none: 0.2 }, 0.1), open);
+    expect(asked).toEqual({ outcome: 'carry', next: inVisit });
+    expect(decideRoute(plain, unclearOf(2), fit({ visit: 0.9, none: 0.1 }, 0.9), open).next).toEqual(inVisit);
+  });
+  it('in a working journey, a drop is not unclear', () => {
+    const r = decideRoute(plain, unclearOf(1), fit({ none: 0.9, visit: 0.1 }, 0.1, { drops: 0.9 }), open);
+    expect(r).toEqual({ outcome: 'dropped', next: root });
+  });
+  it('in the after phase fits is not used: never unclear, and the count clears', () => {
+    const j: JourneyState = { ...inVisit, phase: 'after', done: ['visit'], unclear: 1 };
+    const r = decideRoute(plain, j, reading({ task: { none: 0.9, visit: 0.1 }, fits: 0.0 }), open);
+    expect(isUnclear(r)).toBe(false);
+    expect(r).toEqual({ outcome: 'carry', next: { ...inVisit, phase: 'after', done: ['visit'] } });
+  });
+  it('a null reading leaves the count unchanged and is never unclear', () => {
+    expect(decideRoute(plain, unclearOf(2), readRoute(null), open)).toEqual({ outcome: 'carry', next: unclearOf(2) });
+    expect(isUnclear(decideRoute(plain, unclearOf(2), reading({ task: null, fits: 0 }), open))).toBe(false);
+    expect(isUnclear(decideRoute(plain, inVisit, reading({ task: { none: 1 }, fits: null }), open))).toBe(false);
   });
 });
 

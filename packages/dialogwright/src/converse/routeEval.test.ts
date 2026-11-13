@@ -30,7 +30,7 @@ describe('routeCases', () => {
     expect(cases.map((x) => [x.journey.active, x.journey.paused])).toEqual([[null, null], ['visit', null], ['visit', null], ['note', 'visit']]);
     expect((cases[2]!.state as { said: string; lastReply: string }).said).toBe('n1');
     expect((cases[2]!.state as { lastReply: string }).lastReply).toBe('line before n1');
-    expect(Object.keys((cases[0]!.questions.task as { criteria: object }).criteria)).toEqual(['visit', 'note', 'none']);
+    expect(Object.keys((cases[0]!.questions.task as { criteria: object }).criteria)).toEqual(['visit', 'note', 'question', 'none']);
     expect(cases[1]!.expected.task).toBe('visit');
   });
 

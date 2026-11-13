@@ -29,6 +29,11 @@
           "description": "The business's IANA time zone (for example America/New_York): what \"today\" means for its calendar. Default: UTC.",
           "type": "string",
           "minLength": 1
+        },
+        "line": {
+          "description": "The business's reason for the line, said to a caller who is not giving what it asks for (for example \"This line is how we price repairs and set up drop-offs while we are busy in the shop\"). Used only with journeys.",
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -285,6 +290,21 @@
           ],
           "additionalProperties": false,
           "description": "The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done, per language."
+        },
+        "unclear": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys), in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys), per language."
         },
         "stuck": {
           "default": {
@@ -1111,6 +1131,7 @@
     "routing": {
       "default": {
         "switchAt": 0.6,
+        "startAt": 0.8,
         "timeoutMs": 400
       },
       "description": "How each caller turn is routed to a journey.",
@@ -1119,6 +1140,13 @@
         "switchAt": {
           "default": 0.6,
           "description": "The bar the decision model's reading must reach for the line to move to another journey. A number over 0 and at most 1. Default: 0.6.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "startAt": {
+          "default": 0.8,
+          "description": "The bar the decision model's reading must reach for a journey to start from the root; below it the turn is unclear. At least switchAt. A number over 0 and at most 1. Default: 0.8.",
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 1
@@ -1219,6 +1247,21 @@
               "account"
             ],
             "additionalProperties": false
+          },
+          "greeting": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What the line says first where this journey starts the call (it has `start`), instead of lines.greeting, in English."
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false,
+            "description": "What the line says first where this journey starts the call (it has `start`), instead of lines.greeting, per language."
           },
           "start": {
             "description": "A fact of the call that starts the journey before the caller speaks. At most one journey says it.",

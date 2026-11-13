@@ -16,6 +16,8 @@ business:
   where: Inside the detailing shop at 400 Commerce Drive, Rivergate.
   hours: Monday to Friday, 7:30 am to 5:30 pm, with two drop-off windows a day; closed Saturday and Sunday. # assumption: the owner corrects these
   timezone: America/New_York
+  # assumption: the owner corrects this (the reason for the line, said to a caller who is not giving what it asks for)
+  line: This line is how we price repairs and set up drop-offs while we're busy in the shop fixing wheels.
 
 # The ballpark prices are assumptions for the owner to correct; the caveat below is said with any of them.
 services: # assumption: the owner corrects these
@@ -162,6 +164,8 @@ lines:
   closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
+  # assumption: the owner corrects these (the line said on the third turn in a row it cannot follow, before the call ends)
+  unclear: { en: "Sorry, this line can only help with a wheel repair or a callback. Call us back any time." }
   done: { en: "That's done." }
   stuck: { en: "Let me get someone from the shop to follow up on that." }
 model:

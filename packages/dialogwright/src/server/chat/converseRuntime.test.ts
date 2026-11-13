@@ -80,6 +80,13 @@ describe('converseChatRuntime: a saved state', () => {
       expect(s!.journey, `case ${i}`).toBeUndefined();
     });
   });
+
+  it('the unclear count is kept when a count of turns, and removed (as none) when it is not', () => {
+    const at = (unclear: unknown) => stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-unclear', channel: 'chat' }), journey: { active: 'visit', phase: 'working', paused: null, done: [], unclear } })!.journey;
+    expect(at(2)).toMatchObject({ unclear: 2 });
+    for (const bad of ['2', null, -1, 1.5, 0, {}]) expect(Object.hasOwn(at(bad)!, 'unclear'), String(bad)).toBe(false);
+    expect(at(undefined)).toEqual({ active: 'visit', phase: 'working', paused: null, done: [] });
+  });
 });
 
 describe('converseChatRuntime: a chat abandoned', () => {

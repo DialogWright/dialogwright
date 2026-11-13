@@ -112,6 +112,8 @@ export function stateOf(session: unknown): ConverseState | null {
   if (s.done !== undefined && !(Array.isArray(s.done) && s.done.every((d) => typeof d === 'object' && d !== null && typeof d.action === 'string' && typeof d.readBack === 'string' && Array.isArray(d.results)))) delete s.done;
   // Where the call is among the journeys: one not in its shape loads as none (the turn starts it again, initialJourney).
   if (Object.hasOwn(s, 'journey') && !isJourneyState(s.journey)) delete s.journey;
+  // The unclear turns in a row: a count that is not a whole number of turns is none.
+  else if (s.journey !== undefined && Object.hasOwn(s.journey, 'unclear') && !(Number.isInteger(s.journey.unclear) && s.journey.unclear! > 0)) delete s.journey.unclear;
   return s as ConverseState;
 }
 

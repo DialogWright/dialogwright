@@ -62,6 +62,8 @@ export interface JourneyState {
   paused: string | null;
   /** Journeys whose completing action ran on this call, in order. */
   done: string[];
+  /** Turns in a row the line could not follow (docs/designs/2026-11-12-journeys.md, "Amendment (2026-11-13)"). Absent: none. */
+  unclear?: number;
 }
 
 /** A change that ran on the call: its action, its read-back as said and confirmed, and what it and each follow-on returned (`<action>: <result>`). */

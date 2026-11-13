@@ -14,17 +14,40 @@ export interface RouteReading {
   task: Record<string, number> | null;
   drops: number | null;
   again: number | null;
+  /** In a working journey: that the turn gives what the line just asked for, or carries on with the task. Null: not asked or not answered. */
+  fits: number | null;
 }
 export interface Route {
   outcome: RouteOutcome;
   next: JourneyState;
+  /**
+   * The line could not follow the turn (docs/designs/2026-11-12-journeys.md, "Amendment (2026-11-13)"): `next.unclear` is the
+   * count of such turns in a row. Absent: the turn was not unclear, and `next.unclear` is absent too (none in a row).
+   */
+  unclear?: true;
   /** The older paused journey a switch dropped. */
   droppedPaused?: string;
 }
 
 /** The `task` option for a turn that asks for none of the journeys. */
 export const NONE_TASK = 'none';
-const NONE_WHEN = 'none of these: a question, small talk, or something else';
+const NONE_WHEN = 'none of these: unclear, unrelated, or something the line does not do';
+/** The `task` option for a question about the business, which the line answers whichever task it is in. */
+export const QUESTION_TASK = 'question';
+const QUESTION_WHEN = 'a question about the business: its hours, prices, where it is, what it does or doesn\'t do';
+/** Below this, a turn does not give what the line just asked for (a working journey's `fits`). */
+const FITS_AT = 0.5;
+
+/** Whether the line could not follow the turn. */
+export function isUnclear(r: Route): boolean {
+  return r.unclear === true;
+}
+
+/** A journey state with no unclear turns in a row. */
+function calm(j: JourneyState): JourneyState {
+  const { unclear: _unclear, ...rest } = j;
+  return rest;
+}
 
 type Caller = ConverseState['caller'];
 
@@ -73,10 +96,11 @@ export function offeredActions(b: AgentBusiness, j: JourneyState | undefined): s
 
 const whenOf = (b: AgentBusiness, id: string | null): string | null => (id === null ? null : (b.journeys?.[id]?.when ?? null));
 
-/** The questions put to the decision model for a turn: `task` always, `drops` in a working journey, `again` in a finished one. */
+/** The questions put to the decision model for a turn: `task` always, `drops` and `fits` in a working journey, `again` in a finished one. */
 export function routeQuestions(b: AgentBusiness, j: JourneyState, caller: Caller): QuestionMap {
   const criteria: Record<string, string | null> = {};
   for (const id of openJourneys(b, caller)) criteria[id] = whenOf(b, id);
+  criteria[QUESTION_TASK] = QUESTION_WHEN;
   criteria[NONE_TASK] = NONE_WHEN;
   const questions: QuestionMap = {
     task: {
@@ -88,6 +112,7 @@ export function routeQuestions(b: AgentBusiness, j: JourneyState, caller: Caller
   const active = j.active === null ? undefined : b.journeys?.[j.active];
   if (active !== undefined && j.phase === 'working') {
     questions.drops = { type: 'noul', instructions: 'Read said and active. Has the caller said they no longer want to go on with the active task?' };
+    questions.fits = { type: 'noul', instructions: 'Read said and lastReply. Does the caller\'s turn give what the line just asked for, or carry on with this task?' };
   }
   if (active !== undefined && j.phase === 'after') {
     questions.again = { type: 'noul', instructions: `Read said and finished. Does the caller want another one, a new one, of this: ${active.goal}` };
@@ -104,56 +129,89 @@ export function routeState(b: AgentBusiness, j: JourneyState, said: string, last
 
 /** The answers as a reading; all null where the decision model gave none. */
 export function readRoute(answers: AnswerMap | null): RouteReading {
-  if (answers === null) return { task: null, drops: null, again: null };
+  if (answers === null) return { task: null, drops: null, again: null, fits: null };
   const task = answers.task;
   return {
     task: isChoice(task) ? task.probabilities : null,
     drops: probabilityOf(answers.drops),
     again: probabilityOf(answers.again),
+    fits: probabilityOf(answers.fits),
   };
 }
 
-/** What the turn does, from the reading and the state (the design's table). Ignores any option not in `open`. */
-export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[]): Route {
-  const bar = b.routing.switchAt;
-  const above = (p: number | null): boolean => p !== null && p >= bar;
-  const carry: Route = { outcome: 'carry', next: j };
-  if (r.task === null) return carry;
-
-  // The journey the caller most wants, if it is open and reaches the bar.
-  let wanted: string | null = null;
+/** The open option the reading rates highest, the question and none among them (the first of a tie, in that order). */
+function topOption(task: Record<string, number>, open: string[]): string | null {
+  let top: string | null = null;
   let best = -1;
-  for (const id of open) {
-    const p = r.task[id];
-    if (typeof p === 'number' && p >= bar && p > best) {
-      wanted = id;
+  for (const id of [...open, QUESTION_TASK, NONE_TASK]) {
+    const p = task[id];
+    if (typeof p === 'number' && p > best) {
+      top = id;
       best = p;
     }
   }
+  return top;
+}
+
+/** The count of unclear turns in a row, one more. */
+const moreUnclear = (j: JourneyState): JourneyState => ({ ...j, unclear: (j.unclear ?? 0) + 1 });
+
+/**
+ * What the turn does, from the reading and the state (the design's table and its 2026-11-13 amendment). Ignores any option
+ * not in `open`. A null reading never changes the count and is never unclear; a turn that is not unclear clears the count.
+ */
+export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[]): Route {
+  const bar = b.routing.switchAt;
+  const above = (p: number | null): boolean => p !== null && p >= bar;
+  if (r.task === null) return { outcome: 'carry', next: j };
+  const top = topOption(r.task, open);
+
+  // The journey the caller most wants at or above a bar, if it is open.
+  const wantedAt = (at: number): string | null => {
+    let wanted: string | null = null;
+    let best = -1;
+    for (const id of open) {
+      const p = r.task![id];
+      if (typeof p === 'number' && p >= at && p > best) {
+        wanted = id;
+        best = p;
+      }
+    }
+    return wanted;
+  };
 
   if (j.active === null) {
-    if (wanted === null) return { outcome: 'root', next: j };
-    // The journey set aside (a drop that kept it) comes back: a return, not a fresh start.
-    if (wanted === j.paused) return { outcome: 'return', next: { ...j, active: wanted, phase: 'working', paused: null } };
-    return { outcome: 'start', next: { ...j, active: wanted, phase: 'working' } };
+    // From the root a journey starts only at the stricter bar; the question is answered, anything else is unclear.
+    const starts = wantedAt(b.routing.startAt);
+    if (starts !== null) {
+      // The journey set aside (a drop that kept it) comes back: a return, not a fresh start.
+      if (starts === j.paused) return { outcome: 'return', next: { ...calm(j), active: starts, phase: 'working', paused: null } };
+      return { outcome: 'start', next: { ...calm(j), active: starts, phase: 'working' } };
+    }
+    if (top === QUESTION_TASK) return { outcome: 'root', next: calm(j) };
+    return { outcome: 'root', next: moreUnclear(j), unclear: true };
   }
 
+  const wanted = wantedAt(bar);
   const finished = j.phase === 'after';
+  const decided = (route: Route): Route => ({ ...route, next: calm(route.next) });
   if (!finished && above(r.drops)) {
-    if (wanted === null || wanted === j.active) return { outcome: 'dropped', next: { ...j, active: null, phase: 'working' } };
-    if (wanted === j.paused) return { outcome: 'return', next: { ...j, active: wanted, phase: 'working', paused: null } };
-    return { outcome: 'switch', next: { ...j, active: wanted, phase: 'working' } };
+    if (wanted === null || wanted === j.active) return decided({ outcome: 'dropped', next: { ...j, active: null, phase: 'working' } });
+    if (wanted === j.paused) return decided({ outcome: 'return', next: { ...j, active: wanted, phase: 'working', paused: null } });
+    return decided({ outcome: 'switch', next: { ...j, active: wanted, phase: 'working' } });
   }
-  if (wanted === null) return carry;
-  if (wanted === j.active) {
-    return finished && above(r.again) ? { outcome: 'again', next: { ...j, phase: 'working' } } : carry;
+  if (wanted === null || wanted === j.active) {
+    // A working turn that does not fit what was asked, switches nowhere and is no question is one the line cannot follow.
+    if (!finished && r.fits !== null && r.fits < FITS_AT && top !== QUESTION_TASK) return { outcome: 'carry', next: moreUnclear(j), unclear: true };
+    if (wanted === null) return decided({ outcome: 'carry', next: j });
+    return finished && above(r.again) ? decided({ outcome: 'again', next: { ...j, phase: 'working' } }) : decided({ outcome: 'carry', next: j });
   }
   // A finished journey has nothing to resume, so it is not set aside.
   const setAside = finished ? j.paused : j.active;
-  if (wanted === j.paused) return { outcome: 'return', next: { ...j, active: wanted, phase: 'working', paused: finished ? null : setAside } };
+  if (wanted === j.paused) return decided({ outcome: 'return', next: { ...j, active: wanted, phase: 'working', paused: finished ? null : setAside } });
   const route: Route = { outcome: 'switch', next: { ...j, active: wanted, phase: 'working', paused: setAside } };
   if (!finished && j.paused !== null) route.droppedPaused = j.paused;
-  return route;
+  return decided(route);
 }
 
 /** The change actions whose confirmed run ends a journey: its `completes`, else every change it names that is not a follow-on. */

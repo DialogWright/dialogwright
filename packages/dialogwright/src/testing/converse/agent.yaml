@@ -19,6 +19,7 @@ lines:
   closing: { en: "Thanks for getting in touch. Goodbye." }
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Let me get a person to call you back." }
+  unclear: { en: "Sorry, I can't follow that. Please call back any time." }   # said only by an app with journeys
 model:
   default: anthropic:claude-haiku-5-5
 checks:
