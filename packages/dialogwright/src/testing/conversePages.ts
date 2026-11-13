@@ -293,7 +293,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '- Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.',
     '- A follow-on action runs only after its parent ran on the caller\'s yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.',
     `- After ${b.limits.refusalsPerAction} refusals of the same action on a call (\`limits.refusalsPerAction\`), the agent model is told to offer the caller a person rather than try again.`,
-    `- ${code(END_CALL)} is the runtime's own action, offered to the model on every call: it says the closing line and ends the call, and changes nothing.`,
+    `- ${code(END_CALL)} is the runtime's own action, offered to the model on every call: it ends the call on the model's own goodbye (the closing line where the model writes none), and changes nothing.`,
     '',
     '## What a model is sent and what is recorded',
     '',
@@ -378,7 +378,7 @@ export function converseAppMapText(app: ConverseApp): string {
     const shape = spec.kind === 'lookup' ? ['[', ']'] : ['[[', ']]'];
     lines.push(`  ${nodeId('a', name)}${shape[0]}${mermaidLabel(name, spec.kind === 'lookup' ? 'lookup' : followOns.has(name) ? 'change (follow-on)' : 'change: read back, then yes')}${shape[1]}`);
   }
-  lines.push(`  ${nodeId('a', END_CALL)}(${mermaidLabel(END_CALL, 'closing line, ends the call')})`);
+  lines.push(`  ${nodeId('a', END_CALL)}(${mermaidLabel(END_CALL, 'ends the call')})`);
   for (const [name, spec] of Object.entries(b.actions)) {
     for (const [p, s] of Object.entries(spec.params)) if (s.type === 'slot' && s.from !== undefined && names.includes(s.from)) lines.push(`  ${nodeId('a', s.from)} -->|${mermaidLabel(p).slice(1, -1)}| ${nodeId('a', name)}`);
     for (const t of spec.then ?? []) lines.push(`  ${nodeId('a', name)} ==>|"then, after the yes"| ${nodeId('a', t)}`);

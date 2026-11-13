@@ -32,7 +32,8 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   the line, in the business's own words filled with exactly the call's values, and the turn ends there;
  *   the caller's answer is read by the decision model, and only a clear yes runs it (with its follow-on
  *   actions, each through the gate). Anything else goes back to the model with what the caller said;
- * - the model ends the call with the runtime's own action, end_call: the line says the closing line;
+ * - the model ends the call with the runtime's own action, end_call: its own words written with it are the goodbye, and
+ *   the line says the closing line where it wrote none;
  * - a model that errs or says nothing is asked once more while half its time is left, and one that has
  *   not begun to answer within half its time is stopped and asked once more; else the line says the
  *   recovery line (the done line instead, where an action the caller confirmed has just run), and once
@@ -403,11 +404,12 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       continue;
     }
     if (c.name === END_CALL) {
-      // The runtime's own action: no params, no confirmation, recorded; the line says the closing line once the round's calls are done.
+      // The runtime's own action: no params, no confirmation, recorded; the call ends once the round's calls are done, on the
+      // model's own goodbye, or the closing line where the model wrote none.
       await record(t, { type: 'converse_end', detail: { by: END_CALL } });
       traceTool(t, undefined, c.name, {}, 'ran');
       t.ending = true;
-      results.push({ type: 'tool_result', id: c.id, content: 'The call is ending: the line says the closing line.' });
+      results.push({ type: 'tool_result', id: c.id, content: 'The call is ending.' });
       continue;
     }
     const follows = followOnsOf(b).get(c.name);
@@ -801,7 +803,9 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       return { ok: false, error: r.error };
     }
     const final = r.calls.length === 0;
-    const said = sp.endRound(final);
+    // A round that only ends the call (nothing waits on a read-back) ends on its own words, where it wrote any: they are the goodbye.
+    const goodbye = !final && t.st.pending === null && r.calls.every((c) => c.name === END_CALL);
+    const said = sp.endRound(final || goodbye);
     add(t.st, 'assistant', [...(said !== '' ? [{ type: 'text' as const, text: said }] : []), ...r.calls.map((c) => ({ type: 'tool_call' as const, id: c.id, name: c.name, args: c.args }))]);
     // The caller has heard a reply after the action they confirmed.
     if (said !== '') {
@@ -816,9 +820,12 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       return { ok: true };
     }
     if (t.ending) {
-      const closing = lineOn(t.deps.business.lines.closing, t.st.channel);
-      sp.line(closing);
-      add(t.st, 'assistant', [{ type: 'text', text: closing }]);
+      // The model's own words written with end_call alone are the goodbye; the closing line is said where it wrote none.
+      if (!goodbye || said === '') {
+        const closing = lineOn(t.deps.business.lines.closing, t.st.channel);
+        sp.line(closing);
+        add(t.st, 'assistant', [{ type: 'text', text: closing }]);
+      }
       t.st.ended = 'closing';
       t.out.end('closing');
       return { ok: true };

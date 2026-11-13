@@ -269,9 +269,16 @@ describe('converseTurn: a line\'s words in the web chat', () => {
     await h.run(chat(), { kind: 'start' });
     expect(h.said).toEqual([['Example Menders, how can I help?', true]]);
   });
-  it('tells the model to end the chat rather than say goodbye itself', () => {
+  it('tells the model that a goodbye alone does not end the chat: it ends it with end_call', () => {
     const end = toolsOf(business()).find((t) => t.name === 'end_call')!;
-    expect(end.description).toContain('end it rather than saying goodbye yourself');
+    expect(end.description).toContain('Write your goodbye in the same reply as this call: a goodbye alone does not end it');
+  });
+  it('ends a chat on the model\'s own goodbye, with no closing line after it', async () => {
+    const h = harness([[text('Thanks for messaging, take care!'), call('c1', 'end_call', {}), done('tool')]], { edit: chatWords });
+    const s = await h.run(chat(), { kind: 'text', text: 'that is all, thanks' });
+    expect(h.said).toEqual([['Thanks for messaging, take care!', true]]);
+    expect(h.ended).toEqual(['closing']);
+    expect(s.messages.at(-1)!.content.some((c) => c.type === 'text' && c.text === CHAT_CLOSING)).toBe(false);
   });
 });
 
@@ -624,10 +631,10 @@ describe('converseTurn: the app\'s settings', () => {
 });
 
 describe('converseTurn: ending the call', () => {
-  it('says the closing line once when the model calls end_call, records it and ends', async () => {
-    const h = harness([[text('Glad to help.'), call('c1', 'end_call', {}), done('tool')]]);
+  it('says the closing line once when the model calls end_call with no goodbye of its own, records it and ends', async () => {
+    const h = harness([[call('c1', 'end_call', {}), done('tool')]]);
     const s = await h.run(fresh(), { kind: 'text', text: 'that is all, thanks' });
-    expect(h.said).toEqual([['Glad to help.', false], ['Thanks for calling. Goodbye.', true]]);
+    expect(h.said).toEqual([['Thanks for calling. Goodbye.', true]]);
     expect(h.ended).toEqual(['closing']);
     expect(s.ended).toBe('closing');
     expect(h.rows).toEqual([{ type: 'converse_end', detail: { by: 'end_call' } }]);
@@ -635,6 +642,22 @@ describe('converseTurn: ending the call', () => {
     expect(h.traces[0]!.tools).toEqual([{ name: 'end_call', args: {}, outcome: 'ran' }]);
     // An ended call takes no more turns.
     expect(await h.run(s, { kind: 'text', text: 'wait' })).toBe(s);
+  });
+
+  it('ends on the model\'s own goodbye where it wrote one with end_call, the closing line not said', async () => {
+    const h = harness([[text('Glad to help. Goodbye!'), call('c1', 'end_call', {}), done('tool')]]);
+    const s = await h.run(fresh(), { kind: 'text', text: 'that is all, thanks' });
+    expect(h.said).toEqual([['Glad to help. ', false], ['Goodbye!', true]]);
+    expect(h.ended).toEqual(['closing']);
+    expect(s.ended).toBe('closing');
+    expect(h.model.requests).toHaveLength(1);
+  });
+
+  it('says the closing line after the model\'s words where the round ran an action as well as end_call', async () => {
+    const h = harness([[text('Let me look.'), call('c1', 'check_availability', { day: FRIDAY }), call('c2', 'end_call', {}), done('tool')]]);
+    await h.run(fresh(), { kind: 'text', text: 'that is all, thanks' });
+    expect(h.said).toEqual([['Let me look.', false], ['Thanks for calling. Goodbye.', true]]);
+    expect(h.ended).toEqual(['closing']);
   });
 
   it('refuses end_call while a read-back waits for the caller\'s answer (one confirmation at a time), counting no refusal', async () => {

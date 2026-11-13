@@ -13,7 +13,7 @@
 - Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.
 - A follow-on action runs only after its parent ran on the caller's yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.
 - After 3 refusals of the same action on a call (`limits.refusalsPerAction`), the agent model is told to offer the caller a person rather than try again.
-- `end_call` is the runtime's own action, offered to the model on every call: it says the closing line and ends the call, and changes nothing.
+- `end_call` is the runtime's own action, offered to the model on every call: it ends the call on the model's own goodbye (the closing line where the model writes none), and changes nothing.
 
 ## What a model is sent and what is recorded
 

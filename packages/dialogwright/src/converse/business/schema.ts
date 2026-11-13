@@ -72,7 +72,7 @@ export const CLAIM_CHECK_DEFAULTS = { mode: 'off', correctAt: 0.7, gapAt: 0.7 } 
 /** A probability a reading is held to: over 0, at most 1. */
 const bar = (what: string, d: number) => z.number().gt(0).max(1).default(d).describe(`${what} A number over 0 and at most 1. Default: ${d}.`);
 
-/** The runtime's own action, offered to every model: it says the closing line and ends the call. No business action takes its name. */
+/** The runtime's own action, offered to every model: it ends the call, on the model's own goodbye or the closing line. No business action takes its name. */
 export const END_CALL = 'end_call';
 
 /** Param types the runtime checks a value by. */
@@ -201,7 +201,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   const followed = new Set<string>();
   for (const [name, a] of Object.entries(actions)) if (isMap(a) && Array.isArray(a.then)) for (const t of a.then) if (typeof t === 'string' && t !== name) followed.add(t);
   for (const [name, a] of Object.entries(actions)) {
-    if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which says the closing line and ends the call`);
+    if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which ends the call`);
     if (!isMap(a)) continue;
     const params = isMap(a.params) ? a.params : {};
     if (a.kind === 'change' && a.readBack === undefined) {
@@ -370,7 +370,7 @@ export const agentBusinessSchema = z
     lines: z
       .strictObject({
         greeting: said('The greeting'),
-        closing: said('The closing line'),
+        closing: said('The closing line').describe('The closing line, per language: said when the model ends the call without a goodbye of its own.'),
         recovery: said('The short line said when the agent did not catch something'),
         handoff: said('The line said when the call goes to a person'),
         notConfirmed: said('The line said when the caller did not confirm a read-back').optional(),

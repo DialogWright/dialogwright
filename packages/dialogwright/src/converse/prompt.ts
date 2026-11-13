@@ -209,10 +209,10 @@ function toolOf(name: string, spec: ActionSpec): ModelTool {
   return { name, description: about, parameters: { type: 'object', properties, required, additionalProperties: false } };
 }
 
-/** The runtime's own action, offered on every call: it ends the call, and the line says the business's closing line. */
+/** The runtime's own action, offered on every call: it ends the call, on the model's own goodbye or, where it wrote none, the business's closing line. */
 const END_CALL_TOOL: ModelTool = {
   name: END_CALL,
-  description: 'End the call (on the web chat, the chat), once the caller has nothing more they want or says goodbye. The line then says the business\'s closing line, which is the goodbye: end it rather than saying goodbye yourself, or the caller is left in a conversation that is still open.',
+  description: 'End the call (on the web chat, the chat), once the caller has nothing more they want or says goodbye. Write your goodbye in the same reply as this call: a goodbye alone does not end it, and leaves the caller in a conversation that is still open. If you write none, the line says the business\'s closing line.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 

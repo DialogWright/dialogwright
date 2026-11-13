@@ -289,7 +289,7 @@
             "en"
           ],
           "additionalProperties": false,
-          "description": "The closing line, per language."
+          "description": "The closing line, per language: said when the model ends the call without a goodbye of its own."
         },
         "recovery": {
           "type": "object",

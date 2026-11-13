@@ -222,10 +222,11 @@ someone will get back to the caller as soon as they can. Decided by the maintain
 Each fixed line (the greetings, a journey's greeting, the closing, recovery, handoff, done, stuck and unclear
 lines) may have a wording of its own for the web chat (`chat: { en: ... }` beside its `en`), said in a chat in place
 of the call's words, where those would not fit ("Thanks for messaging" for "Thanks for calling"); a line with none
-says the same words in both. The runtime's `end_call` tells the model to end the conversation rather than say a
-goodbye of its own, since the closing line is the goodbye: in a chat its own goodbye left the conversation open
-with no closing line. Decided by the maintainer on 2026-11-13, after a chat on the wheel shop thanked the customer
-for calling.
+says the same words in both. The model writes its own goodbye with `end_call`, in the same reply: a goodbye
+alone left a chat open, so the tool tells the model that one does not end it. Where the model writes none, the
+line says the closing line. Decided by the maintainer on 2026-11-13, after a chat on the wheel shop thanked the
+customer for calling and stayed open: the goodbye need not be fixed words, as long as the conversation ends and a
+chat is not thanked for a call (the model is told it is on the web chat).
 
 The wheel shop's current assumptions (days, windows, services, accounts) carry over, still marked as
 assumptions for the owner to correct.
