@@ -53,7 +53,7 @@ describe('routeQuestions', () => {
     if (q.type !== 'choice') throw new Error('choice');
     expect(Object.keys(q.criteria)).toEqual(['visit', 'note', QUESTION_TASK, NONE_TASK]);
     expect(q.criteria.visit).toBe(acct.journeys!.visit!.when);
-    expect(q.criteria[NONE_TASK]).toBe('none of these: unclear, unrelated, or something the line does not do');
+    expect(q.criteria[NONE_TASK]).toBe('none of these: nothing the line can act on or answer (unrelated to the business, a request for something it does not do, or words with no clear meaning on their own)');
     expect(Object.keys(q.criteria)).not.toContain('visit_account');
   });
   it('task asks what the caller wants done, not what they ask about', () => {
@@ -109,10 +109,10 @@ describe('decideRoute', () => {
     const r = decideRoute(plain, root, reading({ task: { visit: 0.9, none: 0.1 } }), open);
     expect(r).toEqual({ outcome: 'start', next: { ...root, active: 'visit' } });
   });
-  it('at the root, none of these (or below the start bar) stays at the root, unclear', () => {
+  it('at the root, none on top stays at the root, unclear; a journey below the start bar with none not on top is clear', () => {
     const unclear = { outcome: 'root', unclear: true, next: { ...root, unclear: 1 } };
     expect(decideRoute(plain, root, reading({ task: { visit: 0.2, none: 0.8 } }), open)).toEqual(unclear);
-    expect(decideRoute(plain, root, reading({ task: { visit: 0.79, none: 0.21 } }), open)).toEqual(unclear);
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.79, none: 0.21 } }), open)).toEqual({ outcome: 'root', next: root });
   });
   it('a probability exactly at the start bar counts as a start', () => {
     expect(decideRoute(plain, root, reading({ task: { visit: 0.8, none: 0.2 } }), open).outcome).toBe('start');
@@ -190,11 +190,11 @@ describe('unclear turns', () => {
   it('task has a question option, and fits is asked only in a working journey', () => {
     const q = routeQuestions(plain, root, anon).task!;
     if (q.type !== 'choice') throw new Error('choice');
-    expect(q.criteria[QUESTION_TASK]).toBe("a question about the business: its hours, prices, where it is, what it does or doesn't do");
+    expect(q.criteria[QUESTION_TASK]).toBe("a question about the business or about this line: its hours, prices, where it is, what it fixes or doesn't, how things work, or whether this is a person or an automated line");
     expect(Object.keys(routeQuestions(plain, root, anon))).toEqual(['task']);
     expect(Object.keys(routeQuestions(plain, { ...inVisit, phase: 'after', done: ['visit'] }, anon))).not.toContain('fits');
     expect(routeQuestions(plain, inVisit, anon).fits).toMatchObject({ type: 'noul' });
-    expect(routeQuestions(plain, inVisit, anon).fits!.instructions).toMatch(/give what the line just asked for/);
+    expect(routeQuestions(plain, inVisit, anon).fits!.instructions).toMatch(/anything to do with this task/);
   });
   it('readRoute reads fits', () => {
     expect(readRoute({ fits: { type: 'noul', noul: 0.3 } }).fits).toBe(0.3);
@@ -204,8 +204,13 @@ describe('unclear turns', () => {
     expect(r).toEqual({ outcome: 'root', next: root });
     expect(isUnclear(r)).toBe(false);
   });
-  it('at the root, a journey below the start bar (but above the switch bar) is unclear and counted', () => {
-    const r = decideRoute(plain, root, reading({ task: { visit: 0.7, none: 0.3 } }), open);
+  it('at the root, a journey at 0.55 with the question at 0.45 (below the start bar, none not on top) is answered at the root, clear, the count reset', () => {
+    const r = decideRoute(plain, { ...root, unclear: 2 }, reading({ task: { visit: 0.55, question: 0.45, none: 0.1 } }), open);
+    expect(r).toEqual({ outcome: 'root', next: root });
+    expect(isUnclear(r)).toBe(false);
+  });
+  it('at the root, none on top is unclear and counted', () => {
+    const r = decideRoute(plain, root, reading({ task: { visit: 0.3, none: 0.7 } }), open);
     expect(isUnclear(r)).toBe(true);
     expect(r).toMatchObject({ outcome: 'root', next: { ...root, unclear: 1 } });
     expect(decideRoute(plain, { ...root, unclear: 1 }, reading({ task: { none: 0.9, visit: 0.1 } }), open).next.unclear).toBe(2);
@@ -245,14 +250,14 @@ describe('unclear turns', () => {
     const r = decideRoute(plain, inVisit, fit({ visit: 0.9, none: 0.1 }, 0.3), open);
     expect(r).toEqual({ outcome: 'carry', unclear: true, next: { ...inVisit, unclear: 1 } });
   });
-  it('at the root, a journey set aside read between switchAt and startAt is unclear, not a return', () => {
+  it('at the root, a journey below startAt with none on top is unclear', () => {
+    const r = decideRoute(plain, root, reading({ task: { visit: 0.4, none: 0.6 } }), open);
+    expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 1 } });
+  });
+  it('at the root, a journey set aside read between switchAt and startAt is not a return, and is clear', () => {
     const j: JourneyState = { ...root, paused: 'visit' };
     const r = decideRoute(plain, j, reading({ task: { visit: 0.7, none: 0.3 } }), open);
-    expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...j, unclear: 1 } });
-  });
-  it('at the root, the question second behind a journey below startAt is unclear', () => {
-    const r = decideRoute(plain, root, reading({ task: { visit: 0.5, question: 0.4, none: 0.1 } }), open);
-    expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 1 } });
+    expect(r).toEqual({ outcome: 'root', next: j });
   });
   it('a null reading starts the count again and is never unclear', () => {
     expect(decideRoute(plain, unclearOf(2), readRoute(null), open)).toEqual({ outcome: 'carry', next: inVisit });

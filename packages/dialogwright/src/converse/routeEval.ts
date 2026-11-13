@@ -346,7 +346,7 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
 /** What the figures mean. */
 export const ROUTE_DEFINITIONS = [
   'Accuracy: the share of turns where the journey and phase Jev routes to, and whether the line could not follow the turn (unclear), are those the label gives.',
-  'Unclear: the line could not follow the turn. At the root, the label is none, or a journey asked for below the start bar; in a working task, fits is false and the turn is no question and switches nowhere. A turn labelled question is never unclear at the root.',
+  'Unclear: the line could not follow the turn. At the root, the label is none (a journey asked for below the start bar is a missed start, not unclear); in a working task, fits is false and the turn is no question and switches nowhere. A turn labelled question is never unclear at the root.',
   'Unclear recall: of the turns the label makes unclear, the share Jev also reads unclear.',
   'Unclear precision: of the turns Jev reads unclear, the share the label also makes unclear.',
   'Missed start: the label starts (or returns to) a journey from the root and Jev\'s route at that start bar does not; its share is of the turns where the label starts one.',

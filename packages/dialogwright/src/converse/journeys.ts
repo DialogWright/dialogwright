@@ -31,10 +31,10 @@ export interface Route {
 
 /** The `task` option for a turn that asks for none of the journeys. */
 export const NONE_TASK = 'none';
-const NONE_WHEN = 'none of these: unclear, unrelated, or something the line does not do';
+const NONE_WHEN = 'none of these: nothing the line can act on or answer (unrelated to the business, a request for something it does not do, or words with no clear meaning on their own)';
 /** The `task` option for a question about the business, which the line answers whichever task it is in. */
 export const QUESTION_TASK = 'question';
-const QUESTION_WHEN = 'a question about the business: its hours, prices, where it is, what it does or doesn\'t do';
+const QUESTION_WHEN = 'a question about the business or about this line: its hours, prices, where it is, what it fixes or doesn\'t, how things work, or whether this is a person or an automated line';
 /** Below this, a turn does not give what the line just asked for (a working journey's `fits`). */
 const FITS_AT = 0.5;
 
@@ -112,7 +112,7 @@ export function routeQuestions(b: AgentBusiness, j: JourneyState, caller: Caller
   const active = j.active === null ? undefined : b.journeys?.[j.active];
   if (active !== undefined && j.phase === 'working') {
     questions.drops = { type: 'noul', instructions: 'Read said and active. Has the caller said they no longer want to go on with the active task?' };
-    questions.fits = { type: 'noul', instructions: 'Read said and lastReply. Does the caller\'s turn give what the line just asked for, or carry on with this task?' };
+    questions.fits = { type: 'noul', instructions: 'Read said and lastReply. Has the caller\'s turn got anything to do with this task (giving or correcting details for it, answering the line, or asking about it), as opposed to nothing the line could use?' };
   }
   if (active !== undefined && j.phase === 'after') {
     questions.again = { type: 'noul', instructions: `Read said and finished. Does the caller want another one, a new one, of this: ${active.goal}` };
@@ -181,15 +181,15 @@ export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, 
   };
 
   if (j.active === null) {
-    // From the root a journey starts only at the stricter bar; the question is answered, anything else is unclear.
+    // From the root a journey starts only at the stricter bar; the turn is unclear only when none is the top option.
     const starts = wantedAt(b.routing.startAt);
     if (starts !== null) {
       // The journey set aside (a drop that kept it) comes back: a return, not a fresh start.
       if (starts === j.paused) return { outcome: 'return', next: { ...calm(j), active: starts, phase: 'working', paused: null } };
       return { outcome: 'start', next: { ...calm(j), active: starts, phase: 'working' } };
     }
-    if (top === QUESTION_TASK) return { outcome: 'root', next: calm(j) };
-    return { outcome: 'root', next: moreUnclear(j), unclear: true };
+    if (top === NONE_TASK) return { outcome: 'root', next: moreUnclear(j), unclear: true };
+    return { outcome: 'root', next: calm(j) };
   }
 
   const wanted = wantedAt(bar);

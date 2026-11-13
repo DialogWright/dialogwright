@@ -160,13 +160,13 @@ describe('unclear turns and the start bar', () => {
     const unmarked = routeCases(b, [call('f/a-1', ['v1', 'more'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'visit')]);
     expect(scoreRoutes(b, unmarked, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#1', fit(0.9)]]), BARS).accuracy).toBe(1);
   });
-  it('the start-bar table turns a start into an unclear above its bar, a missed start', () => {
+  it('the start-bar table turns a start below its bar into a clear root turn (none not on top), a missed start', () => {
     const cs = routeCases(b, [call('f/a-1', ['book me'])], [label('f/a-1', 0, 'visit')]);
     const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.85, note: 0, none: 0.15, question: 0 })]]), BARS);
     expect(r.byStart.map((x) => x.startAt)).toEqual([0.6, 0.7, 0.8, 0.9]);
     expect(r.byStart.map((x) => x.missedStarts)).toEqual([0, 0, 0, 1]);
     expect(r.byStart.map((x) => x.accuracy)).toEqual([1, 1, 1, 0]);
-    expect(r.byStart.find((x) => x.startAt === 0.9)!.unclearPrecision).toBe(0);
+    expect(r.byStart.find((x) => x.startAt === 0.9)!.unclearPrecision).toBeNull();
   });
   it('reads fits from a label, and prints the start table with its definitions', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'route-eval-fits-'));
