@@ -84,7 +84,10 @@ export interface ConverseTraceRecord {
    * journey before and after (null: the root), the outcome, the decision model's probabilities for each `task`
    * option (null: no reading) and its `drops` and `again` readings where it gave them, its time, whether it
    * answered nothing within routing.timeoutMs (`timedOut`: the turn carried on), the older paused journey a
-   * switch dropped, and whether the turn's first round was asked again for the route (`restarted`).
+   * switch dropped, and whether the turn's first round was asked again for the route (`restarted`). A call
+   * that starts in a journey (its `start`) has a route on its start turn too: from the root to that journey,
+   * `start`, with no reading (`task` null) and `ms` 0, as nothing was asked. Routing that threw is a carry with
+   * no reading.
    */
   route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true };
   /** A journey the turn's confirmed action completed: it is in its after phase from this turn on. */

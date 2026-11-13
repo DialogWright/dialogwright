@@ -636,18 +636,27 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
   sp.hold();
   const first = round(t, sp, emptyOk, stop.signal);
   const settled: { round?: Round } = {};
-  void first.then((r) => (settled.round = r));
-  const routed = await routing;
-  t.st.journey = routed.next;
-  t.route = routed.route;
-  if (routed.next.active === j.active && routed.next.phase === j.phase) {
-    if (settled.round !== undefined && !settled.round.ok) sp.discard();
-    else sp.release();
-    return await first;
+  // A first round that throws is the turn's error once the route is acted on, never a rejection left unhandled meanwhile.
+  first.then((r) => (settled.round = r), () => undefined);
+  try {
+    const routed = await routing;
+    t.st.journey = routed.next;
+    t.route = routed.route;
+    if (routed.next.active === j.active && routed.next.phase === j.phase) {
+      if (settled.round !== undefined && !settled.round.ok) sp.discard();
+      else sp.release();
+      return await first;
+    }
+    stop.abort();
+    await first;
+    sp.discard();
+  } catch (e) {
+    // Anything that throws before the route is acted on stops the first round (never left streaming), and the
+    // error is the turn's, as a round's own is on a business without journeys: one failed turn.
+    stop.abort();
+    await first.catch(() => undefined);
+    throw e;
   }
-  stop.abort();
-  await first;
-  sp.discard();
   if (before.error === undefined) delete t.model.error;
   else t.model.error = before.error;
   if (before.retried === undefined) delete t.model.retried;
@@ -942,31 +951,37 @@ interface Routed {
 /**
  * Routes the caller's turn among the journeys from `j`, the journey as it stands (docs/designs/2026-11-12-journeys.md,
  * "Routing"): the decision model is asked which task the caller wants now, within routing.timeoutMs, and code
- * decides from its reading (decideRoute). A decision model that errs or is late leaves the journey as it was
- * (carry): routing never fails a turn, and `timedOut` says it was late. Nothing is set here: routedRound sets
- * the call's journey and the turn's route once it is known.
+ * decides from its reading (decideRoute). A decision model that errs or is late, or anything here that throws,
+ * leaves the journey as it was (carry, with no reading): routing never fails a turn, and `timedOut` says it was
+ * late. It never rejects. Nothing is set here: routedRound sets the call's journey and the turn's route once
+ * it is known.
  */
 async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string | null): Promise<Routed> {
   const b = t.deps.business;
   const started = Date.now();
-  const asked = await askWithinWhy(t.deps.jev, routeState(b, j, said, lastReply), routeQuestions(b, j, t.st.caller), b.routing.timeoutMs);
-  const ms = Date.now() - started;
-  const reading = readRoute(asked.answers);
-  const route = decideRoute(b, j, reading, openJourneys(b, t.st.caller));
-  return {
-    next: route.next,
-    route: {
-      from: j.active,
-      to: route.next.active,
-      outcome: route.outcome,
-      task: reading.task,
-      ...(reading.drops !== null ? { drops: reading.drops } : {}),
-      ...(reading.again !== null ? { again: reading.again } : {}),
-      ms,
-      ...(asked.answers === null && asked.why === 'late' ? { timedOut: true as const } : {}),
-      ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),
-    },
-  };
+  try {
+    const asked = await askWithinWhy(t.deps.jev, routeState(b, j, said, lastReply), routeQuestions(b, j, t.st.caller), b.routing.timeoutMs);
+    const ms = Date.now() - started;
+    const reading = readRoute(asked.answers);
+    const route = decideRoute(b, j, reading, openJourneys(b, t.st.caller));
+    return {
+      next: route.next,
+      route: {
+        from: j.active,
+        to: route.next.active,
+        outcome: route.outcome,
+        task: reading.task,
+        ...(reading.drops !== null ? { drops: reading.drops } : {}),
+        ...(reading.again !== null ? { again: reading.again } : {}),
+        ms,
+        ...(asked.answers === null && asked.why === 'late' ? { timedOut: true as const } : {}),
+        ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),
+      },
+    };
+  } catch {
+    // Whatever throws here (an answer in no shape the code can read, a client that breaks): the journey as it was.
+    return { next: j, route: { from: j.active, to: j.active, outcome: 'carry', task: null, ms: Date.now() - started } };
+  }
 }
 
 export async function converseTurn(s: ConverseState, input: Input, deps: ConverseDeps, out: Out): Promise<ConverseState> {
@@ -992,7 +1007,11 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
-    if (hasJourneys(deps.business)) st.journey = initialJourney(deps.business, st.caller);
+    if (hasJourneys(deps.business)) {
+      st.journey = initialJourney(deps.business, st.caller);
+      // A call that starts in a journey (its `start`) has it on record from the start turn: nothing was asked.
+      if (st.journey.active !== null) t.route = { from: null, to: st.journey.active, outcome: 'start', task: null, ms: 0 };
+    }
     const greeting = deps.business.lines.greeting.en;
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);

@@ -1494,7 +1494,7 @@
     const MARKED = { start: 'started', switch: 'switched to', return: 'returned to', dropped: 'dropped, back to' };
     const journeyLine = (turn) => {
       if (turn.journey === undefined) return '';
-      const mark = turn.routeOutcome !== null && MARKED[turn.routeOutcome] ? `${MARKED[turn.routeOutcome]} ` : '';
+      const mark = typeof turn.routeOutcome === 'string' && Object.hasOwn(MARKED, turn.routeOutcome) ? `${MARKED[turn.routeOutcome]} ` : '';
       const ended = turn.journeyEnded ? ` · ${esc(turn.journeyEnded)} done` : '';
       return `<div class="aside mono">journey: ${mark}${esc(turn.journey ?? 'the root')}${ended}</div>`;
     };

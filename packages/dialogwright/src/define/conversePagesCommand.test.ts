@@ -192,6 +192,22 @@ describe('the pages of a converse app with journeys', () => {
     expect(text).toMatch(/root.*-->.*j_visit/s);
   });
 
+  it('the card says what routing sends the decision model: each caller turn\'s words, the line\'s last reply, the open journeys\' triggers, and a finished journey\'s goal', () => {
+    const text = conversePolicyCardText(app);
+    const sent = text.slice(text.indexOf('## What a model is sent'), text.indexOf('## Journeys'));
+    expect(sent).toMatch(/For routing among the journeys, the decision model is also sent each caller turn's words, the line's last reply before them .*, and the trigger \(`when`\) of each journey open to the caller.*the finished journey's goal/);
+    expect(conversePolicyCardText(plain)).not.toContain('For routing');
+  });
+
+  it('the card says a lookup no journey and not the root names is not offered to the model', () => {
+    const hours = '  hours:\n    about: The hours on a day.\n    kind: lookup\n    params:\n      day: { type: date, about: The day. }\n';
+    const { value, problems } = agentBusinessProblems(read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8') + LEAVE_NOTE_ACTION + hours + JOURNEYS_YAML);
+    expect(problems).toEqual([]);
+    const text = conversePolicyCardText({ ...plain, business: value! });
+    expect(text).toMatch(/\| `hours` \| lookup \| no: named by no journey \| none \|/);
+    expect(text).toMatch(/\| `availability` \| lookup \| yes \| `visit` \|/);
+  });
+
   it('an app without journeys has the same pages as before: no section, no column, no diagram', () => {
     const card = conversePolicyCardText(plain);
     const map = converseAppMapText(plain);

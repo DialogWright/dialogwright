@@ -167,6 +167,12 @@ describe('decideRoute', () => {
     const j: JourneyState = { ...inVisit, phase: 'after', done: ['visit'] };
     expect(decideRoute(plain, j, reading({ task: { note: 0.9, none: 0.1 } }), open)).toEqual({ outcome: 'switch', next: { active: 'note', phase: 'working', paused: null, done: ['visit'] } });
   });
+  it('at the root with a journey set aside, choosing it again is a return: active, working, nothing set aside', () => {
+    const j: JourneyState = { ...root, paused: 'note' };
+    expect(decideRoute(plain, j, reading({ task: { note: 0.9, none: 0.1 } }), open)).toEqual({ outcome: 'return', next: { ...root, active: 'note' } });
+    // Another journey from there starts, the set-aside one kept.
+    expect(decideRoute(plain, j, reading({ task: { visit: 0.9, none: 0.1 } }), open)).toEqual({ outcome: 'start', next: { ...j, active: 'visit' } });
+  });
   it('a journey done earlier that comes up again while not active starts fresh', () => {
     const j: JourneyState = { ...root, done: ['visit'] };
     expect(decideRoute(plain, j, reading({ task: { visit: 0.9, none: 0.1 } }), open)).toEqual({ outcome: 'start', next: { ...j, active: 'visit' } });

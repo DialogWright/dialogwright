@@ -133,7 +133,9 @@ export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, 
 
   if (j.active === null) {
     if (wanted === null) return { outcome: 'root', next: j };
-    return { outcome: 'start', next: { ...j, active: wanted, phase: 'working', paused: j.paused === wanted ? null : j.paused } };
+    // The journey set aside (a drop that kept it) comes back: a return, not a fresh start.
+    if (wanted === j.paused) return { outcome: 'return', next: { ...j, active: wanted, phase: 'working', paused: null } };
+    return { outcome: 'start', next: { ...j, active: wanted, phase: 'working' } };
   }
 
   const finished = j.phase === 'after';

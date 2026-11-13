@@ -210,6 +210,11 @@ function checkWords(b: ConverseApp['business']): string {
   return `For the check after speaking (agent.yaml \`checks.claims.mode: ${c.mode}\`), it is also sent the business information, the business's day, the call's actions so far with the agent model's arguments and what each returned (as the agent model was sent them), and each reply of the agent model as it was said, once said: ${then}. The trace keeps each reply's readings.`;
 }
 
+/** What the card says the decision model is sent to route each caller turn among the journeys (converse/journeys.ts routeState and routeQuestions). */
+function routingWords(): string {
+  return '- For routing among the journeys, the decision model is also sent each caller turn\'s words, the line\'s last reply before them (the read-back waiting for its answer, where one is), and the trigger (`when`) of each journey open to the caller (the journey in progress and one set aside among them); in a finished journey\'s after phase, also the finished journey\'s goal. A turn whose yes runs its read-back is not routed.';
+}
+
 /** Where an action is offered, in words: the root and the journeys that name it. */
 function offeredIn(b: AgentBusiness, name: string): string {
   const places = [...((b.root?.actions ?? []).includes(name) ? ['at the root'] : []), ...Object.entries(b.journeys ?? {}).filter(([, j]) => j.actions.includes(name)).map(([id]) => code(id))];
@@ -271,6 +276,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '',
     '- The agent model is sent, in full: the caller\'s words, its own replies, the fixed lines said, the arguments of its own action calls, each read-back as it was said (the caller\'s own values among it), and what each action returned, as the action returned it. Nothing checks an action\'s result: there is no closed-form check on a converse action\'s reply, so an action returns only what the model may see. This app has no identity factors to withhold.',
     `- The decision model (not the agent model) is sent each read-back as it was said, the caller's own words in answer to it and the business's day (today's date, in words), to read a yes or a no. ${checkWords(b)}`,
+    ...(hasJourneys(b) ? [routingWords()] : []),
     '- The caller\'s number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions\' code (a phone param the model writes as `caller` is resolved by the runtime).',
     '- Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call\'s values were not valid for their types, and the words an action failed with, go to the agent model as written.',
     '- The trace and the audit record each action\'s params as its `audit` says, hidden (`•`) where it says nothing (see each action\'s table below). Only the audit records an action\'s result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.',
@@ -285,7 +291,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
   for (const [name, spec] of Object.entries(b.actions)) {
     const rules = writtenRules(spec).map(ruleHeader);
     const all = spec.kind === 'change' ? [...rules, `confirmed(${confirmedFields(spec).join(', ')})`] : rules;
-    lines.push(`| ${code(name)} | ${spec.kind} | ${followOns.has(name) ? `no: follows ${andList(parentsOf(name).map(code))}` : 'yes'} | ${hasJourneys(b) ? `${followOns.has(name) ? 'none' : offeredIn(b, name)} | ` : ''}${cell(all.map(code).join(', ') || 'none')} | ${spec.then?.map(code).join(', ') ?? 'none'} |`);
+    lines.push(`| ${code(name)} | ${spec.kind} | ${followOns.has(name) ? `no: follows ${andList(parentsOf(name).map(code))}` : hasJourneys(b) && offeredIn(b, name) === 'none' ? 'no: named by no journey' : 'yes'} | ${hasJourneys(b) ? `${followOns.has(name) ? 'none' : offeredIn(b, name)} | ` : ''}${cell(all.map(code).join(', ') || 'none')} | ${spec.then?.map(code).join(', ') ?? 'none'} |`);
   }
   for (const [name, spec] of Object.entries(b.actions)) {
     lines.push('', `### ${code(name)}: ${spec.kind === 'change' ? 'a change' : 'a lookup'}`, '', cell(spec.about.trim().replace(/\s+/g, ' ')), '');

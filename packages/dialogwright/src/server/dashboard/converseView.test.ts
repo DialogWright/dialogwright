@@ -80,6 +80,17 @@ describe('a converse call\'s detail with journeys', () => {
     expect(turns.map((t) => t.journeyEnded)).toEqual([null, null, null, 'visit', null]);
   });
 
+  it('shows a call that starts in a journey in it from its start turn, the route the start turn recorded', () => {
+    const started: ConverseTraceRecord[] = [
+      { ...J[0]!, sessionId: 'chat-3', route: { from: null, to: 'visit_account', outcome: 'start', task: null, ms: 0 } },
+      { ...RECORDS[1]!, sessionId: 'chat-3' },
+      { ...RECORDS[2]!, sessionId: 'chat-3', route: route('visit_account', 'visit_account', 'carry') },
+    ];
+    const turns = converseCall(started).turns;
+    expect(turns.map((t) => t.journey)).toEqual(['visit_account', 'visit_account', 'visit_account']);
+    expect(turns.map((t) => t.routeOutcome)).toEqual(['start', null, 'carry']);
+  });
+
   it('leaves a call without routes as it was, with no journey on its turns', () => {
     for (const t of converseCall(RECORDS).turns) expect(t.journey).toBeUndefined();
   });

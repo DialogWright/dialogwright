@@ -2142,7 +2142,8 @@ export function converseRow(records, frames) {
 export function converseCall(records) {
   const list = converseRecords(records);
   // A call with journeys (a record with a route or an ended journey): each turn's journey is where its route
-  // went, and a turn with no route (a confirmed yes, the start) is in the journey before it. Other calls are unchanged.
+  // went (a call that starts in a journey has a route on its start turn), and a turn with no route (a confirmed
+  // yes, a start at the root) is in the journey before it. Other calls are unchanged.
   const withJourneys = list.some((r) => r.route != null || r.journeyEnded != null);
   let carried = null;
   const turns = list.map((r) => {
