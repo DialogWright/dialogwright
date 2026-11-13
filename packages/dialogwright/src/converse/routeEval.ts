@@ -65,12 +65,13 @@ function perfectReading(b: AgentBusiness, j: JourneyState, label: RouteLabel, op
 const callerOf = (c: RouteCall): { number: string; account: string | null } => ({ number: CALLER_NUMBER, account: c.account ? ACCOUNT_NAME : null });
 
 /** The cases, and what was left out of them. */
-export function routeCaseSet(b: AgentBusiness, calls: readonly RouteCall[], labels: readonly RouteLabel[]): { cases: RouteCase[]; unlabelledTurns: number; unlabelledCalls: number; orphanLabels: number } {
+export function routeCaseSet(b: AgentBusiness, calls: readonly RouteCall[], labels: readonly RouteLabel[]): { cases: RouteCase[]; unlabelledTurns: number; unlabelledCalls: number; orphanLabels: number; unknownTasks: string[] } {
   const byKey = new Map(labels.map((l) => [`${l.id}#${l.turn}`, l]));
   const cases: RouteCase[] = [];
   const used = new Set<string>();
   let unlabelledTurns = 0;
   let unlabelledCalls = 0;
+  const unknownTasks: string[] = [];
   for (const call of calls) {
     const caller = callerOf(call);
     const open = openJourneys(b, caller);
@@ -91,6 +92,11 @@ export function routeCaseSet(b: AgentBusiness, calls: readonly RouteCall[], labe
       }
       any = true;
       used.add(key);
+      // A task that is no journey of the business (and not `none`) is listed, never read as `none`; the call stops here, as its later states would be wrong.
+      if (label.confirms === undefined && label.task !== NONE_TASK && b.journeys?.[label.task] === undefined) {
+        unknownTasks.push(key);
+        break;
+      }
       if (label.confirms !== undefined) {
         journey = completeJourney(b, journey, label.confirms);
         continue;
@@ -100,7 +106,7 @@ export function routeCaseSet(b: AgentBusiness, calls: readonly RouteCall[], labe
     }
     if (!any) unlabelledCalls += 1;
   }
-  return { cases, unlabelledTurns, unlabelledCalls, orphanLabels: labels.filter((l) => !used.has(`${l.id}#${l.turn}`)).length };
+  return { cases, unlabelledTurns, unlabelledCalls, unknownTasks, orphanLabels: labels.filter((l) => !used.has(`${l.id}#${l.turn}`)).length };
 }
 
 export function routeCases(b: AgentBusiness, calls: readonly RouteCall[], labels: readonly RouteLabel[]): RouteCase[] {
@@ -193,6 +199,7 @@ export interface BarRow {
   accuracy: number | null;
   wrongSwitches: number;
   missedSwitches: number;
+  wrongJourney: number;
 }
 
 export interface RouteEvalReport {
@@ -203,6 +210,8 @@ export interface RouteEvalReport {
   unlabelledCalls: number;
   /** Labels naming no caller turn. */
   orphanLabels: number;
+  /** Labels whose task is no journey of the business, by case id; each call is skipped from that turn on. */
+  unknownTasks: string[];
   /** Cases the decision model gave no answer for; read as carry, as a call would. */
   unanswered: number;
   /** At the business's own `routing.switchAt`. */
@@ -211,8 +220,10 @@ export interface RouteEvalReport {
   accuracy: number | null;
   /** Jev's start, switch or return where the label is carry, none or the root. */
   wrongSwitches: number;
-  /** A label asks for a start, switch or return and Jev's route does not make it. */
+  /** A label asks for a move and Jev's route makes none. */
   missedSwitches: number;
+  /** Both make a move, but to a different journey or phase. */
+  wrongJourney: number;
   byBar: BarRow[];
   /** The live requests' times (absent where all were recorded). */
   latency: { requests: number; p50Ms: number; p95Ms: number } | null;
@@ -220,7 +231,8 @@ export interface RouteEvalReport {
   wrongCases: Array<{ id: string; expected: RouteOutcome; got: RouteOutcome; label: string }>;
 }
 
-const MOVES: readonly RouteOutcome[] = ['start', 'switch', 'return'];
+/** The outcomes that change the journey or its phase. */
+const MOVES: readonly RouteOutcome[] = ['start', 'switch', 'return', 'dropped', 'again'];
 const STAYS: readonly RouteOutcome[] = ['carry', 'root'];
 
 export function latencyOf(times: readonly number[]): RouteEvalReport['latency'] {
@@ -237,6 +249,7 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
     let correct = 0;
     let wrong = 0;
     let missed = 0;
+    let wrongJourney = 0;
     const misses: RouteEvalReport['wrongCases'] = [];
     for (const c of cases) {
       const open = Object.keys((c.questions.task as { criteria: Record<string, string | null> }).criteria).filter((k) => k !== NONE_TASK);
@@ -247,8 +260,9 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
       else misses.push({ id: c.id, expected: expected.outcome, got: got.outcome, label: c.expected.task });
       if (MOVES.includes(got.outcome) && STAYS.includes(expected.outcome)) wrong += 1;
       if (MOVES.includes(expected.outcome) && !MOVES.includes(got.outcome)) missed += 1;
+      if (MOVES.includes(expected.outcome) && MOVES.includes(got.outcome) && !same) wrongJourney += 1;
     }
-    return { correct, wrong, missed, misses };
+    return { correct, wrong, missed, wrongJourney, misses };
   };
   const ratio = (a: number): number | null => (cases.length === 0 ? null : a / cases.length);
   const own = at(b.routing.switchAt);
@@ -257,20 +271,30 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
     unlabelledTurns: 0,
     unlabelledCalls: 0,
     orphanLabels: 0,
+    unknownTasks: [],
     unanswered: cases.filter((c) => (answers.get(c.id) ?? null) === null).length,
     switchAt: b.routing.switchAt,
     correct: own.correct,
     accuracy: ratio(own.correct),
     wrongSwitches: own.wrong,
     missedSwitches: own.missed,
+    wrongJourney: own.wrongJourney,
     byBar: bars.map((bar) => {
       const r = at(bar);
-      return { bar, correct: r.correct, accuracy: ratio(r.correct), wrongSwitches: r.wrong, missedSwitches: r.missed };
+      return { bar, correct: r.correct, accuracy: ratio(r.correct), wrongSwitches: r.wrong, missedSwitches: r.missed, wrongJourney: r.wrongJourney };
     }),
     latency: null,
     wrongCases: own.misses,
   };
 }
+
+/** What the figures mean. */
+export const ROUTE_DEFINITIONS = [
+  'Accuracy: the share of turns where the journey and phase Jev routes to are those the label gives.',
+  'Wrong switch: Jev moves the call (starts, switches, returns, drops or goes again) where the label stays (carry or root).',
+  'Missed switch: the label moves the call (a start, switch, return, drop or again) and Jev makes no move.',
+  'Switched to the wrong journey: both move the call, but to a different journey or phase.',
+];
 
 const pct = (n: number | null): string => (n === null ? '-' : n.toFixed(2));
 
@@ -278,11 +302,13 @@ const pct = (n: number | null): string => (n === null ? '-' : n.toFixed(2));
 export function formatRouteEval(r: RouteEvalReport): string[] {
   const out: string[] = ['# Routing, measured', ''];
   out.push(`${r.cases} caller turns routed (${r.unlabelledTurns} without a label skipped, ${r.unlabelledCalls} calls without any label${r.orphanLabels > 0 ? `, ${r.orphanLabels} labels naming no turn` : ''}), ${r.unanswered} unanswered (read as carry).`, '');
-  out.push(`At the business's bar, ${r.switchAt}: accuracy ${pct(r.accuracy)} (${r.correct} of ${r.cases}), ${r.wrongSwitches} wrong switches, ${r.missedSwitches} missed switches.`, '');
-  out.push('| bar | accuracy | correct | wrong switches | missed switches |', '| --- | --- | --- | --- | --- |');
-  for (const x of r.byBar) out.push(`| ${x.bar} | ${pct(x.accuracy)} | ${x.correct} | ${x.wrongSwitches} | ${x.missedSwitches} |`);
+  out.push(`At the business's bar, ${r.switchAt}: accuracy ${pct(r.accuracy)} (${r.correct} of ${r.cases}), ${r.wrongSwitches} wrong switches, ${r.missedSwitches} missed switches, ${r.wrongJourney} switched to the wrong journey.`, '');
+  out.push('| bar | accuracy | correct | wrong switches | missed switches | wrong journey |', '| --- | --- | --- | --- | --- | --- |');
+  for (const x of r.byBar) out.push(`| ${x.bar} | ${pct(x.accuracy)} | ${x.correct} | ${x.wrongSwitches} | ${x.missedSwitches} | ${x.wrongJourney} |`);
   out.push('');
-  if (r.latency !== null) out.push(`Jev: ${r.latency.requests} live requests, p50 ${Math.round(r.latency.p50Ms)} ms, p95 ${Math.round(r.latency.p95Ms)} ms.`, '');
+  out.push(...ROUTE_DEFINITIONS, '');
+  if (r.unknownTasks.length > 0) out.push(`Labels naming a task that is no journey (the call is skipped from that turn on): ${r.unknownTasks.join(', ')}.`, '');
+  out.push(r.latency !== null ? `Jev: ${r.latency.requests} live requests, p50 ${Math.round(r.latency.p50Ms)} ms, p95 ${Math.round(r.latency.p95Ms)} ms (latency: recorded run only).` : 'Jev latency: recorded run only (this report has none).', '');
   out.push('## Turns routed wrongly at the business\'s bar', '');
   if (r.wrongCases.length === 0) out.push('None.');
   else {

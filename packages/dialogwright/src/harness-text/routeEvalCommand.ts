@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readAgentBusiness } from '../converse/business/load';
-import { askRoutes, formatRouteEval, latencyOf, loadRouteCalls, loadRouteLabels, routeCaseSet, scoreRoutes } from '../converse/routeEval';
+import { askRoutes, formatRouteEval, ROUTE_DEFINITIONS, latencyOf, loadRouteCalls, loadRouteLabels, routeCaseSet, scoreRoutes } from '../converse/routeEval';
 import { inCi } from '../define/ci';
 import { CassetteClient } from '../jev/cassette';
 import { resolveJevProvider } from '../jev/provider';
@@ -24,6 +24,9 @@ export const ROUTE_EVAL_USAGE = [
   '  --calls: the results.jsonl of one or more evaluations (dialogwright eval); a call\'s id is <folder of the file>/<persona>-<run>',
   '  --personas: the personas file of those evaluations; a call whose persona has callingFrom is a recognised account (open to the journeys for accounts), any other is not',
   '  --labels: one line per labelled caller turn: {"id": <call id>, "turn": <caller turn, 0-based>, "task": <journey id or "none">, "drops"?: true, "again"?: true, "confirms"?: <action>}; a turn labelled confirms is a yes to a read-back, never routed, and runs that action; a turn or call with no label is skipped and counted',
+  ...ROUTE_DEFINITIONS.map((l) => `  ${l}`),
+  '  a label whose task is neither a journey of the app nor "none" is listed by id in the report, and its call is skipped from that turn on',
+  '  latency is measured on the recording run only; a --replay report has none',
   '  asks the decision model once per labelled turn (TYPESAFE_API_KEY, or JEV_PROVIDER\'s; from the environment, ENV_FILE or a .env where it is run), four at a time, into the cassette beside the labels (<labels>.jev.jsonl), asking only what it lacks; refused in CI',
   '  --replay: read the cassette alone, asking nothing; --out: also write the report as Markdown; --json: the figures as JSON on stdout; --timeout-ms: how long each request may take (default 30000)',
 ].join('\n');
@@ -152,6 +155,7 @@ export async function routeEvalCommand(argv: readonly string[], io: RouteEvalIo)
     unlabelledTurns: set.unlabelledTurns,
     unlabelledCalls: set.unlabelledCalls,
     orphanLabels: set.orphanLabels,
+    unknownTasks: set.unknownTasks,
     latency: latencyOf(timings),
   };
   const markdown = formatRouteEval(report);

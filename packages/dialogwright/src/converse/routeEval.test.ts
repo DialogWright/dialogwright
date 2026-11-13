@@ -7,7 +7,7 @@ import { routeEvalCommand, routeCassettePath } from '../harness-text/routeEvalCo
 import { JevClientError, type AnswerMap, type JevClient, type JevRequest } from '../jev/types';
 import { JOURNEYS_YAML, LEAVE_NOTE_ACTION } from '../testing/converse/journeys';
 import { agentBusinessProblems } from './business/load';
-import { loadRouteCalls, loadRouteLabels, routeCases, scoreRoutes, type RouteCall, type RouteLabel } from './routeEval';
+import { loadRouteCalls, loadRouteLabels, routeCaseSet, routeCases, scoreRoutes, type RouteCall, type RouteLabel } from './routeEval';
 
 const base = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'testing', 'converse', 'agent.yaml'), 'utf8');
 const built = agentBusinessProblems(base + LEAVE_NOTE_ACTION + JOURNEYS_YAML);
@@ -85,6 +85,38 @@ describe('scoreRoutes', () => {
     const r = scoreRoutes(b, cases, new Map([['f/a-1#0', null]]), BARS);
     expect(r.unanswered).toBe(3);
     expect(r.missedSwitches).toBe(1);
+  });
+});
+
+describe('moves and their definitions', () => {
+  it('counts a spurious drop as a wrong switch', () => {
+    const cs = routeCases(b, [call('f/a-1', ['v1', 'more'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'visit')]);
+    const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#1', reading({ visit: 0.9, note: 0, none: 0.1 }, 0.9)]]), BARS);
+    expect(r.wrongSwitches).toBe(1);
+    expect(r.wrongCases.map((x) => x.got)).toEqual(['dropped']);
+  });
+  it('counts a missed again as a missed switch', () => {
+    const cs = routeCases(b, [call('f/a-1', ['book', 'yes', 'another'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'visit', { confirms: 'book' }), label('f/a-1', 2, 'visit', { again: true })]);
+    const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#2', { task: { type: 'choice', choice: 'visit', probabilities: { visit: 0.9, note: 0, none: 0.1 }, confidence: 0.9 }, again: { type: 'noul', noul: 0.1 } }]]), BARS);
+    expect(r.missedSwitches).toBe(1);
+    expect(r.wrongSwitches).toBe(0);
+  });
+  it('counts a switch to the wrong journey in its own line', () => {
+    const cs = routeCases(b, [call('f/a-1', ['v1', 'n1'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'note')]);
+    const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#1', reading({ visit: 0.9, note: 0.1, none: 0 }, 0.9)]]), BARS);
+    expect(r.wrongJourney).toBe(1);
+    expect(r.wrongSwitches).toBe(0);
+    expect(r.missedSwitches).toBe(0);
+  });
+  it('states its definitions, and that latency is of the recorded run', async () => {
+    const { formatRouteEval } = await import('./routeEval');
+    const text = formatRouteEval({ ...scoreRoutes(b, [], new Map(), BARS), unlabelledTurns: 0, unlabelledCalls: 0 }).join('\n');
+    for (const w of ['Accuracy:', 'Wrong switch:', 'Missed switch:', 'Switched to the wrong journey:', 'latency: recorded run only']) expect(text).toContain(w);
+  });
+  it('lists a label naming no journey and skips its call from that turn on', () => {
+    const set = routeCaseSet(b, [call('f/a-1', ['v1', 'x', 'v3'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'bogus'), label('f/a-1', 2, 'visit')]);
+    expect(set.cases.map((c) => c.id)).toEqual(['f/a-1#0']);
+    expect(set.unknownTasks).toEqual(['f/a-1#1']);
   });
 });
 
