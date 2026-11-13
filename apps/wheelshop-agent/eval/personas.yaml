@@ -167,7 +167,8 @@ personas:
     expects: request
 
   # The journeys' personas (docs/designs/2026-11-12-journeys.md, "Measuring it"): their calls count apart from the
-  # twelve above.
+  # twelve above. Since 2026-11-13 a callback note is part of the request journey, so switches-to-callback's
+  # request and callback both happen in one journey, with no switch.
   - id: switches-to-callback
     goal: Start getting a curb-rash repair booked in, ask halfway to have someone call you instead, then come back and finish the request.
     truth:

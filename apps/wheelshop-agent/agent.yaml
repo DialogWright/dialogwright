@@ -101,16 +101,23 @@ root:
 routing:
   startAt: 0.7
 journeys:
-  repair_request:
-    when: The caller wants a wheel repaired, a price, or to bring a car in.
+  # One request journey: a callback note is part of the caller's request, not a journey of its own (the maintainer's
+  # direction, 2026-11-13; DESIGN.md, "How the facts were split").
+  request:
+    # assumption: the owner corrects these (what the line takes from a caller on no account: a repair request, or a callback note)
+    when: The caller wants a wheel repaired, a price, to bring a car in, or someone from the shop to call them.
     for: { account: none }
-    goal: Send the shop a repair request with a drop-off window, read back and confirmed by the caller.
+    # assumption: the owner corrects these (the goal and the limits: what a callback note carries, no callback times, no dealership rates)
+    goal: "Send the shop the caller's request: a repair request with a drop-off window, or, where the caller wants a call rather than a drop-off, a callback note; read back and confirmed by the caller."
     instructions: >-
-      Collect what send_request needs, in whatever order the caller gives it. Look the day up before offering a
-      window. Don't discuss dealership accounts or their rates.
+      Collect what send_request needs, in whatever order the caller gives it, and look the day up before offering
+      a window. Where the caller wants someone from the shop to call them instead, or can't or won't set up a
+      drop-off, leave_callback carries it: their name, the number to call back, what it is about and any notes
+      for the shop, and nothing else. Never say when someone will call back. Don't discuss dealership accounts
+      or their rates.
     facts: # assumption: the owner corrects these
     - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
-    - A request needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
+    - A request or a callback note needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
     - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them. # assumption: the owner corrects these
     - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
     - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
@@ -119,11 +126,13 @@ journeys:
       a: >-
         No. Nothing is charged until you accept the shop's price, and you can cancel before drop-off at no cost:
         reply to our text or get in touch with us.
+    # assumption: the owner corrects these (the owner must confirm the same-day deadline: a drop-off today, booked
+    # after hours, is past "6 pm the day before", so the reply is due before the window's drop-off time instead)
     - q: When do I need to send the photo?
       a: >-
         As soon as you can: the shop prices the job from it, and your window is held while it waits. Once the
         shop texts you the price, reply within 24 hours to book it (or by 6 pm the day before drop-off, whichever
-        comes first).
+        comes first); for a drop-off the same day, reply to the price text before the window's drop-off time.
     - q: What if I can't send a photo?
       a: That's fine; tell us, and the shop calls you instead to talk the damage through and give you a price.
     - q: What kind of photo do you need?
@@ -136,44 +145,41 @@ journeys:
       a: >-
         Not yet. The request holds the drop-off window you picked while the shop prices the job; the drop-off is
         booked when you reply yes to the shop's price text (or agree the price when the shop calls).
-    actions: [check_availability, send_request]
+    - q: When will someone from the shop call me back?
+      a: As soon as the shop can; we don't give a set time.
+    - q: Can I call the shop directly?
+      a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
+    actions: [check_availability, send_request, leave_callback]
+    # Never moves to its after phase: a caller may send a request and also leave a callback note, each read back
+    # and confirmed on its own.
+    completes: []
   dealer_booking:
-    when: The caller wants to book cars in for repair.
+    # assumption: the owner corrects these (a dealership may want someone from the shop to call it, too)
+    when: The caller wants to book cars in for repair, or someone from the shop to call them.
     for: { account: recognised }
     start: { account: recognised }
     # assumption: the owner corrects these (said to a recognised account; it names no one, as a number on file does not prove who is calling)
     greeting: { en: "Example Wheel Works, hi. Booking some cars in today?" }
     goal: Book the account's cars into a drop-off window, read back and confirmed by the caller.
+    # assumption: the owner corrects these (a callback note for a dealership)
     instructions: >-
       Recognise the account before booking. Look the day up before offering a window, and book only into one
-      with room for every car.
+      with room for every car. A callback note for the dealership is fine when the caller wants one. Never say
+      when someone will call back.
     facts: # assumption: the owner corrects these
     - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window, up to three cars in one window. # assumption: the owner corrects these
     - Dealership work is billed at the rates agreed with the shop. # assumption: the owner corrects these
     - A dealership's booking is made on this line once we read it back and the caller confirms it, and the line says it is booked and gives its reference. # assumption: the owner corrects these
-    actions: [recognise_caller, check_availability, book_dealer]
-  callback:
-    when: The caller wants to speak with someone, or wants the shop to call them.
-    goal: Leave the shop a callback note, read back and confirmed by the caller.
-    # assumption: the owner corrects these (the limit on callback times)
-    instructions: >-
-      The note carries only the caller's name, the number to call back, what it is about and any notes for the
-      shop. Never say when someone will call back.
-    facts: # assumption: the owner corrects these
-    - A callback note needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
-    questions: # assumption: the owner corrects these
-    - q: When will someone from the shop call me back?
-      a: As soon as the shop can; we don't give a set time.
-    - q: Can I call the shop directly?
-      a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
-    actions: [leave_callback]
+    actions: [recognise_caller, check_availability, book_dealer, leave_callback]
+    # The booking ends the journey; a callback note does not, so a dealership may leave one and still book.
+    completes: [book_dealer]
 persona:
   style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
 lines:
   # assumption: the owner corrects these (a receptionist's opening: what the shop does, then what the line can do)
   greeting: { en: "Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?" }
-  # assumption: the owner corrects these (said instead of the greeting when a call starts outside the shop's hours)
-  greetingAfterHours: { en: "Thanks for calling Example Wheel Works. We're closed right now, but we can price a repair and set up a drop-off, or take a note for the shop to call you back. How can we help?" }
+  # assumption: the owner corrects these (said instead of the greeting when a call starts outside the shop's hours: what the line can do first, then that the shop is closed)
+  greetingAfterHours: { en: "Thanks for calling Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?" }
   closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }

@@ -27,7 +27,7 @@
 - On the second unclear turn in a row the agent model is also sent the business's reason for the line (`business.line`), where it has one.
 - In a journey in progress, the agent model is also sent the trigger (`when`) of each other journey open to the caller (not the one set aside), so it can say what else the line does and ask whether to switch.
 - The agent model is told, on every request, whether the business is open now (from `business.open`, in the business's time zone) and when it closes or next opens. A callback is never promised for a time the business information does not give.
-- A call that starts while the business is closed hears `lines.greetingAfterHours`, word for word, in place of the greeting (and of a journey's): "Thanks for calling Example Wheel Works. We're closed right now, but we can price a repair and set up a drop-off, or take a note for the shop to call you back. How can we help?"
+- A call that starts while the business is closed hears `lines.greetingAfterHours`, word for word, in place of the greeting (and of a journey's): "Thanks for calling Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?"
 - The caller's number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions' code (a phone param the model writes as `caller` is resolved by the runtime).
 - Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call's values were not valid for their types, and the words an action failed with, go to the agent model as written.
 - The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below). Only the audit records an action's result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.
@@ -39,37 +39,33 @@
 - The root offers no actions and has its own instructions.
 - An unclear turn (see above) is answered with guidance, never a guess. While it is answered, only the lookups are offered to the agent model, so change actions are withheld: none is offered, and one called anyway is refused as not offered and audited. The count of unclear turns in a row starts again on any turn that is not unclear. On the third in a row the line says `lines.unclear`, word for word ("Sorry, this line can only help with a wheel repair or a callback. Call us back any time."), and the call ends (audited as `converse_end` by `unclear`).
 
-### `repair_request`
+### `request`
 
-- Trigger: The caller wants a wheel repaired, a price, or to bring a car in.
+- Trigger: The caller wants a wheel repaired, a price, to bring a car in, or someone from the shop to call them.
 - Open only where the number calling is on no account.
-- Actions: `check_availability` and `send_request`
+- Actions: `check_availability`, `send_request` and `leave_callback`
+- Never done: no action ends it, so it stays in progress after each change runs on the caller's yes.
 
 ### `dealer_booking`
 
-- Trigger: The caller wants to book cars in for repair.
+- Trigger: The caller wants to book cars in for repair, or someone from the shop to call them.
 - Open only where the number calling is on an account. Starts the call there.
-- Actions: `recognise_caller`, `check_availability` and `book_dealer`
+- Actions: `recognise_caller`, `check_availability`, `book_dealer` and `leave_callback`
 - Greeting, said word for word where it starts the call: "Example Wheel Works, hi. Booking some cars in today?"
-
-### `callback`
-
-- Trigger: The caller wants to speak with someone, or wants the shop to call them.
-- Open to every caller.
-- Actions: `leave_callback`
+- Done when `book_dealer` runs on the caller's yes.
 
 ## Actions
 
 | Action | Kind | Offered to the model | Journeys | Rules | Follow-on actions |
 | --- | --- | --- | --- | --- | --- |
 | `recognise_caller` | lookup | yes | `dealer_booking` | none | none |
-| `check_availability` | lookup | yes | `repair_request`, `dealer_booking` | none | none |
-| `send_request` | change | yes | `repair_request` | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | `send_photo_request`, `notify_shop_request` |
+| `check_availability` | lookup | yes | `request`, `dealer_booking` | none | none |
+| `send_request` | change | yes | `request` | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | `send_photo_request`, `notify_shop_request` |
 | `send_photo_request` | change | no: follows `send_request` | none | `oneOf(textOk: yes)`, `confirmed(callbackNumber, textOk)` | none |
 | `notify_shop_request` | change | no: follows `send_request` | none | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | none |
 | `book_dealer` | change | yes | `dealer_booking` | `confirmed(account, cars, vehicles, slot)` | `notify_shop_booking` |
 | `notify_shop_booking` | change | no: follows `book_dealer` | none | `confirmed(account, cars, vehicles, slot)` | none |
-| `leave_callback` | change | yes | `callback` | `confirmed(name, callbackNumber, about, notes)` | none |
+| `leave_callback` | change | yes | `request`, `dealer_booking` | `confirmed(name, callbackNumber, about, notes)` | none |
 
 ### `recognise_caller`: a lookup
 

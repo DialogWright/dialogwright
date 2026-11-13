@@ -55,9 +55,8 @@ Each caller turn, the decision model reads which journey the caller wants; the a
 flowchart LR
   root(["Root"])
   subgraph journeys["Journeys"]
-    j_repair_request["repair_request<br/>The caller wants a wheel repaired, a price, or to bring a car in."]
-    j_dealer_booking["dealer_booking<br/>The caller wants to book cars in for repair."]
-    j_callback["callback<br/>The caller wants to speak with someone, or wants the shop to call them."]
+    j_request["request<br/>The caller wants a wheel repaired, a price, to bring a car in, or someone from the shop to call them."]
+    j_dealer_booking["dealer_booking<br/>The caller wants to book cars in for repair, or someone from the shop to call them."]
   end
   a_recognise_caller["recognise_caller"]
   a_check_availability["check_availability"]
@@ -67,15 +66,15 @@ flowchart LR
   a_book_dealer[["book_dealer"]]
   a_notify_shop_booking[["notify_shop_booking"]]
   a_leave_callback[["leave_callback"]]
-  root --> j_repair_request
+  root --> j_request
   root --> j_dealer_booking
-  root --> j_callback
-  j_repair_request --> a_check_availability
-  j_repair_request --> a_send_request
+  j_request --> a_check_availability
+  j_request --> a_send_request
+  j_request --> a_leave_callback
   j_dealer_booking --> a_recognise_caller
   j_dealer_booking --> a_check_availability
   j_dealer_booking --> a_book_dealer
-  j_callback --> a_leave_callback
+  j_dealer_booking --> a_leave_callback
   a_send_request ==>|"then, after the yes"| a_send_photo_request
   a_send_request ==>|"then, after the yes"| a_notify_shop_request
   a_book_dealer ==>|"then, after the yes"| a_notify_shop_booking

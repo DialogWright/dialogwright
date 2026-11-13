@@ -33,9 +33,9 @@ const dropped = (): ConverseModelEvent[][] => [[DROPPED, done()]];
 
 /**
  * A decision model that reads "yes" in the caller's words as a yes (anything else a no), and routes a turn by
- * its words among the journeys it is offered: a wish to talk to a person is the callback, a lone "yes" or
- * "no" carries on, a dealership's trade-ins the dealer booking, a car or a wheel the repair request, and
- * anything else none. It records what it was asked.
+ * its words among the journeys it is offered: a dealership's trade-ins, or a recognised dealership's wish to be
+ * called, the dealer booking; a car, a wheel or a wish to be called the request; and anything else none. It
+ * records what it was asked.
  */
 function routingJev(): JevClient & { asked: JevRequest[] } {
   const asked: JevRequest[] = [];
@@ -47,7 +47,8 @@ function routingJev(): JevClient & { asked: JevRequest[] } {
       const answers: AnswerMap = {};
       if (Object.hasOwn(req.questions, 'task')) {
         const open = Object.keys((req.questions.task as { criteria: Record<string, string | null> }).criteria).filter((k) => k !== 'none');
-        const pick = /\bperson\b|call me|call back|callback/i.test(said) ? 'callback' : /trade-in/i.test(said) ? 'dealer_booking' : /civic|wheel|curb|tuesday|afternoon|photo/i.test(said) ? 'repair_request' : 'none';
+        const wantsCall = /\bperson\b|call me|call back|callback/i.test(said);
+        const pick = /trade-in/i.test(said) || (wantsCall && open.includes('dealer_booking')) ? 'dealer_booking' : wantsCall || /civic|wheel|curb|tuesday|afternoon|photo/i.test(said) ? 'request' : 'none';
         const choice = pick === 'none' || open.includes(pick) ? pick : 'none';
         const probabilities = Object.fromEntries([...open, 'none'].map((k) => [k, k === choice ? 0.9 : 0.05]));
         answers.task = { type: 'choice', choice, probabilities, confidence: 0.9 };
@@ -132,7 +133,7 @@ describe('send_request', () => {
     const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(NOW) });
     await c.start();
     await c.say('I curbed my Civic');
-    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'end_call']);
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
   });
 
   it('texts the caller nothing without their yes to texts: the gate refuses the photo request (no-consent), and the shop still gets its summary', async () => {
@@ -273,9 +274,9 @@ describe('journeys', () => {
     await c.start();
     expect(c.state.journey).toMatchObject({ active: 'dealer_booking', phase: 'working' });
     await c.say('three trade-ins for tomorrow');
-    expect(toolNames(model)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'end_call']);
-    // The repair request is closed to an account, so it is not among the options the decision model is asked.
-    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['dealer_booking', 'callback', 'question', 'none']);
+    expect(toolNames(model)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'leave_callback', 'end_call']);
+    // The request is closed to an account, so it is not among the options the decision model is asked.
+    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['dealer_booking', 'question', 'none']);
   });
 
   it('never offers book_dealer to a caller on no account, nor asks about the dealer booking', async () => {
@@ -286,10 +287,10 @@ describe('journeys', () => {
     await c.start();
     expect(c.state.journey).toMatchObject({ active: null });
     await c.say('I curbed my Civic, can I bring it in Tuesday?');
-    expect(c.state.journey).toMatchObject({ active: 'repair_request' });
+    expect(c.state.journey).toMatchObject({ active: 'request' });
     expect(toolNames(model)).not.toContain('book_dealer');
     expect(toolNames(model)).not.toContain('recognise_caller');
-    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['repair_request', 'callback', 'question', 'none']);
+    expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['request', 'question', 'none']);
   });
 
   it('refuses a book_dealer the model calls in a request, as not offered, and sends nothing', async () => {
@@ -325,19 +326,60 @@ describe('journeys', () => {
     expect(sys.bookings).toEqual([]);
   });
 
-  it('moves a confirmed request to the after phase, withdrawing send_request', async () => {
+  it('keeps a confirmed request working: the request never moves to an after phase, so a callback note may follow it, read back on its own', async () => {
     const provider = fakeTextProvider();
-    const { app } = wheelshop({ now: () => NOW });
-    const model = fakeConverseModel([...dropped(), ...requestScript('yes'), [text('Anything else?'), done()]]);
-    const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const model = fakeConverseModel([
+      ...dropped(), ...requestScript('yes'),
+      [call('c3', 'leave_callback', { name: 'Dana Example', callbackNumber: '555 555 0111', about: 'an older wheel left last month' }), done('tool')],
+      [text('Someone will call you.'), done()],
+    ]);
+    const jev = routingJev();
+    const c = converseTestCall(app, { model, jev, now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
     await c.start();
     await c.say('I curbed my Civic, can I bring it in Tuesday morning?');
-    expect(c.state.journey).toMatchObject({ active: 'repair_request', phase: 'working' });
+    expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working' });
     await c.say('yes, that is right');
-    expect(c.state.journey).toMatchObject({ active: 'repair_request', phase: 'after', done: ['repair_request'] });
-    expect(toolNames(model)).toEqual(['check_availability', 'end_call']);
-    await c.say('what is the parking like?');
-    expect(toolNames(model)).toEqual(['check_availability', 'end_call']);
+    expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working', done: [] });
+    expect(sys.requests).toHaveLength(1);
+    expect(await c.say('and can someone call me about an older wheel?')).toEqual(['We\'ll have someone from the shop call Dana Example back on 555 555 0111 about an older wheel left last month. Is that right?']);
+    // The same journey all along: no switch, and both changes offered in it.
+    expect(c.traces.map((t) => t.route?.outcome)).not.toContain('switch');
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+    await c.say('yes');
+    expect(sys.callbacks).toMatchObject([{ ref: 'C101', name: 'Dana Example', about: 'an older wheel left last month' }]);
+    expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working', paused: null });
+  });
+
+  it('offers a caller on no account send_request and leave_callback in the one request journey, with no switch', async () => {
+    const model = fakeConverseModel([...dropped(), [text('Sure.'), done()], [text('Of course.'), done()]]);
+    const { app } = wheelshop({ now: () => NOW });
+    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW) });
+    await c.start();
+    await c.say('I would rather someone call me back');
+    expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working' });
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+    await c.say('it is about curb rash on my Civic');
+    expect(c.state.journey).toMatchObject({ active: 'request', paused: null });
+    expect(c.traces.at(-1)!.route).toMatchObject({ outcome: 'carry' });
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+  });
+
+  it('offers a dealership book_dealer and leave_callback, and a callback note leaves the booking open', async () => {
+    const provider = fakeTextProvider();
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const model = fakeConverseModel([
+      [call('c1', 'leave_callback', { name: 'Rivergate Motors', callbackNumber: 'caller', about: 'the invoice for last week' }), done('tool')],
+      [text('Someone will call you.'), done()],
+    ]);
+    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
+    await c.start();
+    await c.say('can someone call me back about an invoice?');
+    expect(toolNames(model, 0)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'leave_callback', 'end_call']);
+    await c.say('yes');
+    expect(sys.callbacks).toMatchObject([{ ref: 'C101', about: 'the invoice for last week' }]);
+    expect(c.state.journey).toMatchObject({ active: 'dealer_booking', phase: 'working' });
+    expect(toolNames(model)).toContain('book_dealer');
   });
 });
 
@@ -377,7 +419,7 @@ describe('the app folder', () => {
 });
 
 describe('after hours', () => {
-  const AFTER_HOURS = 'Thanks for calling Example Wheel Works. We\'re closed right now, but we can price a repair and set up a drop-off, or take a note for the shop to call you back. How can we help?';
+  const AFTER_HOURS = 'Thanks for calling Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?';
   const SATURDAY = Date.parse('2026-11-14T15:00:00Z'); // 10 a.m. at the shop, a Saturday
   const NIGHT = Date.parse('2026-11-12T04:00:00Z'); // 11 p.m. Wednesday at the shop
   const systemOf = (m: { requests: readonly unknown[] }): string => (m.requests.at(-1) as { system: string }).system;
