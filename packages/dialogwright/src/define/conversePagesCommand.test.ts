@@ -67,6 +67,7 @@ describe('the pages of a converse app', () => {
     const card = conversePolicyCardText({ ...app, business: open });
     expect(card).toContain('is told, on every request, whether the business is open now');
     expect(card).toContain('when it closes or next opens');
+    expect(card).toContain('is told never to promise a callback for a time the business information does not give');
     expect(card).toContain('`lines.greetingAfterHours`, word for word, in place of the greeting (and of a journey\'s): "We are closed."');
     expect(conversePolicyCardText(app)).not.toContain('greetingAfterHours');
     expect(conversePolicyCardText(app)).not.toContain('whether the business is open now');

@@ -259,7 +259,7 @@ function journeyCardLines(b: AgentBusiness): string[] {
 function openCardWords(b: AgentBusiness): string[] {
   const after = b.lines.greetingAfterHours;
   return [
-    '- The agent model is told, on every request, whether the business is open now (from `business.open`, in the business\'s time zone) and when it closes or next opens. A callback is never promised for a time the business information does not give.',
+    '- The agent model is told, on every request, whether the business is open now (from `business.open`, in the business\'s time zone) and when it closes or next opens. The agent model is told never to promise a callback for a time the business information does not give, the opening time included.',
     ...(after === undefined ? [] : [`- A call that starts while the business is closed hears \`lines.greetingAfterHours\`, word for word, in place of the greeting (and of a journey's): "${cell(after.en)}"`]),
   ];
 }

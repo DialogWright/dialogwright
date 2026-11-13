@@ -114,7 +114,8 @@ journeys:
       a window. Where the caller wants someone from the shop to call them instead, or can't or won't set up a
       drop-off, leave_callback carries it: their name, the number to call back, what it is about and any notes
       for the shop, and nothing else. Never say when someone will call back. Don't discuss dealership accounts
-      or their rates.
+      or their rates. A request already sent on this call is not sent again; a change to it goes in a callback note
+      (or the caller's reply to the shop's price text).
     facts: # assumption: the owner corrects these
     - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
     - A request or a callback note needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them. # assumption: the owner corrects these
@@ -126,13 +127,15 @@ journeys:
       a: >-
         No. Nothing is charged until you accept the shop's price, and you can cancel before drop-off at no cost:
         reply to our text or get in touch with us.
-    # assumption: the owner corrects these (the owner must confirm the same-day deadline: a drop-off today, booked
-    # after hours, is past "6 pm the day before", so the reply is due before the window's drop-off time instead)
+    # assumption: the owner corrects these (the owner must confirm the short-notice deadline: a drop-off the same day, or
+    # the next morning when it is already past 6 pm, is past "6 pm the day before", so the reply is due before the
+    # window's drop-off time instead)
     - q: When do I need to send the photo?
       a: >-
         As soon as you can: the shop prices the job from it, and your window is held while it waits. Once the
         shop texts you the price, reply within 24 hours to book it (or by 6 pm the day before drop-off, whichever
-        comes first); for a drop-off the same day, reply to the price text before the window's drop-off time.
+        comes first); where the drop-off is too soon for that (the same day, or the next morning when it's already past 6 pm), reply to
+        the price text before the window's drop-off time.
     - q: What if I can't send a photo?
       a: That's fine; tell us, and the shop calls you instead to talk the damage through and give you a price.
     - q: What kind of photo do you need?
