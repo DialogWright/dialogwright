@@ -642,3 +642,209 @@ Model tier: the controller, with labelling subagents (sonnet) following `label-b
     kickstart).
   - **Worse:** stop. Bring the figures and the wrong replies' kinds to the maintainer as a finding.
 - [ ] **Step 8:** Update the memory's roadmap state with the outcome.
+
+---
+
+# Part 2: guide the caller, don't guess (the amendment of 2026-11-13)
+
+**Goal:** Build the design's amendment ("Amendment (2026-11-13): guide the caller, don't guess"):
+- unclear input detected by the decision model and answered with the model's guidance, escalating;
+- the call ended politely on the third unclear turn in a row;
+- a stricter start;
+- a way out of a task;
+- receptionist greetings.
+
+Then measure the wheel shop again.
+
+**Spec:** the same design, its amendment and "Decided by the maintainer (2026-11-13)". The global constraints above
+hold unchanged. Above all, an app with no journeys behaves exactly as today.
+
+## Review focus (part 2)
+
+1. **A confusing turn inside a task is never acted on.** On an unclear turn, no change action is offered, even when
+   the model calls one: it is refused `not-offered`. Test in Task 12.
+2. **The third unclear turn in a row ends the call with `lines.unclear`**, and the model is not asked on that turn.
+   A clear turn in between resets the count. Test in Task 12.
+3. **A question about the business at the root is answered, not treated as unclear.** Test in Task 11.
+4. **A start below `routing.startAt` is unclear, not a start.** A switch between journeys still uses `switchAt`.
+   Test in Task 11.
+5. **The speculative first round is restarted when the turn turns out unclear,** since its prompt and tools differ.
+   Nothing of the dropped round is said. Test in Task 12.
+
+### Task 11: Schema and routing for unclear turns
+
+Model tier: standard.
+
+**Files:**
+- Modify `converse/business/schema.ts`:
+  - `routing.startAt` (default 0.8; check: `startAt >= switchAt`);
+  - a journey's `greeting` (a worded line; check: only on a journey with `start`);
+  - `lines.unclear` (optional; check: required when `journeys` is present).
+- Regenerate `schemas/agent.schema.json`.
+- Modify the fixtures in `testing/converse/journeys.ts`: add `lines.unclear` to what JOURNEYS_YAML needs. If it
+  can't be added by appending, give the fragments' tests a helper, and say which in the report.
+- Modify `converse/journeys.ts`, with its tests in `journeys.test.ts`.
+
+**Interfaces (produces):**
+```ts
+export const QUESTION_TASK = 'question';   // the root option "a question about the business"
+// RouteReading gains: fits: number | null   (asked only in a working journey)
+// JourneyState gains: unclear?: number       (unclear turns in a row; absent = 0)
+// Route gains:        unclear: boolean
+export function isUnclear(r: Route): boolean; // = r.unclear
+```
+
+**The routing questions:**
+- **`task`** gains the option `question`, with the criterion "a question about the business: its hours, prices,
+  where it is, what it does or doesn't do". `none` becomes "none of these: unclear, unrelated, or something the line
+  does not do".
+- **`fits`** is a noul, asked only in a working journey: "Does the caller's turn give what the line just asked for,
+  or carry on with this task?"
+- These give goals, never a procedure.
+
+**`decideRoute` additions:**
+
+| Where | Reading | Outcome | Unclear |
+| --- | --- | --- | --- |
+| At the root | top option a journey at or above `startAt` | `start` | no |
+| At the root | `question` is the top option | `root` | no |
+| At the root | `none` is the top option, or a journey below `startAt` | `root` | yes |
+| In a working journey | `fits` below 0.5, `task` neither another journey above `switchAt` nor `question` | `carry` | yes |
+| In the after phase | `fits` is not asked | — | never |
+| Anywhere | a null reading | — | no (a failed reading never ends a call) |
+
+- Every other row is unchanged.
+- Unclear sets `next.unclear = (j.unclear ?? 0) + 1`. Any other route sets it to 0.
+
+**Steps:**
+- [ ] Failing tests first:
+  - one per new row;
+  - Review Focus 3 and 4;
+  - `startAt` exactly at the bar counts as a start;
+  - the schema checks (`startAt < switchAt` refused; a `greeting` without `start` refused; journeys without
+    `lines.unclear` refused).
+- [ ] Implement, then run the full gate.
+- [ ] Commit: `converse: unclear turns read by the decision model, a stricter start`.
+
+### Task 12: The turn: guidance, the third unclear turn, the way out, the greetings
+
+Model tier: most capable.
+
+**Files:**
+- Modify `converse/turn.ts`, `converse/prompt.ts` and `business/text.ts` (`journeyText`).
+- Modify `converse/trace.ts`: `route.unclear?: number`, and `ended` with the reason `unclear`.
+- Tests in `turn.test.ts` (journeys block) and `prompt.test.ts`.
+
+**What to build:**
+- **The prompt on an unclear turn.** It gains a short block after the record of the call. It says the caller's last
+  turn was unclear, gives the turn's words, and states the goal:
+  - **First unclear turn:** give the caller direction for the input needed now. At the root, that is what the line
+    can help with (the open journeys' `when`). In a journey, it is what it needs from them now. Never a guess at
+    what they meant.
+  - **Second unclear turn:** the same, and say exactly what to say.
+- **Tools on an unclear turn:** the lookups of the turn's offer, plus `end_call`. A change action called anyway is
+  refused `not-offered`.
+- **The third unclear turn in a row:**
+  - no model request;
+  - the runtime says `lines.unclear` and ends the call, as `end_call` does with the closing line;
+  - the audit row is `converse_end` with `{ by: 'unclear' }`.
+- **The way out.** In a working journey, `journeyText` adds "Other things this line can help with:", followed by the
+  other open journeys' `when`. The goal: when the caller wants one of them, say so and ask whether to switch, never
+  fit it into this task's actions.
+- **The greetings.** At `start`, a journey started by `start` that has a `greeting` says it in place of
+  `lines.greeting`.
+- **The speculative first round.** It is restarted when the route comes back unclear, as it is when the journey
+  changes.
+
+**Steps:**
+- [ ] Failing tests first:
+  - Review Focus 1, 2 and 5;
+  - the prompt blocks at levels 1 and 2;
+  - the way-out text present only in a working journey;
+  - the start greeting;
+  - an app with no journeys: unchanged (the existing tests, unedited).
+- [ ] Implement, then run the full gate.
+- [ ] Commit: `converse: guidance on unclear turns, the call ended on the third, a way out of a task, journey greetings`.
+
+### Task 13: Console, policy card, docs
+
+Model tier: standard.
+
+**What to build:**
+- **The call view** marks an unclear turn with its count, and the end by `unclear`.
+- **The policy card** names:
+  - the `fits` question and the new options in what routing sends the decision model;
+  - `lines.unclear` among the fixed lines;
+  - that change actions are withheld on an unclear turn.
+- **Docs:**
+  - the root CLAUDE.md converse bullet gets one clause;
+  - the agent-runtime design's journeys bullet gets one clause.
+
+**Steps:**
+- [ ] Failing tests first.
+- [ ] Implement, then run the full gate.
+- [ ] Commit: `console and policy pages: unclear turns`.
+
+### Task 14: Route-eval for unclear turns, and the labels
+
+Model tier: standard, for the command. The labelling is done by the controller, through subagents.
+
+**The command:**
+- Labels gain the task `question` and `fits` (a boolean, for turns inside a task).
+- Scoring:
+  - **unclear precision:** of the turns the decision model read as unclear, the share labelled unclear;
+  - **unclear recall:** of the turns labelled unclear, the share it read as unclear;
+  - accuracy counts the unclear flag.
+- The report states both definitions. Tests come first.
+
+**The labels:**
+- The 59 turns labelled `none` in the routing labels are labelled again, as `question` or `none`.
+- Every caller turn inside a task gets `fits`.
+- The work goes to labellers with an amended brief.
+
+**Then:**
+- Record, and choose `startAt` from a by-bar table of start bars over 0.6 to 0.9: the highest bar whose unclear
+  recall is at least 0.9 while missed starts stay under 5%. Fall back to 0.8 where none does.
+
+**Commit:** `converse:route-eval: unclear turns and the start bar`.
+
+### Task 15: The wheel shop
+
+Model tier: standard.
+
+**What to change:**
+- **The greeting:** a receptionist's opening, in the business's voice, naming the two tasks. For example: "Thanks
+  for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a
+  drop-off, or have someone from the shop call you back. How can we help?"
+- **The `dealer_booking` greeting:** a booking question for a recognised account.
+- **`lines.unclear`.**
+- **`routing.startAt`:** from Task 14.
+
+Each line is marked `# assumption: the owner corrects these`.
+
+**Also:**
+- the app tests for the greeting, the unclear guidance and the third-turn end;
+- the pages regenerated and their diff read;
+- DESIGN.md.
+
+**Commit:** `wheelshop-agent: a receptionist's greeting, guidance on unclear turns`.
+
+### Task 16: Measure again and decide
+
+- **Run.** The same 300 calls: two runs of `--runs 10 --parallel 2`. Run them in the afternoon, Eastern, where it
+  can be arranged, to match the baseline's time of day. If not, say so.
+- **Label.** The replies, by the same brief.
+- **Count:**
+  - wrong replies, severity 2 or more, and gaps, per 100 calls;
+  - requests done by persona, under the design's rule for the number-and-day caller (guided to the task, then the
+    task done, counts as done);
+  - the switch checks;
+  - unclear turns and the calls ended by them (each read: was it really unclear?).
+- **Write** the second part of `docs/designs/eval/2026-11-journeys.md`.
+- **Decide landing.** The wheel shop merges and deploys only if:
+  - wrong replies are no worse than the baseline;
+  - requests are done at least as often (80%);
+  - no call was ended by the unclear count that a person reading it would have understood.
+  
+  Otherwise, bring the figures to the maintainer.
+- **Then** run the final whole-branch review of Tasks 8–16, and finish the branch.
