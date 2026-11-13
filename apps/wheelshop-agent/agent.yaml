@@ -52,36 +52,16 @@ facts:
   - How long any other job takes depends on the damage; the shop says once it has seen it. # assumption: the owner corrects these
   - "Cars are dropped off in a window: the morning window, drop off by 8, ready by about noon; or the afternoon window, drop off by noon, ready by about 5." # assumption: the owner corrects these
   - Dealerships on Commerce Drive send their trade-ins here.
-  - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window, up to three cars in one window. # assumption: the owner corrects these
-  - Dealership work is billed at the rates agreed with the shop. # assumption: the owner corrects these
-  - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
-  - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them. # assumption: the owner corrects these
   - There is no live transfer; a caller who wants to speak with someone can leave a callback note, and someone from the shop calls back as soon as they can.
-  - A request and a callback note each need a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
-  - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
-  - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
 # The questions callers ask, with the shop's answers. Each came from the simulated callers' calls, where a
 # model answered something this file did not (the judge's "gaps", 2026-11-11): the owner answers them here.
 questions: # assumption: the owner corrects these
-  - q: When will someone from the shop call me back?
-    a: Usually the same working day, or the next working day if the shop has closed by then.
   - q: How long will I be without my car?
     a: >-
       Most repairs are ready the same day, by the end of the window you drop off in: about noon for the
       morning window, about 5 for the afternoon. If a job needs longer, the shop tells you when it sends the price.
   - q: Do I need to bring anything when I drop the car off?
     a: Just the car and its keys; there's no paperwork.
-  - q: Does it cost anything to hold a window, or to cancel?
-    a: >-
-      No. Nothing is charged until you accept the shop's price, and you can cancel before drop-off at no cost:
-      reply to our text or get in touch with us.
-  - q: When do I need to send the photo?
-    a: >-
-      As soon as you can: the shop prices the job from it, and your window is held while it waits. Once the
-      shop texts you the price, reply within 24 hours to book it (or by 6 pm the day before drop-off, whichever
-      comes first).
-  - q: What if I can't send a photo?
-    a: That's fine; tell us, and the shop calls you instead to talk the damage through and give you a price.
   - q: Are there any discounts or deals?
     a: We don't run discounts or promotions; the price is the shop's, firmed up from the photo.
   - q: Does the price depend on my car, or on the wheel?
@@ -98,23 +78,82 @@ questions: # assumption: the owner corrects these
     a: Anyone can drop it off with the keys, and there's no need to wait at the shop.
   - q: Where do I park?
     a: Park in front of the detailing shop at 400 Commerce Drive and bring the keys inside.
-  - q: What kind of photo do you need?
-    a: A clear photo of the damaged part of the wheel is enough; more than one angle helps. Reply to our text with them.
-  - q: Do I get a confirmation number or a written quote?
-    a: >-
-      It depends. A repair request has no booking number: the shop texts you its price, that text is your
-      confirmation of the price, and your reply to it books the drop-off. A dealership's booking is made on
-      this line once we read it back and you confirm it, and the line says it is booked and gives its reference.
-  - q: Is my drop-off booked once my request is in?
-    a: >-
-      Not yet. The request holds the drop-off window you picked while the shop prices the job; the drop-off is
-      booked when you reply yes to the shop's price text (or agree the price when the shop calls).
-  - q: Can I call the shop directly?
-    a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
   - q: Is my car ready? What's the status of my wheel?
     a: >-
       We can't look up a job on this line. The shop texts you when your car is ready to collect, or calls if
       you'd rather not have texts; if you'd like someone to call you about it, we can leave a callback note.
+# What the line does for a caller, one journey at a time: the decision model picks the journey each caller turn,
+# and the agent model is then shown that journey's goal, instructions, facts, questions and actions on top of the
+# business information above (docs/designs/2026-11-12-journeys.md; DESIGN.md, "How the facts were split").
+root:
+  instructions: >-
+    Answer what you can from the business information. For anything else, say plainly that it isn't something
+    we can help with, and offer what we can do: send a repair request, book a dealership's cars, or leave a
+    callback note.
+  actions: []
+journeys:
+  repair_request:
+    when: The caller wants a wheel repaired, a price, or to bring a car in.
+    for: { account: none }
+    goal: Send the shop a repair request with a drop-off window, read back and confirmed by the caller.
+    instructions: >-
+      Collect what send_request needs, in whatever order the caller gives it. Look the day up before offering a
+      window. Don't discuss dealership accounts or their rates.
+    facts: # assumption: the owner corrects these
+    - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
+    - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them. # assumption: the owner corrects these
+    - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
+    - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
+    questions: # assumption: the owner corrects these
+    - q: Does it cost anything to hold a window, or to cancel?
+      a: >-
+        No. Nothing is charged until you accept the shop's price, and you can cancel before drop-off at no cost:
+        reply to our text or get in touch with us.
+    - q: When do I need to send the photo?
+      a: >-
+        As soon as you can: the shop prices the job from it, and your window is held while it waits. Once the
+        shop texts you the price, reply within 24 hours to book it (or by 6 pm the day before drop-off, whichever
+        comes first).
+    - q: What if I can't send a photo?
+      a: That's fine; tell us, and the shop calls you instead to talk the damage through and give you a price.
+    - q: What kind of photo do you need?
+      a: A clear photo of the damaged part of the wheel is enough; more than one angle helps. Reply to our text with them.
+    - q: Do I get a confirmation number or a written quote?
+      a: >-
+        A repair request has no booking number: the shop texts you its price, that text is your confirmation
+        of the price, and your reply to it books the drop-off.
+    - q: Is my drop-off booked once my request is in?
+      a: >-
+        Not yet. The request holds the drop-off window you picked while the shop prices the job; the drop-off is
+        booked when you reply yes to the shop's price text (or agree the price when the shop calls).
+    actions: [check_availability, send_request]
+  dealer_booking:
+    when: The caller wants to book cars in for repair.
+    for: { account: recognised }
+    start: { account: recognised }
+    goal: Book the account's cars into a drop-off window, read back and confirmed by the caller.
+    instructions: >-
+      Recognise the account before booking. Look the day up before offering a window, and book only into one
+      with room for every car.
+    facts: # assumption: the owner corrects these
+    - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window, up to three cars in one window. # assumption: the owner corrects these
+    - Dealership work is billed at the rates agreed with the shop. # assumption: the owner corrects these
+    - A dealership's booking is made on this line once we read it back and the caller confirms it, and the line says it is booked and gives its reference. # assumption: the owner corrects these
+    actions: [recognise_caller, check_availability, book_dealer]
+  callback:
+    when: The caller wants to speak with someone, or wants the shop to call them.
+    goal: Leave the shop a callback note, read back and confirmed by the caller.
+    instructions: >-
+      The note carries only the caller's name, the number to call back, what it is about and any notes for the
+      shop.
+    facts: # assumption: the owner corrects these
+    - A request and a callback note each need a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
+    questions: # assumption: the owner corrects these
+    - q: When will someone from the shop call me back?
+      a: Usually the same working day, or the next working day if the shop has closed by then.
+    - q: Can I call the shop directly?
+      a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
+    actions: [leave_callback]
 persona:
   style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
 lines:

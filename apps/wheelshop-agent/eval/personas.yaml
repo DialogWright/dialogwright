@@ -165,3 +165,49 @@ personas:
       textOk: yes
     manner: Rambles, trails off, starts sentences and abandons them, mentions the parking garage and your sister's car, and answers a question a message late.
     expects: request
+
+  # The journeys' personas (docs/designs/2026-11-12-journeys.md, "Measuring it"): their calls count apart from the
+  # twelve above.
+  - id: switches-to-callback
+    goal: Start getting a curb-rash repair booked in, ask halfway to have someone call you instead, then come back and finish the request.
+    truth:
+      name: Morgan Placeholder
+      car: 2017 Ford Focus
+      wheels: one
+      damage: curb rash on the rear left wheel
+      face: painted all over
+      day: Wednesday
+      window: afternoon
+      callbackNumber: "555 555 0131"
+      textOk: yes
+      callback: Halfway through, you ask whether someone can call you about an older wheel you left with the shop last month, and give the same number. Once that is sorted, you go back to the request and finish it.
+    manner: Friendly and a little scattered. Changes track mid-sentence and says so ("actually, before that"), then returns to what you were doing.
+    expects: request
+
+  - id: side-question
+    goal: Get a curb-rash repair booked in, asking the hours and where to park partway through.
+    truth:
+      name: Sam Sample
+      car: 2020 Mazda CX-5
+      wheels: two
+      damage: curb rash on both front wheels
+      face: painted all over
+      day: Monday
+      window: morning
+      callbackNumber: "555 555 0132"
+      textOk: yes
+      sideQuestions: Partway through you ask what hours the shop is open, and later where you should park when you drop the car off.
+    manner: Practical. Answers what is asked, asks your own questions as they occur to you, and expects to carry on where you left off.
+    expects: request
+
+  - id: wanders-off
+    goal: Ask about tyres, the weather and a car wash, then settle on a price for curb rash on one wheel.
+    truth:
+      name: Pat Nobody
+      car: Nissan Leaf
+      wheels: one
+      damage: curb rash
+      face: painted
+      ask: You open by asking whether the shop sells tyres, then what the weather will be on Friday, then whether it also washes cars. Only then do you ask what curb rash on one wheel would cost.
+    manner: Chatty and unfocused, a person killing time. You will not book or leave details today; the price is what you want.
+    expects: answer

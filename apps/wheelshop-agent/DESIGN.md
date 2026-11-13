@@ -33,6 +33,20 @@ The demo needs answers only the owner can give. As with a real client, `agent.ya
 
 The shop's own texts (the photo request, the summaries, the quote) are in `src/shopTexts.ts`: agent.yaml describes the business the model speaks for and has no place for the texts the code sends, and a converse folder holds only app.yaml and agent.yaml.
 
+## How the facts were split among the journeys
+
+The line has three journeys (`repair_request`, `dealer_booking`, `callback`) and a root, per the spec's table ([the design](../../docs/designs/2026-11-12-journeys.md), "The wheel shop's journeys"). The owner corrects the split by moving an item between `agent.yaml`'s top level and a journey; every item keeps its assumption marker.
+
+| Where | What is there |
+|---|---|
+| Base (every journey sees it) | Who, where and hours; services, ballpark prices and the caveat; what is not offered; the damage and diamond cut facts; the drop-off windows and turnaround; dealerships send trade-ins here; no live transfer, and that a callback note exists; the answers on turnaround, what to bring, discounts, price by car, being late, pick-up, someone else dropping off, parking and the job's status. |
+| `repair_request` | A request holds its window until the shop prices it from a photo; the photo by text, or a call without the yes to texts; no photos on the line; what photo, and what if the caller cannot send one; when to send it; holding and cancelling cost nothing; a request is not a booking until the price is accepted; no booking number. Actions `check_availability`, `send_request`. Instructions: do not discuss dealership accounts. |
+| `dealer_booking` | Accounts are recognised by number and booked straight into a window, up to three cars; billed at the agreed rates; the booking is made on the line once read back and confirmed, with its reference. Starts the call for a recognised account. Actions `recognise_caller`, `check_availability`, `book_dealer`. |
+| `callback` | A callback note needs a number the caller gives; when someone calls back; there is no direct line. Action `leave_callback`. Instructions: the note carries only the name, the number, what it is about and notes. |
+| Root | Answer from the base; for anything else say it is not something we help with and offer the three tasks. No actions. |
+
+One judgment to check: the answer to "Do I get a confirmation number or a written quote?" used to describe both a request and a dealership booking. Its dealership half became a `dealer_booking` fact, so a repair request's answer never mentions dealership accounts.
+
 ## What changed from the old app, and why
 
 - **One file of the business, and the model talks.** The old app built intents, forms and slots from `business.yaml` and checked each value the model understood by its slot type; the model never called a tool. Here the model calls the actions itself, the runtime checks each value by its param's type, and the read-back and the gate are the guard.

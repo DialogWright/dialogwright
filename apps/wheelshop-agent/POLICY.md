@@ -19,23 +19,47 @@
 
 - The agent model is sent, in full: the caller's words, its own replies, the fixed lines said, the arguments of its own action calls, each read-back as it was said (the caller's own values among it), and what each action returned, as the action returned it. Nothing checks an action's result: there is no closed-form check on a converse action's reply, so an action returns only what the model may see. This app has no identity factors to withhold.
 - The decision model (not the agent model) is sent each read-back as it was said, the caller's own words in answer to it and the business's day (today's date, in words), to read a yes or a no. The check after speaking is off (agent.yaml `checks.claims.mode: off`): the decision model is sent no reply of the agent model.
+- For routing among the journeys, the decision model is also sent each caller turn's words, the line's last reply before them (the read-back waiting for its answer, where one is), and the trigger (`when`) of each journey open to the caller (the journey in progress and one set aside among them); in a finished journey's after phase, also the finished journey's goal. A turn whose yes runs its read-back is not routed.
 - The caller's number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions' code (a phone param the model writes as `caller` is resolved by the runtime).
 - Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call's values were not valid for their types, and the words an action failed with, go to the agent model as written.
 - The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below). Only the audit records an action's result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.
 - The caller's own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.
 
+## Journeys
+
+- Each caller turn, the decision model reads which journey (task) the caller wants now. The agent model is offered only the actions of the journey it is in (or the root's), and an action of another journey is refused as not offered, audited and not counted as a refusal of the action.
+- The root offers no actions and has its own instructions.
+
+### `repair_request`
+
+- Trigger: The caller wants a wheel repaired, a price, or to bring a car in.
+- Open only where the number calling is on no account.
+- Actions: `check_availability` and `send_request`
+
+### `dealer_booking`
+
+- Trigger: The caller wants to book cars in for repair.
+- Open only where the number calling is on an account. Starts the call there.
+- Actions: `recognise_caller`, `check_availability` and `book_dealer`
+
+### `callback`
+
+- Trigger: The caller wants to speak with someone, or wants the shop to call them.
+- Open to every caller.
+- Actions: `leave_callback`
+
 ## Actions
 
-| Action | Kind | Offered to the model | Rules | Follow-on actions |
-| --- | --- | --- | --- | --- |
-| `recognise_caller` | lookup | yes | none | none |
-| `check_availability` | lookup | yes | none | none |
-| `send_request` | change | yes | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | `send_photo_request`, `notify_shop_request` |
-| `send_photo_request` | change | no: follows `send_request` | `oneOf(textOk: yes)`, `confirmed(callbackNumber, textOk)` | none |
-| `notify_shop_request` | change | no: follows `send_request` | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | none |
-| `book_dealer` | change | yes | `confirmed(account, cars, vehicles, slot)` | `notify_shop_booking` |
-| `notify_shop_booking` | change | no: follows `book_dealer` | `confirmed(account, cars, vehicles, slot)` | none |
-| `leave_callback` | change | yes | `confirmed(name, callbackNumber, about, notes)` | none |
+| Action | Kind | Offered to the model | Journeys | Rules | Follow-on actions |
+| --- | --- | --- | --- | --- | --- |
+| `recognise_caller` | lookup | yes | `dealer_booking` | none | none |
+| `check_availability` | lookup | yes | `repair_request`, `dealer_booking` | none | none |
+| `send_request` | change | yes | `repair_request` | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | `send_photo_request`, `notify_shop_request` |
+| `send_photo_request` | change | no: follows `send_request` | none | `oneOf(textOk: yes)`, `confirmed(callbackNumber, textOk)` | none |
+| `notify_shop_request` | change | no: follows `send_request` | none | `confirmed(name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes)` | none |
+| `book_dealer` | change | yes | `dealer_booking` | `confirmed(account, cars, vehicles, slot)` | `notify_shop_booking` |
+| `notify_shop_booking` | change | no: follows `book_dealer` | none | `confirmed(account, cars, vehicles, slot)` | none |
+| `leave_callback` | change | yes | `callback` | `confirmed(name, callbackNumber, about, notes)` | none |
 
 ### `recognise_caller`: a lookup
 
