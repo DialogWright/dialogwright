@@ -8,8 +8,14 @@ The wheel shop (`apps/wheelshop-agent`) was rebuilt with three journeys ([the de
 It was then run on the simulated callers and compared with the prevention baseline
 ([2026-11-prevention.md](2026-11-prevention.md), the Muse Ember runs).
 
-**Verdict:** worse than the baseline on the bar that decides the merge. The wheel shop's journeys stay on their
-branch. The engine's journeys are on main and change nothing for an app without them.
+**Verdict.**
+- **The first run (part 1 below)** was worse than the baseline: a wrong first route trapped callers in the wrong task.
+- **After the amendment ("guide the caller, don't guess", [part 2](#part-2-guide-the-caller-dont-guess)):**
+  - callers get what they came for more often than without journeys;
+  - serious wrong replies are level with the baseline;
+  - gaps fall by two thirds;
+  - the raw rate of wrong replies is 0.8 per 100 calls above the baseline, within noise and within the labellers'
+    difference.
 
 ## The runs
 
@@ -155,3 +161,115 @@ Before the wheel shop merges, that needs one of these:
 
 These are the maintainer's choices to make. The calls, the labels and the labelling briefs stay outside the
 repository with the runs. This page holds only their figures.
+
+## Part 2: guide the caller, don't guess
+
+The amendment of 2026-11-13 ([the design](../2026-11-12-journeys.md#amendment-2026-11-13-guide-the-caller-dont-guess))
+made four changes:
+- **Unclear turns.** The line detects a turn it cannot follow, guides the caller with escalating goals, offers only
+  lookups on that turn, and ends the call politely on the third such turn in a row.
+- **A stricter start** (`routing.startAt`).
+- **A way out of a task.**
+- **A receptionist's greeting.**
+
+The same 300 simulated calls were run again and labelled by the same brief.
+
+**Time of day.** These calls ran on Friday at about 1 am Eastern, with the shop closed but today's windows still
+ahead. The baseline ran on Thursday afternoon, and the first journeys run on Thursday night.
+
+### Routing, measured again
+
+The routing labels gained two things:
+- the split of `none` into "a question about the business" and "none of these";
+- `fits` for turns inside a task.
+
+That gives 304 caller turns from the baseline's calls: 23 questions, 36 none, and 10 turns inside a task that did
+not fit.
+
+**The first wording measured badly.** It was a `fits` question about "what the line just asked for", with a turn at
+the root unclear whenever a journey read below the start bar. It flagged ordinary turns as unclear: only 21% of its
+unclear readings were right.
+
+Three things were reworded:
+- `fits` now asks whether the turn has anything to do with the task;
+- "a question" now includes questions about the line itself;
+- a turn at the root is unclear only when "none of these" is the top reading.
+
+The table below is that wording, recorded at `routing.switchAt` 0.6.
+
+| Start bar | Accuracy | Unclear recall | Unclear precision | Missed starts |
+| --- | --- | --- | --- | --- |
+| 0.6 | 0.90 | 0.32 | 0.55 | 8 of 52 |
+| **0.7 (the wheel shop's)** | **0.90** | **0.32** | **0.55** | **10 of 52** |
+| 0.8 | 0.88 | 0.32 | 0.55 | 17 of 52 |
+| 0.9 | 0.87 | 0.32 | 0.55 | 19 of 52 |
+
+**Why 0.7.** It keeps 0.6's accuracy with fewer wrong starts, while 0.8 misses a third of the callers' starts. No
+bar met the plan's rule (unclear recall of 0.9 with missed starts under 5%).
+
+**The unclear reading misses a lot, by design.** It catches a third of the labelled unclear turns. Most of the rest
+are off-topic asks (a tyre quote) that start the repair request, where the model then says the shop doesn't do
+tyres. Its precision is what protects callers who are cooperating.
+
+The decision model answered in 74 ms at the median and 101 ms at the 95th percentile.
+
+### Wrong replies
+
+| Per 100 calls | Baseline | Journeys, first run | Journeys, after the amendment |
+| --- | --- | --- | --- |
+| Wrong replies (12 personas) | 11.7 | 13.8 | 12.5 |
+| Severity 2 or more | 8.3 | 8.8 | 8.3 |
+| Gaps | 14.2 | 17.5 | 4.6 |
+| Wrong replies (3 new personas) | | 11.7 | 8.3 |
+
+- **Three of the 30 are severity 1 replies saying a request "didn't go through"** while it only waited for the
+  caller's yes. That pattern is in the baseline's calls too, unlabelled there. Without them the rate is 11.3.
+- **Gaps fell by two thirds.** Gaps are commitments the business information does not cover. Each task's own facts
+  answer more of what callers ask.
+
+### Whether callers got what they came for
+
+| Persona (expects) | Baseline | First run | After the amendment |
+| --- | --- | --- | --- |
+| retail-all-at-once (request) | 10/10 | 17/20 | 18/20 |
+| retail-out-of-order (request) | 9/10 | 3/20 | **15/20** |
+| retail-corrects-readback (request) | 10/10 | 13/20 | 14/20 |
+| asks-if-real-person (request) | 6/10 | 7/20 | 16/20 |
+| discount-pusher (request) | 10/10 | 19/20 | 19/20 |
+| terse (request) | 7/10 | 7/20 | 17/20 |
+| rambling-fragments (request) | 8/10 | 19/20 | 18/20 |
+| dealership-regular (booking) | 4/10 | 11/20 | 14/20 |
+| wants-a-person (callback) | 8/10 | 19/20 | 19/20 |
+| **All nine** | **72/90 (80%)** | **115/180 (64%)** | **150/180 (83%)** |
+
+The caller who opens with only a number and a day is now guided to the task, and 15 of 20 finish it.
+
+### Switching, side questions, wandering, and calls ended as unclear
+
+| Persona | First run | After the amendment |
+| --- | --- | --- |
+| switches-to-callback: the callback taken up as its own task, then back to the request | 11 of 18 | 18 of 20 |
+| switches-to-callback: something already given asked again | 4 calls | 2 calls |
+| side-question: hours and parking answered, request carried on | 20 of 20 | 20 of 20 |
+| wanders-off: the price given | 20 of 20 | 20 of 20 |
+
+**Calls ended as unclear.** Eleven calls were ended this way, all from the off-topic persona (tyres, headlights,
+restaurants), and every one was read as fair: a receptionist could not have helped either. In 7 of them the
+guidance before the end said exactly what to say; in 4 it said what the line can do without a phrase to say.
+
+**Rough edges:**
+- A caller's plain goodbye that arrives as the third unclear turn hears the "this line can only help with…" line
+  rather than the closing line.
+- The read-back says the window as the shop labels it ("afternoon, by noon"), and some callers argued with that
+  wording. It is the shop's wording, and was there before journeys.
+
+### Speed and cost
+
+| | Baseline | Journeys, after the amendment |
+| --- | --- | --- |
+| First sentence, median | 0.74 to 0.76 s | 0.68 to 0.71 s |
+| First sentence, 95th percentile | 1.24 to 1.29 s | 1.16 to 1.24 s |
+| Timeouts | 0.0 to 0.9% of turns | 0.7 to 1.2% of turns |
+| The line's model, per call | $0.0038 to $0.0040 | $0.0032 to $0.0033 |
+
+The second run cost $1.41.
