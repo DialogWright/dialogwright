@@ -43,8 +43,25 @@ export interface ConverseState {
    * request. Absent (as in a state saved before it was kept): none ran.
    */
   done?: DoneChange[];
+  /**
+   * Where the call is among the business's journeys. Absent: the app has no journeys, or the state was saved
+   * before them (a field not in the shape loads as absent).
+   */
+  journey?: JourneyState;
   /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
   ended?: 'closing' | 'handoff' | 'left';
+}
+
+/** Where a call is among the journeys: the one the turn is in (null: the root), its phase, the one set aside and those done. */
+export interface JourneyState {
+  /** The journey the turn is in, or null at the root. */
+  active: string | null;
+  /** after: its completing action ran; its information stays, its changes are withdrawn. */
+  phase: 'working' | 'after';
+  /** Set aside by a switch; at most one. */
+  paused: string | null;
+  /** Journeys whose completing action ran on this call, in order. */
+  done: string[];
 }
 
 /** A change that ran on the call: its action, its read-back as said and confirmed, and what it and each follow-on returned (`<action>: <result>`). */
