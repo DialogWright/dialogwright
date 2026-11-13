@@ -162,8 +162,8 @@ describe('journeys', () => {
     expect(r.problems).toEqual([]);
     expect(r.value).not.toHaveProperty('journeys');
     expect(r.value).not.toHaveProperty('root');
-    expect(r.value!.routing).toEqual({ switchAt: 0.6, startAt: 0.8, timeoutMs: 400 });
-    expect(ROUTING_DEFAULTS).toEqual({ switchAt: 0.6, startAt: 0.8, timeoutMs: 400 });
+    expect(r.value!.routing).toEqual({ switchAt: 0.6, startAt: 0.7, timeoutMs: 400 });
+    expect(ROUTING_DEFAULTS).toEqual({ switchAt: 0.6, startAt: 0.7, timeoutMs: 400 });
   });
 
   it('a journey with an empty when or goal is refused', () => {

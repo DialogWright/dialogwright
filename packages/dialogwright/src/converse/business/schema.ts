@@ -112,7 +112,7 @@ const question = z.strictObject({ q: text().describe('A question callers ask, in
 export const ACCOUNT_FACTS = ['recognised', 'none'] as const;
 export type AccountFact = (typeof ACCOUNT_FACTS)[number];
 /** Routing's defaults: the bar a switch to another journey must reach, the stricter bar a start from the root must reach, and how long the decision model may take. */
-export const ROUTING_DEFAULTS = { switchAt: 0.6, startAt: 0.8, timeoutMs: 400 } as const;
+export const ROUTING_DEFAULTS = { switchAt: 0.6, startAt: 0.7, timeoutMs: 400 } as const;
 
 const journey = z
   .strictObject({
@@ -385,7 +385,7 @@ export const agentBusinessSchema = z
     routing: z
       .strictObject({
         switchAt: bar('The bar the decision model\'s reading must reach for the line to move to another journey.', ROUTING_DEFAULTS.switchAt),
-        startAt: bar('The bar the decision model\'s reading must reach for a journey to start from the root; below it the turn is unclear. At least switchAt.', ROUTING_DEFAULTS.startAt),
+        startAt: bar('The bar the decision model\'s reading must reach for a journey to start from the root; below it the turn is unclear. At least switchAt. The default, 0.7, is the value measured on labelled caller turns (docs/designs/eval/2026-11-journeys.md).', ROUTING_DEFAULTS.startAt),
         timeoutMs: z.number().int().positive().default(ROUTING_DEFAULTS.timeoutMs).describe(`How long the decision model may take to read a turn before the turn goes on with the active journey (or the root). Default: ${ROUTING_DEFAULTS.timeoutMs}.`),
       })
       .default({ ...ROUTING_DEFAULTS })

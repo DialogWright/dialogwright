@@ -92,8 +92,8 @@ root:
     Answer what you can from the business information. For anything else, say plainly that it isn't something
     we can help with, and offer what we can do: send a repair request or leave a callback note.
   actions: []
-# The bar a journey's reading must reach to start from the root: chosen on labelled turns (0.7 kept the best
-# accuracy with fewer wrong starts than 0.6, and 0.8 missed a third of starts; docs/designs/eval/2026-11-journeys.md).
+# The shop keeps 0.7 explicitly; it matches the engine default now, chosen on labelled turns (0.6 started wrongly
+# more often, 0.8 missed a third of starts; docs/designs/eval/2026-11-journeys.md).
 routing:
   startAt: 0.7
 journeys:

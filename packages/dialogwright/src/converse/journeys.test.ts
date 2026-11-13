@@ -112,10 +112,10 @@ describe('decideRoute', () => {
   it('at the root, none on top stays at the root, unclear; a journey below the start bar with none not on top is clear', () => {
     const unclear = { outcome: 'root', unclear: true, next: { ...root, unclear: 1 } };
     expect(decideRoute(plain, root, reading({ task: { visit: 0.2, none: 0.8 } }), open)).toEqual(unclear);
-    expect(decideRoute(plain, root, reading({ task: { visit: 0.79, none: 0.21 } }), open)).toEqual({ outcome: 'root', next: root });
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.69, none: 0.31 } }), open)).toEqual({ outcome: 'root', next: root });
   });
   it('a probability exactly at the start bar counts as a start', () => {
-    expect(decideRoute(plain, root, reading({ task: { visit: 0.8, none: 0.2 } }), open).outcome).toBe('start');
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.7, none: 0.3 } }), open).outcome).toBe('start');
   });
   it('a closed journey named by Jev is never routed to', () => {
     const o = openJourneys(acct, anon);
@@ -256,7 +256,7 @@ describe('unclear turns', () => {
   });
   it('at the root, a journey set aside read between switchAt and startAt is not a return, and is clear', () => {
     const j: JourneyState = { ...root, paused: 'visit' };
-    const r = decideRoute(plain, j, reading({ task: { visit: 0.7, none: 0.3 } }), open);
+    const r = decideRoute(plain, j, reading({ task: { visit: 0.65, none: 0.35 } }), open);
     expect(r).toEqual({ outcome: 'root', next: j });
   });
   it('a null reading starts the count again and is never unclear', () => {
