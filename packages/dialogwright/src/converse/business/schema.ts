@@ -106,6 +106,30 @@ const calendar = z
 
 const account = z.strictObject({ name: text().describe('The account\'s name.'), numbers: z.array(numberOrEnv()).default([]).describe('The numbers it calls from: E.164, or env.<NAME>. A variable that is not set is left out.') }).describe('A caller account, recognised by the numbers it calls from.');
 
+const question = z.strictObject({ q: text().describe('A question callers ask, in their words.'), a: text().describe('The business\'s answer, as the agent may say it.') }).describe('One question and its answer.');
+
+/** What a journey may ask of the caller's account, a fact of the call the runtime already has (a recognised account is not an identity). */
+export const ACCOUNT_FACTS = ['recognised', 'none'] as const;
+export type AccountFact = (typeof ACCOUNT_FACTS)[number];
+/** Routing's defaults: the bar a switch to another journey must reach, and how long the decision model may take. */
+export const ROUTING_DEFAULTS = { switchAt: 0.6, timeoutMs: 400 } as const;
+
+const journey = z
+  .strictObject({
+    when: text().describe('The trigger, in plain words: what the caller wants. It is what the decision model reads, and what the root model is told the line can help with. Say what the caller wants, never who they are.'),
+    goal: text().describe('What the journey achieves, in one sentence.'),
+    instructions: text().optional().describe('What to collect, what to check first, what not to mention. Goals and limits, never wording.'),
+    facts: z.array(text()).default([]).describe('This journey\'s own facts, added to the base\'s for this journey only. A journey cannot remove or override a base fact.'),
+    questions: z.array(question).default([]).describe('This journey\'s own questions callers ask, with the business\'s answers, added to the base\'s for this journey only.'),
+    actions: z.array(identifier()).default([]).describe('The actions it may use, named from the top-level actions. Each action is defined once and may be named by several journeys.'),
+    for: z.strictObject({ account: z.enum(ACCOUNT_FACTS).describe('recognised: open only where the number calling is on an account. none: open only where it is on none.') }).optional().describe('Which callers the journey is open to, by a fact of the call. A journey closed to the caller is never one of the decision model\'s options. Absent: open to every caller.'),
+    start: z.strictObject({ account: z.literal('recognised').describe('Start where the number calling is on an account.') }).optional().describe('A fact of the call that starts the journey before the caller speaks. At most one journey says it.'),
+    completes: z.array(identifier()).optional().describe('The change actions whose confirmed run ends the journey. Default: all the change actions it names that are not follow-ons.'),
+    after: text().optional().describe('What the line helps with once the journey is done, in one sentence. Default: "<goal>: done on this call. Answer the caller\'s questions about it."'),
+  })
+  .describe('One journey: a task the line can take on, with its own instructions, facts and actions.');
+export type JourneySpec = z.output<typeof journey>;
+
 const issue = (ctx: z.core.$RefinementCtx, path: (string | number)[], message: string, fix: string): void => ctx.addIssue({ code: 'custom', path, message, params: { fix } });
 const isMap = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -219,6 +243,43 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
       for (const key of Object.keys(a.audit)) if (!Object.hasOwn(params, key)) issue(ctx, ['actions', name, 'audit', key], `"${key}" is no param of "${name}"`, `name one of its params (${Object.keys(params).join(', ') || 'it has none'}), or delete the entry`);
     }
   }
+
+  if (isMap(root.root) && Array.isArray(root.root.actions)) {
+    root.root.actions.forEach((n, i) => {
+      if (typeof n !== 'string') return;
+      if (!Object.hasOwn(actions, n)) issue(ctx, ['root', 'actions', i], `"${n}" is no action`, `name one of the actions (${Object.keys(actions).join(', ')}), or add "${n}" under actions`);
+      else if (kindOf(n) !== 'lookup') issue(ctx, ['root', 'actions', i], `the root names the change "${n}"`, 'the root offers lookups only: move the change into a journey');
+      else if (followed.has(n)) issue(ctx, ['root', 'actions', i], `the root names "${n}", which is a follow-on`, 'a follow-on is never offered to the model: delete it');
+    });
+  }
+  if (isMap(root.journeys)) {
+    const named = new Set<string>();
+    const starters: string[] = [];
+    for (const [id, j] of Object.entries(root.journeys)) {
+      if (!isMap(j)) continue;
+      const listed = Array.isArray(j.actions) ? j.actions.filter((n): n is string => typeof n === 'string') : [];
+      listed.forEach((n, i) => {
+        named.add(n);
+        if (!Object.hasOwn(actions, n)) issue(ctx, ['journeys', id, 'actions', i], `"${n}" is no action`, `name one of the actions (${Object.keys(actions).join(', ')}), or add "${n}" under actions`);
+        else if (followed.has(n)) issue(ctx, ['journeys', id, 'actions', i], `the journey "${id}" names "${n}", which is a follow-on`, 'a follow-on runs on its parent\'s yes and is never offered to the model: delete it from the journey');
+      });
+      if (Array.isArray(j.completes)) {
+        j.completes.forEach((n, i) => {
+          if (typeof n !== 'string') return;
+          if (!listed.includes(n)) issue(ctx, ['journeys', id, 'completes', i], `"${n}" is not among the actions of "${id}"`, `name one of its actions (${listed.join(', ') || 'it has none'}), or add "${n}" to its actions`);
+          else if (kindOf(n) !== 'change') issue(ctx, ['journeys', id, 'completes', i], `"${n}" is not a change`, 'only a confirmed change ends a journey: name a change action, or delete the entry');
+        });
+      }
+      if (isMap(j.start)) {
+        starters.push(id);
+        if (isMap(j.for) && j.for.account === 'none') issue(ctx, ['journeys', id, 'start'], `the journey "${id}" starts where the number is on an account and is open only where it is on none`, 'delete "start", or make "for" account: recognised');
+      }
+    }
+    if (starters.length > 1) issue(ctx, ['journeys', starters[1]!, 'start'], `${starters.join(' and ')} both say start, and two would race at the call's start`, `keep "start" on one journey and delete it from ${starters.slice(1).join(', ')}`);
+    for (const [name, a] of Object.entries(actions)) {
+      if (isMap(a) && a.kind === 'change' && !followed.has(name) && !named.has(name)) issue(ctx, ['actions', name], `the change "${name}" is named by no journey, so it could never be offered`, `add "${name}" to a journey's actions, or delete it`);
+    }
+  }
 }
 
 export const agentBusinessSchema = z
@@ -243,7 +304,7 @@ export const agentBusinessSchema = z
     notOffered: z.array(text()).default([]).describe('What the business does not do.'),
     facts: z.array(text()).default([]).describe('Anything else the agent may say, one fact each.'),
     questions: z
-      .array(z.strictObject({ q: text().describe('A question callers ask, in their words.'), a: text().describe('The business\'s answer, as the agent may say it.') }).describe('One question and its answer.'))
+      .array(question)
       .default([])
       .describe('The questions callers ask and the business\'s answers: what to bring, how long things take, when someone calls back, what it costs to cancel. Where the business has not answered a question, the agent has nothing to go on; the simulated callers\' judge lists such answers as gaps for the owner to fill in here.'),
     persona: z
@@ -303,6 +364,21 @@ export const agentBusinessSchema = z
       .default({})
       .describe('Where the calendar and the caller accounts come from.'),
     actions: z.record(identifier(), action).default({}).describe('Every action the agent may call, by name.'),
+    root: z
+      .strictObject({
+        instructions: text().optional().describe('How the line answers when no journey is active: the business\'s own guidance, never a script.'),
+        actions: z.array(identifier()).default([]).describe('The actions offered at the root: lookups only. Default: none.'),
+      })
+      .optional()
+      .describe('The line when no journey is active.'),
+    routing: z
+      .strictObject({
+        switchAt: bar('The bar the decision model\'s reading must reach for the line to move to another journey.', ROUTING_DEFAULTS.switchAt),
+        timeoutMs: z.number().int().positive().default(ROUTING_DEFAULTS.timeoutMs).describe(`How long the decision model may take to read a turn before the turn goes on with the active journey (or the root). Default: ${ROUTING_DEFAULTS.timeoutMs}.`),
+      })
+      .default({ ...ROUTING_DEFAULTS })
+      .describe('How each caller turn is routed to a journey.'),
+    journeys: z.record(identifier(), journey).optional().describe('The tasks the line can take on, by id. Absent: one conversation with every action, as before.'),
     transfer: z.strictObject({ number: numberOrEnv().describe('The number to hand a call to: E.164, or env.<NAME>.') }).optional().describe('Where a call goes when it is handed to a person.'),
   })
   .check(checkAlways(crossChecks))

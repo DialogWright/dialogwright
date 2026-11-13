@@ -1087,6 +1087,176 @@
         "description": "One action the agent may call."
       }
     },
+    "root": {
+      "description": "The line when no journey is active.",
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "description": "How the line answers when no journey is active: the business's own guidance, never a script.",
+          "type": "string",
+          "minLength": 1
+        },
+        "actions": {
+          "default": [],
+          "description": "The actions offered at the root: lookups only. Default: none.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "routing": {
+      "default": {
+        "switchAt": 0.6,
+        "timeoutMs": 400
+      },
+      "description": "How each caller turn is routed to a journey.",
+      "type": "object",
+      "properties": {
+        "switchAt": {
+          "default": 0.6,
+          "description": "The bar the decision model's reading must reach for the line to move to another journey. A number over 0 and at most 1. Default: 0.6.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "timeoutMs": {
+          "default": 400,
+          "description": "How long the decision model may take to read a turn before the turn goes on with the active journey (or the root). Default: 400.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "journeys": {
+      "description": "The tasks the line can take on, by id. Absent: one conversation with every action, as before.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "when": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The trigger, in plain words: what the caller wants. It is what the decision model reads, and what the root model is told the line can help with. Say what the caller wants, never who they are."
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the journey achieves, in one sentence."
+          },
+          "instructions": {
+            "description": "What to collect, what to check first, what not to mention. Goals and limits, never wording.",
+            "type": "string",
+            "minLength": 1
+          },
+          "facts": {
+            "default": [],
+            "description": "This journey's own facts, added to the base's for this journey only. A journey cannot remove or override a base fact.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "questions": {
+            "default": [],
+            "description": "This journey's own questions callers ask, with the business's answers, added to the base's for this journey only.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A question callers ask, in their words."
+                },
+                "a": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The business's answer, as the agent may say it."
+                }
+              },
+              "required": [
+                "q",
+                "a"
+              ],
+              "additionalProperties": false,
+              "description": "One question and its answer."
+            }
+          },
+          "actions": {
+            "default": [],
+            "description": "The actions it may use, named from the top-level actions. Each action is defined once and may be named by several journeys.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            }
+          },
+          "for": {
+            "description": "Which callers the journey is open to, by a fact of the call. A journey closed to the caller is never one of the decision model's options. Absent: open to every caller.",
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "enum": [
+                  "recognised",
+                  "none"
+                ],
+                "description": "recognised: open only where the number calling is on an account. none: open only where it is on none."
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "start": {
+            "description": "A fact of the call that starts the journey before the caller speaks. At most one journey says it.",
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "const": "recognised",
+                "description": "Start where the number calling is on an account."
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "completes": {
+            "description": "The change actions whose confirmed run ends the journey. Default: all the change actions it names that are not follow-ons.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            }
+          },
+          "after": {
+            "description": "What the line helps with once the journey is done, in one sentence. Default: \"<goal>: done on this call. Answer the caller's questions about it.\"",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "when",
+          "goal"
+        ],
+        "additionalProperties": false,
+        "description": "One journey: a task the line can take on, with its own instructions, facts and actions."
+      }
+    },
     "transfer": {
       "description": "Where a call goes when it is handed to a person.",
       "type": "object",

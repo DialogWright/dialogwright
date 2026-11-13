@@ -6,6 +6,9 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { checkAppFully } from '../../define/check';
 import { formatProblem } from '../../define/problems';
 import { CALLBACK_DIR, callbackCode } from '../../testing/callback/app';
+import { ACCOUNT_JOURNEYS_YAML, JOURNEYS_YAML, LEAVE_NOTE_ACTION } from '../../testing/converse/journeys';
+import { agentBusinessProblems } from './load';
+import { ROUTING_DEFAULTS } from './schema';
 
 /**
  * `pnpm check` and agent.yaml: a converse app's folder (app.yaml's mode: converse) has its agent.yaml
@@ -53,5 +56,94 @@ describe('pnpm check and agent.yaml', () => {
     const out = await problemsOf(text.replace('then: [notify]', 'then: [nothing]'));
     expect(out).toHaveLength(1);
     expect(out[0]).toMatch(/^agent\.yaml:\d+:\d+  actions\.book\.then\[0\]  "nothing" is no action .*->  /);
+  });
+});
+
+describe('journeys', () => {
+  const base = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'testing', 'converse', 'agent.yaml'), 'utf8');
+  const withJourneys = base + LEAVE_NOTE_ACTION + JOURNEYS_YAML;
+  const changed = (from: string, to: string, source: string = withJourneys): string => {
+    expect(source).toContain(from);
+    return source.replace(from, to);
+  };
+  const problemsOf = (t: string) => agentBusinessProblems(t).problems;
+  const only = (t: string) => {
+    const out = problemsOf(t);
+    expect(out).toHaveLength(1);
+    return out[0]!;
+  };
+
+  it('the fixture with journeys is valid, with and without accounts', () => {
+    expect(problemsOf(withJourneys)).toEqual([]);
+    expect(problemsOf(base + LEAVE_NOTE_ACTION + ACCOUNT_JOURNEYS_YAML)).toEqual([]);
+  });
+
+  it('a journey names an action that does not exist', () => {
+    const p = only(changed('actions: [availability, book]', 'actions: [book, nothing]'));
+    expect(p.path).toBe('journeys.visit.actions[1]');
+    expect(p.fix).toMatch(/name one of the actions/);
+  });
+
+  it('the root names a change action', () => {
+    const p = only(changed('root:\n', 'root:\n  actions: [book]\n'));
+    expect(p.path).toBe('root.actions[0]');
+    expect(p.fix).toMatch(/lookups only/);
+  });
+
+  it('a journey names a follow-on', () => {
+    const t = changed('    audit: { name: length, phone: last4 }\n  leave_note:', '    then: [leave_note]\n    audit: { name: length, phone: last4 }\n  leave_note:')
+      .replace('actions: [leave_note]', 'actions: [availability, book, leave_note]');
+    const out = problemsOf(t).filter((x) => x.path.startsWith('journeys'));
+    // the follow-on leave_note is named by the note journey at index 2
+    expect(out.map((x) => x.path)).toEqual(['journeys.note.actions[2]']);
+    expect(out[0]!.fix).toMatch(/follow-on/);
+  });
+
+  it('a change action no journey names', () => {
+    const p = only(changed('    actions: [leave_note]\n', '    actions: []\n'));
+    expect(p.path).toBe('actions.leave_note');
+    expect(p.fix).toMatch(/add "leave_note" to a journey/);
+  });
+
+  it('an unnamed change is no problem where there are no journeys', () => {
+    expect(problemsOf(base + LEAVE_NOTE_ACTION)).toEqual([]);
+  });
+
+  it('completes names an action the journey does not list, or a lookup', () => {
+    const notListed = only(changed('    actions: [availability, book]\n', '    completes: [leave_note]\n    actions: [availability, book]\n'));
+    expect(notListed.path).toBe('journeys.visit.completes[0]');
+    expect(notListed.fix).toMatch(/name one of its actions/);
+    const lookup = only(changed('    actions: [availability, book]\n', '    completes: [availability]\n    actions: [availability, book]\n'));
+    expect(lookup.path).toBe('journeys.visit.completes[0]');
+    expect(lookup.fix).toMatch(/change action/);
+  });
+
+  it('two journeys say start', () => {
+    const t = base + LEAVE_NOTE_ACTION + ACCOUNT_JOURNEYS_YAML;
+    expect(problemsOf(t)).toEqual([]);
+    const p = only(changed('    when: The caller wants to speak with someone, or wants a call back.\n', '    start: { account: recognised }\n    when: The caller wants to speak with someone, or wants a call back.\n', t));
+    expect(p.path).toBe('journeys.note.start');
+    expect(p.fix).toMatch(/keep "start" on one journey/);
+  });
+
+  it('start where for says account: none', () => {
+    const t = base + LEAVE_NOTE_ACTION + ACCOUNT_JOURNEYS_YAML;
+    const p = only(changed('    for: { account: none }\n', '    for: { account: none }\n    start: { account: recognised }\n', t).replace('    start: { account: recognised }\n    goal: Book the account', '    goal: Book the account'));
+    expect(p.path).toBe('journeys.visit.start');
+    expect(p.fix).toMatch(/account: recognised/);
+  });
+
+  it('an app without journeys gets no journey problems and its value has no journeys key, with routing defaults', () => {
+    const r = agentBusinessProblems(base);
+    expect(r.problems).toEqual([]);
+    expect(r.value).not.toHaveProperty('journeys');
+    expect(r.value).not.toHaveProperty('root');
+    expect(r.value!.routing).toEqual({ switchAt: 0.6, timeoutMs: 400 });
+    expect(ROUTING_DEFAULTS).toEqual({ switchAt: 0.6, timeoutMs: 400 });
+  });
+
+  it('a journey with an empty when or goal is refused', () => {
+    expect(problemsOf(changed('when: The caller wants a visit booked, or wants to know about one.', 'when: ""')).map((x) => x.path)).toEqual(['journeys.visit.when']);
+    expect(problemsOf(changed('goal: Leave a note asking for a call back, read back and confirmed by the caller.', 'goal: ""')).map((x) => x.path)).toEqual(['journeys.note.goal']);
   });
 });
