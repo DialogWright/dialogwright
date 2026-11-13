@@ -206,7 +206,7 @@ describe('book_dealer', () => {
     expect(provider.sent.map((t) => [t.to, t.body])).toEqual([[SHOP_PHONE, `New booking from Rivergate Motors (5555550142): three cars, ${VEHICLES}. Drop-off: Thursday, November 12, morning.`]]);
   });
 
-  it('refuses, before any read-back, a booking from a number on no account: the dealership tools are not offered to it (and the account is what recognise_caller returned)', async () => {
+  it('never offers the dealership tools to a caller on no account: a book_dealer it calls is refused, with no gate row and no read-back', async () => {
     const { app, sys } = wheelshop({ now: () => NOW });
     const c = converseTestCall(app, { model: fakeConverseModel(dealerScript('three', 'We can send the shop a request instead.')), jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
@@ -215,6 +215,23 @@ describe('book_dealer', () => {
     expect(sys.bookings).toEqual([]);
     expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'recognise_caller', outcome: 'refused' }, { name: 'check_availability', outcome: 'refused' }, { name: 'book_dealer', outcome: 'refused' }]);
     expect(c.audit.filter((r) => r.type === 'gate').map((r) => r.detail.tool)).not.toContain('book_dealer');
+  });
+
+  it('refuses, before any read-back, an account other than the one recognise_caller returned for the number calling', async () => {
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const script: ConverseModelEvent[][] = [
+      [call('c0', 'recognise_caller', {}), call('c1', 'check_availability', { day: THURSDAY }), done('tool')],
+      [call('c2', 'book_dealer', { account: 'Northside Auto Sales', cars: 'one', vehicles: VEHICLES, slot: `${THURSDAY}:morning` }), done('tool')],
+      [text('I can only book for the account this number is on.'), done()],
+    ];
+    const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW), env: { SHOP_PHONE } });
+    await c.start();
+    expect(c.state.journey).toMatchObject({ active: 'dealer_booking' });
+    expect(await c.say('Northside Auto Sales, one trade-in tomorrow morning')).toEqual(['I can only book for the account this number is on.']);
+    expect(sys.bookings).toEqual([]);
+    expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'recognise_caller', outcome: 'ran' }, { name: 'check_availability', outcome: 'ran' }, { name: 'book_dealer', outcome: 'invalid' }]);
+    expect(c.audit.filter((r) => r.type === 'gate').map((r) => r.detail.tool)).not.toContain('book_dealer');
+    expect(c.state.pending).toBeNull();
   });
 
   it('books nothing where the window has no room for every car now: the shop\'s calendar refuses it, and says how many it can take', async () => {

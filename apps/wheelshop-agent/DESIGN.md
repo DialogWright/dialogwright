@@ -45,6 +45,8 @@ The line has three journeys (`repair_request`, `dealer_booking`, `callback`) and
 | `callback` | A callback note needs a number the caller gives; when someone calls back; there is no direct line. Action `leave_callback`. Instructions: the note carries only the name, the number, what it is about and notes. |
 | Root | Answer from the base; for anything else say it is not something we help with and offer the three tasks. No actions. |
 
+The prevention fact that a request and a callback note each need a number the caller gives was one line in the base; it is now worded twice, once in `repair_request` (a request) and once in `callback` (a callback note), each a journey's own fact, since neither journey sees the other's. The original line carried no assumption marker, and neither does either wording.
+
 One judgment to check: the answer to "Do I get a confirmation number or a written quote?" used to describe both a request and a dealership booking. Its dealership half became a `dealer_booking` fact, so a repair request's answer never mentions dealership accounts.
 
 ## What changed from the old app, and why
