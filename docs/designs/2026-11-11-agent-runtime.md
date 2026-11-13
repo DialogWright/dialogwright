@@ -219,6 +219,14 @@ and the trace records whether the business was open at each turn. A callback is 
 time unless the business information gives one, and tying it to when the business opens is a time too: rule 1 says
 someone will get back to the caller as soon as they can. Decided by the maintainer on 2026-11-13.
 
+Each fixed line (the greetings, a journey's greeting, the closing, recovery, handoff, done, stuck and unclear
+lines) may have a wording of its own for the web chat (`chat: { en: ... }` beside its `en`), said in a chat in place
+of the call's words, where those would not fit ("Thanks for messaging" for "Thanks for calling"); a line with none
+says the same words in both. The runtime's `end_call` tells the model to end the conversation rather than say a
+goodbye of its own, since the closing line is the goodbye: in a chat its own goodbye left the conversation open
+with no closing line. Decided by the maintainer on 2026-11-13, after a chat on the wheel shop thanked the customer
+for calling.
+
 The wheel shop's current assumptions (days, windows, services, accounts) carry over, still marked as
 assumptions for the owner to correct.
 

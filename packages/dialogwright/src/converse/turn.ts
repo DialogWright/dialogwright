@@ -8,7 +8,7 @@ import { localDateIso } from '../core/localDate';
 import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
-import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
+import { END_CALL, lineOn, type ActionSpec, type AgentBusiness } from './business/schema';
 import { checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { askWithinWhy, dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
@@ -709,7 +709,7 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
  */
 async function endUnclear(t: Turn, sp: Speaker): Promise<void> {
   const lines = t.deps.business.lines;
-  const line = (lines.unclear ?? lines.closing).en;
+  const line = lineOn(lines.unclear ?? lines.closing, t.st.channel);
   await record(t, { type: 'converse_end', detail: { by: 'unclear' } });
   sp.line(line);
   add(t.st, 'assistant', [{ type: 'text', text: line }]);
@@ -732,10 +732,10 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
   const said: string[] = [];
   if (t.confirmedRan) {
     t.confirmedRan = false;
-    said.push(lines.done.en);
+    said.push(lineOn(lines.done, t.st.channel));
   }
-  if (handoff) said.push(lines.handoff.en);
-  else if (said.length === 0) said.push(why === 'stuck' ? lines.stuck.en : lines.recovery.en);
+  if (handoff) said.push(lineOn(lines.handoff, t.st.channel));
+  else if (said.length === 0) said.push(lineOn(why === 'stuck' ? lines.stuck : lines.recovery, t.st.channel));
   said.forEach((line, i) => sp.line(line, i === said.length - 1));
   add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
   if (handoff) {
@@ -816,7 +816,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       return { ok: true };
     }
     if (t.ending) {
-      const closing = t.deps.business.lines.closing.en;
+      const closing = lineOn(t.deps.business.lines.closing, t.st.channel);
       sp.line(closing);
       add(t.st, 'assistant', [{ type: 'text', text: closing }]);
       t.st.ended = 'closing';
@@ -1075,8 +1075,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     // A call started in a journey (its `start`) with a greeting of its own opens with it, in place of the business's.
     const started = st.journey?.active ? deps.business.journeys?.[st.journey.active] : undefined;
     // A business that is closed as the call starts (business.open) says its after-hours greeting first of all: a journey's greeting may speak of today.
-    const closedGreeting = openAt(deps.business, now.getTime()) === false ? deps.business.lines.greetingAfterHours?.en : undefined;
-    const greeting = closedGreeting ?? started?.greeting?.en ?? deps.business.lines.greeting.en;
+    const closedGreeting = openAt(deps.business, now.getTime()) === false ? deps.business.lines.greetingAfterHours : undefined;
+    const greeting = lineOn(closedGreeting ?? started?.greeting ?? deps.business.lines.greeting, st.channel);
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);
   } else if (input.kind === 'left') {

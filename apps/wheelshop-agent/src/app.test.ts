@@ -85,7 +85,7 @@ function shop(textOk: string, callerNumber?: string) {
 describe('send_request', () => {
   it('is read back in the shop\'s words and, on the yes, books the slot, texts the caller for a photo and the shop a summary', async () => {
     const { c, sys, provider } = shop('yes');
-    expect(await c.start()).toEqual(['Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
+    expect(await c.start()).toEqual(['Thanks for messaging Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
@@ -306,7 +306,10 @@ describe('journeys', () => {
   it('greets a caller on no account as a receptionist, and a recognised dealership with a booking question', async () => {
     const { app } = wheelshop({ now: () => NOW });
     const retail = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW) });
-    expect(await retail.start()).toEqual(['Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
+    expect(await retail.start()).toEqual(['Thanks for messaging Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
+    // On a call, the greeting's own words: the chat says "messaging" (its `chat:` wording) where a call says "calling".
+    const onCall = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, channel: 'voice', now: () => new Date(NOW) });
+    expect(await onCall.start()).toEqual(['Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
     const dealer = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW) });
     expect(await dealer.start()).toEqual(['Example Wheel Works, hi. Booking some cars in today?']);
   });
@@ -321,7 +324,7 @@ describe('journeys', () => {
     expect(toolNames(model)).toEqual(['end_call']);
     expect(await c.say('hmm hm')).toEqual(['We can price a wheel repair or take a callback note.']);
     const said = await c.say('uh huh');
-    expect(said).toEqual(['Sorry, this line can only help with a wheel repair or a callback. Call us back any time.']);
+    expect(said).toEqual(['Sorry, this chat can only help with a wheel repair or a callback. Get in touch any time.']);
     expect(model.requests).toHaveLength(5); // two turns' dropped round and guidance, and none on the third
     expect(sys.bookings).toEqual([]);
   });
@@ -419,7 +422,8 @@ describe('the app folder', () => {
 });
 
 describe('after hours', () => {
-  const AFTER_HOURS = 'Thanks for calling Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?';
+  // The chat's wording (converseTestCall is a chat by default).
+  const AFTER_HOURS = 'Thanks for messaging Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?';
   const SATURDAY = Date.parse('2026-11-14T15:00:00Z'); // 10 a.m. at the shop, a Saturday
   const NIGHT = Date.parse('2026-11-12T04:00:00Z'); // 11 p.m. Wednesday at the shop
   const systemOf = (m: { requests: readonly unknown[] }): string => (m.requests.at(-1) as { system: string }).system;
@@ -447,7 +451,7 @@ describe('after hours', () => {
 
   it('in opening hours says the usual greeting and that the shop is open until 5:30 pm', async () => {
     const { greeting, model } = await opening(NOW);
-    expect(greeting[0]).toMatch(/^Thanks for calling Example Wheel Works, where we make damaged wheels look new again\./);
+    expect(greeting[0]).toMatch(/^Thanks for messaging Example Wheel Works, where we make damaged wheels look new again\./);
     expect(systemOf(model)).toContain('The business is open now, until 5:30 pm today.');
   });
 

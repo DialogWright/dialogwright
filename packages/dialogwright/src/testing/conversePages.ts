@@ -242,12 +242,12 @@ function journeyCardLines(b: AgentBusiness): string[] {
     '',
     '- Each caller turn, the decision model reads which journey (task) the caller wants now. The agent model is offered only the actions of the journey it is in (or the root\'s), and an action of another journey is refused as not offered, audited and not counted as a refusal of the action.',
     `- The root offers ${(b.root?.actions ?? []).length > 0 ? andList((b.root?.actions ?? []).map(code)) : 'no actions'}${b.root?.instructions === undefined ? '' : ' and has its own instructions'}.`,
-    `- An unclear turn (see above) is answered with guidance, never a guess. While it is answered, only the lookups are offered to the agent model, so change actions are withheld: none is offered, and one called anyway is refused as not offered and audited. The count of unclear turns in a row starts again on any turn that is not unclear. On the third in a row the line says \`lines.unclear\`, word for word ("${cell(b.lines.unclear?.en ?? b.lines.closing.en)}"), and the call ends (audited as \`converse_end\` by \`unclear\`).`,
+    `- An unclear turn (see above) is answered with guidance, never a guess. While it is answered, only the lookups are offered to the agent model, so change actions are withheld: none is offered, and one called anyway is refused as not offered and audited. The count of unclear turns in a row starts again on any turn that is not unclear. On the third in a row the line says \`lines.unclear\`, word for word ("${cell(b.lines.unclear?.en ?? b.lines.closing.en)}"${inChat(b.lines.unclear ?? b.lines.closing)}), and the call ends (audited as \`converse_end\` by \`unclear\`).`,
     '',
   ];
   for (const [id, j] of Object.entries(b.journeys ?? {})) {
     lines.push(`### ${code(id)}`, '', `- Trigger: ${cell(j.when)}`, `- ${journeyAudience(j)}`, `- Actions: ${j.actions.length > 0 ? andList(j.actions.map(code)) : 'none'}`);
-    if (j.greeting !== undefined) lines.push(`- Greeting, said word for word where it starts the call: "${cell(j.greeting.en)}"`);
+    if (j.greeting !== undefined) lines.push(`- Greeting, said word for word where it starts the call: "${cell(j.greeting.en)}"${inChat(j.greeting)}`);
     if (j.completes !== undefined && j.completes.length === 0) lines.push('- Never done: no action ends it, so it stays in progress after each change runs on the caller\'s yes.');
     else if (j.completes !== undefined) lines.push(`- Done when ${andList(j.completes.map(code))} runs on the caller's yes.`);
     lines.push('');
@@ -255,12 +255,15 @@ function journeyCardLines(b: AgentBusiness): string[] {
   return lines;
 }
 
+/** A line's own words in the web chat, where it has them (agent.yaml's `chat` on a line), after its words on a call. */
+const inChat = (line: { chat?: { en: string } | undefined }): string => (line.chat === undefined ? '' : `, and in the web chat "${cell(line.chat.en)}"`);
+
 /** The card's lines for a business with opening hours (agent.yaml `business.open`). */
 function openCardWords(b: AgentBusiness): string[] {
   const after = b.lines.greetingAfterHours;
   return [
     '- The agent model is told, on every request, whether the business is open now (from `business.open`, in the business\'s time zone) and when it closes or next opens. The agent model is told never to promise a callback for a time the business information does not give, the opening time included.',
-    ...(after === undefined ? [] : [`- A call that starts while the business is closed hears \`lines.greetingAfterHours\`, word for word, in place of the greeting (and of a journey's): "${cell(after.en)}"`]),
+    ...(after === undefined ? [] : [`- A call that starts while the business is closed hears \`lines.greetingAfterHours\`, word for word, in place of the greeting (and of a journey's): "${cell(after.en)}"${inChat(after)}`]),
   ];
 }
 

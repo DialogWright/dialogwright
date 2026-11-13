@@ -212,7 +212,7 @@ function toolOf(name: string, spec: ActionSpec): ModelTool {
 /** The runtime's own action, offered on every call: it ends the call, and the line says the business's closing line. */
 const END_CALL_TOOL: ModelTool = {
   name: END_CALL,
-  description: 'End the call, once the caller has nothing more they want or says goodbye. The line then says the business\'s closing line.',
+  description: 'End the call (on the web chat, the chat), once the caller has nothing more they want or says goodbye. The line then says the business\'s closing line, which is the goodbye: end it rather than saying goodbye yourself, or the caller is left in a conversation that is still open.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 

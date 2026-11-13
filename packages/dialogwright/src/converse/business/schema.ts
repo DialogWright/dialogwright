@@ -31,6 +31,26 @@ export type Lang = (typeof LANGS)[number];
 const worded = (what: string) =>
   z.strictObject({ en: text().describe(`${what}, in English.`) }).describe(`${what}, per language.`);
 
+/**
+ * A line the runtime says word for word: per language, with an optional wording of its own for the web chat
+ * (`chat`), where the call's words would not fit ("Thanks for messaging" for "Thanks for calling").
+ */
+const said = (what: string) =>
+  z
+    .strictObject({
+      en: text().describe(`${what}, in English.`),
+      chat: z
+        .strictObject({ en: text().describe(`${what} in the web chat, in English.`) })
+        .optional()
+        .describe(`${what} in the web chat, per language, where it is worded differently from the call (for example "Thanks for messaging" for "Thanks for calling"). Absent: the chat says the same words as the call.`),
+    })
+    .describe(`${what}, per language.`);
+
+/** A line's words on a channel: its chat wording in the web chat where it has one, and otherwise its own. */
+export function lineOn(line: { en: string; chat?: { en: string } | undefined }, channel: 'chat' | 'voice'): string {
+  return channel === 'chat' && line.chat !== undefined ? line.chat.en : line.en;
+}
+
 /** The openers a persona may ask for (persona.opener). */
 export const OPENERS = ['acknowledge'] as const;
 export type Opener = (typeof OPENERS)[number];
@@ -124,7 +144,7 @@ const journey = z
     questions: z.array(question).default([]).describe('This journey\'s own questions callers ask, with the business\'s answers, added to the base\'s for this journey only.'),
     actions: z.array(identifier()).default([]).describe('The actions it may use, named from the top-level actions. Each action is defined once and may be named by several journeys.'),
     for: z.strictObject({ account: z.enum(ACCOUNT_FACTS).describe('recognised: open only where the number calling is on an account. none: open only where it is on none.') }).optional().describe('Which callers the journey is open to, by a fact of the call. A journey closed to the caller is never one of the decision model\'s options. Absent: open to every caller.'),
-    greeting: worded('What the line says first where this journey starts the call (it has `start`), instead of lines.greeting').optional(),
+    greeting: said('What the line says first where this journey starts the call (it has `start`), instead of lines.greeting').optional(),
     start: z.strictObject({ account: z.literal('recognised').describe('Start where the number calling is on an account.') }).optional().describe('A fact of the call that starts the journey before the caller speaks. At most one journey says it.'),
     completes: z.array(identifier()).optional().describe('The change actions whose confirmed run ends the journey. Default: all the change actions it names that are not follow-ons.'),
     after: text().optional().describe('What the line helps with once the journey is done, in one sentence. Default: "<goal>: done on this call. Answer the caller\'s questions about it."'),
@@ -349,15 +369,15 @@ export const agentBusinessSchema = z
       .describe('How the agent sounds.'),
     lines: z
       .strictObject({
-        greeting: worded('The greeting'),
-        closing: worded('The closing line'),
-        recovery: worded('The short line said when the agent did not catch something'),
-        handoff: worded('The line said when the call goes to a person'),
-        notConfirmed: worded('The line said when the caller did not confirm a read-back').optional(),
-        done: worded('The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done').default({ en: "That's done." }),
-        unclear: worded('The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys)').optional(),
-        greetingAfterHours: worded('The greeting said instead of the greeting (and of a journey\'s) when a call starts while the business is closed by business.open (required to have business.open)').optional(),
-        stuck: worded('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
+        greeting: said('The greeting'),
+        closing: said('The closing line'),
+        recovery: said('The short line said when the agent did not catch something'),
+        handoff: said('The line said when the call goes to a person'),
+        notConfirmed: said('The line said when the caller did not confirm a read-back').optional(),
+        done: said('The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done').default({ en: "That's done." }),
+        unclear: said('The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys)').optional(),
+        greetingAfterHours: said('The greeting said instead of the greeting (and of a journey\'s) when a call starts while the business is closed by business.open (required to have business.open)').optional(),
+        stuck: said('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
       })
       .describe('The lines said word for word.'),
     model: z

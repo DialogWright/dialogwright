@@ -238,6 +238,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The greeting, in English."
+            },
+            "chat": {
+              "description": "The greeting in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The greeting in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -253,6 +268,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The closing line, in English."
+            },
+            "chat": {
+              "description": "The closing line in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The closing line in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -268,6 +298,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The short line said when the agent did not catch something, in English."
+            },
+            "chat": {
+              "description": "The short line said when the agent did not catch something in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The short line said when the agent did not catch something in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -283,6 +328,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The line said when the call goes to a person, in English."
+            },
+            "chat": {
+              "description": "The line said when the call goes to a person in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said when the call goes to a person in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -298,6 +358,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The line said when the caller did not confirm a read-back, in English."
+            },
+            "chat": {
+              "description": "The line said when the caller did not confirm a read-back in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said when the caller did not confirm a read-back in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -316,6 +391,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done, in English."
+            },
+            "chat": {
+              "description": "The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -331,6 +421,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys), in English."
+            },
+            "chat": {
+              "description": "The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys) in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys) in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -346,6 +451,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The greeting said instead of the greeting (and of a journey's) when a call starts while the business is closed by business.open (required to have business.open), in English."
+            },
+            "chat": {
+              "description": "The greeting said instead of the greeting (and of a journey's) when a call starts while the business is closed by business.open (required to have business.open) in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The greeting said instead of the greeting (and of a journey's) when a call starts while the business is closed by business.open (required to have business.open) in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -364,6 +484,21 @@
               "type": "string",
               "minLength": 1,
               "description": "The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run), in English."
+            },
+            "chat": {
+              "description": "The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run) in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run) in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1303,6 +1438,21 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "What the line says first where this journey starts the call (it has `start`), instead of lines.greeting, in English."
+              },
+              "chat": {
+                "description": "What the line says first where this journey starts the call (it has `start`), instead of lines.greeting in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "What the line says first where this journey starts the call (it has `start`), instead of lines.greeting in the web chat, in English."
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

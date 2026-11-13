@@ -12,7 +12,7 @@ import type { AgentBusiness } from './business/schema';
 import { CALLER, NO_LOOKUPS, confirmedFields, policyOf } from './policy';
 import { fakeModel } from './model/fake';
 import type { ConverseModel, ModelEvent } from './model/types';
-import { systemPrompt } from './prompt';
+import { systemPrompt, toolsOf } from './prompt';
 import { fakeCalendar } from './sources/calendar';
 import { businessZone, newConverseState, type ConverseState } from './state';
 import type { ConverseTraceRecord } from './trace';
@@ -234,6 +234,44 @@ describe('converseTurn: the start', () => {
     expect(h.traces).toHaveLength(1);
     expect(h.traces[0]).toMatchObject({ v: 3, kind: 'converse', sessionId: 'call-1', turnIndex: 0, said: null, replies: ['Example Menders, how can I help?'] });
     expect(s.turnIndex).toBe(1);
+  });
+});
+
+describe('converseTurn: a line\'s words in the web chat', () => {
+  const CHAT_GREETING = 'Example Menders, thanks for messaging. How can I help?';
+  const CHAT_CLOSING = 'Thanks for getting in touch. Goodbye.';
+  const chatWords = (t: string): string =>
+    t
+      .replace('  greeting: { en: "Example Menders, how can I help?" }\n', `  greeting: { en: "Example Menders, how can I help?", chat: { en: "${CHAT_GREETING}" } }\n`)
+      .replace('  closing: { en: "Thanks for calling. Goodbye." }\n', `  closing: { en: "Thanks for calling. Goodbye.", chat: { en: "${CHAT_CLOSING}" } }\n`);
+  const chat = (): ConverseState => newConverseState({ appId: 'menders', callId: 'chat-1', channel: 'chat' });
+  it('greets a chat in the chat wording, and keeps it as the line\'s', async () => {
+    const h = harness([], { edit: chatWords });
+    const s = await h.run(chat(), { kind: 'start' });
+    expect(h.said).toEqual([[CHAT_GREETING, true]]);
+    expect(s.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text: CHAT_GREETING }] }]);
+  });
+  it('greets a call in the call\'s own words', async () => {
+    const h = harness([], { edit: chatWords });
+    await h.run(fresh(), { kind: 'start' });
+    expect(h.said).toEqual([['Example Menders, how can I help?', true]]);
+  });
+  it('ends a chat with the chat wording of the closing line, and a call with its own', async () => {
+    const inChat = harness([[call('c1', 'end_call', {}), done('tool')]], { edit: chatWords });
+    await inChat.run(chat(), { kind: 'text', text: 'that is all, thanks' });
+    expect(inChat.said).toEqual([[CHAT_CLOSING, true]]);
+    const onCall = harness([[call('c1', 'end_call', {}), done('tool')]], { edit: chatWords });
+    await onCall.run(fresh(), { kind: 'text', text: 'that is all, thanks' });
+    expect(onCall.said).toEqual([['Thanks for calling. Goodbye.', true]]);
+  });
+  it('says a line with no chat wording in a chat as it is', async () => {
+    const h = harness([]);
+    await h.run(chat(), { kind: 'start' });
+    expect(h.said).toEqual([['Example Menders, how can I help?', true]]);
+  });
+  it('tells the model to end the chat rather than say goodbye itself', () => {
+    const end = toolsOf(business()).find((t) => t.name === 'end_call')!;
+    expect(end.description).toContain('end it rather than saying goodbye yourself');
   });
 });
 
