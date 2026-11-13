@@ -1,3 +1,5 @@
+import { afterLine, openJourneys } from '../journeys';
+import type { ConverseState, JourneyState } from '../state';
 import type { AgentBusiness } from './schema';
 
 const money = (n: number): string => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
@@ -20,5 +22,30 @@ export function businessText(b: AgentBusiness): string {
   if (b.facts.length > 0) out.push('Facts:', ...b.facts.map((f) => `- ${f}`));
   if (b.questions.length > 0) out.push('Questions callers ask, with our answers:', ...b.questions.map((x) => `- ${x.q} ${x.a}`));
   out.push(`Hours: ${b.business.hours}`);
+  return out.join('\n');
+}
+
+/**
+ * What the model is told for the task the call is in, after the business information: the goal (or, once the
+ * task is done, what the line helps with now), its instructions, its facts and its questions with our
+ * answers; at the root, the root's guidance and what the line can help with. A task set aside is named so it
+ * can be offered again. Empty for a business with no journeys.
+ */
+export function journeyText(b: AgentBusiness, j: JourneyState, caller: ConverseState['caller']): string {
+  if (b.journeys === undefined || Object.keys(b.journeys).length === 0) return '';
+  const out: string[] = [];
+  const spec = j.active === null ? undefined : b.journeys[j.active];
+  if (spec === undefined) {
+    if (b.root?.instructions !== undefined) out.push(b.root.instructions);
+    out.push('What this line can help with:', ...openJourneys(b, caller).map((id) => `- ${b.journeys![id]!.when}`));
+  } else {
+    const finished = j.phase === 'after';
+    out.push(finished ? afterLine(b, j.active!) : `What you are helping the caller with now: ${spec.goal}`);
+    if (!finished && spec.instructions !== undefined) out.push(spec.instructions);
+    if (spec.facts.length > 0) out.push('Facts for this:', ...spec.facts.map((f) => `- ${f}`));
+    if (spec.questions.length > 0) out.push('Questions callers ask about this, with our answers:', ...spec.questions.map((x) => `- ${x.q} ${x.a}`));
+  }
+  const paused = j.paused === null ? undefined : b.journeys[j.paused];
+  if (paused !== undefined) out.push(`Set aside earlier on this call: ${paused.when}; offer to pick it up once this is done.`);
   return out.join('\n');
 }

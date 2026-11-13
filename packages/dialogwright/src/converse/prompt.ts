@@ -1,7 +1,8 @@
 import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
-import { businessText } from './business/text';
+import { businessText, journeyText } from './business/text';
+import { offeredActions } from './journeys';
 import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
 import type { ModelTool } from './model/types';
 import { businessZone, type ConverseState } from './state';
@@ -65,6 +66,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
   const zone = businessZone(b);
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
   const person = b.transfer ? 'a person at the business can take the call over' : 'a person at the business can call them back';
+  const journey = s.journey === undefined ? '' : journeyText(b, s.journey, s.caller);
   return [
     `You are the automated assistant answering ${where}. You speak for the business, in this style: ${b.persona.style} The style shapes how you sound, never what you claim.`,
     ...(b.persona.opener === 'acknowledge' ? [OPENER_ACKNOWLEDGE] : []),
@@ -79,6 +81,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     '4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.',
     '5. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give.',
     ...(b.checks.claims.mode === 'correct' ? ['', CHECK_NOTE_WORDS] : []),
+    ...(journey === '' ? [] : ['', journey]),
     '',
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,
     '',
@@ -127,8 +130,12 @@ export function followOnsOf(b: AgentBusiness): Map<string, string> {
   return out;
 }
 
-/** The business's actions as the model's tools, each with its params' JSON Schema, and the runtime's end_call. A follow-on is not offered: it runs only after the action it follows. */
-export function toolsOf(b: AgentBusiness): ModelTool[] {
+/**
+ * The business's actions as the model's tools, each with its params' JSON Schema, and the runtime's end_call.
+ * A follow-on is not offered: it runs only after the action it follows. `offered` (the journey's actions, from
+ * `offeredActions`) narrows them; absent, every action is offered.
+ */
+export function toolsOf(b: AgentBusiness, offered?: readonly string[]): ModelTool[] {
   const followOns = followOnsOf(b);
-  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name)).map(([name, spec]) => toolOf(name, spec)), END_CALL_TOOL];
+  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec)), END_CALL_TOOL];
 }

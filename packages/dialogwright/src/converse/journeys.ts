@@ -48,6 +48,29 @@ export function initialJourney(b: AgentBusiness, caller: Caller): JourneyState {
   return { active: starter?.[0] ?? null, phase: 'working', paused: null, done: [] };
 }
 
+/** What the line helps with once a journey is done: its `after`, else the goal and that it is done. */
+export function afterLine(b: AgentBusiness, id: string): string {
+  const spec = b.journeys?.[id];
+  if (spec === undefined) return '';
+  return spec.after ?? `${spec.goal}: done on this call. Answer the caller's questions about it.`;
+}
+
+/**
+ * The actions the model is offered in a state (the follow-ons are never offered; the runtime runs them).
+ * No journeys, or no state: every action. At the root: its lookups. In a working journey: its actions.
+ * In a finished one: its lookups only, so nothing that changes is offered again.
+ */
+export function offeredActions(b: AgentBusiness, j: JourneyState | undefined): string[] {
+  const followed = new Set<string>();
+  for (const a of Object.values(b.actions)) for (const t of a.then ?? []) followed.add(t);
+  const all = Object.keys(b.actions).filter((n) => !followed.has(n));
+  if (!hasJourneys(b) || j === undefined) return all;
+  const spec = j.active === null ? undefined : b.journeys?.[j.active];
+  const named = spec === undefined ? (b.root?.actions ?? []) : spec.actions;
+  const chosen = all.filter((n) => named.includes(n));
+  return spec !== undefined && j.phase === 'after' ? chosen.filter((n) => b.actions[n]?.kind === 'lookup') : chosen;
+}
+
 const whenOf = (b: AgentBusiness, id: string | null): string | null => (id === null ? null : (b.journeys?.[id]?.when ?? null));
 
 /** The questions put to the decision model for a turn: `task` always, `drops` in a working journey, `again` in a finished one. */
