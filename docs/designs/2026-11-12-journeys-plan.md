@@ -679,7 +679,8 @@ Model tier: standard.
 - Modify `converse/business/schema.ts`:
   - `routing.startAt` (default 0.8; check: `startAt >= switchAt`);
   - a journey's `greeting` (a worded line; check: only on a journey with `start`);
-  - `lines.unclear` (optional; check: required when `journeys` is present).
+  - `lines.unclear` (optional; check: required when `journeys` is present);
+  - `business.line` (optional text: the business's reason for the line, said in the second guidance).
 - Regenerate `schemas/agent.schema.json`.
 - Modify the fixtures in `testing/converse/journeys.ts`: add `lines.unclear` to what JOURNEYS_YAML needs. If it
   can't be added by appending, give the fragments' tests a helper, and say which in the report.
@@ -741,7 +742,8 @@ Model tier: most capable.
   - **First unclear turn:** give the caller direction for the input needed now. At the root, that is what the line
     can help with (the open journeys' `when`). In a journey, it is what it needs from them now. Never a guess at
     what they meant.
-  - **Second unclear turn:** the same, and say exactly what to say.
+  - **Second unclear turn:** say plainly that the line can only help when the caller gives what it asks for, give the
+    reason from `business.line` where the business has one, and say exactly what to say.
 - **Tools on an unclear turn:** the lookups of the turn's offer, plus `end_call`. A change action called anyway is
   refused `not-offered`.
 - **The third unclear turn in a row:**
@@ -817,7 +819,10 @@ Model tier: standard.
   for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a
   drop-off, or have someone from the shop call you back. How can we help?"
 - **The `dealer_booking` greeting:** a booking question for a recognised account.
-- **`lines.unclear`.**
+- **`business.line`:** "This line is how we price repairs and set up drop-offs while we're busy in the shop fixing
+  wheels."
+- **`lines.unclear`:** for example, "Sorry, this line can only help with a wheel repair or a callback. Call us back
+  any time."
 - **`routing.startAt`:** from Task 14.
 
 Each line is marked `# assumption: the owner corrects these`.
