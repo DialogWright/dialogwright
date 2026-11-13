@@ -5,7 +5,7 @@ import type { ConverseModel } from '../../converse/model/types';
 import { policyOf } from '../../converse/policy';
 import { accountOf } from '../../converse/sources/accounts';
 import { converseTexts } from '../../converse/sources/texts';
-import { newConverseState, type ConverseState } from '../../converse/state';
+import { newConverseState, type ConverseState, type JourneyState } from '../../converse/state';
 import { converseTurn, type ConverseDeps, type Input, type Out } from '../../converse/turn';
 import { E164 } from '../../core/numberLocales';
 import type { JevClient } from '../../jev/types';
@@ -93,15 +93,25 @@ function describeError(err: unknown): string {
 /** A reply's pieces as one line of text: each trimmed, joined by a space. */
 const joined = (pieces: readonly string[]): string => pieces.map((p) => p.trim()).filter((p) => p !== '').join(' ');
 
+/** A journey state in its shape (JourneyState): a saved one that is not loads as none. */
+const isJourneyState = (j: unknown): j is JourneyState => {
+  if (typeof j !== 'object' || j === null) return false;
+  const v = j as Record<string, unknown>;
+  const idOrNull = (x: unknown): boolean => x === null || typeof x === 'string';
+  return idOrNull(v.active) && (v.phase === 'working' || v.phase === 'after') && idOrNull(v.paused) && Array.isArray(v.done) && v.done.every((d) => typeof d === 'string');
+};
+
 /**
  * A saved converse state as it was written (newConverseState's shape), or null. A state saved before a field
- * was kept loads as it is: a carried note absent is none (and one that is not text is dropped).
+ * was kept loads as it is: a carried note absent is none (and one that is not text is dropped); a journey absent or not in its shape, none.
  */
 export function stateOf(session: unknown): ConverseState | null {
   const s = session as Partial<ConverseState> | null;
   if (typeof s !== 'object' || s === null || s.kind !== 'converse' || s.v !== 1 || typeof s.appId !== 'string' || !Array.isArray(s.messages)) return null;
   if (s.carriedNote !== undefined && typeof s.carriedNote !== 'string') delete s.carriedNote;
   if (s.done !== undefined && !(Array.isArray(s.done) && s.done.every((d) => typeof d === 'object' && d !== null && typeof d.action === 'string' && typeof d.readBack === 'string' && Array.isArray(d.results)))) delete s.done;
+  // Where the call is among the journeys: one not in its shape loads as none (the turn starts it again, initialJourney).
+  if (Object.hasOwn(s, 'journey') && !isJourneyState(s.journey)) delete s.journey;
   return s as ConverseState;
 }
 

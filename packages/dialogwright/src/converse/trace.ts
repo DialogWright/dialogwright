@@ -2,6 +2,7 @@ import type { App } from '../core/app/types';
 import { recordedValue, scrubberFor, type RecordingApp, type Scrub } from '../audit/recording';
 import type { ToolCall } from '../gate/types';
 import type { ActionSpec } from './business/schema';
+import type { RouteOutcome } from './journeys';
 
 /**
  * What a converse call records, turn by turn (docs/designs/2026-11-11-agent-runtime.md, "Settled after
@@ -77,6 +78,17 @@ export interface ConverseTraceRecord {
    * `model.requests` with no error.
    */
   carriedNoteDropped?: true;
+  /**
+   * How the caller's turn was routed among the journeys (docs/designs/2026-11-12-journeys.md, "Routing"), on a
+   * business with journeys and a turn of the caller's that was routed (not a yes that ran its read-back): the
+   * journey before and after (null: the root), the outcome, the decision model's probabilities for each `task`
+   * option (null: no reading) and its `drops` and `again` readings where it gave them, its time, whether it
+   * answered nothing within routing.timeoutMs (`timedOut`: the turn carried on), the older paused journey a
+   * switch dropped, and whether the turn's first round was asked again for the route (`restarted`).
+   */
+  route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true };
+  /** A journey the turn's confirmed action completed: it is in its after phase from this turn on. */
+  journeyEnded?: { journey: string; how: 'done' };
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
 }

@@ -10,7 +10,8 @@ import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
 import { checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
-import { dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
+import { askWithin, dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
+import { completeJourney, decideRoute, hasJourneys, initialJourney, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
@@ -47,7 +48,13 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   correction the model declines (it answers with nothing at all) or that fails says nothing more and counts
  *   no failure: the reply was fine to leave as it was;
  * - the caller's words reach the model with the note's mark rewritten wherever they write it (neutralised),
- *   so a caller can never pass for the line's own check.
+ *   so a caller can never pass for the line's own check;
+ * - with journeys (docs/designs/2026-11-12-journeys.md), the call starts in the journey its caller starts in
+ *   (else the root), and each caller turn is routed by the decision model before the model is asked (but a
+ *   turn whose read-back the caller confirmed and that ran: the yes is not routed). The model is offered the
+ *   turn's journey's actions only, and a call to any other is refused as not offered, before the gate and
+ *   counting toward no refusal. A journey's completing action, run on the caller's yes, moves it to its after
+ *   phase. Routing never fails a turn: a decision model that errs or is late leaves the journey as it was.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
@@ -146,6 +153,10 @@ interface Turn {
   carriedNote: boolean;
   /** The model answered the message carrying that note with nothing at all: the note was taken out and the model asked again without it. */
   carriedNoteDropped: boolean;
+  /** How the caller's turn was routed among the journeys, where it was. */
+  route?: ConverseTraceRecord['route'];
+  /** The journey the turn's confirmed action completed. */
+  journeyEnded?: ConverseTraceRecord['journeyEnded'];
 }
 
 /** A reply's words to the caller: model text in sentences as it streams, and fixed lines whole. Exactly one piece of a turn is final. */
@@ -330,6 +341,15 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       error(c.id, why);
       continue;
     }
+    if (hasJourneys(b) && spec !== undefined && !offeredActions(b, t.st.journey).includes(c.name)) {
+      // Not among the turn's journey's actions: a model's slip, or a caller's words naming it. Refused before
+      // the gate, and counted toward no refusal, since nothing about the action itself was wrong.
+      const why = `Not run: "${c.name}" is not available for what the caller is doing now.`;
+      await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'not-offered', journey: t.st.journey?.active ?? 'root' } });
+      traceTool(t, spec, c.name, c.args, 'refused', why);
+      error(c.id, why);
+      continue;
+    }
     let params: Record<string, string> = {};
     if (spec !== undefined) {
       const checked = checkArgs(spec, c.args, t.st.seen, t.todayIso, t.st.caller.number);
@@ -351,7 +371,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       continue;
     }
     if (d.verdict !== 'ALLOW') {
-      const why = gateReason(d, spec, call, Object.keys(b.actions));
+      const why = gateReason(d, spec, call, hasJourneys(b) ? offeredActions(b, t.st.journey) : Object.keys(b.actions));
       traceTool(t, spec, c.name, spec === undefined ? c.args : params, 'refused', why);
       error(c.id, refused(t, c.name, why));
       continue;
@@ -487,7 +507,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  */
 async function round(t: Turn, sp: Speaker, emptyOk = false): Promise<Round> {
   const b = t.deps.business;
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b, offeredActions(b, t.st.journey)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
@@ -718,8 +738,12 @@ async function runConfirmed(t: Turn, name: string, params: Record<string, string
  */
 const ONLY_THE_READ_BACK = 'Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them.';
 
-/** The caller answered a read-back: a clear yes runs the action and its follow-ons; anything else goes back to the model. */
-async function answered(t: Turn, said: string): Promise<void> {
+/**
+ * The caller answered a read-back: a clear yes runs the action and its follow-ons; anything else goes back to
+ * the model. Returns whether the action ran on the caller's yes. An action that completes the active journey
+ * moves it to its after phase.
+ */
+async function answered(t: Turn, said: string): Promise<boolean> {
   const p = t.st.pending!;
   t.st.pending = null;
   const b = t.deps.business;
@@ -734,17 +758,27 @@ async function answered(t: Turn, said: string): Promise<void> {
     // The decision model timed out or failed: what the caller meant is not known, and nothing runs.
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
-    return;
+    return false;
   }
   if (!yes) {
     traceTool(t, spec, p.action, p.params, 'notConfirmed');
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
-    return;
+    return false;
   }
   await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });
   const parent = await runConfirmed(t, p.action, p.params, p.hash);
   traceTool(t, spec, p.action, p.params, parent.outcome === 'ran' ? 'confirmed' : parent.outcome, parent.why);
-  if (parent.outcome === 'ran') t.confirmedRan = true;
+  if (parent.outcome === 'ran') {
+    t.confirmedRan = true;
+    const j = t.st.journey;
+    if (hasJourneys(b) && j !== undefined) {
+      const next = completeJourney(b, j, p.action);
+      if (next !== j) {
+        t.st.journey = next;
+        t.journeyEnded = { journey: j.active!, how: 'done' };
+      }
+    }
+  }
   const done = [`${p.action}: ${parent.text}`];
   // Follow-ons run only after their parent ran, each with the parent's confirmed values by name (agent.yaml's
   // check makes every param a follow-on takes one its parent has), its own hash, and a row naming the yes.
@@ -767,6 +801,53 @@ async function answered(t: Turn, said: string): Promise<void> {
   // The line's own record of what has been done, told to the model on every request from now on.
   if (parent.outcome === 'ran') (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
   add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
+  return parent.outcome === 'ran';
+}
+
+/** The text of the line's last words before the caller's turn: a read-back waiting for its answer, else the last message of the line's with text. */
+function lastReplyOf(st: ConverseState): string | null {
+  if (st.pending !== null) return st.pending.text;
+  for (let m = st.messages.length - 1; m >= 0; m--) {
+    const msg = st.messages[m]!;
+    if (msg.role !== 'assistant') continue;
+    const text = msg.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join(' ').trim();
+    if (text !== '') return text;
+  }
+  return null;
+}
+
+/**
+ * Routes the caller's turn among the journeys (docs/designs/2026-11-12-journeys.md, "Routing"): the decision
+ * model is asked which task the caller wants now, within routing.timeoutMs, and code decides from its reading
+ * (decideRoute). The call's journey is set, and the route kept for the trace. A decision model that errs or is
+ * late leaves the journey as it was (carry): routing never fails a turn. `timedOut` is told from an error by
+ * a timer of the limit's own length set just before askWithin's: timers of one length fire in the order they
+ * were set, so where askWithin gave up at its limit, this one has already fired.
+ */
+async function routeTurn(t: Turn, said: string, lastReply: string | null): Promise<void> {
+  const b = t.deps.business;
+  const j = (t.st.journey ??= initialJourney(b, t.st.caller));
+  const limit = b.routing.timeoutMs;
+  const started = Date.now();
+  let late = false;
+  const clock = setTimeout(() => (late = true), limit);
+  const answers = await askWithin(t.deps.jev, routeState(b, j, said, lastReply), routeQuestions(b, j, t.st.caller), limit);
+  clearTimeout(clock);
+  const ms = Date.now() - started;
+  const reading = readRoute(answers);
+  const route = decideRoute(b, j, reading, openJourneys(b, t.st.caller));
+  t.st.journey = route.next;
+  t.route = {
+    from: j.active,
+    to: route.next.active,
+    outcome: route.outcome,
+    task: reading.task,
+    ...(reading.drops !== null ? { drops: reading.drops } : {}),
+    ...(reading.again !== null ? { again: reading.again } : {}),
+    ms,
+    ...(answers === null && late ? { timedOut: true as const } : {}),
+    ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),
+  };
 }
 
 export async function converseTurn(s: ConverseState, input: Input, deps: ConverseDeps, out: Out): Promise<ConverseState> {
@@ -792,6 +873,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
+    if (hasJourneys(deps.business)) st.journey = initialJourney(deps.business, st.caller);
     const greeting = deps.business.lines.greeting.en;
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);
@@ -804,8 +886,16 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     st.ended = 'left';
     await record(t, { type: 'converse_left', detail: { pending } });
   } else {
-    if (st.pending !== null) await answered(t, input.text);
+    const routed = hasJourneys(deps.business);
+    // A state saved before journeys starts where its call would have.
+    if (routed) st.journey ??= initialJourney(deps.business, st.caller);
+    const lastReply = routed ? lastReplyOf(st) : null;
+    let ran = false;
+    if (st.pending !== null) ran = await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
+    // A yes that ran its action is not routed: the caller answered the read-back, and the journey moved on by it.
+    // Any other answer to a read-back is routed on the same words.
+    if (routed && !ran) await routeTurn(t, input.text, lastReply);
     const carried = st.carriedNote;
     if (carried !== undefined) {
       // The check after speaking's note carried from a turn that ended on a read-back: after this message's
@@ -835,6 +925,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ...(t.check !== undefined ? { check: t.check } : {}),
     ...(t.carriedNote ? { carriedNote: true as const } : {}),
     ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
+    ...(t.route !== undefined ? { route: t.route } : {}),
+    ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
   });
   st.turnIndex += 1;
   return st;

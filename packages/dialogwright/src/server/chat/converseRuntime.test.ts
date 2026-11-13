@@ -52,6 +52,34 @@ describe('converseChatRuntime: a saved state', () => {
     expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-8', channel: 'chat' }), done: [{ action: 'book' }] })!.done).toBeUndefined();
     expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-9', channel: 'chat' }), done: 'book' })!.done).toBeUndefined();
   });
+
+  it('a saved state without journey loads as none', () => {
+    const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-10', channel: 'chat' }))) as unknown;
+    expect(stateOf(before)).not.toBeNull();
+    expect(stateOf(before)!.journey).toBeUndefined();
+    const journey = { active: 'visit', phase: 'after', paused: 'note', done: ['visit'] };
+    expect(stateOf(JSON.parse(JSON.stringify({ ...newConverseState({ appId: 'visits', callId: 'chat-11', channel: 'chat' }), journey })))!.journey).toEqual(journey);
+    const root = { active: null, phase: 'working', paused: null, done: [] };
+    expect(stateOf(JSON.parse(JSON.stringify({ ...newConverseState({ appId: 'visits', callId: 'chat-12', channel: 'chat' }), journey: root })))!.journey).toEqual(root);
+  });
+
+  it('a journey not in its shape is dropped', () => {
+    const odd: unknown[] = [
+      'visit',
+      null,
+      { active: 'visit', phase: 'working', paused: null },
+      { active: 7, phase: 'working', paused: null, done: [] },
+      { active: 'visit', phase: 'finished', paused: null, done: [] },
+      { active: 'visit', phase: 'working', paused: 3, done: [] },
+      { active: 'visit', phase: 'working', paused: null, done: [1] },
+      { active: 'visit', phase: 'working', done: [] },
+    ];
+    odd.forEach((journey, i) => {
+      const s = stateOf({ ...newConverseState({ appId: 'visits', callId: `chat-odd-${i}`, channel: 'chat' }), journey });
+      expect(s, `case ${i}`).not.toBeNull();
+      expect(s!.journey, `case ${i}`).toBeUndefined();
+    });
+  });
 });
 
 describe('converseChatRuntime: a chat abandoned', () => {
