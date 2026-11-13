@@ -248,7 +248,8 @@ function journeyCardLines(b: AgentBusiness): string[] {
   for (const [id, j] of Object.entries(b.journeys ?? {})) {
     lines.push(`### ${code(id)}`, '', `- Trigger: ${cell(j.when)}`, `- ${journeyAudience(j)}`, `- Actions: ${j.actions.length > 0 ? andList(j.actions.map(code)) : 'none'}`);
     if (j.greeting !== undefined) lines.push(`- Greeting, said word for word where it starts the call: "${cell(j.greeting.en)}"`);
-    if (j.completes !== undefined) lines.push(`- Done when ${andList(j.completes.map(code))} runs on the caller's yes.`);
+    if (j.completes !== undefined && j.completes.length === 0) lines.push('- Never done: no action ends it, so it stays in progress after each change runs on the caller\'s yes.');
+    else if (j.completes !== undefined) lines.push(`- Done when ${andList(j.completes.map(code))} runs on the caller's yes.`);
     lines.push('');
   }
   return lines;

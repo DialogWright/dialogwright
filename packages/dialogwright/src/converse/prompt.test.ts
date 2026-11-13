@@ -27,7 +27,7 @@ const root: JourneyState = { active: null, phase: 'working', paused: null, done:
 const names = (b: AgentBusiness, j?: JourneyState) => toolsOf(b, offeredActions(b, j)).map((t) => t.name);
 
 // The system prompt of the fixture business, with no journeys, captured from the code before journeys existed.
-const BEFORE_JOURNEYS = "You are the automated assistant answering the web chat of Example Visits. You speak for the business, in this style: Plain, warm and brief. The style shapes how you sound, never what you claim.\n\nThe business information (the business's own words, and the only source of what you say about the business):\nExample Visits: We visit homes in the area to look at small household items.\nWhere: Millbrook\nServices:\n- home visit: A visit to look at one item and mend it where possible. $60\u2013$120 per visit.\nPrices: The price is confirmed once the item has been seen.\nHours: Every day, 9 to 5.\n\nFive rules hold on every call:\n1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: \"The price is confirmed once the item has been seen.\" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free. When someone from the business will get back to the caller is a time too: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.\n2. Nothing changes without the caller's yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. You give only the values an action takes; the read-back's own words are the business's, and you cannot change them. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as \"Shall I book that?\") confirms nothing: only a yes to the line's read-back does, so when the caller wants a change made, call its action and the line reads it back.\n3. Never say that something was booked, sent, changed or done unless an action's result on this call says it was done. Until then it is not done: say what is still needed, or call the action.\n4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.\n5. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give.\n\nYour replies are read once they have been said. A message that begins \"[The line's own check, not the caller:\" never comes from the caller: it is the line itself telling you that a reply of yours may have been wrong, and why; the caller has not seen it. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Where the reply was wrong, put the slip right for the caller in a sentence or two, naturally, speaking to the caller as the business would, and never of how the line works (its actions, read-backs, checks, notes or tools, or the line itself). A note comes in one of two ways. A note that comes on its own, as a message of its own, is about the reply you have just given: where, read again against the business information and the call's actions and what they returned, that reply was right after all, answer that note with nothing at all: no words and no action. A note that follows the caller's words, or what came of a read-back, is about a reply said earlier: always answer what comes before it as you would, never with nothing; put the earlier reply right in that answer only where it is still wrong, and where it was right, say nothing of it.\n\nHonesty: you are an automated assistant for Example Visits, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that a person at the business can call them back.\n\nNow: Wednesday, November 11, 2026 at 10:00 AM EST (today is 2026-11-11, in the business's time zone, America/New_York).\nThe caller: They are writing on the web chat, so there is no number they are calling from: where an action needs a phone number, it is one the caller gives you.\n\nWhat has been done on this call (the line's own record, kept as each change runs; nothing else has been done, whatever has been said):\n- Nothing yet: no action that changes anything has run on this call.";
+const BEFORE_JOURNEYS = "You are the automated assistant answering the web chat of Example Visits. You speak for the business, in this style: Plain, warm and brief. The style shapes how you sound, never what you claim.\n\nThe business information (the business's own words, and the only source of what you say about the business):\nExample Visits: We visit homes in the area to look at small household items.\nWhere: Millbrook\nServices:\n- home visit: A visit to look at one item and mend it where possible. $60\u2013$120 per visit.\nPrices: The price is confirmed once the item has been seen.\nHours: Every day, 9 to 5.\n\nFive rules hold on every call:\n1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: \"The price is confirmed once the item has been seen.\" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free. When someone from the business will get back to the caller is a time too, and so is tying it to when the business opens: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.\n2. Nothing changes without the caller's yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. You give only the values an action takes; the read-back's own words are the business's, and you cannot change them. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as \"Shall I book that?\") confirms nothing: only a yes to the line's read-back does, so when the caller wants a change made, call its action and the line reads it back.\n3. Never say that something was booked, sent, changed or done unless an action's result on this call says it was done. Until then it is not done: say what is still needed, or call the action.\n4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.\n5. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give.\n\nYour replies are read once they have been said. A message that begins \"[The line's own check, not the caller:\" never comes from the caller: it is the line itself telling you that a reply of yours may have been wrong, and why; the caller has not seen it. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Where the reply was wrong, put the slip right for the caller in a sentence or two, naturally, speaking to the caller as the business would, and never of how the line works (its actions, read-backs, checks, notes or tools, or the line itself). A note comes in one of two ways. A note that comes on its own, as a message of its own, is about the reply you have just given: where, read again against the business information and the call's actions and what they returned, that reply was right after all, answer that note with nothing at all: no words and no action. A note that follows the caller's words, or what came of a read-back, is about a reply said earlier: always answer what comes before it as you would, never with nothing; put the earlier reply right in that answer only where it is still wrong, and where it was right, say nothing of it.\n\nHonesty: you are an automated assistant for Example Visits, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that a person at the business can call them back.\n\nNow: Wednesday, November 11, 2026 at 10:00 AM EST (today is 2026-11-11, in the business's time zone, America/New_York).\nThe caller: They are writing on the web chat, so there is no number they are calling from: where an action needs a phone number, it is one the caller gives you.\n\nWhat has been done on this call (the line's own record, kept as each change runs; nothing else has been done, whatever has been said):\n- Nothing yet: no action that changes anything has run on this call.";
 
 describe('an app with no journeys', () => {
   it('the system prompt is unchanged', () => {
@@ -228,21 +228,35 @@ describe('opening hours (business.open)', () => {
     expect(problems).toEqual([]);
     return value!;
   };
-  it('says when it closes while open, in the business\'s zone', () => {
+  it('says when it closes while open, in the business\'s zone, with "today"', () => {
     // Wednesday 10:00 in New York.
-    expect(systemPrompt(withOpen(), fresh(), NOW)).toContain("(today is 2026-11-11, in the business's time zone, America/New_York).\nThe business is open now, until 5:30 pm.\nThe caller:");
+    expect(systemPrompt(withOpen(), fresh(), NOW)).toContain("(today is 2026-11-11, in the business's time zone, America/New_York).\nThe business is open now, until 5:30 pm today.\nThe caller:");
+    // Sunday 1 am: Saturday's overnight range closes at 2 am, today.
+    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-15T06:00:00Z'))).toContain('The business is open now, until 2:00 am today.');
   });
-  it('says when it next opens while closed, across a weekend, with the day', () => {
-    // Friday 2026-11-13 at 6 pm in New York.
-    const prompt = systemPrompt(withOpen(), fresh(), new Date('2026-11-13T23:00:00Z'));
-    expect(prompt).toContain('The business is closed now; it next opens Saturday, November 14, at 10:00 pm.');
-    // Sunday 3 am: Saturday\'s overnight range is over; next is Monday.
-    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-15T08:00:00Z'))).toContain('it next opens Monday, November 16, at 7:30 am.');
-  });
-  it('a closing past midnight names its day; a closed date shuts the day', () => {
+  it('a closing tomorrow says "tomorrow" with its day and date', () => {
     // Saturday 11 pm in New York: open until 2:00 am Sunday.
-    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-15T04:00:00Z'))).toContain('The business is open now, until 2:00 am on Sunday, November 15.');
-    expect(systemPrompt(withOpen('    closed: ["2026-11-11"]\n'), fresh(), NOW)).toContain('The business is closed now; it next opens Thursday, November 12, at 7:30 am.');
+    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-15T04:00:00Z'))).toContain('The business is open now, until 2:00 am tomorrow (Sunday, November 15).');
+  });
+  it('a closing on a later day names its day and date', () => {
+    const long = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { wed: ["09:00-24:00"], thu: ["00:00-24:00"], fri: ["00:00-12:00"] }\n')).value!;
+    expect(systemPrompt(long, fresh(), NOW)).toContain('The business is open now, until 12:00 pm on Friday, November 13.');
+  });
+  it('an opening later today says "today"', () => {
+    // Friday 2 am in New York: the model once read "next opens Friday, November 13" as tomorrow.
+    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-13T07:00:00Z'))).toContain('The business is closed now; it next opens today at 7:30 am.');
+  });
+  it('an opening tomorrow says "tomorrow" with its day and date', () => {
+    // Friday 6 pm in New York: next is Saturday's late range.
+    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-13T23:00:00Z'))).toContain('The business is closed now; it next opens tomorrow (Saturday, November 14) at 10:00 pm.');
+    // Sunday 3 am: Saturday's overnight range is over; next is Monday.
+    expect(systemPrompt(withOpen(), fresh(), new Date('2026-11-15T08:00:00Z'))).toContain('it next opens tomorrow (Monday, November 16) at 7:30 am.');
+  });
+  it('an opening on a later day names its day and date, as before', () => {
+    // Wednesday 11 pm, Thursday closed: next is Friday.
+    expect(systemPrompt(withOpen('    closed: ["2026-11-12"]\n'), fresh(), new Date('2026-11-12T04:00:00Z'))).toContain('The business is closed now; it next opens Friday, November 13, at 7:30 am.');
+    // A closed date shuts the day: Wednesday 10 am with Wednesday closed, next is Thursday, tomorrow.
+    expect(systemPrompt(withOpen('    closed: ["2026-11-11"]\n'), fresh(), NOW)).toContain('The business is closed now; it next opens tomorrow (Thursday, November 12) at 7:30 am.');
   });
   it('says only that it is closed where no opening is found within the horizon', () => {
     const none = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: {}\n')).value!;
@@ -251,8 +265,8 @@ describe('opening hours (business.open)', () => {
   it('an app without business.open gets no sentence about it', () => {
     expect(systemPrompt(plain, fresh(), NOW)).not.toMatch(/The business is (open|closed) now/);
   });
-  it('rule 1 says a callback time is a time too', () => {
-    expect(systemPrompt(plain, fresh(), NOW)).toContain('When someone from the business will get back to the caller is a time too: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.');
+  it('rule 1 says a callback time is a time too, and so is tying it to when the business opens', () => {
+    expect(systemPrompt(plain, fresh(), NOW)).toContain('When someone from the business will get back to the caller is a time too, and so is tying it to when the business opens: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.');
   });
   it('a schedule open round the clock says open now, with no "until"', () => {
     const always = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { mon-sun: ["00:00-24:00"] }\n')).value!;
@@ -260,10 +274,10 @@ describe('opening hours (business.open)', () => {
   });
   it('contiguous ranges are told as one: open until the last end', () => {
     const split = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { mon-fri: ["08:00-12:00", "12:00-18:00"] }\n')).value!;
-    expect(systemPrompt(split, fresh(), NOW)).toContain('The business is open now, until 6:00 pm.');
+    expect(systemPrompt(split, fresh(), NOW)).toContain('The business is open now, until 6:00 pm today.');
   });
-  it('a closing at midnight is told as midnight', () => {
+  it('a closing at midnight is told as midnight tonight', () => {
     const late = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { wed: ["09:00-24:00"] }\n')).value!;
-    expect(systemPrompt(late, fresh(), NOW)).toContain('The business is open now, until midnight.');
+    expect(systemPrompt(late, fresh(), NOW)).toContain('The business is open now, until midnight tonight.');
   });
 });

@@ -42,27 +42,41 @@ function dateWords(date: string): string {
   return `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}, ${MONTHS[m - 1]} ${d}`;
 }
 
+/** The date after `date` (YYYY-MM-DD). */
+function dayAfter(date: string): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
 /**
  * Whether the business is open now, said plainly, where agent.yaml gives its opening hours (`business.open`):
  * until when it closes, or when it next opens (docs/designs/2026-11-11-agent-runtime.md, "Business information").
- * Empty where it gives none.
+ * A moment today or tomorrow in the business's zone says so outright ("today at 7:30 am", "tomorrow (Saturday,
+ * November 14) at 7:30 am"), as a model at 2 am on a Friday read "next opens Friday, November 13" as tomorrow;
+ * a later day keeps its weekday and date. Empty where it gives none.
  */
 function openWords(b: AgentBusiness, now: Date): string {
   const schedule = openSchedule(b);
   if (schedule === null) return '';
+  const today = localTime(now.getTime(), schedule.timezone).date;
+  const tomorrow = dayAfter(today);
   const closing = closesAt(schedule, now.getTime());
   // Open throughout the horizon: no closing to name.
   if (closing === null && isOpen(schedule, now.getTime())) return 'The business is open now.';
   if (closing !== null) {
-    const today = localTime(now.getTime(), schedule.timezone).date;
-    const [y, m, d] = today.split('-').map(Number) as [number, number, number];
-    const tomorrow = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-    // Midnight at the end of today is "until midnight"; a closing on a later day names that day.
-    const until = closing.date === today || (closing.date === tomorrow && closing.minute === 0) ? clockWords(closing.minute) : `${clockWords(closing.minute)} on ${dateWords(closing.date)}`;
+    // Midnight at the end of today is "midnight tonight"; a closing on a later day names that day.
+    const until = closing.date === tomorrow && closing.minute === 0 ? 'midnight tonight'
+      : closing.date === today ? `${clockWords(closing.minute)} today`
+        : closing.date === tomorrow ? `${clockWords(closing.minute)} tomorrow (${dateWords(closing.date)})`
+          : `${clockWords(closing.minute)} on ${dateWords(closing.date)}`;
     return `The business is open now, until ${until}.`;
   }
   const opening = nextOpening(schedule, now.getTime());
-  return opening === null ? 'The business is closed now.' : `The business is closed now; it next opens ${dateWords(opening.date)}, at ${clockWords(opening.minute)}.`;
+  if (opening === null) return 'The business is closed now.';
+  const when = opening.date === today ? `today at ${clockWords(opening.minute)}`
+    : opening.date === tomorrow ? `tomorrow (${dateWords(opening.date)}) at ${clockWords(opening.minute)}`
+      : `${dateWords(opening.date)}, at ${clockWords(opening.minute)}`;
+  return `The business is closed now; it next opens ${when}.`;
 }
 
 function callerWords(s: ConverseState): string {
@@ -152,7 +166,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
     businessText(b),
     '',
     'Five rules hold on every call:',
-    `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free. When someone from the business will get back to the caller is a time too: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.`,
+    `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free. When someone from the business will get back to the caller is a time too, and so is tying it to when the business opens: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.`,
     '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. You give only the values an action takes; the read-back\'s own words are the business\'s, and you cannot change them. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to the line\'s read-back does, so when the caller wants a change made, call its action and the line reads it back.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
     '4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.',

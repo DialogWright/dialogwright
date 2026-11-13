@@ -246,6 +246,14 @@ describe('the pages of a converse app with journeys', () => {
     expect(conversePolicyCardText(plain)).not.toContain('unclear');
   });
 
+  it('the card says which actions end a journey, and that one with an empty completes is never done', () => {
+    const own = conversePolicyCardText(withJourneys(JOURNEYS_YAML.replace('    actions: [availability, book]\n', '    actions: [availability, book]\n    completes: [book]\n')));
+    expect(own).toContain('- Done when `book` runs on the caller\'s yes.');
+    const never = conversePolicyCardText(withJourneys(JOURNEYS_YAML.replace('    actions: [availability, book]\n', '    actions: [availability, book]\n    completes: []\n')));
+    expect(never).toContain('- Never done: no action ends it, so it stays in progress after each change runs on the caller\'s yes.');
+    expect(never).not.toMatch(/Done when +runs/);
+  });
+
   it('the card says a lookup no journey and not the root names is not offered to the model', () => {
     const hours = '  hours:\n    about: The hours on a day.\n    kind: lookup\n    params:\n      day: { type: date, about: The day. }\n';
     const { value, problems } = agentBusinessProblems(read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8') + LEAVE_NOTE_ACTION + hours + JOURNEYS_YAML);

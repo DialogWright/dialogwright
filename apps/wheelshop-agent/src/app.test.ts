@@ -400,13 +400,13 @@ describe('after hours', () => {
   it('opens with the after-hours greeting at 11 pm on a weekday', async () => {
     const { greeting, model } = await opening(NIGHT);
     expect(greeting).toEqual([AFTER_HOURS]);
-    expect(systemOf(model)).toContain('The business is closed now; it next opens Thursday, November 12, at 7:30 am.');
+    expect(systemOf(model)).toContain('The business is closed now; it next opens tomorrow (Thursday, November 12) at 7:30 am.');
   });
 
   it('in opening hours says the usual greeting and that the shop is open until 5:30 pm', async () => {
     const { greeting, model } = await opening(NOW);
     expect(greeting[0]).toMatch(/^Thanks for calling Example Wheel Works, where we make damaged wheels look new again\./);
-    expect(systemOf(model)).toContain('The business is open now, until 5:30 pm.');
+    expect(systemOf(model)).toContain('The business is open now, until 5:30 pm today.');
   });
 
   it('gives a dealership calling at night the after-hours greeting, not the dealership one', async () => {

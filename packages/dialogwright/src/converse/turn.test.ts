@@ -269,7 +269,7 @@ describe('converseTurn: after hours', () => {
     const h = harness([[text('We are closed.'), done()]], { edit: hours, now: NIGHT });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'hi' });
-    expect(h.model.requests[0]!.system).toContain('The business is closed now; it next opens Thursday, November 12, at 8:00 am.');
+    expect(h.model.requests[0]!.system).toContain('The business is closed now; it next opens tomorrow (Thursday, November 12) at 8:00 am.');
   });
   it('overrides a journey\'s start greeting at night', async () => {
     const OWN = 'Example Menders. Which day would you like a visit for the account?';
