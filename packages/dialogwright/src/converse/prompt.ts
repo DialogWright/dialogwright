@@ -1,4 +1,4 @@
-import { closesAt, localTime, nextOpening } from '../core/hours';
+import { closesAt, isOpen, localTime, nextOpening } from '../core/hours';
 import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
@@ -51,6 +51,8 @@ function openWords(b: AgentBusiness, now: Date): string {
   const schedule = openSchedule(b);
   if (schedule === null) return '';
   const closing = closesAt(schedule, now.getTime());
+  // Open throughout the horizon: no closing to name.
+  if (closing === null && isOpen(schedule, now.getTime())) return 'The business is open now.';
   if (closing !== null) {
     const today = localTime(now.getTime(), schedule.timezone).date;
     const [y, m, d] = today.split('-').map(Number) as [number, number, number];

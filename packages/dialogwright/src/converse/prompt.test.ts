@@ -254,4 +254,16 @@ describe('opening hours (business.open)', () => {
   it('rule 1 says a callback time is a time too', () => {
     expect(systemPrompt(plain, fresh(), NOW)).toContain('When someone from the business will get back to the caller is a time too: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.');
   });
+  it('a schedule open round the clock says open now, with no "until"', () => {
+    const always = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { mon-sun: ["00:00-24:00"] }\n')).value!;
+    expect(systemPrompt(always, fresh(), NOW)).toContain("America/New_York).\nThe business is open now.\nThe caller:");
+  });
+  it('contiguous ranges are told as one: open until the last end', () => {
+    const split = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { mon-fri: ["08:00-12:00", "12:00-18:00"] }\n')).value!;
+    expect(systemPrompt(split, fresh(), NOW)).toContain('The business is open now, until 6:00 pm.');
+  });
+  it('a closing at midnight is told as midnight', () => {
+    const late = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { wed: ["09:00-24:00"] }\n')).value!;
+    expect(systemPrompt(late, fresh(), NOW)).toContain('The business is open now, until midnight.');
+  });
 });

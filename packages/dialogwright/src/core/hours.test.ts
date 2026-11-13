@@ -176,3 +176,30 @@ describe('the next opening and today\'s closing', () => {
     expect(closesAt(week, at('2026-12-25T15:00:00Z'))).toBeNull();
   });
 });
+
+describe('closesAt across contiguous ranges, and through DST', () => {
+  it('a 24/7 schedule is open with no closing; contiguous ranges close at the last end', () => {
+    const always: HoursConfig = { timezone: 'America/New_York', weekly: { 'mon-sun': ['00:00-24:00'] } };
+    expect(isOpen(always, at('2026-11-11T15:00:00Z'))).toBe(true);
+    expect(closesAt(always, at('2026-11-11T15:00:00Z'))).toBeNull();
+    const split: HoursConfig = { timezone: 'America/New_York', weekly: { 'mon-fri': ['08:00-12:00', '12:00-18:00'] } };
+    expect(closesAt(split, at('2026-11-11T15:00:00Z'))).toEqual({ date: '2026-11-11', minute: 18 * 60 });
+  });
+  it('a range ending 24:00 carries into the next day\'s 00:00 range, and stops at a closed date', () => {
+    const late: HoursConfig = { timezone: 'UTC', weekly: { mon: ['18:00-24:00'], tue: ['00:00-03:00'] } };
+    expect(closesAt(late, at('2026-11-16T20:00:00Z'))).toEqual({ date: '2026-11-17', minute: 3 * 60 });
+    expect(closesAt({ ...late, closed: ['2026-11-17'] }, at('2026-11-16T20:00:00Z'))).toEqual({ date: '2026-11-17', minute: 0 });
+  });
+});
+
+describe('nextOpening through daylight saving changes', () => {
+  const ny: HoursConfig = { timezone: 'America/New_York', weekly: { 'mon-sun': ['09:00-17:00'] } };
+  it('across the fall-back Sunday (2026-11-01) the opening is still 9:00 local', () => {
+    expect(nextOpening(ny, at('2026-11-01T06:00:00Z'))).toEqual({ date: '2026-11-01', minute: 9 * 60 });
+    expect(nextOpening(ny, at('2026-11-01T23:00:00Z'))).toEqual({ date: '2026-11-02', minute: 9 * 60 });
+  });
+  it('across the spring-forward Sunday (2027-03-14) the opening is still 9:00 local', () => {
+    expect(nextOpening(ny, at('2027-03-14T05:30:00Z'))).toEqual({ date: '2027-03-14', minute: 9 * 60 });
+    expect(nextOpening(ny, at('2027-03-14T22:00:00Z'))).toEqual({ date: '2027-03-15', minute: 9 * 60 });
+  });
+});
