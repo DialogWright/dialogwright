@@ -31,6 +31,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright kb:approve | kb:status             (../kb/commands.ts, ../kb/approval.ts: approving passages, and their state)
  *   dialogwright regress [dir] [options]            (../harness-text/regressCommand.ts: an app's regression run)
  *   dialogwright render:bakeoff [dir] --models ...  (../harness-text/renderBakeoffCommand.ts: render models compared)
+ *   dialogwright converse:route-eval <app dir> --calls <file>... --labels <file>   (../harness-text/routeEvalCommand.ts: journey routing measured on labelled caller turns)
  *   dialogwright converse:claims-eval --cases <file>... --labels <file> --variant <module>...   (../harness-text/claimsEvalCommand.ts: the check after speaking's questions measured on labelled replies)
  *   dialogwright render:judge-eval [--replay] ...   (../harness-text/judgeEvalCommand.ts: the span drift judge measured against the shape checks)
  *   dialogwright eval <app dir> --personas ...   (../eval/cli.ts: simulated callers over the chat wire)
@@ -64,6 +65,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['regress', "an app's regression run against its fixtures (the stub, or a recording with --client recorded)"],
   ['render:bakeoff', "compare render models on an app's generated lines: each recorded into its own cassette, one table (--replay: from the cassettes)"],
   ['render:judge-eval', 'measure the span drift judge against the span\'s shape checks on labelled cases: the real judge recorded into a cassette, one report (--replay: from the cassette)'],
+  ['converse:route-eval', 'journey routing measured on caller turns a person labelled: accuracy, wrong and missed switches by bar, the decision model recorded into a cassette beside the labels (--replay: from the cassette)'],
   ['converse:claims-eval', "the check after speaking's question sets measured on replies a person labelled: recall, precision and average precision by rule, the decision model recorded into a cassette beside the labels (--replay: from the cassette)"],
   ['agent:bakeoff', "compare agent models on a cases file's calls: answered, valid JSON, values and actions right, figures, latency and cost, each recorded into its own cassette beside the cases (--replay: from the cassettes)"],
   ['eval', "simulated callers over the chat wire: a model plays each persona, a model judges the call (--judge none: each call's judge input written for judging by hand), one summary of the measures (the author's own keys; refused in CI)"],
@@ -132,6 +134,8 @@ export const USAGE = [
   '  render models compared on the app\'s generated lines, each recorded into its own render cassette with your keys (refused in CI); --replay tables the cassettes alone (dialogwright render:bakeoff --help)',
   '       dialogwright render:judge-eval [--replay] [--cases <file>] [--out <file.md>] [--json]',
   '  the span drift judge against the span\'s shape checks on labelled cases, the judge recorded with the decision model\'s key (refused in CI); --replay tables its cassette alone (dialogwright render:judge-eval --help)',
+  '       dialogwright converse:route-eval <app dir> --calls <results.jsonl>... --labels <labels.jsonl> [--personas <file>] [--replay] [--out <file.md>] [--json] [--timeout-ms N]',
+  '  journey routing measured on caller turns a person labelled (calls from dialogwright eval), the decision model recorded into a cassette beside the labels (refused in CI); --replay reads it alone (dialogwright converse:route-eval --help)',
   '       dialogwright converse:claims-eval --cases <claims-cases.jsonl>... --labels <labels.jsonl> --variant <module.ts>... [--replay] [--out <file.md>] [--json] [--timeout-ms N]',
   '  the check after speaking\'s question sets measured on replies a person labelled (cases from dialogwright eval --claims-cases), the decision model recorded into a cassette beside the labels (refused in CI); --replay reads it alone (dialogwright converse:claims-eval --help)',
   '       dialogwright agent:bakeoff --cases <file> --models <model>[,<model>...] [--recorded <dir>] [--examples on|off|both] [--repeat N] [--replay] [--judge-ms N] [--price <model>=<input>,<output>]... [--by-turn] [--print-prompt] [--out <file.md>] [--json]',
@@ -271,6 +275,10 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'render:judge-eval') {
     const { judgeEvalCommand } = await import('../harness-text/judgeEvalCommand');
     return judgeEvalCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
+  }
+  if (command === 'converse:route-eval') {
+    const { routeEvalCommand } = await import('../harness-text/routeEvalCommand');
+    return routeEvalCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
   }
   if (command === 'converse:claims-eval') {
     const { claimsEvalCommand } = await import('../harness-text/claimsEvalCommand');
