@@ -13,8 +13,10 @@ closed. They were compared with [journeys after the amendment](2026-11-journeys.
 run at about 1 am the same night, and labelled by the same brief. The brief added one line: a reply giving a time or
 day for a callback contradicts the business information.
 
-**Verdict:** not ready. The change did what it was for, but it brought a new kind of time promise, and the other
-figures are worse. The branch stays as it is.
+**Verdict.**
+- **The first run (below)** was not ready.
+- **After the reset ([one request journey](#one-request-journey-2026-11-13))** the happy paths are the best measured
+  yet, and it was merged and deployed.
 
 ## What it fixed
 
@@ -54,3 +56,47 @@ figures are worse. The branch stays as it is.
 | The line's model, per call | $0.0032 to $0.0033 | $0.0031 to $0.0032 |
 
 The run cost $1.36.
+
+## One request journey (2026-11-13)
+
+The maintainer's direction after the run above: "A call back is really just a request that didn't let you text… We
+were trying to make an extra journey." The wheel shop now has one journey for every caller who is not a dealership,
+`request`, which offers `send_request` and `leave_callback` together. `dealer_booking` stays for recognised accounts
+and offers `leave_callback` as well.
+
+Three fixes from the run above came with it:
+- the open or closed sentence says "today" and "tomorrow" outright;
+- rule 1 counts tying a callback to the opening as a time too;
+- the after-hours greeting leads with what the line can do and says the shop is closed second.
+
+A same-day reply deadline went in as an assumption for the owner to confirm.
+
+**The new bar.** The maintainer moved the bar to the happy paths. The happy-path callers are seven personas: the caller
+who says it all at once, the discount pusher, side questions, switching to a callback, the dealership, the caller
+who wanders off, and the caller who wants a person. The hard personas (the number-and-day opener, injections,
+off-topic, terse) are a watch list.
+
+The same 300 calls were run at about 3 am. The 140 happy-path calls were labelled by the same brief.
+
+| Happy-path callers (140 calls) | Journeys after the amendment (1 am) | After hours (2 am) | One request journey (3 am) |
+| --- | --- | --- | --- |
+| Calls with a serious wrong reply | 8% | 12% | **4%** |
+| Serious wrong replies, per 100 calls | 9.3 | 17.1 | **4.3** |
+| Wrong replies, per 100 calls | 12.9 | 25.0 | **7.9** |
+
+| Got what they came for | Journeys after the amendment | One request journey |
+| --- | --- | --- |
+| Says it all at once | 18/20 | 18/20 |
+| Switches to a callback mid-request | 16/20 | 18/20, with the callback and the request both done |
+| Side questions | 19/20 | 17/20 |
+| Dealership | 14/20 | 17/20 |
+| Discount pusher | 19/20 | 17/20 |
+| Wants a person | 19/20 | 10/20 |
+
+**Wants a person.** Read call by call, the line offered the callback note every time and said plainly that there is
+no direct line. Told the shop was closed, the simulated caller often chose to "call back when you open" rather than
+leave a note. That is a choice a person might make too, not a wrong reply.
+
+The six serious wrong replies left are mostly the line saying a note carries a preference that is not in it.
+
+The run cost $1.34.
