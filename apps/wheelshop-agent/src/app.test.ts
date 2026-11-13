@@ -375,3 +375,59 @@ describe('the app folder', () => {
     expect(own.warnings ?? []).not.toContainEqual(expect.stringMatching(/kept in memory/));
   });
 });
+
+describe('after hours', () => {
+  const AFTER_HOURS = 'Thanks for calling Example Wheel Works. We\'re closed right now, but we can price a repair and set up a drop-off, or take a note for the shop to call you back. How can we help?';
+  const SATURDAY = Date.parse('2026-11-14T15:00:00Z'); // 10 a.m. at the shop, a Saturday
+  const NIGHT = Date.parse('2026-11-12T04:00:00Z'); // 11 p.m. Wednesday at the shop
+  const systemOf = (m: { requests: readonly unknown[] }): string => (m.requests.at(-1) as { system: string }).system;
+
+  async function opening(at: number, callerNumber?: string) {
+    const model = fakeConverseModel([...dropped(), [text('Hello.'), done()]]);
+    const { app } = wheelshop({ now: () => at });
+    const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(at), env: { SHOP_PHONE }, ...(callerNumber !== undefined ? { callerNumber } : {}) });
+    const greeting = await c.start();
+    await c.say('I curbed my Civic');
+    return { greeting, model };
+  }
+
+  it('opens with the after-hours greeting on a Saturday, and tells the model the shop is closed until Monday at 7:30 am', async () => {
+    const { greeting, model } = await opening(SATURDAY);
+    expect(greeting).toEqual([AFTER_HOURS]);
+    expect(systemOf(model)).toContain('The business is closed now; it next opens Monday, November 16, at 7:30 am.');
+  });
+
+  it('opens with the after-hours greeting at 11 pm on a weekday', async () => {
+    const { greeting, model } = await opening(NIGHT);
+    expect(greeting).toEqual([AFTER_HOURS]);
+    expect(systemOf(model)).toContain('The business is closed now; it next opens Thursday, November 12, at 7:30 am.');
+  });
+
+  it('in opening hours says the usual greeting and that the shop is open until 5:30 pm', async () => {
+    const { greeting, model } = await opening(NOW);
+    expect(greeting[0]).toMatch(/^Thanks for calling Example Wheel Works, where we make damaged wheels look new again\./);
+    expect(systemOf(model)).toContain('The business is open now, until 5:30 pm.');
+  });
+
+  it('gives a dealership calling at night the after-hours greeting, not the dealership one', async () => {
+    const { greeting } = await opening(NIGHT, DEALER);
+    expect(greeting).toEqual([AFTER_HOURS]);
+  });
+
+  it('gives a dealership in opening hours its own greeting', async () => {
+    const { greeting } = await opening(NOW, DEALER);
+    expect(greeting).toEqual(['Example Wheel Works, hi. Booking some cars in today?']);
+  });
+
+  it('gives no callback time: the question about it is answered with no set time', async () => {
+    const { app } = wheelshop({ now: () => NOW });
+    const model = fakeConverseModel([...dropped(), [text('Hello.'), done()]]);
+    const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(NOW), env: { SHOP_PHONE } });
+    await c.start();
+    await c.say('I want to talk to a person');
+    const system = systemOf(model);
+    expect(system).toContain("As soon as the shop can; we don't give a set time.");
+    expect(system).toContain('Never say when someone will call back.');
+    expect(system).not.toMatch(/working day/i);
+  });
+});

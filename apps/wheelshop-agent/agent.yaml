@@ -16,6 +16,10 @@ business:
   where: Inside the detailing shop at 400 Commerce Drive, Rivergate.
   hours: Monday to Friday, 7:30 am to 5:30 pm, with two drop-off windows a day; closed Saturday and Sunday. # assumption: the owner corrects these
   timezone: America/New_York
+  # assumption: the owner corrects these (the hours the line itself works from; no holiday dates yet, the owner adds them under closed)
+  open:
+    weekly:
+      mon-fri: ["07:30-17:30"]
   # assumption: the owner corrects this (the reason for the line, said to a caller who is not giving what it asks for)
   line: This line is how we price repairs and set up drop-offs while we're busy in the shop fixing wheels.
 
@@ -151,14 +155,15 @@ journeys:
   callback:
     when: The caller wants to speak with someone, or wants the shop to call them.
     goal: Leave the shop a callback note, read back and confirmed by the caller.
+    # assumption: the owner corrects these (the limit on callback times)
     instructions: >-
       The note carries only the caller's name, the number to call back, what it is about and any notes for the
-      shop.
+      shop. Never say when someone will call back.
     facts: # assumption: the owner corrects these
     - A callback note needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
     questions: # assumption: the owner corrects these
     - q: When will someone from the shop call me back?
-      a: Usually the same working day, or the next working day if the shop has closed by then.
+      a: As soon as the shop can; we don't give a set time.
     - q: Can I call the shop directly?
       a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
     actions: [leave_callback]
@@ -167,6 +172,8 @@ persona:
 lines:
   # assumption: the owner corrects these (a receptionist's opening: what the shop does, then what the line can do)
   greeting: { en: "Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?" }
+  # assumption: the owner corrects these (said instead of the greeting when a call starts outside the shop's hours)
+  greetingAfterHours: { en: "Thanks for calling Example Wheel Works. We're closed right now, but we can price a repair and set up a drop-off, or take a note for the shop to call you back. How can we help?" }
   closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
