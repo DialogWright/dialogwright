@@ -5,7 +5,7 @@ import type { AnswerMap, JevClient, JsonValue, QuestionMap } from '../jev/types'
 import { loadPersonas } from '../eval/personas';
 import type { AgentBusiness } from './business/schema';
 import { askWithin } from './confirm';
-import { completeJourney, decideRoute, initialJourney, NONE_TASK, openJourneys, readRoute, routeQuestions, routeState, type RouteOutcome, type RouteReading } from './journeys';
+import { completeJourney, decideRoute, initialJourney, NONE_TASK, openJourneys, QUESTION_TASK, readRoute, routeQuestions, routeState, type RouteOutcome, type RouteReading } from './journeys';
 import type { JourneyState } from './state';
 
 /**
@@ -29,8 +29,10 @@ export interface RouteLabel {
   id: string;
   /** The caller turn's index among the call's caller turns, 0-based. */
   turn: number;
-  /** The journey the caller wants done now, or `none`. */
+  /** The journey the caller wants done now, `question` (a question about the business) or `none`. */
   task: string;
+  /** Inside a working task: that the turn gives what the line asked for or carries on with the task. Absent: taken as fitting. */
+  fits?: boolean;
   /** The caller said they no longer want to go on with the active task. */
   drops?: boolean;
   /** The caller wants another one of the finished task. */
@@ -55,11 +57,12 @@ const ACCOUNT_NAME = 'Example Account';
 
 /** The reading a perfect decision model would give a labelled turn. */
 function perfectReading(b: AgentBusiness, j: JourneyState, label: RouteLabel, open: string[]): RouteReading {
-  const task: Record<string, number> = { [NONE_TASK]: 0 };
+  const task: Record<string, number> = { [NONE_TASK]: 0, [QUESTION_TASK]: 0 };
   for (const id of open) task[id] = 0;
   task[label.task] = 1;
   const active = j.active !== null;
-  return { task, drops: active && j.phase === 'working' ? (label.drops === true ? 1 : 0) : null, again: active && j.phase === 'after' ? (label.again === true ? 1 : 0) : null, fits: null };
+  const working = active && j.phase === 'working';
+  return { task, drops: working ? (label.drops === true ? 1 : 0) : null, again: active && j.phase === 'after' ? (label.again === true ? 1 : 0) : null, fits: working ? (label.fits === false ? 0 : 1) : null };
 }
 
 const callerOf = (c: RouteCall): { number: string; account: string | null } => ({ number: CALLER_NUMBER, account: c.account ? ACCOUNT_NAME : null });
@@ -93,7 +96,7 @@ export function routeCaseSet(b: AgentBusiness, calls: readonly RouteCall[], labe
       any = true;
       used.add(key);
       // A task that is no journey of the business (and not `none`) is listed, never read as `none`; the call stops here, as its later states would be wrong.
-      if (label.confirms === undefined && label.task !== NONE_TASK && b.journeys?.[label.task] === undefined) {
+      if (label.confirms === undefined && label.task !== NONE_TASK && label.task !== QUESTION_TASK && b.journeys?.[label.task] === undefined) {
         unknownTasks.push(key);
         break;
       }
@@ -160,6 +163,7 @@ export function loadRouteLabels(file: string): RouteLabel[] {
       task: l.task,
       ...(l.drops === true ? { drops: true } : {}),
       ...(l.again === true ? { again: true } : {}),
+      ...(typeof l.fits === 'boolean' ? { fits: l.fits } : {}),
       ...(typeof l.confirms === 'string' ? { confirms: l.confirms } : {}),
     });
   });
@@ -202,6 +206,21 @@ export interface BarRow {
   wrongJourney: number;
 }
 
+/** One start bar (`routing.startAt`) tried, switchAt the business's own. */
+export interface StartRow {
+  startAt: number;
+  correct: number;
+  accuracy: number | null;
+  /** Of the turns labelled unclear, the share Jev read unclear (null: none labelled). */
+  unclearRecall: number | null;
+  /** Of the turns Jev read unclear, the share labelled unclear (null: none read). */
+  unclearPrecision: number | null;
+  /** Turns where the label starts a journey from the root and Jev's route does not (it reads unclear or stays at the root). */
+  missedStarts: number;
+  /** The turns where the label starts a journey from the root. */
+  starts: number;
+}
+
 export interface RouteEvalReport {
   cases: number;
   /** Caller turns with no label, skipped. */
@@ -225,6 +244,15 @@ export interface RouteEvalReport {
   /** Both make a move, but to a different journey or phase. */
   wrongJourney: number;
   byBar: BarRow[];
+  /** At the business's own `routing.startAt`. */
+  startAt: number;
+  unclearRecall: number | null;
+  unclearPrecision: number | null;
+  /** The turns labelled unclear (by the replayed route), and the turns Jev read unclear. */
+  unclearExpected: number;
+  unclearRead: number;
+  /** By start bar, switchAt the business's. */
+  byStart: StartRow[];
   /** The live requests' times (absent where all were recorded). */
   latency: { requests: number; p50Ms: number; p95Ms: number } | null;
   /** Each case routed wrongly at the business's bar: ids and outcomes, no words of the call. */
@@ -243,29 +271,50 @@ export function latencyOf(times: readonly number[]): RouteEvalReport['latency'] 
 }
 
 /** Routes each case through the runtime's `decideRoute` at each bar, against the route a perfect reading gives it. */
-export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answers: ReadonlyMap<string, AnswerMap | null>, bars: readonly number[]): RouteEvalReport {
-  const at = (bar: number) => {
-    const biz: AgentBusiness = { ...b, routing: { ...b.routing, switchAt: bar } };
+export const START_BARS = [0.6, 0.7, 0.8, 0.9] as const;
+
+export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answers: ReadonlyMap<string, AnswerMap | null>, bars: readonly number[], startBars: readonly number[] = START_BARS): RouteEvalReport {
+  const at = (bar: number, startAt: number = b.routing.startAt) => {
+    const biz: AgentBusiness = { ...b, routing: { ...b.routing, switchAt: bar, startAt } };
     let correct = 0;
+    let unclearExpected = 0;
+    let unclearRead = 0;
+    let unclearBoth = 0;
+    let starts = 0;
+    let missedStarts = 0;
     let wrong = 0;
     let missed = 0;
     let wrongJourney = 0;
     const misses: RouteEvalReport['wrongCases'] = [];
     for (const c of cases) {
-      const open = Object.keys((c.questions.task as { criteria: Record<string, string | null> }).criteria).filter((k) => k !== NONE_TASK);
+      const open = Object.keys((c.questions.task as { criteria: Record<string, string | null> }).criteria).filter((k) => k !== NONE_TASK && k !== QUESTION_TASK);
       const expected = decideRoute(biz, c.journey, perfectReading(biz, c.journey, c.expected, open), open);
       const got = decideRoute(biz, c.journey, readRoute(answers.get(c.id) ?? null), open);
-      const same = got.next.active === expected.next.active && got.next.phase === expected.next.phase;
+      const wasUnclear = expected.unclear === true;
+      const readUnclear = got.unclear === true;
+      if (wasUnclear) unclearExpected += 1;
+      if (readUnclear) unclearRead += 1;
+      if (wasUnclear && readUnclear) unclearBoth += 1;
+      if (c.journey.active === null && MOVES.includes(expected.outcome)) {
+        starts += 1;
+        if (got.outcome !== expected.outcome) missedStarts += 1;
+      }
+      const same = got.next.active === expected.next.active && got.next.phase === expected.next.phase && wasUnclear === readUnclear;
       if (same) correct += 1;
       else misses.push({ id: c.id, expected: expected.outcome, got: got.outcome, label: c.expected.task });
       if (MOVES.includes(got.outcome) && STAYS.includes(expected.outcome)) wrong += 1;
       if (MOVES.includes(expected.outcome) && !MOVES.includes(got.outcome)) missed += 1;
       if (MOVES.includes(expected.outcome) && MOVES.includes(got.outcome) && !same) wrongJourney += 1;
     }
-    return { correct, wrong, missed, wrongJourney, misses };
+    return { correct, wrong, missed, wrongJourney, misses, unclearExpected, unclearRead, unclearBoth, starts, missedStarts };
   };
+  const share = (a: number, of: number): number | null => (of === 0 ? null : a / of);
   const ratio = (a: number): number | null => (cases.length === 0 ? null : a / cases.length);
   const own = at(b.routing.switchAt);
+  const startRow = (startAt: number): StartRow => {
+    const r = at(b.routing.switchAt, startAt);
+    return { startAt, correct: r.correct, accuracy: ratio(r.correct), unclearRecall: share(r.unclearBoth, r.unclearExpected), unclearPrecision: share(r.unclearBoth, r.unclearRead), missedStarts: r.missedStarts, starts: r.starts };
+  };
   return {
     cases: cases.length,
     unlabelledTurns: 0,
@@ -279,6 +328,12 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
     wrongSwitches: own.wrong,
     missedSwitches: own.missed,
     wrongJourney: own.wrongJourney,
+    startAt: b.routing.startAt,
+    unclearRecall: share(own.unclearBoth, own.unclearExpected),
+    unclearPrecision: share(own.unclearBoth, own.unclearRead),
+    unclearExpected: own.unclearExpected,
+    unclearRead: own.unclearRead,
+    byStart: startBars.map(startRow),
     byBar: bars.map((bar) => {
       const r = at(bar);
       return { bar, correct: r.correct, accuracy: ratio(r.correct), wrongSwitches: r.wrong, missedSwitches: r.missed, wrongJourney: r.wrongJourney };
@@ -290,7 +345,11 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
 
 /** What the figures mean. */
 export const ROUTE_DEFINITIONS = [
-  'Accuracy: the share of turns where the journey and phase Jev routes to are those the label gives.',
+  'Accuracy: the share of turns where the journey and phase Jev routes to, and whether the line could not follow the turn (unclear), are those the label gives.',
+  'Unclear: the line could not follow the turn. At the root, the label is none, or a journey asked for below the start bar; in a working task, fits is false and the turn is no question and switches nowhere. A turn labelled question is never unclear at the root.',
+  'Unclear recall: of the turns the label makes unclear, the share Jev also reads unclear.',
+  'Unclear precision: of the turns Jev reads unclear, the share the label also makes unclear.',
+  'Missed start: the label starts (or returns to) a journey from the root and Jev\'s route at that start bar does not; its share is of the turns where the label starts one.',
   'Wrong switch: Jev moves the call (starts, switches, returns, drops or goes again) where the label stays (carry or root).',
   'Missed switch: the label moves the call (a start, switch, return, drop or again) and Jev makes no move.',
   'Switched to the wrong journey: both move the call, but to a different journey or phase.',
@@ -305,6 +364,10 @@ export function formatRouteEval(r: RouteEvalReport): string[] {
   out.push(`At the business's bar, ${r.switchAt}: accuracy ${pct(r.accuracy)} (${r.correct} of ${r.cases}), ${r.wrongSwitches} wrong switches, ${r.missedSwitches} missed switches, ${r.wrongJourney} switched to the wrong journey.`, '');
   out.push('| bar | accuracy | correct | wrong switches | missed switches | wrong journey |', '| --- | --- | --- | --- | --- | --- |');
   for (const x of r.byBar) out.push(`| ${x.bar} | ${pct(x.accuracy)} | ${x.correct} | ${x.wrongSwitches} | ${x.missedSwitches} | ${x.wrongJourney} |`);
+  out.push('');
+  out.push(`Unclear turns at the business's start bar, ${r.startAt}: recall ${pct(r.unclearRecall)} (${r.unclearExpected} labelled), precision ${pct(r.unclearPrecision)} (${r.unclearRead} read).`, '');
+  out.push('| start bar | accuracy | unclear recall | unclear precision | missed starts |', '| --- | --- | --- | --- | --- |');
+  for (const x of r.byStart) out.push(`| ${x.startAt} | ${pct(x.accuracy)} | ${pct(x.unclearRecall)} | ${pct(x.unclearPrecision)} | ${x.missedStarts} of ${x.starts} |`);
   out.push('');
   out.push(...ROUTE_DEFINITIONS, '');
   if (r.unknownTasks.length > 0) out.push(`Labels naming a task that is no journey (the call is skipped from that turn on): ${r.unknownTasks.join(', ')}.`, '');

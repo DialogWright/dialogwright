@@ -120,6 +120,66 @@ describe('moves and their definitions', () => {
   });
 });
 
+describe('unclear turns and the start bar', () => {
+  const none = { visit: 0, note: 0, none: 1, question: 0 };
+  it('accepts question as a task, as a clear root turn', () => {
+    const set = routeCaseSet(b, [call('f/a-1', ['hours?'])], [label('f/a-1', 0, 'question')]);
+    expect(set.unknownTasks).toEqual([]);
+    expect(set.cases).toHaveLength(1);
+    const r = scoreRoutes(b, set.cases, new Map([['f/a-1#0', reading({ visit: 0, note: 0, none: 0, question: 1 })]]), BARS);
+    expect(r.accuracy).toBe(1);
+    expect(r.unclearExpected).toBe(0);
+    expect(r.unclearRead).toBe(0);
+  });
+  it('a none at the root read as none is unclear, correctly', () => {
+    const cs = routeCases(b, [call('f/a-1', ['hmm'])], [label('f/a-1', 0, 'none')]);
+    const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading(none)]]), BARS);
+    expect(r.unclearExpected).toBe(1);
+    expect(r.unclearRecall).toBe(1);
+    expect(r.unclearPrecision).toBe(1);
+    expect(r.accuracy).toBe(1);
+  });
+  it('a none at the root read as a question is a missed unclear, and wrong', () => {
+    const cs = routeCases(b, [call('f/a-1', ['hmm'])], [label('f/a-1', 0, 'none')]);
+    const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0, note: 0, none: 0, question: 1 })]]), BARS);
+    expect(r.unclearRecall).toBe(0);
+    expect(r.unclearPrecision).toBeNull();
+    expect(r.accuracy).toBe(0);
+  });
+  it('a fits: false turn read as fitting is a missed unclear', () => {
+    const cs = routeCases(b, [call('f/a-1', ['v1', 'odd'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'visit', { fits: false })]);
+    const fit = (p: number): AnswerMap => ({ ...reading({ visit: 0.9, note: 0, none: 0.1, question: 0 }, 0.1), fits: { type: 'noul', noul: p } });
+    const miss = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#1', fit(0.9)]]), BARS);
+    expect(miss.unclearExpected).toBe(1);
+    expect(miss.unclearRecall).toBe(0);
+    expect(miss.accuracy).toBe(0.5);
+    const hit = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#1', fit(0.1)]]), BARS);
+    expect(hit.unclearRecall).toBe(1);
+    expect(hit.accuracy).toBe(1);
+    // A turn the labeller did not mark is taken as fitting.
+    const unmarked = routeCases(b, [call('f/a-1', ['v1', 'more'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'visit')]);
+    expect(scoreRoutes(b, unmarked, new Map([['f/a-1#0', reading({ visit: 0.9, note: 0, none: 0.1 })], ['f/a-1#1', fit(0.9)]]), BARS).accuracy).toBe(1);
+  });
+  it('the start-bar table turns a start into an unclear above its bar, a missed start', () => {
+    const cs = routeCases(b, [call('f/a-1', ['book me'])], [label('f/a-1', 0, 'visit')]);
+    const r = scoreRoutes(b, cs, new Map([['f/a-1#0', reading({ visit: 0.85, note: 0, none: 0.15, question: 0 })]]), BARS);
+    expect(r.byStart.map((x) => x.startAt)).toEqual([0.6, 0.7, 0.8, 0.9]);
+    expect(r.byStart.map((x) => x.missedStarts)).toEqual([0, 0, 0, 1]);
+    expect(r.byStart.map((x) => x.accuracy)).toEqual([1, 1, 1, 0]);
+    expect(r.byStart.find((x) => x.startAt === 0.9)!.unclearPrecision).toBe(0);
+  });
+  it('reads fits from a label, and prints the start table with its definitions', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'route-eval-fits-'));
+    const f = join(dir, 'labels.jsonl');
+    writeFileSync(f, `${JSON.stringify({ id: 'a/b-1', turn: 1, task: 'question', fits: false })}\n`);
+    expect(loadRouteLabels(f)).toEqual([{ id: 'a/b-1', turn: 1, task: 'question', fits: false }]);
+    rmSync(dir, { recursive: true, force: true });
+    const { formatRouteEval } = await import('./routeEval');
+    const text = formatRouteEval({ ...scoreRoutes(b, [], new Map(), BARS), unlabelledTurns: 0, unlabelledCalls: 0 }).join('\n');
+    for (const w of ['Unclear recall:', 'Unclear precision:', 'Missed start:', '| start bar |']) expect(text).toContain(w);
+  });
+});
+
 describe('the files', () => {
   const dirs: string[] = [];
   afterEach(() => {

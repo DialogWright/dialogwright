@@ -20,12 +20,13 @@ import { loadHarnessEnv } from '../server/envFile';
 
 export const ROUTE_EVAL_USAGE = [
   'usage: dialogwright converse:route-eval <app dir> --calls <results.jsonl>... --labels <labels.jsonl> [--personas <file>] [--replay] [--out <file.md>] [--json] [--timeout-ms N]',
-  '  <app dir>: the converse app (its agent.yaml gives the journeys and routing.switchAt)',
+  '  <app dir>: the converse app (its agent.yaml gives the journeys and routing.switchAt, routing.startAt)',
   '  --calls: the results.jsonl of one or more evaluations (dialogwright eval); a call\'s id is <folder of the file>/<persona>-<run>',
   '  --personas: the personas file of those evaluations; a call whose persona has callingFrom is a recognised account (open to the journeys for accounts), any other is not',
-  '  --labels: one line per labelled caller turn: {"id": <call id>, "turn": <caller turn, 0-based>, "task": <journey id or "none">, "drops"?: true, "again"?: true, "confirms"?: <action>}; a turn labelled confirms is a yes to a read-back, never routed, and runs that action; a turn or call with no label is skipped and counted',
+  '  --labels: one line per labelled caller turn: {"id": <call id>, "turn": <caller turn, 0-based>, "task": <journey id, "question" or "none">, "fits"?: false (a turn inside a task that does not give what the line asked; absent: it fits), "drops"?: true, "again"?: true, "confirms"?: <action>}; a turn labelled confirms is a yes to a read-back, never routed, and runs that action; a turn or call with no label is skipped and counted',
   ...ROUTE_DEFINITIONS.map((l) => `  ${l}`),
-  '  a label whose task is neither a journey of the app nor "none" is listed by id in the report, and its call is skipped from that turn on',
+  '  a label whose task is neither a journey of the app, "question" nor "none" is listed by id in the report, and its call is skipped from that turn on',
+  '  a second table scores the start bar (routing.startAt) at 0.6, 0.7, 0.8 and 0.9: accuracy, unclear recall and precision, and missed starts, switchAt the app\'s own; choose the highest bar whose unclear recall is high enough while missed starts stay few',
   '  latency is measured on the recording run only; a --replay report has none',
   '  asks the decision model once per labelled turn (TYPESAFE_API_KEY, or JEV_PROVIDER\'s; from the environment, ENV_FILE or a .env where it is run), four at a time, into the cassette beside the labels (<labels>.jev.jsonl), asking only what it lacks; refused in CI',
   '  --replay: read the cassette alone, asking nothing; --out: also write the report as Markdown; --json: the figures as JSON on stdout; --timeout-ms: how long each request may take (default 30000)',
