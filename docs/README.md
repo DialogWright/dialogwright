@@ -112,7 +112,7 @@ The same app answers on the phone through Twilio, Telnyx or both (`VOICE_PROVIDE
 ### Design, history and contributing
 
 - [design.md](design.md): the design: the idea, the roles, how policy and identity work, the knowledge base, testing, channels, and the roadmap (section 12).
-- [designs/](designs/README.md): the design documents for engine features, each with the problem, the options and the decision; the guide is the reference for how a feature works today.
+- [designs/](designs/README.md): the design documents for engine features, each with the problem, the options and the decision; the guide is the reference for how a feature works today. The converse runtime's journeys are [the design](designs/2026-11-12-journeys.md) and [its build plan](designs/2026-11-12-journeys-plan.md).
 - [trials/](trials/README.md): fresh assistants building apps from a paragraph with the create-app skill, with their logs and what each stumble changed.
 - [live-checks.md](live-checks.md): what only real carrier, model and identity accounts can confirm, as a checklist for the maintainer.
 - [known-gaps.md](known-gaps.md): what a known gap in a corpus line or a scripted call is, and how a recording tolerates one.
