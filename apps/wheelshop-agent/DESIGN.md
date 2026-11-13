@@ -33,6 +33,14 @@ The demo needs answers only the owner can give. As with a real client, `agent.ya
 
 The shop's own texts (the photo request, the summaries, the quote) are in `src/shopTexts.ts`: agent.yaml describes the business the model speaks for and has no place for the texts the code sends, and a converse folder holds only app.yaml and agent.yaml.
 
+## The greeting, the unclear lines and the start bar
+
+For the owner to correct, each marked `# assumption: the owner corrects these` in `agent.yaml`:
+
+- **The greeting** is a receptionist's opening: what the shop does ("where we make damaged wheels look new again"), then the two things the line can do (price a repair and set up a drop-off, or have someone from the shop call back). A recognised dealership hears a shorter one from `dealer_booking` ("Example Wheel Works, hi. Booking some cars in today?"); it names no account, because a number on file recognises an account and does not prove who is calling.
+- **A turn the line cannot follow** (the decision model reads none of the offered tasks) is not guessed at: the model says what the line can do, with only lookups on offer, and `business.line` ("This line is how we price repairs and set up drop-offs while we're busy in the shop fixing wheels.") gives it the reason. On the third such turn in a row the line says `lines.unclear` ("Sorry, this line can only help with a wheel repair or a callback. Call us back any time.") and ends the call.
+- **The start bar** (`routing.startAt: 0.7`) is how sure the decision model must be that a caller wants a task before the line starts it. It was chosen on labelled turns: 0.7 kept the best accuracy with fewer wrong starts than 0.6, and 0.8 missed a third of starts. Raise it to start fewer tasks wrongly, lower it to miss fewer.
+
 ## How the facts were split among the journeys
 
 The line has three journeys (`repair_request`, `dealer_booking`, `callback`) and a root, per the spec's table ([the design](../../docs/designs/2026-11-12-journeys.md), "The wheel shop's journeys"). The owner corrects the split by moving an item between `agent.yaml`'s top level and a journey; every item keeps its assumption marker.

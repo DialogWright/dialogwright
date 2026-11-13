@@ -84,7 +84,7 @@ function shop(textOk: string, callerNumber?: string) {
 describe('send_request', () => {
   it('is read back in the shop\'s words and, on the yes, books the slot, texts the caller for a photo and the shop a summary', async () => {
     const { c, sys, provider } = shop('yes');
-    expect(await c.start()).toEqual(['Example Wheel Works, how can we help?']);
+    expect(await c.start()).toEqual(['Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
@@ -300,6 +300,29 @@ describe('journeys', () => {
     expect(await c.say('I curbed my Civic, can I bring it in Thursday?')).toEqual(['We can send the shop a request instead.']);
     expect(sys.bookings).toEqual([]);
     expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'book_dealer', outcome: 'refused', reason: expect.stringContaining('is not available') }]);
+  });
+
+  it('greets a caller on no account as a receptionist, and a recognised dealership with a booking question', async () => {
+    const { app } = wheelshop({ now: () => NOW });
+    const retail = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW) });
+    expect(await retail.start()).toEqual(['Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
+    const dealer = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW) });
+    expect(await dealer.start()).toEqual(['Example Wheel Works, hi. Booking some cars in today?']);
+  });
+
+  it('answers a turn it cannot follow with the model\'s guidance and the lookups alone, and ends on the third in a row with the shop\'s line', async () => {
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const guide = (): ConverseModelEvent[] => [text('We can price a wheel repair or take a callback note.'), done()];
+    const model = fakeConverseModel([...dropped(), guide(), ...dropped(), guide(), ...dropped()]);
+    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
+    await c.start();
+    expect(await c.say('mumble mumble')).toEqual(['We can price a wheel repair or take a callback note.']);
+    expect(toolNames(model)).toEqual(['end_call']);
+    expect(await c.say('hmm hm')).toEqual(['We can price a wheel repair or take a callback note.']);
+    const said = await c.say('uh huh');
+    expect(said).toEqual(['Sorry, this line can only help with a wheel repair or a callback. Call us back any time.']);
+    expect(model.requests).toHaveLength(5); // two turns' dropped round and guidance, and none on the third
+    expect(sys.bookings).toEqual([]);
   });
 
   it('moves a confirmed request to the after phase, withdrawing send_request', async () => {

@@ -93,6 +93,10 @@ root:
     we can help with, and offer what we can do: send a repair request, book a dealership's cars, or leave a
     callback note.
   actions: []
+# The bar a journey's reading must reach to start from the root: chosen on labelled turns (0.7 kept the best
+# accuracy with fewer wrong starts than 0.6, and 0.8 missed a third of starts; docs/designs/eval/2026-11-journeys.md).
+routing:
+  startAt: 0.7
 journeys:
   repair_request:
     when: The caller wants a wheel repaired, a price, or to bring a car in.
@@ -134,6 +138,8 @@ journeys:
     when: The caller wants to book cars in for repair.
     for: { account: recognised }
     start: { account: recognised }
+    # assumption: the owner corrects these (said to a recognised account; it names no one, as a number on file does not prove who is calling)
+    greeting: { en: "Example Wheel Works, hi. Booking some cars in today?" }
     goal: Book the account's cars into a drop-off window, read back and confirmed by the caller.
     instructions: >-
       Recognise the account before booking. Look the day up before offering a window, and book only into one
@@ -160,7 +166,8 @@ journeys:
 persona:
   style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
 lines:
-  greeting: { en: "Example Wheel Works, how can we help?" }
+  # assumption: the owner corrects these (a receptionist's opening: what the shop does, then what the line can do)
+  greeting: { en: "Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?" }
   closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
   recovery: { en: "Sorry, could you say that again?" }
   handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
