@@ -117,7 +117,7 @@ journeys:
       or their rates.
     facts: # assumption: the owner corrects these
     - Anyone else sends a request with a drop-off window; the shop looks at a photo of the damage and texts or calls back with a price. # assumption: the owner corrects these
-    - A request or a callback note needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them.
+    - A request or a callback note needs a number the shop can reach the caller on, given by the caller; without one, the shop has no way to get back to them. # assumption: the owner corrects these
     - With the caller's yes to texts, once a request is in we text them asking them to reply with a photo of the damage; without it, we call them. # assumption: the owner corrects these
     - A request holds the drop-off window the customer picked; the shop confirms the drop-off with its price. # assumption: the owner corrects these
     - The line takes no photos; a photo comes by reply to the text we send once a request is in. # assumption: the owner corrects these
