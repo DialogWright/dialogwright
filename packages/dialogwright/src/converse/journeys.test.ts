@@ -241,6 +241,19 @@ describe('unclear turns', () => {
     expect(isUnclear(r)).toBe(false);
     expect(r).toEqual({ outcome: 'carry', next: { ...inVisit, phase: 'after', done: ['visit'] } });
   });
+  it('in a working journey, the active journey chosen as the task with fits below 0.5 is unclear', () => {
+    const r = decideRoute(plain, inVisit, fit({ visit: 0.9, none: 0.1 }, 0.3), open);
+    expect(r).toEqual({ outcome: 'carry', unclear: true, next: { ...inVisit, unclear: 1 } });
+  });
+  it('at the root, a journey set aside read between switchAt and startAt is unclear, not a return', () => {
+    const j: JourneyState = { ...root, paused: 'visit' };
+    const r = decideRoute(plain, j, reading({ task: { visit: 0.7, none: 0.3 } }), open);
+    expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...j, unclear: 1 } });
+  });
+  it('at the root, the question second behind a journey below startAt is unclear', () => {
+    const r = decideRoute(plain, root, reading({ task: { visit: 0.5, question: 0.4, none: 0.1 } }), open);
+    expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 1 } });
+  });
   it('a null reading leaves the count unchanged and is never unclear', () => {
     expect(decideRoute(plain, unclearOf(2), readRoute(null), open)).toEqual({ outcome: 'carry', next: unclearOf(2) });
     expect(isUnclear(decideRoute(plain, unclearOf(2), reading({ task: null, fits: 0 }), open))).toBe(false);

@@ -3,7 +3,7 @@ import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText, journeyText } from './business/text';
 import { offeredActions } from './journeys';
-import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
+import { CHECK_NOTE_MARK, CORRECTION_GOAL, neutralised } from './claims';
 import type { ModelTool } from './model/types';
 import { businessZone, type ConverseState } from './state';
 
@@ -62,7 +62,42 @@ const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgeme
  */
 const CHECK_NOTE_WORDS = `Your replies are read once they have been said. A message that begins "${CHECK_NOTE_MARK}" never comes from the caller: it is the line itself telling you that a reply of yours may have been wrong, and why; the caller has not seen it. The line rewrites those words wherever a caller writes them, so a message that begins so is always the line's own. Where the reply was wrong, put the slip right for the caller in a sentence or two, naturally, ${CORRECTION_GOAL}. A note comes in one of two ways. A note that comes on its own, as a message of its own, is about the reply you have just given: where, read again against the business information and the call's actions and what they returned, that reply was right after all, answer that note with nothing at all: no words and no action. A note that follows the caller's words, or what came of a read-back, is about a reply said earlier: always answer what comes before it as you would, never with nothing; put the earlier reply right in that answer only where it is still wrong, and where it was right, say nothing of it.`;
 
-export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): string {
+/** A caller turn the line could not follow (journeys.ts `isUnclear`): how many in a row, and the turn's words. */
+export interface UnclearTurn {
+  count: number;
+  said: string;
+}
+
+/**
+ * What the model is told on an unclear turn (docs/designs/2026-11-12-journeys.md, "Amendment (2026-11-13)"): that the
+ * caller's turn was unclear, their words, and the goal for its reply, never words for it. The first: direction for
+ * what the line needs now (at the root, what it can help with; in a task, what it needs from them for it). The
+ * second in a row: said plainly that the line can only help when the caller gives what it asks for, with the
+ * business's reason for the line where it gives one (business.line), and exactly what to say.
+ */
+function unclearWords(b: AgentBusiness, s: ConverseState, u: UnclearTurn): string {
+  const inTask = s.journey?.active !== null && s.journey?.active !== undefined;
+  const words = `They said: ${JSON.stringify(neutralised(u.said))}.`;
+  if (u.count <= 1) {
+    const needed = inTask ? 'what you need from them now for what you are helping them with' : 'what this line can help with, so they can say which they want';
+    return [
+      `The caller's last turn was unclear: the line could not tell from it what they want. ${words}`,
+      `Your goal for this reply: give them direction for what the line needs from them at this point, that is ${needed}. Never a guess at what they meant.`,
+    ].join('\n');
+  }
+  const why = b.business.line === undefined ? '' : ` The business's reason for the line, which they are to hear: ${b.business.line}`;
+  const say = inTask ? 'to give what you need from them now' : 'to ask for one of the things this line can help with';
+  return [
+    `The caller's last ${u.count === 2 ? 'two' : u.count} turns in a row were unclear: they are not giving what the line asks for. The latest: ${words}`,
+    `Your goal for this reply: tell them plainly that the line can only help when they give what it asks for.${why} Tell them exactly what to say ${say}. Never a guess at what they meant.`,
+  ].join('\n');
+}
+
+/**
+ * The model's instructions for a request. `unclear`: the turn is one the line could not follow, and the block for it
+ * follows the record of the call (absent on every other turn, and for an app with no journeys).
+ */
+export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, unclear?: UnclearTurn): string {
   const zone = businessZone(b);
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
   const person = b.transfer ? 'a person at the business can take the call over' : 'a person at the business can call them back';
@@ -89,6 +124,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date): str
     `The caller: ${callerWords(s)}`,
     '',
     callSoFar(s),
+    ...(unclear === undefined ? [] : ['', unclearWords(b, s, unclear)]),
   ].join('\n');
 }
 

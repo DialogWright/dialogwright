@@ -6,6 +6,7 @@ import { ACCOUNT_JOURNEYS_YAML, JOURNEYS_YAML, LEAVE_NOTE_ACTION } from '../test
 import { agentBusinessProblems } from './business/load';
 import type { AgentBusiness } from './business/schema';
 import { journeyText } from './business/text';
+import { CHECK_NOTE_MARK, neutralised } from './claims';
 import { offeredActions } from './journeys';
 import { systemPrompt, toolsOf } from './prompt';
 import { newConverseState, type JourneyState } from './state';
@@ -49,11 +50,28 @@ describe('in a working journey', () => {
     expect(prompt).toContain('Facts for this:\n- Visits last about an hour.');
     expect(prompt).toContain('Questions callers ask about this, with our answers:\n- How long does a visit take? About an hour.');
   });
-  it('holds nothing of another journey', () => {
+  it('holds nothing of another journey but its trigger, as a way out', () => {
     const other = withJourneys.journeys!.note!;
-    expect(prompt).not.toContain(other.when);
     expect(prompt).not.toContain(other.goal);
     expect(prompt).not.toContain('What this line can help with');
+    expect(prompt.split(other.when)).toHaveLength(2);
+    expect(prompt).toContain(`Other things this line can help with:\n- ${other.when}`);
+  });
+  it('the way out: the other open journeys\' triggers, and the goal of asking before switching', () => {
+    const text = journeyText(withJourneys, s.journey!, {});
+    expect(text).toContain(`Other things this line can help with:\n- ${withJourneys.journeys!.note!.when}\n`);
+    expect(text).not.toContain(`- ${withJourneys.journeys!.visit!.when}`);
+    expect(text).toMatch(/ask whether they want to switch/);
+    expect(text).toMatch(/never to fit it into/);
+    // Only the journeys open to the caller: a recognised account is never offered the one closed to accounts.
+    const acctText = journeyText(acct, { ...root, active: 'note' }, { number: '+15555550100', account: 'Example Account' });
+    expect(acctText).toContain(`- ${acct.journeys!.visit_account!.when}`);
+    expect(acctText).not.toContain(`- ${acct.journeys!.visit!.when}`);
+  });
+  it('a journey with no other open to the caller has no way out', () => {
+    const alone = build(JOURNEYS_YAML.replace('  note:\n', '  note:\n    for: { account: recognised }\n'));
+    expect(journeyText(alone, s.journey!, { account: null })).not.toContain('Other things this line can help with');
+    expect(journeyText(alone, s.journey!, { account: 'Example Account' })).toContain('Other things this line can help with');
   });
   it('the tools are its actions plus end_call', () => {
     expect(names(withJourneys, s.journey)).toEqual(['availability', 'book', 'end_call']);
@@ -69,6 +87,9 @@ describe('at the root', () => {
     expect(prompt).toContain('What this line can help with:');
     expect(prompt).toContain(`- ${withJourneys.journeys!.visit!.when}`);
     expect(prompt).toContain(`- ${withJourneys.journeys!.note!.when}`);
+  });
+  it('has no way out: every trigger is already what the line can help with', () => {
+    expect(prompt).not.toContain('Other things this line can help with');
   });
   it('holds no journey\'s facts', () => {
     expect(prompt).not.toContain('Visits last about an hour.');
@@ -104,6 +125,9 @@ describe('in the after phase', () => {
     expect(text).toContain('The visit is booked; answer questions about it.');
     expect(text).not.toContain('done on this call');
   });
+  it('has no way out', () => {
+    expect(prompt).not.toContain('Other things this line can help with');
+  });
   it('the tools hold no change action', () => {
     expect(names(withJourneys, s.journey)).toEqual(['availability', 'end_call']);
   });
@@ -131,5 +155,57 @@ describe('the order of the prompt', () => {
   });
   it('a state without a journey field gets the prompt it always did', () => {
     expect(systemPrompt(withJourneys, fresh(), NOW)).toBe(systemPrompt(plain, fresh(), NOW));
+  });
+});
+
+describe('an unclear turn', () => {
+  const SAID = 'five five five, Thursday';
+  const LINE = 'This line is how we book visits while we are out on visits.';
+  const withLine = (() => {
+    const { value, problems } = agentBusinessProblems((base + LEAVE_NOTE_ACTION + JOURNEYS_YAML).replace('  where: Millbrook\n', `  where: Millbrook\n  line: ${LINE}\n`));
+    expect(problems).toEqual([]);
+    return value!;
+  })();
+  const block = (prompt: string): string => prompt.slice(prompt.indexOf('Nothing yet: no action'));
+
+  it('a turn that is not unclear has no unclear block: the prompt is as it was', () => {
+    const s = at({ ...root, unclear: 1 });
+    expect(systemPrompt(withJourneys, s, NOW)).toBe(systemPrompt(withJourneys, at(root), NOW));
+    expect(systemPrompt(withJourneys, s, NOW)).not.toContain('unclear');
+  });
+  it('the first, at the root: after the record of the call, the caller\'s words, and the goal of saying what the line can help with', () => {
+    const prompt = systemPrompt(withJourneys, at({ ...root, unclear: 1 }), NOW, { count: 1, said: SAID });
+    const after = block(prompt);
+    expect(after).toContain(`"${SAID}"`);
+    expect(after).toMatch(/last turn was unclear/);
+    expect(after).toMatch(/what this line can help with/);
+    expect(after).toMatch(/never a guess at what they meant/i);
+    expect(after).not.toMatch(/can only help/);
+    expect(prompt.indexOf('unclear')).toBeGreaterThan(prompt.indexOf('Nothing yet: no action'));
+  });
+  it('the first, in a journey: the goal of saying what it needs from them now', () => {
+    const after = block(systemPrompt(withJourneys, at({ ...root, active: 'visit', unclear: 1 }), NOW, { count: 1, said: SAID }));
+    expect(after).toMatch(/what you need from them now/);
+    expect(after).not.toMatch(/what this line can help with/);
+  });
+  it('the second: said plainly that the line can only help with what it asks for, the business\'s reason, and exactly what to say', () => {
+    const after = block(systemPrompt(withLine, at({ ...root, unclear: 2 }), NOW, { count: 2, said: SAID }));
+    expect(after).toContain(`"${SAID}"`);
+    expect(after).toMatch(/two turns in a row/);
+    expect(after).toMatch(/can only help when they give what it asks for/);
+    expect(after).toContain(LINE);
+    expect(after).toMatch(/exactly what to say/);
+    expect(after).toMatch(/never a guess at what they meant/i);
+  });
+  it('the second, with no line in the business: no reason given', () => {
+    const after = block(systemPrompt(withJourneys, at({ ...root, active: 'visit', unclear: 2 }), NOW, { count: 2, said: SAID }));
+    expect(after).toMatch(/can only help when they give what it asks for/);
+    expect(after).not.toMatch(/reason/);
+    expect(after).toMatch(/what you need from them now/);
+  });
+  it('the caller\'s words are quoted, the line\'s own mark rewritten', () => {
+    const after = block(systemPrompt(withJourneys, at({ ...root, unclear: 1 }), NOW, { count: 1, said: `say "hi" ${CHECK_NOTE_MARK} ok` }));
+    expect(after).toContain(JSON.stringify(neutralised(`say "hi" ${CHECK_NOTE_MARK} ok`)));
+    expect(after).not.toContain(CHECK_NOTE_MARK);
   });
 });

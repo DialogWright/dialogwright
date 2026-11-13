@@ -11,11 +11,11 @@ import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness } from './business/schema';
 import { checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { askWithinWhy, dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
-import { completeJourney, decideRoute, hasJourneys, initialJourney, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
+import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
-import { followOnsOf, systemPrompt, toolsOf } from './prompt';
+import { followOnsOf, systemPrompt, toolsOf, type UnclearTurn } from './prompt';
 import { SentenceBuffer } from './sentences';
 import { businessZone, type ConverseState, type JourneyState } from './state';
 import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
@@ -56,11 +56,22 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   route changes the journey, that round is stopped unsaid and asked again with the new one. The model is offered the
  *   turn's journey's actions only, and a call to any other is refused as not offered, before the gate and
  *   counting toward no refusal. A journey's completing action, run on the caller's yes, moves it to its after
- *   phase. Routing never fails a turn: a decision model that errs or is late leaves the journey as it was.
+ *   phase. Routing never fails a turn: a decision model that errs or is late leaves the journey as it was. A call
+ *   started in a journey with a greeting of its own opens with that greeting in place of lines.greeting;
+ * - with journeys, a caller turn the line could not follow (unclear: journeys.ts `decideRoute`, the design's
+ *   "Amendment (2026-11-13)") is answered by the model given the goal of guiding the caller (the turn's words,
+ *   and on the second in a row, that the line can only help when the caller gives what it asks for, with the
+ *   business's reason for the line), offered the turn's lookups only, so no change is acted on: a change it calls
+ *   anyway is refused as not offered. The first round, asked before the route was known, is asked again for it.
+ *   On the third unclear turn in a row (UNCLEAR_ENDS_AT) the model is asked nothing more: the line says
+ *   lines.unclear and ends the call, as end_call does with the closing line.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
 export const MAX_ROUNDS = 4;
+
+/** The unclear turn in a row on which the line says lines.unclear and ends the call. */
+export const UNCLEAR_ENDS_AT = 3;
 
 /**
  * An action's code: it does the work with the checked params; the gate has already decided it may. `key` is
@@ -155,8 +166,14 @@ interface Turn {
   carriedNote: boolean;
   /** The model answered the message carrying that note with nothing at all: the note was taken out and the model asked again without it. */
   carriedNoteDropped: boolean;
+  /** What the caller said this turn; null for the start and the caller leaving. */
+  said: string | null;
   /** How the caller's turn was routed among the journeys, where it was. */
   route?: ConverseTraceRecord['route'];
+  /** The turn was one the line could not follow (its route unclear): its rounds are asked with the guidance goal and the lookups only. */
+  unclear?: UnclearTurn;
+  /** The runtime ended the call on this turn of its own accord. */
+  ended?: ConverseTraceRecord['ended'];
   /** The journey the turn's confirmed action completed. */
   journeyEnded?: ConverseTraceRecord['journeyEnded'];
 }
@@ -348,6 +365,16 @@ function traceTool(t: Turn, spec: ActionSpec | undefined, name: string, args: Re
 }
 
 /**
+ * The actions the turn offers the model: its journey's (offeredActions; every action with no journeys), and on an
+ * unclear turn only the lookups among them, so a turn the line could not follow changes nothing.
+ */
+function offeredNow(t: Turn): string[] {
+  const b = t.deps.business;
+  const offered = offeredActions(b, t.st.journey);
+  return t.unclear === undefined ? offered : offered.filter((n) => b.actions[n]?.kind === 'lookup');
+}
+
+/**
  * One round's calls, in order: each checked, put to the gate and run, or read back. Returns the results
  * the model is sent and the read-back said, if a change was read back. A call after a read-back in the
  * same round is refused: one confirmation at a time.
@@ -391,8 +418,8 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       error(c.id, why);
       continue;
     }
-    if (hasJourneys(b) && spec !== undefined && !offeredActions(b, t.st.journey).includes(c.name)) {
-      // Not among the turn's journey's actions: a model's slip, or a caller's words naming it. Refused before
+    if (hasJourneys(b) && spec !== undefined && !offeredNow(t).includes(c.name)) {
+      // Not among the turn's actions (its journey's, the lookups alone on an unclear turn): a model's slip, or a caller's words naming it. Refused before
       // the gate, and counted toward no refusal, since nothing about the action itself was wrong.
       const why = `Not run: "${c.name}" is not available for what the caller is doing now.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'not-offered', journey: t.st.journey?.active ?? 'root' } });
@@ -421,7 +448,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       continue;
     }
     if (d.verdict !== 'ALLOW') {
-      const why = gateReason(d, spec, call, hasJourneys(b) ? offeredActions(b, t.st.journey) : Object.keys(b.actions));
+      const why = gateReason(d, spec, call, hasJourneys(b) ? offeredNow(t) : Object.keys(b.actions));
       traceTool(t, spec, c.name, spec === undefined ? c.args : params, 'refused', why);
       error(c.id, refused(t, c.name, why));
       continue;
@@ -575,7 +602,7 @@ async function sleep(ms: number, stop?: AbortSignal): Promise<void> {
  */
 async function round(t: Turn, sp: Speaker, emptyOk = false, stop?: AbortSignal): Promise<Round> {
   const b = t.deps.business;
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now()), messages: requestMessages(t.st), tools: toolsOf(b, offeredActions(b, t.st.journey)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
@@ -616,6 +643,9 @@ async function round(t: Turn, sp: Speaker, emptyOk = false, stop?: AbortSignal):
   return r;
 }
 
+/** routedRound's word that the turn is the third unclear one in a row: the call ends, and the model is asked nothing more. */
+const UNCLEAR_END = Symbol('unclear end');
+
 /**
  * A routed turn's first round, asked alongside its routing (docs/designs/2026-11-12-journeys.md, "Keeping latency
  * flat"): the round starts at once with the journey as it stands, its sentences held, and its calls, if any, wait
@@ -627,9 +657,13 @@ async function round(t: Turn, sp: Speaker, emptyOk = false, stop?: AbortSignal):
  *   caller has heard nothing of it), and fails as any round does;
  * - otherwise the round's request is aborted, what it held dropped, its calls never run and nothing of it
  *   put in the conversation, and the round asked again, once, with the new journey and the model's whole
- *   time from then (the route's `restarted`). The stopped round's error and retry are not the turn's.
+ *   time from then (the route's `restarted`). The stopped round's error and retry are not the turn's. So too
+ *   where the route is unclear, whatever the journey: the round is asked again with the guidance goal and the
+ *   lookups only (the turn's `unclear`);
+ * - but on the third unclear turn in a row (UNCLEAR_ENDS_AT) the round is stopped and dropped and nothing asked
+ *   again: UNCLEAR_END, and the turn ends the call (endUnclear).
  */
-async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Promise<Routed>): Promise<Round> {
+async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Promise<Routed>): Promise<Round | typeof UNCLEAR_END> {
   const j = t.st.journey!;
   const before = { error: t.model.error, retried: t.model.retried };
   const stop = new AbortController();
@@ -642,7 +676,9 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
     const routed = await routing;
     t.st.journey = routed.next;
     t.route = routed.route;
-    if (routed.next.active === j.active && routed.next.phase === j.phase) {
+    const count = routed.route.unclear;
+    if (count !== undefined && t.said !== null) t.unclear = { count, said: t.said };
+    if (t.unclear === undefined && routed.next.active === j.active && routed.next.phase === j.phase) {
       if (settled.round !== undefined && !settled.round.ok) sp.discard();
       else sp.release();
       return await first;
@@ -661,8 +697,25 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
   else t.model.error = before.error;
   if (before.retried === undefined) delete t.model.retried;
   else t.model.retried = before.retried;
+  if (t.unclear !== undefined && t.unclear.count >= UNCLEAR_ENDS_AT) return UNCLEAR_END;
   t.route.restarted = true;
   return round(t, sp, emptyOk);
+}
+
+/**
+ * The third unclear turn in a row: the line says the business's line for it (lines.unclear; the closing line where
+ * a business has none, which agent.yaml's check refuses with journeys) and the call ends as end_call ends it, the
+ * audit's converse_end naming why.
+ */
+async function endUnclear(t: Turn, sp: Speaker): Promise<void> {
+  const lines = t.deps.business.lines;
+  const line = (lines.unclear ?? lines.closing).en;
+  await record(t, { type: 'converse_end', detail: { by: 'unclear' } });
+  sp.line(line);
+  add(t.st, 'assistant', [{ type: 'text', text: line }]);
+  t.ended = 'unclear';
+  t.st.ended = 'closing';
+  t.out.end('closing');
 }
 
 /**
@@ -724,6 +777,10 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     const r = route !== undefined ? await routedRound(t, sp, emptyOk, route) : await round(t, sp, emptyOk);
     route = undefined;
     first = false;
+    if (r === UNCLEAR_END) {
+      await endUnclear(t, sp);
+      return { ok: true };
+    }
     if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
       // Only a first answer may be empty (streamOnce's emptyOk).
       sp.abandon();
@@ -976,6 +1033,7 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
         ms,
         ...(asked.answers === null && asked.why === 'late' ? { timedOut: true as const } : {}),
         ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),
+        ...(isUnclear(route) ? { unclear: route.next.unclear ?? 1 } : {}),
       },
     };
   } catch {
@@ -1004,6 +1062,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     correcting: false,
     carriedNote: false,
     carriedNoteDropped: false,
+    said: input.kind === 'text' ? input.text : null,
   };
   const sp = new Speaker(t);
   if (input.kind === 'start') {
@@ -1012,7 +1071,9 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
       // A call that starts in a journey (its `start`) has it on record from the start turn: nothing was asked.
       if (st.journey.active !== null) t.route = { from: null, to: st.journey.active, outcome: 'start', task: null, ms: 0 };
     }
-    const greeting = deps.business.lines.greeting.en;
+    // A call started in a journey (its `start`) with a greeting of its own opens with it, in place of the business's.
+    const started = st.journey?.active ? deps.business.journeys?.[st.journey.active] : undefined;
+    const greeting = started?.greeting?.en ?? deps.business.lines.greeting.en;
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);
   } else if (input.kind === 'left') {
@@ -1031,6 +1092,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     let ran = false;
     if (st.pending !== null) ran = await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
+    // A yes that ran is no unclear turn: the count of them in a row starts again.
+    if (ran && st.journey?.unclear !== undefined) delete st.journey.unclear;
     // A yes that ran its action is not routed: the caller answered the read-back, and the journey moved on by it.
     // Any other answer to a read-back is routed on the same words, alongside the model's first round.
     const routing = routed && !ran ? routeOf(t, st.journey!, input.text, lastReply) : undefined;
@@ -1065,6 +1128,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
     ...(t.route !== undefined ? { route: t.route } : {}),
     ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
+    ...(t.ended !== undefined ? { ended: t.ended } : {}),
   });
   st.turnIndex += 1;
   return st;

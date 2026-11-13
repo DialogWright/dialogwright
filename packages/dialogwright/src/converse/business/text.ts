@@ -28,8 +28,9 @@ export function businessText(b: AgentBusiness): string {
 /**
  * What the model is told for the task the call is in, after the business information: the goal (or, once the
  * task is done, what the line helps with now), its instructions, its facts and its questions with our
- * answers; at the root, the root's guidance and what the line can help with. A task set aside is named so it
- * can be offered again. Empty for a business with no journeys.
+ * answers, and while the task is worked on, the way out of it (the other journeys open to the caller, and the
+ * goal of asking before switching to one); at the root, the root's guidance and what the line can help with.
+ * A task set aside is named so it can be offered again. Empty for a business with no journeys.
  */
 export function journeyText(b: AgentBusiness, j: JourneyState, caller: ConverseState['caller']): string {
   if (b.journeys === undefined || Object.keys(b.journeys).length === 0) return '';
@@ -44,6 +45,12 @@ export function journeyText(b: AgentBusiness, j: JourneyState, caller: ConverseS
     if (!finished && spec.instructions !== undefined) out.push(spec.instructions);
     if (spec.facts.length > 0) out.push('Facts for this:', ...spec.facts.map((f) => `- ${f}`));
     if (spec.questions.length > 0) out.push('Questions callers ask about this, with our answers:', ...spec.questions.map((x) => `- ${x.q} ${x.a}`));
+    // The way out of a task: what else the line does, so a caller who wants it is asked, never fitted into this task.
+    const others = finished ? [] : openJourneys(b, caller).filter((id) => id !== j.active);
+    if (others.length > 0) {
+      out.push('Other things this line can help with:', ...others.map((id) => `- ${b.journeys![id]!.when}`));
+      out.push('Where the caller wants one of these, your goal is to say it is something else this line can do and ask whether they want to switch to it, never to fit it into what you are helping them with now.');
+    }
   }
   const paused = j.paused === null ? undefined : b.journeys[j.paused];
   if (paused !== undefined) out.push(`Set aside earlier on this call: ${paused.when}; offer to pick it up once this is done.`);

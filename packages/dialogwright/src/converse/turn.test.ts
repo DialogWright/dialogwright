@@ -1432,7 +1432,7 @@ describe('journeys', () => {
   const withJourneys = (t: string): string => `${t}${JOURNEYS}${CHECKS_OFF}`;
 
   /** One routing answer: `task`'s probabilities and the yes/no readings; or the decision model failing, or never answering. */
-  type RouteStep = { task?: Record<string, number>; drops?: number; again?: number } | 'fail' | 'hang';
+  type RouteStep = { task?: Record<string, number>; drops?: number; again?: number; fits?: number } | 'fail' | 'hang';
 
   /** A decision model that answers each routing request with the next step, and a read-back's answer as `reading`, keeping what it was asked. */
   function routeJev(steps: RouteStep[], reading = { yes: 0.95, no: 0.05 }): Harness['jev'] {
@@ -1453,6 +1453,7 @@ describe('journeys', () => {
           }
           if (step.drops !== undefined && Object.hasOwn(req.questions, 'drops')) answers.drops = { type: 'noul', noul: step.drops };
           if (step.again !== undefined && Object.hasOwn(req.questions, 'again')) answers.again = { type: 'noul', noul: step.again };
+          if (step.fits !== undefined && Object.hasOwn(req.questions, 'fits')) answers.fits = { type: 'noul', noul: step.fits };
         } else {
           answers.confirmsYes = { type: 'noul', noul: reading.yes };
           answers.confirmsNo = { type: 'noul', noul: reading.no };
@@ -1927,6 +1928,163 @@ describe('journeys', () => {
       expect(h.jev.asked).toEqual([]);
       expect(h.traces.at(-1)!.route).toBeUndefined();
     });
+  });
+
+  /**
+   * Unclear turns (the design's "Amendment (2026-11-13): guide the caller, don't guess"): guidance from the model on the
+   * first and second in a row, with no change offered; the third ends the call with the business's line.
+   */
+  describe('unclear turns', () => {
+    const LINE = 'This line is how we book visits while we are out mending.';
+    const withLine = (t: string): string => withJourneys(t.replace('  timezone: America/New_York\n', `  timezone: America/New_York\n  line: ${LINE}\n`));
+    const UNCLEAR_LINE = "Sorry, I can't follow that. Please call back any time.";
+    const NONE = { visit: 0.05, note: 0.05, question: 0.05, none: 0.85 };
+    const QUESTION = { visit: 0.05, note: 0.05, question: 0.85, none: 0.05 };
+    const OFF = { visit: 0.9, note: 0.05, none: 0.05 };
+    const root = { active: null, phase: 'working', paused: null, done: [] };
+
+    it('at the root: the first round, asked before the route was known, is asked again with the guidance goal, and nothing of it is said', async () => {
+      const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
+      expect(h.model.requests).toHaveLength(2);
+      expect(h.model.requests[0]!.system).not.toMatch(/unclear/);
+      const system = h.model.requests[1]!.system;
+      expect(system).toMatch(/last turn was unclear/);
+      expect(system).toContain('"555 0112, Thursday"');
+      expect(system).toMatch(/what this line can help with/);
+      // The business's reason is for the second unclear turn, not the first.
+      expect(system).not.toContain(LINE);
+      expect(toolNames(h)).toEqual(['end_call']);
+      expect(h.model.requests[1]!.messages).toEqual(h.model.requests[0]!.messages);
+      expect(h.traces.at(-1)!.route).toMatchObject({ from: null, to: null, outcome: 'root', unclear: 1, restarted: true });
+      expect(s.journey).toEqual({ ...root, unclear: 1 });
+      expect(neverSaid(h)).toBe(true);
+      expect(h.said.at(-1)).toEqual(['We can book a visit or arrange a call back.', true]);
+      // The guidance goal is the prompt's, never a message of the conversation.
+      expect(JSON.stringify(s.messages)).not.toMatch(/unclear/);
+      expect(h.ended).toEqual([]);
+    });
+
+    it('in a task, a confusing turn is never acted on: no change offered, and a change called anyway is refused not-offered', async () => {
+      const h = harness([
+        DROPPED,
+        [text('Which day suits you?'), done()],
+        // The first round, asked with the visit's actions before the route was known: its call never runs.
+        [call('c0', 'book', { slot: SLOT, item: 'lamp' }), done('tool')],
+        [call('c1', 'book', { slot: SLOT, item: 'lamp' }), done('tool')],
+        [text('I just need the day you would like the visit.'), done()],
+      ], { edit: withJourneys, jev: routeJev([{ task: VISIT }, { task: OFF, drops: 0.05, fits: 0.1 }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
+      // The way out: in the visit, the model is told the other thing the line can help with.
+      expect(h.model.requests.at(-1)!.system).toContain(`Other things this line can help with:\n- ${h.deps.business.journeys!.note!.when}`);
+      s = await h.run(s, { kind: 'text', text: 'my brother had one of those, he lives out past the lake now' });
+      expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', unclear: 1, restarted: true });
+      expect(toolNames(h, 2)).toEqual(['check_availability', 'book', 'end_call']);
+      for (const i of [3, 4]) {
+        expect(toolNames(h, i)).toEqual(['check_availability', 'end_call']);
+        expect(h.model.requests[i]!.system).toMatch(/what you need from them now/);
+      }
+      expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'book', reason: 'not-offered', journey: 'visit' }]);
+      expect(h.rows.filter((r) => r.type === 'gate')).toEqual([]);
+      expect(h.traces.at(-1)!.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'refused', reason: 'Not run: "book" is not available for what the caller is doing now.' }]);
+      expect(s.pending).toBeNull();
+      expect(h.calendar.bookings).toHaveLength(0);
+      expect(s.refusals).toEqual({});
+      expect(JSON.stringify(s.messages)).not.toContain('"c0"');
+      expect(s.journey).toEqual({ ...root, active: 'visit', unclear: 1 });
+      expect(h.said.at(-1)).toEqual(['I just need the day you would like the visit.', true]);
+    });
+
+    it('the second unclear turn in a row: the goal says plainly the line can only help with what it asks for, with the business\'s reason', async () => {
+      const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), done()], DROPPED, [text('This line books visits; say "visit" or "call back".'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }, { task: NONE }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
+      s = await h.run(s, { kind: 'text', text: 'like I said, Thursday' });
+      const system = h.model.requests.at(-1)!.system;
+      expect(system).toMatch(/two turns in a row/);
+      expect(system).toMatch(/can only help when they give what it asks for/);
+      expect(system).toContain(LINE);
+      expect(system).toContain('"like I said, Thursday"');
+      expect(h.traces.at(-1)!.route).toMatchObject({ unclear: 2, restarted: true });
+      expect(s.journey).toEqual({ ...root, unclear: 2 });
+      expect(h.ended).toEqual([]);
+      expect(neverSaid(h)).toBe(true);
+    });
+
+    it('the third unclear turn in a row ends the call with lines.unclear: the model is not asked once the route is known, and its first round runs nothing', async () => {
+      const h = harness([
+        DROPPED, [text('We can book a visit or arrange a call back.'), done()],
+        DROPPED, [text('Say "visit" or "call back".'), done()],
+        // The first round of the third, asked before the route was known: its end_call never runs.
+        [text('Never said.'), call('c9', 'end_call', {}), done('tool')],
+      ], { edit: withLine, jev: routeJev([{ task: NONE }, { task: NONE }, { task: NONE }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
+      s = await h.run(s, { kind: 'text', text: 'like I said, Thursday' });
+      const rows = h.rows.length;
+      s = await h.run(s, { kind: 'text', text: 'Thursday!' });
+      // Only the first round, asked alongside the routing, was a request on this turn.
+      expect(h.model.requests).toHaveLength(5);
+      expect(h.said.at(-1)).toEqual([UNCLEAR_LINE, true]);
+      expect(neverSaid(h)).toBe(true);
+      expect(h.ended).toEqual(['closing']);
+      expect(s.ended).toBe('closing');
+      expect(h.rows.slice(rows)).toEqual([{ type: 'converse_end', detail: { by: 'unclear' } }]);
+      const r = h.traces.at(-1)!;
+      expect(r.ended).toBe('unclear');
+      expect(r.route).toMatchObject({ from: null, to: null, outcome: 'root', unclear: 3 });
+      expect(r.replies).toEqual([UNCLEAR_LINE]);
+      expect(r.tools).toEqual([]);
+      expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: UNCLEAR_LINE }] });
+      expect(JSON.stringify(s.messages)).not.toContain('c9');
+      expect(s.journey?.unclear).toBe(3);
+      // The call is over: a later turn does nothing.
+      const after = await h.run(s, { kind: 'text', text: 'hello?' });
+      expect(after).toBe(s);
+    });
+
+    it('a clear turn in between starts the count again', async () => {
+      const h = harness([
+        DROPPED, [text('We can book a visit or arrange a call back.'), done()],
+        [text('We are open weekdays, 9 to 5.'), done()],
+        DROPPED, [text('We can book a visit or arrange a call back.'), done()],
+        DROPPED, [text('Say "visit" or "call back".'), done()],
+      ], { edit: withLine, jev: routeJev([{ task: NONE }, { task: QUESTION }, { task: NONE }, { task: NONE }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
+      expect(s.journey?.unclear).toBe(1);
+      s = await h.run(s, { kind: 'text', text: 'when are you open?' });
+      expect(s.journey).toEqual(root);
+      expect(h.traces.at(-1)!.route!.unclear).toBeUndefined();
+      expect(h.traces.at(-1)!.route!.restarted).toBeUndefined();
+      expect(h.model.requests.at(-1)!.system).not.toMatch(/unclear/);
+      expect(h.said.at(-1)).toEqual(['We are open weekdays, 9 to 5.', true]);
+      s = await h.run(s, { kind: 'text', text: 'Thursday' });
+      s = await h.run(s, { kind: 'text', text: 'Thursday!' });
+      expect(s.journey?.unclear).toBe(2);
+      expect(h.model.requests.at(-1)!.system).toMatch(/two turns in a row/);
+      expect(h.ended).toEqual([]);
+      expect(s.ended).toBeUndefined();
+      expect(h.rows.some((r) => r.type === 'converse_end')).toBe(false);
+    });
+  });
+
+  it('a call that starts in a journey with a greeting of its own says it in place of lines.greeting', async () => {
+    const OWN = 'Example Menders. Which day would you like a visit for the account?';
+    const ACCOUNT = ACCOUNT_JOURNEYS_YAML.replaceAll('actions: [availability, book]', 'actions: [check_availability, book]').replace('actions: [leave_note]', 'actions: [leave_note, callback]')
+      .replace('    start: { account: recognised }\n', `    start: { account: recognised }\n    greeting: { en: "${OWN}" }\n`);
+    expect(ACCOUNT).toContain(OWN);
+    const recognised = harness([], { edit: (t) => `${t}${ACCOUNT}${CHECKS_OFF}`, jev: routeJev([]) });
+    const s = await recognised.run(newConverseState({ appId: 'menders', callId: 'call-1', channel: 'voice', callerNumber: CALLER_NUMBER, account: 'Example Account' }), { kind: 'start' });
+    expect(recognised.said).toEqual([[OWN, true]]);
+    expect(s.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text: OWN }] }]);
+    expect(recognised.traces[0]!.replies).toEqual([OWN]);
+    // A caller the journey does not start for hears the business's greeting.
+    const other = harness([], { edit: (t) => `${t}${ACCOUNT}${CHECKS_OFF}`, jev: routeJev([]) });
+    await other.run(fresh(), { kind: 'start' });
+    expect(other.said).toEqual([[GREETING, true]]);
   });
 
   it('an app without journeys asks the decision model nothing but the read-back', async () => {

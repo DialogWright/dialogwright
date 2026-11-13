@@ -87,9 +87,15 @@ export interface ConverseTraceRecord {
    * switch dropped, and whether the turn's first round was asked again for the route (`restarted`). A call
    * that starts in a journey (its `start`) has a route on its start turn too: from the root to that journey,
    * `start`, with no reading (`task` null) and `ms` 0, as nothing was asked. Routing that threw is a carry with
-   * no reading.
+   * no reading. `unclear`: the line could not follow the turn (the design's "Amendment (2026-11-13)"), the count
+   * of such turns in a row with it; absent on a turn that was not unclear.
    */
-  route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true };
+  route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true; unclear?: number };
+  /**
+   * The runtime ended the call on this turn of its own accord: `unclear`, the third unclear turn in a row, on which
+   * the line said lines.unclear and the call ended as end_call ends it (the state's `ended` is `closing`).
+   */
+  ended?: 'unclear';
   /** A journey the turn's confirmed action completed: it is in its after phase from this turn on. */
   journeyEnded?: { journey: string; how: 'done' };
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */

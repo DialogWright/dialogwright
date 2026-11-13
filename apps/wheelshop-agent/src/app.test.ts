@@ -213,7 +213,10 @@ describe('book_dealer', () => {
     expect(c.state.caller.account).toBeNull();
     expect(await c.say('This is Rivergate Motors, three trade-ins tomorrow morning')).toEqual(['We can send the shop a request instead.']);
     expect(sys.bookings).toEqual([]);
-    expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'recognise_caller', outcome: 'refused' }, { name: 'check_availability', outcome: 'refused' }, { name: 'book_dealer', outcome: 'refused' }]);
+    // A dealership request from a number on no account fits none of the journeys open to it: the turn is unclear, so
+    // the first round (asked before the route was known) is asked again with the lookups only, and book_dealer is refused.
+    expect(c.traces.at(-1)!.route).toMatchObject({ outcome: 'root', unclear: 1, restarted: true });
+    expect(c.traces.at(-1)!.tools).toMatchObject([{ name: 'book_dealer', outcome: 'refused' }]);
     expect(c.audit.filter((r) => r.type === 'gate').map((r) => r.detail.tool)).not.toContain('book_dealer');
   });
 
