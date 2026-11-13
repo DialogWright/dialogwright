@@ -212,7 +212,7 @@ function checkWords(b: ConverseApp['business']): string {
 
 /** What the card says the decision model is sent to route each caller turn among the journeys (converse/journeys.ts routeState and routeQuestions). */
 function routingWords(): string {
-  return '- For routing among the journeys, the decision model is also sent each caller turn\'s words, the line\'s last reply before them (the read-back waiting for its answer, where one is), and the trigger (`when`) of each journey open to the caller (the journey in progress and one set aside among them); in a finished journey\'s after phase, also the finished journey\'s goal. A turn whose yes runs its read-back is not routed.';
+  return '- For routing among the journeys, the decision model is also sent each caller turn\'s words, the line\'s last reply before them (the read-back waiting for its answer, where one is), and the trigger (`when`) of each journey open to the caller (the journey in progress and one set aside among them); in a finished journey\'s after phase, also the finished journey\'s goal. A turn whose yes runs its read-back is not routed. The decision model is also asked, in a journey in progress, whether the caller\'s turn gives what the line just asked for (`fits`); a turn is unclear when, at the root, it reaches no journey at `routing.startAt` and is no question, or, in a journey, it does not fit, is no question and moves to no other journey at `routing.switchAt`; the line then guides the caller instead of guessing. On the second unclear turn in a row the agent model is also sent the business\'s reason for the line (`business.line`), where it has one.';
 }
 
 /** Where an action is offered, in words: the root and the journeys that name it. */
@@ -234,6 +234,7 @@ function journeyCardLines(b: AgentBusiness): string[] {
     '',
     '- Each caller turn, the decision model reads which journey (task) the caller wants now. The agent model is offered only the actions of the journey it is in (or the root\'s), and an action of another journey is refused as not offered, audited and not counted as a refusal of the action.',
     `- The root offers ${(b.root?.actions ?? []).length > 0 ? andList((b.root?.actions ?? []).map(code)) : 'no actions'}${b.root?.instructions === undefined ? '' : ' and has its own instructions'}.`,
+    `- An unclear turn (see above) is answered with guidance, never a guess. While it is answered, only the lookups are offered to the agent model, so change actions are withheld: none is offered, and one called anyway is refused as not offered and audited. The count of unclear turns in a row starts again on any turn that is not unclear. On the third in a row the line says \`lines.unclear\`, word for word ("${cell(b.lines.unclear?.en ?? b.lines.closing.en)}"), and the call ends (audited as \`converse_end\` by \`unclear\`).`,
     '',
   ];
   for (const [id, j] of Object.entries(b.journeys ?? {})) {

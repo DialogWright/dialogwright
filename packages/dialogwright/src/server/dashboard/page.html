@@ -1496,7 +1496,9 @@
       if (turn.journey === undefined) return '';
       const mark = typeof turn.routeOutcome === 'string' && Object.hasOwn(MARKED, turn.routeOutcome) ? `${MARKED[turn.routeOutcome]} ` : '';
       const ended = turn.journeyEnded ? ` · ${esc(turn.journeyEnded)} done` : '';
-      return `<div class="aside mono">journey: ${mark}${esc(turn.journey ?? 'the root')}${ended}</div>`;
+      const unclear = typeof turn.unclear === 'number' ? ` · unclear turn ${turn.unclear} in a row` : '';
+      const callEnded = turn.endedBy === 'unclear' ? ' · call ended: three unclear turns in a row' : '';
+      return `<div class="aside mono">journey: ${mark}${esc(turn.journey ?? 'the root')}${ended}${unclear}${callEnded}</div>`;
     };
     box.innerHTML = head + view.turns.map((turn) => '<div class="cturn">'
       + journeyLine(turn)

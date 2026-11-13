@@ -64,7 +64,7 @@ describe('a converse call\'s detail', () => {
 });
 
 describe('a converse call\'s detail with journeys', () => {
-  const route = (from: string | null, to: string | null, outcome: NonNullable<ConverseTraceRecord['route']>['outcome']): ConverseTraceRecord['route'] => ({ from, to, outcome, task: null, ms: 40 });
+  const route = (from: string | null, to: string | null, outcome: NonNullable<ConverseTraceRecord['route']>['outcome']): NonNullable<ConverseTraceRecord['route']> => ({ from, to, outcome, task: null, ms: 40 });
   const J: ConverseTraceRecord[] = [
     { v: 3, kind: 'converse', sessionId: 'chat-2', turnIndex: 0, ts: ts(0), said: null, replies: ['Hello.'], tools: [], model: model(0, null) },
     { ...RECORDS[1]!, sessionId: 'chat-2', route: route(null, 'visit', 'start') },
@@ -89,6 +89,25 @@ describe('a converse call\'s detail with journeys', () => {
     const turns = converseCall(started).turns;
     expect(turns.map((t) => t.journey)).toEqual(['visit_account', 'visit_account', 'visit_account']);
     expect(turns.map((t) => t.routeOutcome)).toEqual(['start', null, 'carry']);
+  });
+
+  it('marks an unclear turn with its count, and a call the line ended by it', () => {
+    const unclear: ConverseTraceRecord[] = [
+      J[0]!,
+      { ...RECORDS[1]!, sessionId: 'chat-2', route: { ...route(null, null, 'root'), unclear: 1, restarted: true } },
+      { ...RECORDS[2]!, sessionId: 'chat-2', route: route(null, null, 'root') },
+      { ...RECORDS[3]!, sessionId: 'chat-2', turnIndex: 3, route: { ...route(null, null, 'root'), unclear: 3 }, ended: 'unclear' },
+    ];
+    const turns = converseCall(unclear).turns;
+    expect(turns.map((t) => t.unclear)).toEqual([null, 1, null, 3]);
+    expect(turns.map((t) => t.endedBy)).toEqual([null, null, null, 'unclear']);
+  });
+
+  it('gives no unclear fields on a call without routes', () => {
+    for (const t of converseCall(RECORDS).turns) {
+      expect(t.unclear).toBeUndefined();
+      expect(t.endedBy).toBeUndefined();
+    }
   });
 
   it('leaves a call without routes as it was, with no journey on its turns', () => {

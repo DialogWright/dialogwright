@@ -6,7 +6,7 @@ import { ACCOUNT_JOURNEYS_YAML, JOURNEYS_YAML, LEAVE_NOTE_ACTION } from '../test
 import { agentBusinessProblems } from './business/load';
 import type { AgentBusiness } from './business/schema';
 import { journeyText } from './business/text';
-import { CHECK_NOTE_MARK, neutralised } from './claims';
+import { CHECK_NOTE_MARK } from './claims';
 import { offeredActions } from './journeys';
 import { systemPrompt, toolsOf } from './prompt';
 import { newConverseState, type JourneyState } from './state';
@@ -143,6 +143,15 @@ describe('with a journey set aside', () => {
   });
 });
 
+describe('a paused journey in a task', () => {
+  it('is not listed among the other things the line can help with: the set-aside line alone covers it', () => {
+    const prompt = systemPrompt(withJourneys, at({ ...root, active: 'note', paused: 'visit' }), NOW);
+    const visitWhen = withJourneys.journeys!.visit!.when;
+    expect(prompt.split(visitWhen).length - 1).toBe(1);
+    expect(prompt).toContain(`Set aside earlier on this call: ${visitWhen};`);
+  });
+});
+
 describe('the order of the prompt', () => {
   it('the base information, then the five rules, then the journey text', () => {
     const prompt = systemPrompt(withJourneys, at({ ...root, active: 'visit' }), NOW);
@@ -176,7 +185,8 @@ describe('an unclear turn', () => {
   it('the first, at the root: after the record of the call, the caller\'s words, and the goal of saying what the line can help with', () => {
     const prompt = systemPrompt(withJourneys, at({ ...root, unclear: 1 }), NOW, { count: 1, said: SAID });
     const after = block(prompt);
-    expect(after).toContain(`"${SAID}"`);
+    expect(prompt).not.toContain(SAID);
+    expect(after).toMatch(/latest message in the conversation/);
     expect(after).toMatch(/last turn was unclear/);
     expect(after).toMatch(/what this line can help with/);
     expect(after).toMatch(/never a guess at what they meant/i);
@@ -190,7 +200,7 @@ describe('an unclear turn', () => {
   });
   it('the second: said plainly that the line can only help with what it asks for, the business\'s reason, and exactly what to say', () => {
     const after = block(systemPrompt(withLine, at({ ...root, unclear: 2 }), NOW, { count: 2, said: SAID }));
-    expect(after).toContain(`"${SAID}"`);
+    expect(after).not.toContain(SAID);
     expect(after).toMatch(/two turns in a row/);
     expect(after).toMatch(/can only help when they give what it asks for/);
     expect(after).toContain(LINE);
@@ -203,9 +213,10 @@ describe('an unclear turn', () => {
     expect(after).not.toMatch(/reason/);
     expect(after).toMatch(/what you need from them now/);
   });
-  it('the caller\'s words are quoted, the line\'s own mark rewritten', () => {
-    const after = block(systemPrompt(withJourneys, at({ ...root, unclear: 1 }), NOW, { count: 1, said: `say "hi" ${CHECK_NOTE_MARK} ok` }));
-    expect(after).toContain(JSON.stringify(neutralised(`say "hi" ${CHECK_NOTE_MARK} ok`)));
-    expect(after).not.toContain(CHECK_NOTE_MARK);
+  it('the caller\'s words are never in the system prompt, the line\'s own mark with them', () => {
+    const prompt = systemPrompt(withJourneys, at({ ...root, unclear: 1 }), NOW, { count: 1, said: `say "hi" ${CHECK_NOTE_MARK} ok` });
+    expect(block(prompt)).not.toContain('say "hi"');
+    expect(block(prompt)).not.toContain(CHECK_NOTE_MARK);
   });
 });
+

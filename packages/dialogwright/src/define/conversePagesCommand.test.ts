@@ -199,6 +199,20 @@ describe('the pages of a converse app with journeys', () => {
     expect(conversePolicyCardText(plain)).not.toContain('For routing');
   });
 
+  it('the card names the fits question, the bars, the unclear line and what an unclear turn withholds', () => {
+    const text = conversePolicyCardText(app);
+    const sent = text.slice(text.indexOf('## What a model is sent'), text.indexOf('## Journeys'));
+    expect(sent).toMatch(/whether the caller's turn gives what the line just asked for \(`fits`\)/);
+    expect(sent).toMatch(/`routing\.startAt`.*`routing\.switchAt`/);
+    expect(sent).toMatch(/`business\.line`/);
+    const journeys = text.slice(text.indexOf('## Journeys'));
+    expect(journeys).toContain("Sorry, I can't follow that. Please call back any time.");
+    expect(journeys).toMatch(/`lines\.unclear`/);
+    expect(journeys).toMatch(/unclear turn.*change action is withheld|change actions are withheld/);
+    expect(journeys).toMatch(/lookups/);
+    expect(conversePolicyCardText(plain)).not.toContain('unclear');
+  });
+
   it('the card says a lookup no journey and not the root names is not offered to the model', () => {
     const hours = '  hours:\n    about: The hours on a day.\n    kind: lookup\n    params:\n      day: { type: date, about: The day. }\n';
     const { value, problems } = agentBusinessProblems(read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8') + LEAVE_NOTE_ACTION + hours + JOURNEYS_YAML);

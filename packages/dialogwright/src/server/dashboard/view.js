@@ -2160,6 +2160,9 @@ export function converseCall(records) {
       journeyView.journey = carried;
       journeyView.routeOutcome = r.route != null && typeof r.route.outcome === 'string' ? r.route.outcome : null;
       journeyView.journeyEnded = r.journeyEnded != null && typeof r.journeyEnded.journey === 'string' ? r.journeyEnded.journey : null;
+      // An unclear turn (the line could not follow it) with how many in a row, and a call the line ended by the third.
+      journeyView.unclear = r.route != null && typeof r.route.unclear === 'number' ? r.route.unclear : null;
+      journeyView.endedBy = r.ended === 'unclear' ? 'unclear' : null;
     }
     return {
       index: r.turnIndex,

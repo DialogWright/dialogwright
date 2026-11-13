@@ -1951,7 +1951,8 @@ describe('journeys', () => {
       expect(h.model.requests[0]!.system).not.toMatch(/unclear/);
       const system = h.model.requests[1]!.system;
       expect(system).toMatch(/last turn was unclear/);
-      expect(system).toContain('"555 0112, Thursday"');
+      expect(system).not.toContain('555 0112, Thursday');
+      expect(system).toMatch(/latest message in the conversation/);
       expect(system).toMatch(/what this line can help with/);
       // The business's reason is for the second unclear turn, not the first.
       expect(system).not.toContain(LINE);
@@ -2006,7 +2007,7 @@ describe('journeys', () => {
       expect(system).toMatch(/two turns in a row/);
       expect(system).toMatch(/can only help when they give what it asks for/);
       expect(system).toContain(LINE);
-      expect(system).toContain('"like I said, Thursday"');
+      expect(system).not.toContain('like I said, Thursday');
       expect(h.traces.at(-1)!.route).toMatchObject({ unclear: 2, restarted: true });
       expect(s.journey).toEqual({ ...root, unclear: 2 });
       expect(h.ended).toEqual([]);
@@ -2035,6 +2036,7 @@ describe('journeys', () => {
       const r = h.traces.at(-1)!;
       expect(r.ended).toBe('unclear');
       expect(r.route).toMatchObject({ from: null, to: null, outcome: 'root', unclear: 3 });
+      expect(r.route!.restarted).toBeUndefined();
       expect(r.replies).toEqual([UNCLEAR_LINE]);
       expect(r.tools).toEqual([]);
       expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: UNCLEAR_LINE }] });

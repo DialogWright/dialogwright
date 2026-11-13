@@ -254,8 +254,8 @@ describe('unclear turns', () => {
     const r = decideRoute(plain, root, reading({ task: { visit: 0.5, question: 0.4, none: 0.1 } }), open);
     expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 1 } });
   });
-  it('a null reading leaves the count unchanged and is never unclear', () => {
-    expect(decideRoute(plain, unclearOf(2), readRoute(null), open)).toEqual({ outcome: 'carry', next: unclearOf(2) });
+  it('a null reading starts the count again and is never unclear', () => {
+    expect(decideRoute(plain, unclearOf(2), readRoute(null), open)).toEqual({ outcome: 'carry', next: inVisit });
     expect(isUnclear(decideRoute(plain, unclearOf(2), reading({ task: null, fits: 0 }), open))).toBe(false);
     expect(isUnclear(decideRoute(plain, inVisit, reading({ task: { none: 1 }, fits: null }), open))).toBe(false);
   });

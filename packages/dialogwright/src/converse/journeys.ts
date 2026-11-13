@@ -158,12 +158,12 @@ const moreUnclear = (j: JourneyState): JourneyState => ({ ...j, unclear: (j.uncl
 
 /**
  * What the turn does, from the reading and the state (the design's table and its 2026-11-13 amendment). Ignores any option
- * not in `open`. A null reading never changes the count and is never unclear; a turn that is not unclear clears the count.
+ * not in `open`. A null reading (the decision model failed) is never unclear and starts the count again, never bringing a call nearer its end; a turn that is not unclear clears the count.
  */
 export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[]): Route {
   const bar = b.routing.switchAt;
   const above = (p: number | null): boolean => p !== null && p >= bar;
-  if (r.task === null) return { outcome: 'carry', next: j };
+  if (r.task === null) return { outcome: 'carry', next: calm(j) };
   const top = topOption(r.task, open);
 
   // The journey the caller most wants at or above a bar, if it is open.

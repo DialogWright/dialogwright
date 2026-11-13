@@ -1092,8 +1092,6 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     let ran = false;
     if (st.pending !== null) ran = await answered(t, input.text);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
-    // A yes that ran is no unclear turn: the count of them in a row starts again.
-    if (ran && st.journey?.unclear !== undefined) delete st.journey.unclear;
     // A yes that ran its action is not routed: the caller answered the read-back, and the journey moved on by it.
     // Any other answer to a read-back is routed on the same words, alongside the model's first round.
     const routing = routed && !ran ? routeOf(t, st.journey!, input.text, lastReply) : undefined;

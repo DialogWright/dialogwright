@@ -141,7 +141,8 @@ runtime gets plain frames.
 - An app may give its line **journeys** (agent.yaml's `root`, `journeys` and `routing`, added 2026-11-12): one
   task each, with its own goal, instructions, information and actions. The decision model routes each caller
   turn to a journey, and the model is then sent only the base information together with the active journey's
-  goal, instructions, information and actions, with the root's own guidance when no journey is active. See
+  goal, instructions, information and actions, with the root's own guidance when no journey is active. A turn the line cannot follow is not guessed at: the
+  caller is guided, and the call ends politely on the third such turn in a row. See
   [journeys](2026-11-12-journeys.md).
 - The reply is plain text, **streamed** to the caller as it is written: to the carrier as text tokens, and to
   the chat as one message or as chunks (the builder's call).

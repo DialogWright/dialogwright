@@ -470,6 +470,9 @@ export interface ConverseTurnView {
   journey?: string | null;
   routeOutcome?: 'start' | 'carry' | 'switch' | 'return' | 'root' | 'dropped' | 'again' | null;
   journeyEnded?: string | null;
+  /** On a call with journeys: how many unclear turns in a row this one made (null: it was not unclear), and `unclear` when the line ended the call on it. */
+  unclear?: number | null;
+  endedBy?: 'unclear' | null;
 }
 /** A converse call's detail: its turns, and the totals of its model. */
 export function converseCall(records: readonly unknown[]): { turns: ConverseTurnView[]; totals: { turns: number; modelMs: number; costUsd: number; models: string[] } };

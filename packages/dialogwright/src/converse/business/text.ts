@@ -46,7 +46,7 @@ export function journeyText(b: AgentBusiness, j: JourneyState, caller: ConverseS
     if (spec.facts.length > 0) out.push('Facts for this:', ...spec.facts.map((f) => `- ${f}`));
     if (spec.questions.length > 0) out.push('Questions callers ask about this, with our answers:', ...spec.questions.map((x) => `- ${x.q} ${x.a}`));
     // The way out of a task: what else the line does, so a caller who wants it is asked, never fitted into this task.
-    const others = finished ? [] : openJourneys(b, caller).filter((id) => id !== j.active);
+    const others = finished ? [] : openJourneys(b, caller).filter((id) => id !== j.active && id !== j.paused);
     if (others.length > 0) {
       out.push('Other things this line can help with:', ...others.map((id) => `- ${b.journeys![id]!.when}`));
       out.push('Where the caller wants one of these, your goal is to say it is something else this line can do and ask whether they want to switch to it, never to fit it into what you are helping them with now.');
