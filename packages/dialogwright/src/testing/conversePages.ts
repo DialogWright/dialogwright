@@ -1,6 +1,7 @@
 import type { ConverseApp } from '../converse/app';
 import type { ActionSpec, AgentBusiness } from '../converse/business/schema';
 import { END_CALL, TEXT_MAX } from '../converse/business/schema';
+import { hasJourneys } from '../converse/journeys';
 import { confirmedFields, CALLER, NO_LOOKUPS, policyOf } from '../converse/policy';
 import { readRule } from '../define/ruleEntry';
 import type { RuleEntryYaml } from '../define/schema/policy';
@@ -209,6 +210,35 @@ function checkWords(b: ConverseApp['business']): string {
   return `For the check after speaking (agent.yaml \`checks.claims.mode: ${c.mode}\`), it is also sent the business information, the business's day, the call's actions so far with the agent model's arguments and what each returned (as the agent model was sent them), and each reply of the agent model as it was said, once said: ${then}. The trace keeps each reply's readings.`;
 }
 
+/** Where an action is offered, in words: the root and the journeys that name it. */
+function offeredIn(b: AgentBusiness, name: string): string {
+  const places = [...((b.root?.actions ?? []).includes(name) ? ['at the root'] : []), ...Object.entries(b.journeys ?? {}).filter(([, j]) => j.actions.includes(name)).map(([id]) => code(id))];
+  return places.join(', ') || 'none';
+}
+
+/** Who a journey is open to and what starts it, in words. */
+function journeyAudience(j: NonNullable<AgentBusiness['journeys']>[string]): string {
+  const open = j.for === undefined ? 'Open to every caller.' : j.for.account === 'recognised' ? 'Open only where the number calling is on an account.' : 'Open only where the number calling is on no account.';
+  return j.start === undefined ? open : `${open} Starts the call there.`;
+}
+
+/** The card's Journeys section: the root, then each journey's trigger, audience and actions. */
+function journeyCardLines(b: AgentBusiness): string[] {
+  const lines = [
+    '## Journeys',
+    '',
+    '- Each caller turn, the decision model reads which journey (task) the caller wants now. The agent model is offered only the actions of the journey it is in (or the root\'s), and an action of another journey is refused as not offered, audited and not counted as a refusal of the action.',
+    `- The root offers ${(b.root?.actions ?? []).length > 0 ? andList((b.root?.actions ?? []).map(code)) : 'no actions'}${b.root?.instructions === undefined ? '' : ' and has its own instructions'}.`,
+    '',
+  ];
+  for (const [id, j] of Object.entries(b.journeys ?? {})) {
+    lines.push(`### ${code(id)}`, '', `- Trigger: ${cell(j.when)}`, `- ${journeyAudience(j)}`, `- Actions: ${j.actions.length > 0 ? andList(j.actions.map(code)) : 'none'}`);
+    if (j.completes !== undefined) lines.push(`- Done when ${andList(j.completes.map(code))} runs on the caller's yes.`);
+    lines.push('');
+  }
+  return lines;
+}
+
 /** The policy card for a converse app, as Markdown. */
 export function conversePolicyCardText(app: ConverseApp): string {
   const b = app.business;
@@ -246,15 +276,16 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '- The trace and the audit record each action\'s params as its `audit` says, hidden (`•`) where it says nothing (see each action\'s table below). Only the audit records an action\'s result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.',
     '- The caller\'s own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.',
     '',
+    ...(hasJourneys(b) ? journeyCardLines(b) : []),
     '## Actions',
     '',
-    '| Action | Kind | Offered to the model | Rules | Follow-on actions |',
-    '| --- | --- | --- | --- | --- |',
+    hasJourneys(b) ? '| Action | Kind | Offered to the model | Journeys | Rules | Follow-on actions |' : '| Action | Kind | Offered to the model | Rules | Follow-on actions |',
+    hasJourneys(b) ? '| --- | --- | --- | --- | --- | --- |' : '| --- | --- | --- | --- | --- |',
   ];
   for (const [name, spec] of Object.entries(b.actions)) {
     const rules = writtenRules(spec).map(ruleHeader);
     const all = spec.kind === 'change' ? [...rules, `confirmed(${confirmedFields(spec).join(', ')})`] : rules;
-    lines.push(`| ${code(name)} | ${spec.kind} | ${followOns.has(name) ? `no: follows ${andList(parentsOf(name).map(code))}` : 'yes'} | ${cell(all.map(code).join(', ') || 'none')} | ${spec.then?.map(code).join(', ') ?? 'none'} |`);
+    lines.push(`| ${code(name)} | ${spec.kind} | ${followOns.has(name) ? `no: follows ${andList(parentsOf(name).map(code))}` : 'yes'} | ${hasJourneys(b) ? `${followOns.has(name) ? 'none' : offeredIn(b, name)} | ` : ''}${cell(all.map(code).join(', ') || 'none')} | ${spec.then?.map(code).join(', ') ?? 'none'} |`);
   }
   for (const [name, spec] of Object.entries(b.actions)) {
     lines.push('', `### ${code(name)}: ${spec.kind === 'change' ? 'a change' : 'a lookup'}`, '', cell(spec.about.trim().replace(/\s+/g, ' ')), '');
@@ -323,5 +354,18 @@ export function converseAppMapText(app: ConverseApp): string {
     for (const t of spec.then ?? []) lines.push(`  ${nodeId('a', name)} ==>|"then, after the yes"| ${nodeId('a', t)}`);
   }
   lines.push('```', '', 'A thin arrow is a value the lookup returned: the param must be one of its results on this call. A thick arrow is a follow-on action, run after the caller\'s yes with the values read back.');
+  if (hasJourneys(b)) {
+    lines.push('', '## Journeys', '', 'Each caller turn, the decision model reads which journey the caller wants; the agent model is offered only that journey\'s actions (or the root\'s).', '', '```mermaid', 'flowchart LR', '  root(["Root"])', '  subgraph journeys["Journeys"]');
+    for (const [id, j] of Object.entries(b.journeys ?? {})) lines.push(`    ${nodeId('j', id)}[${mermaidLabel(id, j.when)}]`);
+    lines.push('  end');
+    const used = new Set<string>([...(b.root?.actions ?? []), ...Object.values(b.journeys ?? {}).flatMap((j) => j.actions)]);
+    for (const n of [...used]) for (const t of b.actions[n]?.then ?? []) used.add(t);
+    for (const n of names.filter((x) => used.has(x))) lines.push(`  ${nodeId('a', n)}${b.actions[n]!.kind === 'lookup' ? '[' : '[['}${mermaidLabel(n)}${b.actions[n]!.kind === 'lookup' ? ']' : ']]'}`);
+    for (const id of Object.keys(b.journeys ?? {})) lines.push(`  root --> ${nodeId('j', id)}`);
+    for (const n of b.root?.actions ?? []) lines.push(`  root --> ${nodeId('a', n)}`);
+    for (const [id, j] of Object.entries(b.journeys ?? {})) for (const n of j.actions) lines.push(`  ${nodeId('j', id)} --> ${nodeId('a', n)}`);
+    for (const n of names.filter((x) => used.has(x))) for (const t of b.actions[n]!.then ?? []) lines.push(`  ${nodeId('a', n)} ==>|"then, after the yes"| ${nodeId('a', t)}`);
+    lines.push('```');
+  }
   return `${lines.join('\n')}\n`;
 }

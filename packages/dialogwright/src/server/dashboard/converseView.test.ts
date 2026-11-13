@@ -62,3 +62,25 @@ describe('a converse call\'s detail', () => {
     expect(converseCall([{ v: 2, sessionId: 'x' } as unknown as ConverseTraceRecord]).turns).toEqual([]);
   });
 });
+
+describe('a converse call\'s detail with journeys', () => {
+  const route = (from: string | null, to: string | null, outcome: NonNullable<ConverseTraceRecord['route']>['outcome']): ConverseTraceRecord['route'] => ({ from, to, outcome, task: null, ms: 40 });
+  const J: ConverseTraceRecord[] = [
+    { v: 3, kind: 'converse', sessionId: 'chat-2', turnIndex: 0, ts: ts(0), said: null, replies: ['Hello.'], tools: [], model: model(0, null) },
+    { ...RECORDS[1]!, sessionId: 'chat-2', route: route(null, 'visit', 'start') },
+    { ...RECORDS[2]!, sessionId: 'chat-2', route: route('visit', 'visit', 'carry') },
+    { ...RECORDS[3]!, sessionId: 'chat-2', journeyEnded: { journey: 'visit', how: 'done' } },
+    { ...RECORDS[4]!, sessionId: 'chat-2', turnIndex: 4, route: route('visit', 'note', 'switch') },
+  ];
+
+  it('gives each turn its journey, how it was routed, and the journey a confirmed action ended', () => {
+    const turns = converseCall(J).turns;
+    expect(turns.map((t) => t.journey)).toEqual([null, 'visit', 'visit', 'visit', 'note']);
+    expect(turns.map((t) => t.routeOutcome)).toEqual([null, 'start', 'carry', null, 'switch']);
+    expect(turns.map((t) => t.journeyEnded)).toEqual([null, null, null, 'visit', null]);
+  });
+
+  it('leaves a call without routes as it was, with no journey on its turns', () => {
+    for (const t of converseCall(RECORDS).turns) expect(t.journey).toBeUndefined();
+  });
+});

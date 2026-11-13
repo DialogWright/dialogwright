@@ -466,6 +466,10 @@ export interface ConverseTurnView {
   tools: { name: string; outcome: string; args: string; reason: string | null }[];
   readBack: { text: string; answer: string } | null;
   model: { id: string; ms: number; firstTextMs: number | null; tokens: string; costUsd: number | null; error: string | null; retried: boolean } | null;
+  /** On a call with journeys only: the journey the turn is in (null: the root), how the turn was routed (null: it was not), and the journey a confirmed action ended on it. */
+  journey?: string | null;
+  routeOutcome?: 'start' | 'carry' | 'switch' | 'return' | 'root' | 'dropped' | 'again' | null;
+  journeyEnded?: string | null;
 }
 /** A converse call's detail: its turns, and the totals of its model. */
 export function converseCall(records: readonly unknown[]): { turns: ConverseTurnView[]; totals: { turns: number; modelMs: number; costUsd: number; models: string[] } };

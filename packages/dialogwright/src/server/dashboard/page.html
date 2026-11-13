@@ -1490,7 +1490,16 @@
     const money = (v) => (v === null ? '–' : `$${v.toFixed(4)}`);
     const t = view.totals;
     const head = `<div class="card-head"><span class="card-title">Conversation</span><span class="aside">${t.turns} turns · ${esc(t.models.join(', ') || 'no model')} · ${esc(durationText(t.modelMs))} · ${esc(money(t.costUsd))}</span></div>`;
+    // On a call with journeys: the journey beside the turn, and a start, switch, return or drop marked.
+    const MARKED = { start: 'started', switch: 'switched to', return: 'returned to', dropped: 'dropped, back to' };
+    const journeyLine = (turn) => {
+      if (turn.journey === undefined) return '';
+      const mark = turn.routeOutcome !== null && MARKED[turn.routeOutcome] ? `${MARKED[turn.routeOutcome]} ` : '';
+      const ended = turn.journeyEnded ? ` · ${esc(turn.journeyEnded)} done` : '';
+      return `<div class="aside mono">journey: ${mark}${esc(turn.journey ?? 'the root')}${ended}</div>`;
+    };
     box.innerHTML = head + view.turns.map((turn) => '<div class="cturn">'
+      + journeyLine(turn)
       + (turn.said !== null ? `<div><b class="who caller">Caller</b> ${esc(turn.said)}</div>` : '')
       + turn.tools.map((x) => `<div class="mono tool">${esc(x.name)}(${esc(x.args)}) · ${esc(x.outcome)}${x.reason !== null ? ` · ${esc(x.reason)}` : ''}</div>`).join('')
       + (turn.readBack !== null ? `<div><b class="who">Read-back</b> ${esc(turn.readBack.text)} <span class="aside">${esc(turn.readBack.answer)}</span></div>` : '')

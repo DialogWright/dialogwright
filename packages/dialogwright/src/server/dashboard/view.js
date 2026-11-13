@@ -2141,6 +2141,10 @@ export function converseRow(records, frames) {
  */
 export function converseCall(records) {
   const list = converseRecords(records);
+  // A call with journeys (a record with a route or an ended journey): each turn's journey is where its route
+  // went, and a turn with no route (a confirmed yes, the start) is in the journey before it. Other calls are unchanged.
+  const withJourneys = list.some((r) => r.route != null || r.journeyEnded != null);
+  let carried = null;
   const turns = list.map((r) => {
     const m = r.model ?? null;
     const asked = m !== null && (m.ms > 0 || (m.usage?.inputTokens ?? 0) > 0 || typeof m.error === 'string');
@@ -2149,6 +2153,13 @@ export function converseCall(records) {
       : rb.confirmed === true ? `confirmed (yes ${rb.yes?.toFixed(2) ?? '–'}, no ${rb.no?.toFixed(2) ?? '–'})`
         : rb.confirmed === false ? (rb.yes === undefined ? 'not confirmed (no reading)' : `not confirmed (yes ${rb.yes.toFixed(2)}, no ${rb.no?.toFixed(2) ?? '–'})`)
           : 'waiting for the answer';
+    const journeyView = {};
+    if (withJourneys) {
+      if (r.route != null) carried = typeof r.route.to === 'string' ? r.route.to : null;
+      journeyView.journey = carried;
+      journeyView.routeOutcome = r.route != null && typeof r.route.outcome === 'string' ? r.route.outcome : null;
+      journeyView.journeyEnded = r.journeyEnded != null && typeof r.journeyEnded.journey === 'string' ? r.journeyEnded.journey : null;
+    }
     return {
       index: r.turnIndex,
       at: msOfTs(r.ts),
@@ -2164,6 +2175,7 @@ export function converseCall(records) {
       model: asked
         ? { id: String(m.id), ms: m.ms, firstTextMs: m.firstTextMs ?? null, tokens: `${m.usage?.inputTokens ?? 0} in, ${m.usage?.outputTokens ?? 0} out`, costUsd: typeof m.costUsd === 'number' ? m.costUsd : null, error: typeof m.error === 'string' ? m.error : null, retried: m.retried === true }
         : null,
+      ...journeyView,
     };
   });
   const models = [];

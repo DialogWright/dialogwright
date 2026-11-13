@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync as read } from 'node:fs';
 import { agentBusinessProblems } from '../converse/business/load';
 import { CONVERSE_FIXTURE_DIR, converseFixture } from '../testing/converse/app';
+import { ACCOUNT_JOURNEYS_YAML, JOURNEYS_YAML, LEAVE_NOTE_ACTION } from '../testing/converse/journeys';
 import { conversePolicyCardText, conversePolicyMatrixText, converseAppMapText } from '../testing/conversePages';
 import { workspaceCopy, type WorkspaceCopy } from './__fixtures__/workspaceCopy';
 import { main } from './cli';
@@ -155,5 +156,47 @@ describe('dialogwright policy:matrix, policy:card and app:diagram on a converse 
       expect(run.out).toEqual([expect.stringMatching(/^wrote apps\/wheelshop-agent\/.* \(\d+ lines\): review the diff before you commit it$/)]);
     }
     for (const file of PAGES) expect(readFileSync(join(root, SHOP, file), 'utf8')).toBe(readFileSync(join(ROOT, SHOP, file), 'utf8'));
+  });
+});
+
+describe('the pages of a converse app with journeys', () => {
+  const { app: plain } = converseFixture();
+  const withJourneys = (yaml: string) => {
+    const { value, problems } = agentBusinessProblems(read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8') + LEAVE_NOTE_ACTION + yaml);
+    expect(problems).toEqual([]);
+    return { ...plain, business: value! };
+  };
+  const app = withJourneys(JOURNEYS_YAML);
+
+  it('the card lists, for each action, the journeys that offer it, and a section for the journeys', () => {
+    const text = conversePolicyCardText(app);
+    expect(text).toMatch(/\| `book` \| change \| yes \| `visit` \|/);
+    expect(text).toMatch(/\| `leave_note` \| change \| yes \| `note` \|/);
+    expect(text).toContain('## Journeys');
+    expect(text).toContain('The caller wants a visit booked, or wants to know about one.');
+    expect(text).toContain('Open to every caller.');
+  });
+
+  it('the card says at the root for a lookup the root offers, and who a journey is open to and starts for', () => {
+    const rooted = withJourneys(JOURNEYS_YAML.replace('root:\n', 'root:\n  actions: [availability]\n'));
+    expect(conversePolicyCardText(rooted)).toMatch(/\| `availability` \| lookup \| yes \| at the root, `visit` \|/);
+    const text = conversePolicyCardText(withJourneys(ACCOUNT_JOURNEYS_YAML));
+    expect(text).toContain('Open only where the number calling is on an account. Starts the call there.');
+    expect(text).toContain('Open only where the number calling is on no account.');
+  });
+
+  it('the map has a journeys subgraph: root, journeys, their actions and follow-ons', () => {
+    const text = converseAppMapText(app);
+    expect(text).toContain('subgraph journeys["Journeys"]');
+    expect(text).toMatch(/j_visit .*-->.* a_book/);
+    expect(text).toMatch(/root.*-->.*j_visit/s);
+  });
+
+  it('an app without journeys has the same pages as before: no section, no column, no diagram', () => {
+    const card = conversePolicyCardText(plain);
+    const map = converseAppMapText(plain);
+    expect(card).not.toContain('Journeys');
+    expect(card).toContain('| Action | Kind | Offered to the model | Rules | Follow-on actions |');
+    expect(map).not.toContain('journeys');
   });
 });
