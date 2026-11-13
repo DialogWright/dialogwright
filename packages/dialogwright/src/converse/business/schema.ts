@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ENV_REFERENCE } from '../../core/app/envReference';
+import { hoursProblems } from '../../core/hours';
 import { E164 } from '../../core/numberLocales';
 import { checkAlways, identifier, matching, text } from '../../define/schema/common';
 import { policyRuleEntry } from '../../define/schema/policy';
@@ -138,6 +139,18 @@ const isMap = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   if (!isMap(value)) return;
   const root = value;
+  const business = isMap(root.business) ? root.business : undefined;
+  const open = isMap(business?.open) ? business.open : undefined;
+  if (open !== undefined) {
+    const timezone = typeof business?.timezone === 'string' ? business.timezone : 'UTC';
+    for (const p of hoursProblems({ timezone, weekly: open.weekly as Record<string, string[]>, ...(open.closed !== undefined ? { closed: open.closed as string[] } : {}) })) {
+      if (p.path[0] === 'timezone') continue;
+      issue(ctx, ['business', 'open', ...p.path], p.message, p.fix);
+    }
+  }
+  if (open === undefined && isMap(root.lines) && root.lines.greetingAfterHours !== undefined) {
+    issue(ctx, ['lines', 'greetingAfterHours'], 'there is an after-hours greeting and no opening hours to tell when it applies', 'add business.open: { weekly: { mon-fri: ["09:00-17:00"] } }, or delete lines.greetingAfterHours');
+  }
   const model = isMap(root.model) ? root.model : undefined;
   const spec = model?.default;
   if (typeof spec === 'string') {
@@ -303,6 +316,13 @@ export const agentBusinessSchema = z
           .refine((z) => { try { new Intl.DateTimeFormat('en-CA', { timeZone: z }); return true; } catch { return false; } }, 'not an IANA time zone name')
           .optional()
           .describe('The business\'s IANA time zone (for example America/New_York): what "today" means for its calendar. Default: UTC.'),
+        open: z
+          .strictObject({
+            weekly: z.record(text(), z.array(text())).describe('Day names (mon ... sun) or ranges of them (mon-fri) to lists of HH:MM-HH:MM ranges in 24-hour time; a range whose end is before its start runs overnight, and 24:00 ends one at midnight.'),
+            closed: z.array(text()).optional().describe('Dates (YYYY-MM-DD) the business is closed all day.'),
+          })
+          .optional()
+          .describe('The business\'s opening hours, as the line can read them (in the business\'s time zone). With them the line tells the model whether the business is open now, and until when or when it next opens, and lines.greetingAfterHours is said when a call starts while it is closed. `hours` stays the text the agent may say; this is what the line itself works from.'),
         line: text().optional().describe('The business\'s reason for the line, said to a caller who is not giving what it asks for (for example "This line is how we price repairs and set up drop-offs while we are busy in the shop"). Used only with journeys.'),
       })
       .describe('Who the business is.'),
@@ -336,6 +356,7 @@ export const agentBusinessSchema = z
         notConfirmed: worded('The line said when the caller did not confirm a read-back').optional(),
         done: worded('The line said when an action the caller confirmed has run but the reply after it failed, so the caller still hears it was done').default({ en: "That's done." }),
         unclear: worded('The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys)').optional(),
+        greetingAfterHours: worded('The greeting said instead of the greeting (and of a journey\'s) when a call starts while the business is closed by business.open (required to have business.open)').optional(),
         stuck: worded('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
       })
       .describe('The lines said word for word.'),

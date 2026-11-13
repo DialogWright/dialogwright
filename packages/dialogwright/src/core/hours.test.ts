@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daysOf, hoursOpen, hoursProblems, isOpen, localTime, rangeOf, scheduleOf, type HoursConfig } from './hours';
+import { closesAt, daysOf, hoursOpen, hoursProblems, isOpen, localTime, nextOpening, rangeOf, scheduleOf, type HoursConfig } from './hours';
 
 /**
  * Business hours (design 2026-10-09-routes, decision 5): a default schedule and named ones, judged
@@ -135,5 +135,44 @@ describe('app.yaml\'s hours, as the schema reads them', () => {
       'hours.closed.0: "2026-13-01" is not a date',
     ]);
     expect(appSchema.safeParse({ id: 'x', hours: { weekly: {} } }).success).toBe(false);
+  });
+});
+
+describe('the next opening and today\'s closing', () => {
+  const week = scheduleOf(HOURS)!;
+  it('nextOpening: later today, the next day, across a weekend', () => {
+    // Wednesday 2026-11-11, 6:30 am in New York (11:30Z): opens at 8:00 today.
+    expect(nextOpening(week, at('2026-11-11T11:30:00Z'))).toEqual({ date: '2026-11-11', minute: 8 * 60 });
+    // Wednesday 7 pm: tomorrow at 8:00.
+    expect(nextOpening(week, at('2026-11-12T00:00:00Z'))).toEqual({ date: '2026-11-12', minute: 8 * 60 });
+    // Saturday 2026-11-14 at 3 pm (after the 13:00 close): Sunday is closed, so Monday 8:00.
+    expect(nextOpening(week, at('2026-11-14T20:00:00Z'))).toEqual({ date: '2026-11-16', minute: 8 * 60 });
+    // Friday 7 pm: Saturday opens at 9:00.
+    expect(nextOpening(week, at('2026-11-14T00:00:00Z'))).toEqual({ date: '2026-11-14', minute: 9 * 60 });
+  });
+  it('nextOpening: a running range is not next, a closed date is skipped, the horizon bounds it', () => {
+    // Wednesday 10 am is inside 08:00-18:00: the next start is Thursday.
+    expect(nextOpening(week, at('2026-11-11T15:00:00Z'))).toEqual({ date: '2026-11-12', minute: 8 * 60 });
+    // Thursday 2026-12-24 evening: Friday the 25th is closed, Saturday 9:00 is next.
+    expect(nextOpening(week, at('2026-12-25T01:00:00Z'))).toEqual({ date: '2026-12-26', minute: 9 * 60 });
+    expect(nextOpening({ timezone: 'UTC', weekly: {} }, at('2026-11-11T00:00:00Z'))).toBeNull();
+    expect(nextOpening({ timezone: 'UTC', weekly: { sun: ['09:00-10:00'] } }, at('2026-11-11T00:00:00Z'), 3)).toBeNull();
+    expect(nextOpening({ timezone: 'UTC', weekly: { sun: ['09:00-10:00'] } }, at('2026-11-11T00:00:00Z'), 5)).toEqual({ date: '2026-11-15', minute: 540 });
+  });
+  it('nextOpening: an overnight range starts on its own day', () => {
+    const night = scheduleOf(HOURS, 'night')!;
+    // Thursday 2026-11-12 noon in London: fri-sun 22:00-06:00, so Friday 22:00.
+    expect(nextOpening(night, at('2026-11-12T12:00:00Z'))).toEqual({ date: '2026-11-13', minute: 22 * 60 });
+    // Saturday 03:00 London is inside Friday's range; the next start is Saturday 22:00.
+    expect(nextOpening(night, at('2026-11-14T03:00:00Z'))).toEqual({ date: '2026-11-14', minute: 22 * 60 });
+  });
+  it('closesAt: the end of the range open now; null when closed', () => {
+    expect(closesAt(week, at('2026-11-11T15:00:00Z'))).toEqual({ date: '2026-11-11', minute: 18 * 60 });
+    expect(closesAt(week, at('2026-11-12T00:00:00Z'))).toBeNull();
+    const night = scheduleOf(HOURS, 'night')!;
+    expect(closesAt(night, at('2026-11-13T23:00:00Z'))).toEqual({ date: '2026-11-14', minute: 6 * 60 });
+    expect(closesAt(night, at('2026-11-14T03:00:00Z'))).toEqual({ date: '2026-11-14', minute: 6 * 60 });
+    expect(closesAt({ timezone: 'UTC', weekly: { mon: ['09:00-24:00'] } }, at('2026-11-16T12:00:00Z'))).toEqual({ date: '2026-11-17', minute: 0 });
+    expect(closesAt(week, at('2026-12-25T15:00:00Z'))).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { closesAt, localTime, nextOpening } from '../core/hours';
 import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
 import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
@@ -5,7 +6,7 @@ import { businessText, journeyText } from './business/text';
 import { offeredActions } from './journeys';
 import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
 import type { ModelTool } from './model/types';
-import { businessZone, type ConverseState } from './state';
+import { businessZone, openSchedule, type ConverseState } from './state';
 
 /**
  * What the agent model is told (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and
@@ -23,6 +24,43 @@ const lastFour = (n: string): string => n.replace(/\D/g, '').slice(-4);
 /** The date and time as a person there would say them, in the business's zone. */
 function nowWords(now: Date, zone: string): string {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone, timeZoneName: 'short' }).format(now);
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** A minute of the day as a person says it: "7:30 am", "5:00 pm", "midnight". */
+function clockWords(minute: number): string {
+  if (minute === 0) return 'midnight';
+  const h = Math.floor(minute / 60);
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(minute % 60).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+}
+
+/** A date (YYYY-MM-DD) in words: "Monday, November 16". */
+function dateWords(date: string): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}, ${MONTHS[m - 1]} ${d}`;
+}
+
+/**
+ * Whether the business is open now, said plainly, where agent.yaml gives its opening hours (`business.open`):
+ * until when it closes, or when it next opens (docs/designs/2026-11-11-agent-runtime.md, "Business information").
+ * Empty where it gives none.
+ */
+function openWords(b: AgentBusiness, now: Date): string {
+  const schedule = openSchedule(b);
+  if (schedule === null) return '';
+  const closing = closesAt(schedule, now.getTime());
+  if (closing !== null) {
+    const today = localTime(now.getTime(), schedule.timezone).date;
+    const [y, m, d] = today.split('-').map(Number) as [number, number, number];
+    const tomorrow = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+    // Midnight at the end of today is "until midnight"; a closing on a later day names that day.
+    const until = closing.date === today || (closing.date === tomorrow && closing.minute === 0) ? clockWords(closing.minute) : `${clockWords(closing.minute)} on ${dateWords(closing.date)}`;
+    return `The business is open now, until ${until}.`;
+  }
+  const opening = nextOpening(schedule, now.getTime());
+  return opening === null ? 'The business is closed now.' : `The business is closed now; it next opens ${dateWords(opening.date)}, at ${clockWords(opening.minute)}.`;
 }
 
 function callerWords(s: ConverseState): string {
@@ -103,6 +141,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
   const person = b.transfer ? 'a person at the business can take the call over' : 'a person at the business can call them back';
   const journey = s.journey === undefined ? '' : journeyText(b, s.journey, s.caller);
+  const open = openWords(b, now);
   return [
     `You are the automated assistant answering ${where}. You speak for the business, in this style: ${b.persona.style} The style shapes how you sound, never what you claim.`,
     ...(b.persona.opener === 'acknowledge' ? [OPENER_ACKNOWLEDGE] : []),
@@ -111,7 +150,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
     businessText(b),
     '',
     'Five rules hold on every call:',
-    `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free.`,
+    `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free. When someone from the business will get back to the caller is a time too: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.`,
     '2. Nothing changes without the caller\'s yes. When you call an action that changes something, the line itself reads its details back to the caller in fixed words and runs it only after their yes, so you never read one back yourself. You give only the values an action takes; the read-back\'s own words are the business\'s, and you cannot change them. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to the line\'s read-back does, so when the caller wants a change made, call its action and the line reads it back.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
     '4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.',
@@ -122,6 +161,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
     `Honesty: you are an automated assistant for ${b.business.name}, not a person, and you never pretend to be one. Asked whether you are a real person, you say you are an automated assistant and that ${person}.`,
     '',
     `Now: ${nowWords(now, zone)} (today is ${localDateIso(now.getTime(), zone)}, in the business's time zone, ${zone}).`,
+    ...(open === '' ? [] : [open]),
     `The caller: ${callerWords(s)}`,
     '',
     callSoFar(s),

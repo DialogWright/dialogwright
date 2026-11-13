@@ -17,7 +17,7 @@ import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
 import { followOnsOf, systemPrompt, toolsOf, type UnclearTurn } from './prompt';
 import { SentenceBuffer } from './sentences';
-import { businessZone, type ConverseState, type JourneyState } from './state';
+import { businessZone, openAt, type ConverseState, type JourneyState } from './state';
 import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
 
 /**
@@ -1074,7 +1074,9 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     }
     // A call started in a journey (its `start`) with a greeting of its own opens with it, in place of the business's.
     const started = st.journey?.active ? deps.business.journeys?.[st.journey.active] : undefined;
-    const greeting = started?.greeting?.en ?? deps.business.lines.greeting.en;
+    // A business that is closed as the call starts (business.open) says its after-hours greeting first of all: a journey's greeting may speak of today.
+    const closedGreeting = openAt(deps.business, now.getTime()) === false ? deps.business.lines.greetingAfterHours?.en : undefined;
+    const greeting = closedGreeting ?? started?.greeting?.en ?? deps.business.lines.greeting.en;
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);
   } else if (input.kind === 'left') {
@@ -1108,6 +1110,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     await checkAfterSpeaking(t, sp);
   }
   // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
+  const openNow = openAt(deps.business, now.getTime());
   const scrub = scrubberOfValues(t.masked);
   const scrubbed = (text: string): string => (scrub === null ? text : scrub(text));
   out.scrubbed?.(scrubbed);
@@ -1128,6 +1131,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ...(t.route !== undefined ? { route: t.route } : {}),
     ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
     ...(t.ended !== undefined ? { ended: t.ended } : {}),
+    ...(openNow !== undefined ? { open: openNow } : {}),
   });
   st.turnIndex += 1;
   return st;

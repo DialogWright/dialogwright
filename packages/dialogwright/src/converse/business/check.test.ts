@@ -171,3 +171,27 @@ describe('journeys', () => {
     expect(problemsOf(changed('goal: Leave a note asking for a call back, read back and confirmed by the caller.', 'goal: ""')).map((x) => x.path)).toEqual(['journeys.note.goal']);
   });
 });
+
+describe('opening hours', () => {
+  const base = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'testing', 'converse', 'agent.yaml'), 'utf8');
+  const withOpen = (open: string) => base.replace('business:\n', `business:\n  open:\n${open}`);
+  const problemsOf = (t: string) => agentBusinessProblems(t).problems;
+  it('a good schedule is valid, and the value carries it', () => {
+    const r = agentBusinessProblems(withOpen('    weekly: { mon-fri: ["08:00-17:00"] }\n    closed: [2026-12-25]\n'));
+    expect(r.problems).toEqual([]);
+    expect(r.value!.business.open).toEqual({ weekly: { 'mon-fri': ['08:00-17:00'] }, closed: ['2026-12-25'] });
+  });
+  it('a bad day, range or date is refused at its path', () => {
+    const out = problemsOf(withOpen('    weekly: { monday: ["8-5"], tue: ["09:00-09:00"] }\n    closed: [2026-13-01]\n'));
+    expect(out.map((p) => p.path)).toEqual(['business.open.weekly.monday', 'business.open.weekly.monday[0]', 'business.open.weekly.tue[0]', 'business.open.closed[0]']);
+  });
+  it('greetingAfterHours needs business.open', () => {
+    const line = '  greetingAfterHours: { en: "We are closed." }\n';
+    const without = base.replace('lines:\n', `lines:\n${line}`);
+    const p = problemsOf(without);
+    expect(p).toHaveLength(1);
+    expect(p[0]!.path).toBe('lines.greetingAfterHours');
+    expect(p[0]!.fix).toMatch(/business\.open/);
+    expect(problemsOf(withOpen('    weekly: { mon: ["08:00-17:00"] }\n').replace('lines:\n', `lines:\n${line}`))).toEqual([]);
+  });
+});

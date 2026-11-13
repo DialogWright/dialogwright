@@ -209,6 +209,14 @@ One file per app replaces business.yaml's current shape. A schema-validated YAML
   - how its result is described to the model.
 - **The short recovery lines and the handoff line.**
 
+Opening hours can also be given as data (`business.open`: weekly ranges and closed dates, in the business's
+time zone, beside the `hours` text the agent may say). Where they are, the line works out whether the business is
+open now and tells the model in one plain sentence after the time ("The business is open now, until 5:30 pm", or
+when it next opens); `lines.greetingAfterHours` is said word for word, in place of the greeting, when a call
+starts while it is closed; and the trace records whether the business was open at each turn. A callback is never
+promised for a particular time unless the business information gives one: rule 1 says someone will get back to
+the caller as soon as they can. Decided by the maintainer on 2026-11-13.
+
 The wheel shop's current assumptions (days, windows, services, accounts) carry over, still marked as
 assumptions for the owner to correct.
 

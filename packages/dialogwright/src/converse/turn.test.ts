@@ -148,10 +148,10 @@ interface Harness {
   run(s: ConverseState, input: Input): Promise<ConverseState>;
 }
 
-function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number; onClaimsRead?: ConverseDeps['onClaimsRead'] } = {}): Harness {
+function harness(turns: ModelEvent[][], o: { now?: Date; reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number; onClaimsRead?: ConverseDeps['onClaimsRead'] } = {}): Harness {
   const b = business(o.edit);
   const model = (o.model ?? fakeModel(turns)) as Harness['model'];
-  const calendar = fakeCalendar({ days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], windows: [{ name: 'morning', label: 'by noon', capacity: 1 }, { name: 'afternoon', label: 'by five', capacity: 1 }], now: () => NOW, timeZone: businessZone(b) });
+  const calendar = fakeCalendar({ days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], windows: [{ name: 'morning', label: 'by noon', capacity: 1 }, { name: 'afternoon', label: 'by five', capacity: 1 }], now: () => o.now ?? NOW, timeZone: businessZone(b) });
   const rows: AuditDraft[] = [];
   const audit: AuditSink = {
     append(callId, channel, d) {
@@ -194,7 +194,7 @@ function harness(turns: ModelEvent[][], o: { reading?: { yes: number; no: number
       ...o.tools,
     },
     texts: null,
-    now: () => NOW,
+    now: () => o.now ?? NOW,
     trace: (r) => void traces.push(r),
     jevTimeoutMs: o.jevTimeoutMs ?? 1000,
     ...(o.onClaimsRead !== undefined ? { onClaimsRead: o.onClaimsRead } : {}),
@@ -234,6 +234,55 @@ describe('converseTurn: the start', () => {
     expect(h.traces).toHaveLength(1);
     expect(h.traces[0]).toMatchObject({ v: 3, kind: 'converse', sessionId: 'call-1', turnIndex: 0, said: null, replies: ['Example Menders, how can I help?'] });
     expect(s.turnIndex).toBe(1);
+  });
+});
+
+describe('converseTurn: after hours', () => {
+  const OPEN = '  open:\n    weekly: { mon-fri: ["08:00-17:00"] }\n';
+  const AFTER = 'Example Menders is closed right now. Tell us what you need and we will get back to you as soon as we can.';
+  const NIGHT = new Date('2026-11-12T04:00:00Z'); // Wednesday, 11 p.m. in the business's zone
+  const hours = (t: string): string => t.replace('  timezone: America/New_York\n', `  timezone: America/New_York\n${OPEN}`).replace('lines:\n', `lines:\n  greetingAfterHours: { en: "${AFTER}" }\n`);
+  it('says the after-hours greeting at night, and records that the business was closed', async () => {
+    const h = harness([], { edit: hours, now: NIGHT });
+    const s = await h.run(fresh(), { kind: 'start' });
+    expect(h.said).toEqual([[AFTER, true]]);
+    expect(s.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text: AFTER }] }]);
+    expect(h.traces[0]).toMatchObject({ replies: [AFTER], open: false });
+  });
+  it('says the usual greeting by day, and records that the business was open', async () => {
+    const h = harness([], { edit: hours });
+    await h.run(fresh(), { kind: 'start' });
+    expect(h.said).toEqual([['Example Menders, how can I help?', true]]);
+    expect(h.traces[0]).toMatchObject({ open: true });
+  });
+  it('says the usual greeting at night where there is no after-hours greeting', async () => {
+    const h = harness([], { edit: (t) => t.replace('  timezone: America/New_York\n', `  timezone: America/New_York\n${OPEN}`), now: NIGHT });
+    await h.run(fresh(), { kind: 'start' });
+    expect(h.said).toEqual([['Example Menders, how can I help?', true]]);
+  });
+  it('an app without business.open records no open flag', async () => {
+    const h = harness([]);
+    await h.run(fresh(), { kind: 'start' });
+    expect(Object.hasOwn(h.traces[0]!, 'open')).toBe(false);
+  });
+  it('tells the model the business is closed', async () => {
+    const h = harness([[text('We are closed.'), done()]], { edit: hours, now: NIGHT });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'hi' });
+    expect(h.model.requests[0]!.system).toContain('The business is closed now; it next opens Thursday, November 12, at 8:00 am.');
+  });
+  it('overrides a journey\'s start greeting at night', async () => {
+    const OWN = 'Example Menders. Which day would you like a visit for the account?';
+    const ACCOUNT = ACCOUNT_JOURNEYS_YAML.replaceAll('actions: [availability, book]', 'actions: [check_availability, book]').replace('actions: [leave_note]', 'actions: [leave_note, callback]')
+      .replace('    start: { account: recognised }\n', `    start: { account: recognised }\n    greeting: { en: "${OWN}" }\n`);
+    const account = (now: Date) => harness([], { edit: (t) => `${hours(t)}${ACCOUNT}checks:\n  claims: { mode: off }\n`, now });
+    const state = () => newConverseState({ appId: 'menders', callId: 'call-1', channel: 'voice', callerNumber: CALLER_NUMBER, account: 'Example Account' });
+    const night = account(NIGHT);
+    await night.run(state(), { kind: 'start' });
+    expect(night.said).toEqual([[AFTER, true]]);
+    const day = account(NOW);
+    await day.run(state(), { kind: 'start' });
+    expect(day.said).toEqual([[OWN, true]]);
   });
 });
 

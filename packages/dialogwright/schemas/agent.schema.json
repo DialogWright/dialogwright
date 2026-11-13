@@ -30,6 +30,39 @@
           "type": "string",
           "minLength": 1
         },
+        "open": {
+          "description": "The business's opening hours, as the line can read them (in the business's time zone). With them the line tells the model whether the business is open now, and until when or when it next opens, and lines.greetingAfterHours is said when a call starts while it is closed. `hours` stays the text the agent may say; this is what the line itself works from.",
+          "type": "object",
+          "properties": {
+            "weekly": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "description": "Day names (mon ... sun) or ranges of them (mon-fri) to lists of HH:MM-HH:MM ranges in 24-hour time; a range whose end is before its start runs overnight, and 24:00 ends one at midnight."
+            },
+            "closed": {
+              "description": "Dates (YYYY-MM-DD) the business is closed all day.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "weekly"
+          ],
+          "additionalProperties": false
+        },
         "line": {
           "description": "The business's reason for the line, said to a caller who is not giving what it asks for (for example \"This line is how we price repairs and set up drop-offs while we are busy in the shop\"). Used only with journeys.",
           "type": "string",
@@ -305,6 +338,21 @@
           ],
           "additionalProperties": false,
           "description": "The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys), per language."
+        },
+        "greetingAfterHours": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The greeting said instead of the greeting (and of a journey's) when a call starts while the business is closed by business.open (required to have business.open), in English."
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The greeting said instead of the greeting (and of a journey's) when a call starts while the business is closed by business.open (required to have business.open), per language."
         },
         "stuck": {
           "default": {

@@ -61,6 +61,17 @@ describe('the pages of a converse app', () => {
     expect(text).toContain('only by its last four digits');
   });
 
+  it('the card: a business with opening hours says what the model is told and the after-hours greeting; one without keeps its card', () => {
+    const base = read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8');
+    const open = agentBusinessProblems(base.replace('business:\n', 'business:\n  open:\n    weekly: { mon-fri: ["08:00-17:00"] }\n').replace('lines:\n', 'lines:\n  greetingAfterHours: { en: "We are closed." }\n')).value!;
+    const card = conversePolicyCardText({ ...app, business: open });
+    expect(card).toContain('is told, on every request, whether the business is open now');
+    expect(card).toContain('when it closes or next opens');
+    expect(card).toContain('`lines.greetingAfterHours`, word for word, in place of the greeting (and of a journey\'s): "We are closed."');
+    expect(conversePolicyCardText(app)).not.toContain('greetingAfterHours');
+    expect(conversePolicyCardText(app)).not.toContain('whether the business is open now');
+  });
+
   it('the card: only the audit records an action\'s result, and only a gate refusal is scrubbed before the model is told it', () => {
     const text = conversePolicyCardText(app);
     expect(text).toContain('Only the audit records an action\'s result');

@@ -98,6 +98,8 @@ export interface ConverseTraceRecord {
   ended?: 'unclear';
   /** A journey the turn's confirmed action completed: it is in its after phase from this turn on. */
   journeyEnded?: { journey: string; how: 'done' };
+  /** Whether the business was open at the turn (agent.yaml `business.open`); absent where it gives no opening hours. */
+  open?: boolean;
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
 }

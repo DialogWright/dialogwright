@@ -150,6 +150,57 @@ export function isOpen(schedule: HoursSchedule, nowMs: number): boolean {
   return false;
 }
 
+/** A moment in a schedule's zone: the local date (`YYYY-MM-DD`) and the minute of that day. */
+export interface LocalMoment {
+  readonly date: string;
+  readonly minute: number;
+}
+
+/** The date `days` after `date` (`YYYY-MM-DD`). */
+function dayAfter(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * The start of the next open range after `nowMs`, in the schedule's zone, or null within `horizonDays` days
+ * (today included). A range that is running now is not "next"; closed dates close the ranges that start on them.
+ */
+export function nextOpening(schedule: HoursSchedule, nowMs: number, horizonDays = 14): LocalMoment | null {
+  const { date, day, minute } = localTime(nowMs, schedule.timezone);
+  const closed = new Set(schedule.closed ?? []);
+  for (let i = 0; i < horizonDays; i++) {
+    const on = dayAfter(date, i);
+    if (closed.has(on)) continue;
+    const starts = rangesOn(schedule.weekly, (day + i) % 7).map((r) => r.start).filter((s) => i > 0 || s > minute);
+    if (starts.length > 0) return { date: on, minute: Math.min(...starts) };
+  }
+  return null;
+}
+
+/**
+ * When `schedule` is open at `nowMs`, the end of the range open now, in the schedule's zone (a range that runs
+ * past midnight ends on the next date; one ending at `24:00` ends at minute 0 of the next date); else null.
+ */
+export function closesAt(schedule: HoursSchedule, nowMs: number): LocalMoment | null {
+  const { date, day, minute } = localTime(nowMs, schedule.timezone);
+  const closed = new Set(schedule.closed ?? []);
+  if (!closed.has(date)) {
+    for (const { start, end } of rangesOn(schedule.weekly, day)) {
+      if (start < end ? minute >= start && minute < end : minute >= start) {
+        if (end === 24 * 60) return { date: dayAfter(date, 1), minute: 0 };
+        return start < end ? { date, minute: end } : { date: dayAfter(date, 1), minute: end };
+      }
+    }
+  }
+  if (!closed.has(dayBefore(date))) {
+    for (const { start, end } of rangesOn(schedule.weekly, (day + 6) % 7)) {
+      if (end < start && minute < end) return { date, minute: end };
+    }
+  }
+  return null;
+}
+
 /** Whether the app's hours (`name`, a named schedule, or the default) are open at `nowMs`; null when there is no such schedule. */
 export function hoursOpen(hours: HoursConfig | undefined, nowMs: number, name?: string): boolean | null {
   if (hours === undefined) return null;

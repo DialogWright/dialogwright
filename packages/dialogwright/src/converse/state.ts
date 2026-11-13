@@ -1,3 +1,4 @@
+import { isOpen, type HoursSchedule } from '../core/hours';
 import { defaultTimeZone } from '../core/localDate';
 import type { Seen } from './actions';
 import type { AgentBusiness } from './business/schema';
@@ -97,4 +98,16 @@ export function newConverseState(o: { appId: string; callId: string; channel: 'c
  */
 export function businessZone(b: AgentBusiness): string {
   return b.business.timezone ?? (defaultTimeZone() || 'UTC');
+}
+
+/** The business's opening hours (agent.yaml `business.open`) as a schedule in its zone; null where it gives none. */
+export function openSchedule(b: AgentBusiness): HoursSchedule | null {
+  const open = b.business.open;
+  return open === undefined ? null : { timezone: businessZone(b), weekly: open.weekly, ...(open.closed !== undefined ? { closed: open.closed } : {}) };
+}
+
+/** Whether the business is open at `nowMs`; undefined where agent.yaml gives no opening hours. */
+export function openAt(b: AgentBusiness, nowMs: number): boolean | undefined {
+  const schedule = openSchedule(b);
+  return schedule === null ? undefined : isOpen(schedule, nowMs);
 }
