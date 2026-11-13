@@ -20,6 +20,7 @@ import { loadHarnessEnv } from '../server/envFile';
 
 export const ROUTE_EVAL_USAGE = [
   'usage: dialogwright converse:route-eval <app dir> --calls <results.jsonl>... --labels <labels.jsonl> [--personas <file>] [--replay] [--out <file.md>] [--json] [--timeout-ms N]',
+  '  measures journey routing on labelled caller turns: accuracy, wrong and missed switches by bar, unclear recall and precision, and the start-bar table; a label\'s task is a journey id, "question" or "none", and fits: false marks a turn in a task that does not fit it',
   '  <app dir>: the converse app (its agent.yaml gives the journeys and routing.switchAt, routing.startAt)',
   '  --calls: the results.jsonl of one or more evaluations (dialogwright eval); a call\'s id is <folder of the file>/<persona>-<run>',
   '  --personas: the personas file of those evaluations; a call whose persona has callingFrom is a recognised account (open to the journeys for accounts), any other is not',

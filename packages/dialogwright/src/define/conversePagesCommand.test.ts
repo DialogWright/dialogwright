@@ -195,15 +195,37 @@ describe('the pages of a converse app with journeys', () => {
   it('the card says what routing sends the decision model: each caller turn\'s words, the line\'s last reply, the open journeys\' triggers, and a finished journey\'s goal', () => {
     const text = conversePolicyCardText(app);
     const sent = text.slice(text.indexOf('## What a model is sent'), text.indexOf('## Journeys'));
-    expect(sent).toMatch(/For routing among the journeys, the decision model is also sent each caller turn's words, the line's last reply before them .*, and the trigger \(`when`\) of each journey open to the caller.*the finished journey's goal/);
+    expect(sent).toMatch(/For routing among the journeys, the decision model is also sent each caller turn's words, the line's last reply before them .*, and the trigger \(`when`\) of each journey open to the caller/);
+    expect(sent).toMatch(/In a finished journey's after phase, the decision model is also sent the finished journey's goal/);
     expect(conversePolicyCardText(plain)).not.toContain('For routing');
+  });
+
+  it('the routing words are short bullets, one idea each', () => {
+    const text = conversePolicyCardText(app);
+    const sent = text.slice(text.indexOf('## What a model is sent'), text.indexOf('## Journeys'));
+    const bullets = sent.split('\n').filter((l) => /routing|unclear|fits/.test(l));
+    expect(bullets.length).toBeGreaterThanOrEqual(3);
+    for (const l of bullets) expect(l.length).toBeLessThan(420);
+  });
+
+  it('the card says the agent model in a journey is sent the other open journeys\' triggers, and lists a journey\'s greeting', () => {
+    const text = conversePolicyCardText(app);
+    const sent = text.slice(text.indexOf('## What a model is sent'), text.indexOf('## Journeys'));
+    expect(sent).toMatch(/In a journey in progress, the agent model is also sent the trigger \(`when`\) of each other journey open to the caller/);
+    expect(text).not.toMatch(/Greeting:/);
+    const acct = conversePolicyCardText(withJourneys(ACCOUNT_JOURNEYS_YAML.replace('    start: { account: recognised }\n', '    start: { account: recognised }\n    greeting: { en: "Welcome back." }\n')));
+    expect(acct).toContain('- Greeting, said word for word where it starts the call: "Welcome back."');
+    expect(conversePolicyCardText(plain)).not.toContain('other journey open');
   });
 
   it('the card names the fits question, the bars, the unclear line and what an unclear turn withholds', () => {
     const text = conversePolicyCardText(app);
     const sent = text.slice(text.indexOf('## What a model is sent'), text.indexOf('## Journeys'));
-    expect(sent).toMatch(/whether the caller's turn gives what the line just asked for \(`fits`\)/);
-    expect(sent).toMatch(/`routing\.startAt`.*`routing\.switchAt`/);
+    expect(sent).toMatch(/whether the caller's turn has anything to do with the task \(`fits`\)/);
+    expect(sent).not.toMatch(/gives what the line just asked for|reaches no journey/);
+    expect(sent).toMatch(/At the root, a turn is unclear only when none is the top reading/);
+    expect(sent).toMatch(/`routing\.startAt`/);
+    expect(sent).toMatch(/`routing\.switchAt`/);
     expect(sent).toMatch(/`business\.line`/);
     const journeys = text.slice(text.indexOf('## Journeys'));
     expect(journeys).toContain("Sorry, I can't follow that. Please call back any time.");

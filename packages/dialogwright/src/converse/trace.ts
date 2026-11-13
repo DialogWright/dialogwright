@@ -82,7 +82,7 @@ export interface ConverseTraceRecord {
    * How the caller's turn was routed among the journeys (docs/designs/2026-11-12-journeys.md, "Routing"), on a
    * business with journeys and a turn of the caller's that was routed (not a yes that ran its read-back): the
    * journey before and after (null: the root), the outcome, the decision model's probabilities for each `task`
-   * option (null: no reading) and its `drops` and `again` readings where it gave them, its time, whether it
+   * option (null: no reading) and its `drops`, `again` and `fits` readings where it gave them, its time, whether it
    * answered nothing within routing.timeoutMs (`timedOut`: the turn carried on), the older paused journey a
    * switch dropped, and whether the turn's first round was asked again for the route (`restarted`). A call
    * that starts in a journey (its `start`) has a route on its start turn too: from the root to that journey,
@@ -90,7 +90,7 @@ export interface ConverseTraceRecord {
    * no reading. `unclear`: the line could not follow the turn (the design's "Amendment (2026-11-13)"), the count
    * of such turns in a row with it; absent on a turn that was not unclear.
    */
-  route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true; unclear?: number };
+  route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; fits?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true; unclear?: number };
   /**
    * The runtime ended the call on this turn of its own accord: `unclear`, the third unclear turn in a row, on which
    * the line said lines.unclear and the call ended as end_call ends it (the state's `ended` is `closing`).

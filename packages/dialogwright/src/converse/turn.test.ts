@@ -1981,7 +1981,7 @@ describe('journeys', () => {
       // The way out: in the visit, the model is told the other thing the line can help with.
       expect(h.model.requests.at(-1)!.system).toContain(`Other things this line can help with:\n- ${h.deps.business.journeys!.note!.when}`);
       s = await h.run(s, { kind: 'text', text: 'my brother had one of those, he lives out past the lake now' });
-      expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', unclear: 1, restarted: true });
+      expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', unclear: 1, restarted: true, fits: 0.1, drops: 0.05 });
       expect(toolNames(h, 2)).toEqual(['check_availability', 'book', 'end_call']);
       for (const i of [3, 4]) {
         expect(toolNames(h, i)).toEqual(['check_availability', 'end_call']);

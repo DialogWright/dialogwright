@@ -1030,6 +1030,7 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
         task: reading.task,
         ...(reading.drops !== null ? { drops: reading.drops } : {}),
         ...(reading.again !== null ? { again: reading.again } : {}),
+        ...(reading.fits !== null ? { fits: reading.fits } : {}),
         ms,
         ...(asked.answers === null && asked.why === 'late' ? { timedOut: true as const } : {}),
         ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),

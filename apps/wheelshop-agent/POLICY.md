@@ -19,7 +19,13 @@
 
 - The agent model is sent, in full: the caller's words, its own replies, the fixed lines said, the arguments of its own action calls, each read-back as it was said (the caller's own values among it), and what each action returned, as the action returned it. Nothing checks an action's result: there is no closed-form check on a converse action's reply, so an action returns only what the model may see. This app has no identity factors to withhold.
 - The decision model (not the agent model) is sent each read-back as it was said, the caller's own words in answer to it and the business's day (today's date, in words), to read a yes or a no. The check after speaking is off (agent.yaml `checks.claims.mode: off`): the decision model is sent no reply of the agent model.
-- For routing among the journeys, the decision model is also sent each caller turn's words, the line's last reply before them (the read-back waiting for its answer, where one is), and the trigger (`when`) of each journey open to the caller (the journey in progress and one set aside among them); in a finished journey's after phase, also the finished journey's goal. A turn whose yes runs its read-back is not routed. The decision model is also asked, in a journey in progress, whether the caller's turn gives what the line just asked for (`fits`); a turn is unclear when, at the root, it reaches no journey at `routing.startAt` and is no question, or, in a journey, it does not fit, is no question and moves to no other journey at `routing.switchAt`; the line then guides the caller instead of guessing. On the second unclear turn in a row the agent model is also sent the business's reason for the line (`business.line`), where it has one.
+- For routing among the journeys, the decision model is also sent each caller turn's words, the line's last reply before them (the read-back waiting for its answer, where one is), and the trigger (`when`) of each journey open to the caller (the journey in progress and one set aside among them).
+- In a finished journey's after phase, the decision model is also sent the finished journey's goal. A turn whose yes runs its read-back is not routed.
+- In a journey in progress, the decision model is also asked whether the caller's turn has anything to do with the task (`fits`).
+- At the root, a turn is unclear only when none is the top reading; a journey starts from the root only at `routing.startAt`.
+- In a journey, a turn is unclear when it does not fit, is no question and moves to no other journey at `routing.switchAt`. The line then guides the caller instead of guessing.
+- On the second unclear turn in a row the agent model is also sent the business's reason for the line (`business.line`), where it has one.
+- In a journey in progress, the agent model is also sent the trigger (`when`) of each other journey open to the caller (not the one set aside), so it can say what else the line does and ask whether to switch.
 - The caller's number reaches the agent model only by its last four digits, so it can say them; the whole number goes only to the actions' code (a phone param the model writes as `caller` is resolved by the runtime).
 - Only the reason the gate refused a call is scrubbed before the agent model is told it: any value of a param that is recorded hidden is replaced by its recorded form. The reason a call's values were not valid for their types, and the words an action failed with, go to the agent model as written.
 - The trace and the audit record each action's params as its `audit` says, hidden (`•`) where it says nothing (see each action's table below). Only the audit records an action's result, as the model is sent it, with the values of hidden params replaced and cut to 600 characters; the trace records whether it ran (and the words it failed with, those values replaced), not what it returned.
@@ -42,6 +48,7 @@
 - Trigger: The caller wants to book cars in for repair.
 - Open only where the number calling is on an account. Starts the call there.
 - Actions: `recognise_caller`, `check_availability` and `book_dealer`
+- Greeting, said word for word where it starts the call: "Example Wheel Works, hi. Booking some cars in today?"
 
 ### `callback`
 
