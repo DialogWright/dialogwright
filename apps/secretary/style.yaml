@@ -18,3 +18,9 @@ avoid:
 model:
   provider: meta
   id: muse-ember-1.0
+# The drift judge refuses a summary it doubts at 0.6 or more, above the engine's 0.5: the maintainer's call
+# (2026-11-18), "I'd rather 3 wrong ones slip through than lose 8 good ones". On the engine's labelled span
+# cases (pnpm render:judge-eval --replay): at 0.5 the judge alone caught 63 of 72 unfaithful and refused 12 of
+# 122 faithful; at 0.6, 60 and 4. Here, the maintainer's example (0.55, 0.56) is now summarized.
+judge:
+  refuseAt: 0.6
