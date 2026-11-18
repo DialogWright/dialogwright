@@ -1,13 +1,15 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/style.schema.json
-# The model that leads the conversation: Inception's Mercury 3 on Inception's own API (provider:
-# inception, key INCEPTION_API_KEY), at its fastest reasoning (instant), with realtime on. Measured on
-# 2026-11-09 with pnpm agent:bakeoff on this app's cases (fixtures/agent/cases.yaml): with the owner's
-# sample replies, valid JSON 100%, values right 94%, no reply with a figure the facts do not hold, and
-# p50 482 ms / p95 889 ms (682 / 1089 with the drift judge), within the bar for a call (p50 1.0 s, p95
-# 1.8 s). At low reasoning the values were right more often, but p50 was 2.5 s: too slow for a call.
+# The model that leads the conversation: Meta's Muse Ember on Meta's own API (provider: meta, key
+# META_API_KEY), in Standard mode (which does not train on what it is sent), at its least reasoning (instant,
+# sent as reasoning_effort minimal: a Muse model always reasons). Inception shuts Mercury 3, the model before,
+# down on 2026-12-28. Measured on 2026-11-18 with pnpm agent:bakeoff on this app's cases
+# (fixtures/agent/cases.yaml), with the owner's sample replies: valid JSON 100%, values right 100% (24 of 24;
+# Mercury 3 at instant 83%), no reply with a figure the facts do not hold, actions right 100%, p50 1048 ms /
+# p95 1647 ms (Mercury 508 / 852), at about two thirds of Mercury's cost. Slower than the bar for a call
+# (p50 1.0 s, p95 1.8 s, with the drift judge); nothing measured is as fast as Mercury.
 agent:
-  provider: inception
-  model: mercury-3
+  provider: meta
+  model: muse-ember-1.0
   effort: instant
 # The most words a reply of the model's may use (a longer one is not said: the field's fixed question
 # is). On a call 30, over the engine's 25: the warm opening the demo wants, as the bake-off's cases

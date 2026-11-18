@@ -11,11 +11,11 @@ describe('the app folder', () => {
     expect((await checkApp(APP_DIR, { code })).map(formatProblem)).toEqual([]);
   });
 
-  it('is Example Wheel Works, in agent mode on Mercury 3, with the adversarial suite on', () => {
+  it('is Example Wheel Works, in agent mode on Muse Ember, with the adversarial suite on', () => {
     expect(app.id).toBe('wheelshop');
     expect(app.brand?.name).toBe('Example Wheel Works');
     expect(app.mode).toBe('agent');
-    expect(app.agent?.model).toEqual({ provider: 'inception', model: 'mercury-3', effort: 'instant' });
+    expect(app.agent?.model).toEqual({ provider: 'meta', model: 'muse-ember-1.0', effort: 'instant' });
     expect(app.adversarial).toBe(true);
   });
 

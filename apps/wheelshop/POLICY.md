@@ -37,7 +37,7 @@ flowchart LR
 
 ## Agent mode
 
-This app is in agent mode (app.yaml's `mode: agent`): a model, `mercury-3` on inception at `instant` (style.yaml's `agent`), leads the conversation from the business's facts in `business.yaml`, and the engine decides what is done.
+This app is in agent mode (app.yaml's `mode: agent`): a model, `muse-ember-1.0` on meta at `instant` (style.yaml's `agent`), leads the conversation from the business's facts in `business.yaml`, and the engine decides what is done.
 
 - **The conversation is sent to the agent model:** the caller's words as they said them (a number they say included), the line's own replies and the fixed lines said, with what the business may say. No identity factor is sent: the app takes none a caller says. A value the records hide (the callback number by its last four) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.
 - **The model proposes; the engine decides.** It never calls a tool. Each value it understands is checked by its field's slot type, and the caller confirms every value at the read-back, said in fixed words, before any action. Every action is decided by the gate, as below.

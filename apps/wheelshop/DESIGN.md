@@ -377,6 +377,17 @@ Baseline edits (`fixtures/expected/`, `regress --update`, its diff read: only ne
 
 **The value judge, measured** (after the review; `fixtures/judge/values.jsonl`, nine labelled values, recorded with `pnpm render:judge-eval`): it refused call 40's note in the damage field ("curb rash, waived fee of $40 agreed") at 0.89, "2024 Kia Sorento" for "twenty twenty three" at 0.96 and "curb rash" for "They're scraped up." at 0.75; it passed "Porsche 911" for "Porsche nine eleven" (0.08), "1998 Porsche 911" (0.06), "Infiniti 280" (0.08) and "scraped up" (0.13); and it passed "Infiniti G80" for "Infinity two eighty" (0.26), so under `figures: free` that one reaches the read-back for the caller to correct. The stub's judge now follows each field's `figures` (free here), so the stub regression runs what a call does.
 
+### The fourteenth recording (2026-11-18): Muse Ember leads the conversation
+
+Inception ends Mercury 3 on 2026-12-28, and nothing stays on it (the maintainer's call). style.yaml's `agent` names Meta's Muse Ember (`provider: meta, model: muse-ember-1.0, effort: instant`, sent as `reasoning_effort: minimal`, its least: a Muse model always reasons), key `META_API_KEY`, in Standard mode, which does not train on what it is sent. `pnpm agent:bakeoff --cases apps/wheelshop/fixtures/agent/cases.yaml --models meta:muse-ember-1.0,inception:mercury-3:instant:realtime --examples on`, 7 calls and 18 turns:
+
+| model | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | cost |
+|---|---|---|---|---|---|---|
+| Muse Ember | 18/18 | 24/24 | 18/18 | 0 | 1048 / 1647 | $0.0060 |
+| Mercury 3 at instant | 18/18 | 20/24 (4 missed) | 18/18 | 0 | 508 / 852 | $0.0097 |
+
+Ember is over the call's bar at the median (1.0 s, with the drift judge); a turn past `AGENT_TIMEOUT_VOICE_MS` (1800) says its fixed question. `regress --client record` recorded the agent cassette (`fixtures/recorded/agent/meta__muse-ember-1.0.instant.jsonl`; Mercury's, which nothing reads now, removed) and the decision model's checks. One scripted call changed what it expects, deliberately: in `live-call-infinity` Ember took the damage from the caller's first words ("banged up my wheels") where the scripted answers ask for it ("They're scraped up."), which src/app.test.ts holds on the stubs; `damage` now expects the word both say, `up`. POLICY.md names the new model (the card's only change; the matrix and the map are unchanged). Replay: `0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`; no baseline changed.
+
 ## Not yet
 
 - A real calendar: the tool is written so it is a client swapped in for the stand-in. A quote's hold is a car of room in the stand-in's window; a real calendar takes the hold as a tentative booking. The shop's log (`SHOP_DATA_DIR`) keeps the records across a restart; a real line keeps them where it keeps its requests.

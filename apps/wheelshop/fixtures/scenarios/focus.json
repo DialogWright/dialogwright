@@ -1859,7 +1859,7 @@
         "wheels": "four",
         "damage": {
           "has": [
-            "scraped"
+            "up"
           ]
         },
         "diamondCut": "no",
