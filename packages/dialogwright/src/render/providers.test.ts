@@ -40,7 +40,7 @@ describe('resolveRenderProvider', () => {
   it('names the variable a missing key is read from, never a key; a replay needs none', () => {
     expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic' })).toThrow('missing required environment variable ANTHROPIC_API_KEY (RENDER_PROVIDER=anthropic)');
     expect(resolveRenderProvider({ RENDER_PROVIDER: 'anthropic' }, { needKey: false })!.apiKey).toBeNull();
-    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openai' })).toThrow('RENDER_PROVIDER must be openrouter, anthropic or inception, got "openai"');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openai' })).toThrow('RENDER_PROVIDER must be openrouter, anthropic, inception or meta, got "openai"');
     expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'inception' })).toThrow('missing required environment variable INCEPTION_API_KEY (RENDER_PROVIDER=inception)');
   });
 });
@@ -131,6 +131,57 @@ describe('Inception (its own API, Mercury)', () => {
     for (const finish of ['length', 'content_filter']) {
       await expect(bodyOf({}, req, { choices: [{ message: { content: 'Who' }, finish_reason: finish }] })).rejects.toThrow(`inception: the answer had no line (${finish})`);
     }
+  });
+});
+
+describe('Meta (its own API, Muse)', () => {
+  const answerOf = (finish: string, message: Record<string, unknown> = { content: 'Who is it from?' }) => ({ model: 'muse-ember-1.0', choices: [{ message, finish_reason: finish }], usage: { prompt_tokens: 290, completion_tokens: 70, completion_tokens_details: { reasoning_tokens: 64 } } });
+  const bodyOf = async (env: Record<string, string>, request: RenderRequest = req, answer: unknown = answerOf('stop')) => {
+    const sent: { url: string; init: RequestInit }[] = [];
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'meta', META_API_KEY: KEY, ...env })!;
+    const f = (async (url: string | URL | Request, init?: RequestInit) => {
+      sent.push({ url: String(url), init: init! });
+      return new Response(JSON.stringify(answer), { status: 200 });
+    }) as typeof fetch;
+    const g = await new ModelRenderClient(p, f).generate(request, signal);
+    return { g, sent: sent[0]!, body: JSON.parse(String(sent[0]!.init.body)) as Record<string, unknown>, p };
+  };
+
+  it('chat completions at its own address, the key from META_API_KEY, muse-ember-1.0 by default at its least reasoning, minimal, with room for it', async () => {
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'meta' })).toThrow('missing required environment variable META_API_KEY (RENDER_PROVIDER=meta)');
+    const { g, sent, body, p } = await bodyOf({});
+    expect(p).toMatchObject({ provider: 'meta', model: 'muse-ember-1.0', keyVar: 'META_API_KEY' });
+    expect(sent.url).toBe('https://api.meta.ai/v1/chat/completions');
+    expect((sent.init.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
+    const { messages, ...rest } = body;
+    // A Muse model always reasons, and its reasoning counts against max_completion_tokens: the thinking room always.
+    expect(rest).toEqual({ model: 'muse-ember-1.0', max_completion_tokens: 4000, reasoning_effort: 'minimal' });
+    expect((messages as unknown[])[0]).toEqual({ role: 'system', content: RENDER_INSTRUCTIONS });
+    expect(g).toMatchObject({ text: 'Who is it from?', model: 'muse-ember-1.0', usage: { inputTokens: 290, outputTokens: 70 }, source: 'model' });
+    expect(renderCassetteModel(p)).toBe('muse-ember-1.0');
+    expect(renderLines(p)).toEqual(['generated lines worded by muse-ember-1.0 from meta (reasoning_effort minimal)']);
+  });
+
+  it('RENDER_THINKING and RENDER_EFFORT in the shared vocabulary as reasoning_effort; a temperature sent as it is', async () => {
+    expect((await bodyOf({ RENDER_THINKING: 'disabled' })).body).toMatchObject({ reasoning_effort: 'minimal' });
+    expect((await bodyOf({ RENDER_EFFORT: 'low' })).body).toMatchObject({ reasoning_effort: 'low' });
+    expect((await bodyOf({ RENDER_THINKING: 'omit' })).body).not.toHaveProperty('reasoning_effort');
+    expect(renderLines((await bodyOf({ RENDER_THINKING: 'omit' })).p)).toEqual(["generated lines worded by muse-ember-1.0 from meta (no reasoning_effort (Meta's default))"]);
+    expect(renderCassetteModel(resolveRenderProvider({ RENDER_PROVIDER: 'meta', META_API_KEY: KEY, RENDER_EFFORT: 'low' })!)).toBe('muse-ember-1.0.thinking-adaptive.effort-low');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'meta', META_API_KEY: KEY, RENDER_THINKING: 'between-tools' })).toThrow('on Meta use disabled, adaptive or omit');
+    expect((await bodyOf({})).body).not.toHaveProperty('temperature');
+    expect((await bodyOf({}, { ...req, temperature: 0.2 })).body.temperature).toBe(0.2);
+  });
+
+  it('Muse Ember is costed at its own price, Standard mode\'s', () => {
+    expect(defaultRenderPrice('muse-ember-1.0')).toEqual({ input: 0.1, output: 0.5 });
+  });
+
+  it('a line cut off, stopped by its content filter or refused by the model is no line', async () => {
+    for (const finish of ['length', 'content_filter']) {
+      await expect(bodyOf({}, req, answerOf(finish))).rejects.toThrow(`meta: the answer had no line (${finish})`);
+    }
+    await expect(bodyOf({}, req, answerOf('stop', { content: null, refusal: 'I cannot help with that.' }))).rejects.toThrow('meta: the answer had no line (refusal)');
   });
 });
 

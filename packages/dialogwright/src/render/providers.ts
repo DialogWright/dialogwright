@@ -8,16 +8,17 @@ import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, 
 
 /**
  * Where generated lines are worded (generated wording, design section 5): a model reached through
- * OpenRouter (any model it serves), the Anthropic API or Inception's own API (its Mercury models), with
+ * OpenRouter (any model it serves), the Anthropic API, Inception's own API (its Mercury models) or Meta's
+ * own API (its Muse models, Standard mode, which does not train on what it is sent), with
  * the author's own key, read from its own variable and never from a flag; never logged, never in a
  * trace. Chosen like the decision model:
  *
- * - RENDER_PROVIDER: `openrouter`, `anthropic` or `inception`. Unset, the app's own (style.yaml's `model`,
+ * - RENDER_PROVIDER: `openrouter`, `anthropic`, `inception` or `meta`. Unset, the app's own (style.yaml's `model`,
  *   renderEnvOf); with neither, no line is generated: every line is its fixed text.
  * - RENDER_MODEL: the model id, read over the app's only with RENDER_PROVIDER set; default the app's
  *   own where its provider is in force, else a current Claude Haiku (`claude-haiku-5-5` on Anthropic,
- *   `anthropic/claude-haiku-5.5` on OpenRouter), or `mercury-3` on Inception.
- * - the key: OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY, the provider's own variable.
+ *   `anthropic/claude-haiku-5.5` on OpenRouter), `mercury-3` on Inception, or `muse-ember-1.0` on Meta.
+ * - the key: OPENROUTER_API_KEY, ANTHROPIC_API_KEY, INCEPTION_API_KEY or META_API_KEY, the provider's own variable.
  * - RENDER_REALTIME: `on` or `off`, Inception's `realtime` flag (its mode for a lower time to the first
  *   token); default on. Read only on Inception.
  * - RENDER_SHARE: the share of calls served generated, 0 to 100; default 100.
@@ -43,9 +44,10 @@ import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, 
  * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
  *   (renderThinkingOf), default the model's own way of thinking least (THINKING_BY_MODEL); on OpenRouter
  *   (openRouterThinkingOf), default reasoning off (`reasoning: { effort: 'none' }`); on Inception
- *   (inceptionThinkingOf), default its fastest, `reasoning_effort: instant`. One vocabulary for all three.
+ *   (inceptionThinkingOf), default its fastest, `reasoning_effort: instant`; on Meta (metaThinkingOf), default
+ *   its least, `reasoning_effort: minimal` (a Muse model always reasons: it refuses `none`). One vocabulary for all four.
  */
-export const RENDER_PROVIDERS = ['openrouter', 'anthropic', 'inception'] as const;
+export const RENDER_PROVIDERS = ['openrouter', 'anthropic', 'inception', 'meta'] as const;
 export type RenderProviderName = (typeof RENDER_PROVIDERS)[number];
 
 /**
@@ -190,6 +192,25 @@ export function inceptionReasoningBody(t: RenderThinking): Record<string, unknow
   return {};
 }
 
+/**
+ * How a Meta model (Muse) reasons while it words a line, in the same vocabulary, sent as its
+ * `reasoning_effort` (metaReasoningBody). A Muse model always reasons: it refuses `none` (live,
+ * 2026-11-18: "Supported values: [minimal, low, medium, high, xhigh, max]"). Neither set is its least,
+ * `minimal`, named as thinking `disabled` as Inception's `instant` is, so the default's cassette is the
+ * model's own name; an effort (low, medium, high) is that effort, `adaptive` with none `medium`; `omit`
+ * alone sends no reasoning_effort (Meta's own default); `between-tools` is refused, and `disabled` with an effort.
+ */
+export function metaThinkingOf(env: Env): RenderThinking {
+  return chatThinkingOf(env, 'Meta') ?? { mode: 'disabled', overridden: false };
+}
+
+/** The `reasoning_effort` a Meta request carries for `t`: `minimal` for thinking disabled, else its effort, else none. */
+export function metaReasoningBody(t: RenderThinking): Record<string, unknown> {
+  if (t.mode === 'disabled') return { reasoning_effort: 'minimal' };
+  if (t.effort !== undefined) return { reasoning_effort: t.effort };
+  return {};
+}
+
 /** The temperatures Inception's Mercury 3 takes: one outside them is reset to its default (1) with no error, so it is held to them (clampInceptionTemperature). */
 export const INCEPTION_TEMPERATURE = { min: 0.5, max: 1 } as const;
 
@@ -229,8 +250,12 @@ export function thinkingLabel(t: RenderThinking): string {
   return `thinking ${t.mode}${t.effort !== undefined ? `, effort ${t.effort}` : ''}`;
 }
 
-/** How a run names a provider's settings: its thinking (thinkingLabel), and on Inception the reasoning_effort and realtime it sends; null with none. */
+/** How a run names a provider's settings: its thinking (thinkingLabel), and on Inception and Meta the reasoning_effort it sends (and Inception's realtime); null with none. */
 export function providerSettingsLabel(p: RenderProvider): string | null {
+  if (p.provider === 'meta') {
+    const effort = metaReasoningBody(p.thinking ?? { mode: 'disabled', overridden: false }).reasoning_effort;
+    return effort !== undefined ? `reasoning_effort ${String(effort)}` : "no reasoning_effort (Meta's default)";
+  }
   if (p.provider === 'inception') {
     const effort = inceptionReasoningBody(p.thinking ?? { mode: 'disabled', overridden: false }).reasoning_effort;
     return [effort !== undefined ? `reasoning_effort ${String(effort)}` : "no reasoning_effort (Inception's default)", ...(p.realtime === true ? ['realtime'] : [])].join(', ');
@@ -246,7 +271,7 @@ export interface RenderProvider {
   /** The variable the key is read from, for messages; never the key itself. */
   keyVar: string;
   url: string;
-  /** How the model thinks (RENDER_THINKING, RENDER_EFFORT): always on Anthropic and Inception; on OpenRouter only where one is set (openRouterThinkingOf). */
+  /** How the model thinks (RENDER_THINKING, RENDER_EFFORT): always on Anthropic, Inception and Meta; on OpenRouter only where one is set (openRouterThinkingOf). */
   thinking?: RenderThinking;
   /** Inception's `realtime` flag (RENDER_REALTIME, default on); absent on any other provider. */
   realtime?: boolean;
@@ -292,6 +317,7 @@ export function resolveRenderProvider(env: Env = process.env, opts: { needKey?: 
     if (realtime !== 'on' && realtime !== 'off') throw new Error(`RENDER_REALTIME must be on or off, got "${value(env, 'RENDER_REALTIME')}"`);
     return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: inceptionThinkingOf(env), realtime: realtime === 'on' };
   }
+  if (provider === 'meta') return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: metaThinkingOf(env) };
   if (provider !== 'anthropic') {
     const thinking = openRouterThinkingOf(env);
     return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, ...(thinking !== null ? { thinking } : {}) };
@@ -402,14 +428,17 @@ function perChannel(env: Env, base: string, defaults: { readonly voice: number; 
 
 /**
  * The price of the models whose price the engine knows, US dollars per million tokens: the default model
- * (Claude Haiku 5.5, on Anthropic and on OpenRouter) and Inception's Mercury 3. Mercury 3's is Inception's
- * regular price, $0.20 input and $0.70 output; at its launch discount it was $0.10 and $0.35 (Inception's
- * docs, read 2026-11-08), so a cost counted at the regular price may be over what was paid.
+ * (Claude Haiku 5.5, on Anthropic and on OpenRouter), Inception's Mercury 3 and Meta's Muse Ember. Mercury 3's
+ * is Inception's regular price, $0.20 input and $0.70 output; at its launch discount it was $0.10 and $0.35
+ * (Inception's docs, read 2026-11-08), so a cost counted at the regular price may be over what was paid. Muse
+ * Ember's is Meta's Standard mode, $0.10 and $0.50, up to 200K input tokens (dev.meta.ai, read 2026-11-11); its
+ * reasoning is in its output tokens, so the cost counts it.
  */
 export const RENDER_PRICE_BY_MODEL: Readonly<Record<string, RenderPrice>> = {
   'claude-haiku-5-5': DEFAULT_RENDER_PRICE,
   'anthropic/claude-haiku-5.5': DEFAULT_RENDER_PRICE,
   'mercury-3': { input: 0.2, output: 0.7 },
+  'muse-ember-1.0': { input: 0.1, output: 0.5 },
 };
 
 /** A model's default price: its own where RENDER_PRICE_BY_MODEL knows it, else the default model's. */
@@ -442,7 +471,7 @@ const MAX_TOKENS = 200;
  */
 const THINKING_MAX_TOKENS = 4000;
 
-/** Words a line through OpenRouter's or Inception's OpenAI-compatible chat completions, or the Anthropic Messages API. */
+/** Words a line through OpenRouter's, Inception's or Meta's OpenAI-compatible chat completions, or the Anthropic Messages API. */
 export class ModelRenderClient implements RenderClient {
   constructor(private readonly p: RenderProvider, private readonly fetchFn: typeof fetch = fetch) {
     if (p.apiKey === null) throw new Error(`missing required environment variable ${p.keyVar} (RENDER_PROVIDER=${p.provider})`);
@@ -467,6 +496,11 @@ export class ModelRenderClient implements RenderClient {
         // reasoning), reasoning_effort instant unless RENDER_THINKING or RENDER_EFFORT asks for more, realtime
         // (RENDER_REALTIME), and the temperature held to what Mercury takes, as it resets any other silently.
         ? { model: this.p.model, max_completion_tokens: mayThink(thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, ...inceptionReasoningBody(thinking), ...(this.p.realtime === true ? { realtime: true } : {}), ...(req.temperature !== undefined ? { temperature: clampInceptionTemperature(req.temperature) } : {}), messages }
+        : this.p.provider === 'meta'
+        // Meta's chat completions: max_completion_tokens, which counts the reasoning a Muse model always does (at
+        // minimal, 44 to 78 tokens for a line, live 2026-11-18; at low, all of 200), so it is given the thinking
+        // room always; reasoning_effort minimal unless RENDER_THINKING or RENDER_EFFORT asks for more.
+        ? { model: this.p.model, max_completion_tokens: THINKING_MAX_TOKENS, ...metaReasoningBody(thinking), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}), messages }
         // OpenRouter's own setting turns a model's reasoning off where it has one (a line, not a page; unconfirmed
         // per model), unless RENDER_THINKING or RENDER_EFFORT asks for it (openRouterReasoningBody).
         : { model: this.p.model, max_tokens: mayThink(this.p.thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, ...openRouterReasoningBody(this.p.thinking), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}), messages };
@@ -491,7 +525,7 @@ export class ModelRenderClient implements RenderClient {
     } catch {
       throw new RenderClientError(`${this.p.provider}: the answer was not JSON`);
     }
-    const parsed = anthropic ? anthropicAnswer(json) : chatAnswer(json, this.p.provider === 'inception');
+    const parsed = anthropic ? anthropicAnswer(json) : chatAnswer(json, this.p.provider === 'inception' || this.p.provider === 'meta');
     if ('stopped' in parsed) throw new RenderClientError(`${this.p.provider}: the answer had no line${parsed.stopped !== null ? ` (${parsed.stopped})` : ''}`);
     return { ...parsed, model: parsed.model ?? this.p.model, latencyMs: performance.now() - started, source: 'model' };
   }
@@ -510,13 +544,18 @@ function anthropicAnswer(json: unknown): Answer {
   return { text, ...(typeof b.model === 'string' ? { model: b.model } : {}), usage: { inputTokens: b.usage?.input_tokens ?? 0, outputTokens: b.usage?.output_tokens ?? 0 } };
 }
 
-/** A chat completion's line (OpenRouter's, Inception's); on Inception a line its content filter stopped is no line either. */
+/**
+ * A chat completion's line (OpenRouter's, Inception's, Meta's); on Inception and Meta a line its content filter
+ * stopped is no line either, nor on Meta one the model refused (its message's `refusal`, never read further).
+ */
 function chatAnswer(json: unknown, contentFilter: boolean): Answer {
-  const b = json as { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string } | null;
+  const b = json as { choices?: { message?: { content?: unknown; refusal?: unknown }; finish_reason?: unknown }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string } | null;
   const text = b?.choices?.[0]?.message?.content;
   // A line cut off at the token limit is no line.
   if (b?.choices?.[0]?.finish_reason === 'length') return { stopped: 'length' };
   if (contentFilter && b?.choices?.[0]?.finish_reason === 'content_filter') return { stopped: 'content_filter' };
+  const refusal = b?.choices?.[0]?.message?.refusal;
+  if (typeof refusal === 'string' && refusal.trim() !== '') return { stopped: 'refusal' };
   if (typeof text !== 'string') return { stopped: null };
   return { text, ...(typeof b?.model === 'string' ? { model: b.model } : {}), usage: { inputTokens: b?.usage?.prompt_tokens ?? 0, outputTokens: b?.usage?.completion_tokens ?? 0 } };
 }

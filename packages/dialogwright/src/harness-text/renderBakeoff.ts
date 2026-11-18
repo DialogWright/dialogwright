@@ -78,22 +78,22 @@ export interface ModelSpec {
  */
 export function parseModelSpecs(list: readonly string[]): ModelSpec[] {
   const entries = list.flatMap((l) => l.split(',')).map((e) => e.trim()).filter((e) => e !== '');
-  if (entries.length === 0) throw new Error('--models names no model: give one or more, comma-separated, as anthropic:<model>, openrouter:<vendor/model> or inception:<model>');
+  if (entries.length === 0) throw new Error('--models names no model: give one or more, comma-separated, as anthropic:<model>, openrouter:<vendor/model>, inception:<model> or meta:<model>');
   const out: ModelSpec[] = [];
   const vocabulary = `its thinking (${RENDER_THINKING_MODES.join(', ')}) and its effort (${RENDER_EFFORTS.join(', ')})`;
   for (const entry of entries) {
     const at = entry.indexOf(':');
     const provider = at === -1 ? '' : entry.slice(0, at);
     const rest = at === -1 ? '' : entry.slice(at + 1);
-    if (!(RENDER_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${RENDER_PROVIDERS.map((p) => `${p}:`).join(' or ')} (anthropic:claude-haiku-5-5, openrouter:<vendor/model>, inception:mercury-3)`);
+    if (!(RENDER_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${RENDER_PROVIDERS.map((p) => `${p}:`).join(' or ')} (anthropic:claude-haiku-5-5, openrouter:<vendor/model>, inception:mercury-3, meta:muse-ember-1.0)`);
     const parts = rest.split(':');
     const effort = parts.length > 1 && (RENDER_EFFORTS as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as RenderEffort) : undefined;
     const thinking = parts.length > 1 && (RENDER_THINKING_MODES as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as RenderThinkingMode) : undefined;
     const model = parts.join(':');
     if (model.trim() === '') throw new Error(`"${entry}": name the model after ${provider}:`);
-    // An Anthropic or Inception id has no colon: anything after the model is its thinking and its effort, or a slip
-    // (Inception's fastest, reasoning_effort instant, is its default, and thinking disabled names it).
-    if ((provider === 'anthropic' || provider === 'inception') && model.includes(':')) throw new Error(`"${entry}": after the model give ${vocabulary}, either or both, got "${model.slice(model.indexOf(':') + 1)}"${provider === 'inception' ? ' (reasoning_effort instant is the default: leave it out, or say disabled)' : ''}`);
+    // An Anthropic, Inception or Meta id has no colon: anything after the model is its thinking and its effort, or a
+    // slip (Inception's fastest, reasoning_effort instant, is its default, and thinking disabled names it; Meta's least, minimal, likewise).
+    if ((provider === 'anthropic' || provider === 'inception' || provider === 'meta') && model.includes(':')) throw new Error(`"${entry}": after the model give ${vocabulary}, either or both, got "${model.slice(model.indexOf(':') + 1)}"${provider === 'inception' ? ' (reasoning_effort instant is the default: leave it out, or say disabled)' : ''}`);
     out.push({ entry, provider: provider as RenderProviderName, model, ...(thinking !== undefined ? { thinking } : {}), ...(effort !== undefined ? { effort } : {}) });
   }
   const seen = new Set<string>();

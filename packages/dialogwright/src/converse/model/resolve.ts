@@ -7,7 +7,7 @@ const PROVIDERS = ['anthropic', 'inception', 'openrouter', 'meta'] as const;
 type Provider = (typeof PROVIDERS)[number];
 
 /** Meta's Model API (the Muse models) is the converse runtime's alone, so its key variable is named here. */
-const keyVarOf = (p: Provider): string => (p === 'meta' ? 'META_API_KEY' : KNOWN[p].keyVar);
+const keyVarOf = (p: Provider): string => KNOWN[p].keyVar;
 
 /**
  * The variable holding the key of the model a spec names (`anthropic:<model>` is ANTHROPIC_API_KEY, say), or

@@ -30,6 +30,7 @@ const PARTS: readonly Readonly<Record<string, string>>[] = [
   { RENDER_PROVIDER: 'openrouter' },
   { RENDER_PROVIDER: 'anthropic' },
   { RENDER_PROVIDER: 'inception' },
+  { RENDER_PROVIDER: 'meta' },
   { CONSOLE_AUTH: 'token' },
   { WIDGET: 'on' },
   { TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}` },

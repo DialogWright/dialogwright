@@ -25,7 +25,7 @@ function messagesOf(system: string, messages: ModelMessage[]): Record<string, un
 /** The providers asked through OpenAI-compatible chat completions. */
 export type OpenAiCompatProvider = 'inception' | 'openrouter' | 'meta';
 
-const URLS: Record<OpenAiCompatProvider, string> = { inception: KNOWN.inception.url, openrouter: KNOWN.openrouter.url, meta: 'https://api.meta.ai/v1/chat/completions' };
+const URLS: Record<OpenAiCompatProvider, string> = { inception: KNOWN.inception.url, openrouter: KNOWN.openrouter.url, meta: KNOWN.meta.url };
 
 /**
  * The reasoning effort in the provider's own form: Inception's `reasoning_effort` (its least is `instant`, which

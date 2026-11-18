@@ -549,7 +549,7 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   if (missing !== null) return [{ id: 'wording', status: 'warn', message: `${said}, worded by ${appModelLabel(model!)}, but ${missing} is unset: every line is said fixed`, fix: `set ${missing} in the settings file to have them generated` }];
   try {
     const p = resolveAppRenderProvider(env, model);
-    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter, anthropic or inception, and its key (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), to have them generated, or name the model in style.yaml (model: { provider, id })' }];
+    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter, anthropic, inception or meta, and its key (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), to have them generated, or name the model in style.yaml (model: { provider, id })' }];
     const r = renderSettings(env, p.model);
     // Where the model came from: style.yaml, or the environment (over it, or alone).
     const source = renderModelSourceLabel(renderModelSource(env, model));

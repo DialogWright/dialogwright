@@ -100,14 +100,14 @@ export const styleSchema = z
       .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),
     model: z
       .strictObject({
-        provider: z.enum(RENDER_PROVIDERS).describe('Where the model is reached: openrouter (any model OpenRouter serves), anthropic, or inception (Inception\'s own API, its Mercury models).'),
+        provider: z.enum(RENDER_PROVIDERS).describe('Where the model is reached: openrouter (any model OpenRouter serves), anthropic, inception (Inception\'s own API, its Mercury models), or meta (Meta\'s own API, its Muse models, in Standard mode, which does not train on what it is sent).'),
         id: text()
           .optional()
-          .describe('The model id, as the provider names it ("google/gemini-3.5-flash-lite" on OpenRouter, "claude-haiku-5-5" on Anthropic, "mercury-3" on Inception). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
+          .describe('The model id, as the provider names it ("google/gemini-3.5-flash-lite" on OpenRouter, "claude-haiku-5-5" on Anthropic, "mercury-3" on Inception, "muse-ember-1.0" on Meta). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
         thinking: z
           .enum(RENDER_THINKING_MODES)
           .optional()
-          .describe('How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers "Reasoning is mandatory"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. On inception, disabled and the default send reasoning_effort instant, its fastest; an effort sends that effort, and omit none (Inception\'s own, medium). Default: the model\'s own default (reasoning off on OpenRouter, instant on Inception), as before.'),
+          .describe('How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers "Reasoning is mandatory"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. On inception, disabled and the default send reasoning_effort instant, its fastest; an effort sends that effort, and omit none (Inception\'s own, medium). On meta likewise, with minimal its least (a Muse model always reasons). Default: the model\'s own default (reasoning off on OpenRouter, instant on Inception, minimal on Meta), as before.'),
         effort: z
           .enum(RENDER_EFFORTS)
           .optional()
@@ -137,7 +137,7 @@ export const styleSchema = z
       })
       .optional()
       .describe(
-        'The model that words the app\'s generated lines, the author\'s choice (measured with render:bakeoff): what the server words with and the regression\'s recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic\'s claude-haiku-5-5).',
+        'The model that words the app\'s generated lines, the author\'s choice (measured with render:bakeoff): what the server words with and the regression\'s recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, INCEPTION_API_KEY or META_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic\'s claude-haiku-5-5).',
       ),
     agent: z
       .strictObject({

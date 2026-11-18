@@ -4,10 +4,11 @@
  */
 
 /** Each provider's endpoint, key variable and default model. */
-export const KNOWN: Record<'openrouter' | 'anthropic' | 'inception', { url: string; keyVar: string; model: string }> = {
+export const KNOWN: Record<'openrouter' | 'anthropic' | 'inception' | 'meta', { url: string; keyVar: string; model: string }> = {
   openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', keyVar: 'OPENROUTER_API_KEY', model: 'anthropic/claude-haiku-5.5' },
   anthropic: { url: 'https://api.anthropic.com/v1/messages', keyVar: 'ANTHROPIC_API_KEY', model: 'claude-haiku-5-5' },
   inception: { url: 'https://api.inceptionlabs.ai/v1/chat/completions', keyVar: 'INCEPTION_API_KEY', model: 'mercury-3' },
+  meta: { url: 'https://api.meta.ai/v1/chat/completions', keyVar: 'META_API_KEY', model: 'muse-ember-1.0' },
 };
 
 /** The API's own account of a failed request (its error's type and message), made safe to record: one line, short, no key. */
