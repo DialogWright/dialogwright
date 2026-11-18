@@ -604,6 +604,18 @@ The engine now asks each section "Would this section of the {document} answer th
 
 OpenRouter stopped serving `inception/mercury-3` (on or before 2026-11-09, HTTP 404: "no provider serves this model anymore"), so every generated line fell back on a call. style.yaml now names the same model on Inception's own API (`provider: inception, id: mercury-3`, the engine's third render provider; key `INCEPTION_API_KEY`), at `reasoning_effort: instant` with `realtime: true`. The wordings were recorded with `pnpm render:bakeoff apps/harbor --models inception:mercury-3` (into `fixtures/recorded/render/mercury-3.jsonl`, each with its latency), then `regress --client record` asked the decision model only the drift checks of the new wordings (19 requests); `cassette:trim` then kept the 470 answers a run asks for, the checks of the old wordings dropped. The old cassette, `inception__mercury-3.jsonl`, is removed: nothing reads it. Replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`; no baseline changed.
 
+### Recording 22: Muse Ember on Meta's own API, 2026-11-18, the render model moved again
+
+Inception shuts Mercury 3 down on 2026-12-28. style.yaml now names Meta's Muse Ember (`provider: meta, id: muse-ember-1.0`, the engine's fourth render provider; key `META_API_KEY`), in Standard mode, which does not train on what it is sent, at `reasoning_effort: minimal` (its least: a Muse model always reasons and refuses `none`). `pnpm render:bakeoff apps/harbor --models meta:muse-ember-1.0,anthropic:claude-haiku-5-5,inception:mercury-3`:
+
+| model | tried | said generated | fell back | wording ms p50 / p95 | over the 900 ms call budget |
+|---|---|---|---|---|---|
+| Muse Ember | 24 | 18 | 2 (drift 2; 4 the words themselves) | 695 / 1727 | 6 of 19 |
+| Claude Haiku 5.5 | 24 | 20 | 4 (drift 3, question 1) | 771 / 962 | 5 of 20 |
+| Mercury 3 | 24 | 21 | 3 (drift 3) | 352 / 831 | 0 of 19 |
+
+No model measured is as fast as Mercury; Ember was the fastest of the rest. A line over the call budget is said fixed on a call; a knowledge answer has its own, longer limit. `regress --client record` then asked the decision model the drift checks of the new wordings, and `cassette:trim` kept the 469 answers a run asks for. `mercury-3.jsonl` stays beside it for `render:bakeoff --replay` until the shutdown. Replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`; no baseline changed.
+
 - Generated lines: 24 tried, 21 said generated, 3 fell back, all `drift` (before: 20 and 4). The three are one wording, of the filing deadline (cr-09, and the scripted calls `report-aside-at-summary` and `report-aside-then-filed`): it leaves out what the member needs to file and is refused at the judge's 0.3, so the passage is said.
 - Wording time, from the bake-off's recording: p50 352 ms, p95 831 ms; none of the 19 over the 900 ms call budget.
 

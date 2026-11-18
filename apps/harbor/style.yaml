@@ -3,26 +3,16 @@
 # kb/topics.yaml marks risk: low) sounds: told to the model, and the phrases to avoid checked on every
 # wording before anyone hears it. The span's word budget is the passage's word count and a quarter
 # more, ten more at least (prompts.yaml sets none), so a long passage's answer is never cut to fit.
-# The model that words it, as the secretary's (the fastest under the call budget in its bake-off of
-# 2026-10-14); the environment's RENDER_PROVIDER overrides it. Harbor's own bake-off is the maintainer's
-# step (DESIGN.md "Recordings").
-persona: a friendly, plain-spoken member services agent at an insurance company
-avoid:
-  - unfortunately
-  - I apologize for the inconvenience
-# The model that words the answers: Inception's Mercury 3 (a diffusion model), on Inception's own API
-# (provider: inception, key INCEPTION_API_KEY), at its fastest reasoning (reasoning_effort instant, the
-# default) with realtime on. It was reached through OpenRouter (inception/mercury-3) until OpenRouter
-# dropped it, on or before 2026-11-09 (HTTP 404: no provider serves this model anymore), so every line
-# fell back on a call. Measured 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low
-# reasoning (render:bakeoff, 43 lines): p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around
-# 2 of 144 for both, a third of the cost. (gemini-3.1-flash-lite-preview, the model before, was shut
-# down by Google on 2026-05-25.) No temperature is set: Mercury takes only 0.5 to 1.
-# On this app's own lines through Inception (render:bakeoff, 2026-11-08): 24 tried, 21 worded, 3 refused by
-# the judge; wording p50 352 ms, p95 831 ms, none of 19 over the 900 ms call budget.
+# The model that words the answers: Meta's Muse Ember, on Meta's own API (provider: meta, key META_API_KEY),
+# in Standard mode (which does not train on what it is sent), at its least reasoning (reasoning_effort minimal,
+# the default; a Muse model always reasons). Inception shuts Mercury 3, the model before, down on 2026-12-28.
+# On this app's own lines (render:bakeoff, 2026-11-18): 24 tried, 18 worded, 2 refused by the judge, 4 the
+# fixed words; wording p50 695 ms, p95 1727 ms, 6 of 19 over the 900 ms call budget (a line over it is said
+# fixed). Beside it: Mercury 3 21 worded, p50 352 ms, none over; Claude Haiku 5.5 20 worded, p50 771 ms, 5 over.
+# No model measured is as fast as Mercury; Ember was the fastest of the rest. DESIGN.md has the detail.
 model:
-  provider: inception
-  id: mercury-3
+  provider: meta
+  id: muse-ember-1.0
 # The drift judge refuses a wording it doubts at 0.3 or more, below the engine's 0.5: on Harbor's
 # labelled answer cases (fixtures/judge/answers.jsonl, `pnpm render:judge-eval`), the two unfaithful
 # wordings the default let by were exclusions dropped on low-risk topics (0.45, 0.35), and no faithful
