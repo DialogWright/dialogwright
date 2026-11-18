@@ -11,17 +11,6 @@ export const KNOWN: Record<'openrouter' | 'anthropic' | 'inception' | 'meta', { 
   meta: { url: 'https://api.meta.ai/v1/chat/completions', keyVar: 'META_API_KEY', model: 'muse-ember-1.0' },
 };
 
-/**
- * Meta's models are offered in two modes, chosen by the model id (dev.meta.ai's pricing page, read
- * 2026-11-18): Standard mode, where "your content is not used to train Meta models", and Contributor
- * mode, a model id ending `-contributor` (muse-spark-1.3-contributor), which is used "to train future
- * Meta models". The engine sends a caller's words to these models, so it never asks a Contributor one:
- * the reason it refuses `model`, or null for a Standard-mode id. No request parameter opts out instead.
- */
-export function metaTrainingRefusal(model: string): string | null {
-  return /-contributor\b/i.test(model) ? `${model} is a Meta Contributor-mode model, which Meta trains on what it is sent; name its Standard-mode id (without -contributor)` : null;
-}
-
 /** The API's own account of a failed request (its error's type and message), made safe to record: one line, short, no key. */
 export function apiError(json: unknown, key: string): { type?: string; message?: string } {
   const e = (json as { error?: unknown } | null)?.error;

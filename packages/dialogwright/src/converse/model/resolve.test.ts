@@ -33,7 +33,5 @@ describe('resolveConverseModel', () => {
     expect(resolveConverseModel('inception:mercury-3', { INCEPTION_API_KEY: 'k' }).id).toBe('inception:mercury-3');
     expect(resolveConverseModel('openrouter:vendor/model', { OPENROUTER_API_KEY: 'k' }).id).toBe('openrouter:vendor/model');
     expect(resolveConverseModel('meta:muse-ember-1.0', { META_API_KEY: 'k' }).id).toBe('meta:muse-ember-1.0');
-    // Never a Contributor-mode model, which Meta trains on what it is sent.
-    expect(() => resolveConverseModel('meta:muse-spark-1.3-contributor', { META_API_KEY: 'k' })).toThrow('Contributor-mode model');
   });
 });

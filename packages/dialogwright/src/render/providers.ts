@@ -1,5 +1,5 @@
 import type { RenderModelChoice } from '../core/app/types';
-import { KNOWN, apiError, metaTrainingRefusal, safeErrorText } from './endpoints';
+import { KNOWN, apiError, safeErrorText } from './endpoints';
 import { actMessage, instructionsOf } from './prompt';
 
 /** Moved to the leaf module endpoints.ts; kept here for the importers of this one. */
@@ -317,11 +317,7 @@ export function resolveRenderProvider(env: Env = process.env, opts: { needKey?: 
     if (realtime !== 'on' && realtime !== 'off') throw new Error(`RENDER_REALTIME must be on or off, got "${value(env, 'RENDER_REALTIME')}"`);
     return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: inceptionThinkingOf(env), realtime: realtime === 'on' };
   }
-  if (provider === 'meta') {
-    const refused = metaTrainingRefusal(model);
-    if (refused !== null) throw new Error(`RENDER_MODEL: ${refused}`);
-    return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: metaThinkingOf(env) };
-  }
+  if (provider === 'meta') return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: metaThinkingOf(env) };
   if (provider !== 'anthropic') {
     const thinking = openRouterThinkingOf(env);
     return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, ...(thinking !== null ? { thinking } : {}) };

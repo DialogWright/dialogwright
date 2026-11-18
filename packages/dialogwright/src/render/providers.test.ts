@@ -173,11 +173,6 @@ describe('Meta (its own API, Muse)', () => {
     expect((await bodyOf({}, { ...req, temperature: 0.2 })).body.temperature).toBe(0.2);
   });
 
-  it('never a Contributor-mode model, which Meta trains on what it is sent', () => {
-    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'meta', META_API_KEY: KEY, RENDER_MODEL: 'muse-spark-1.3-contributor' })).toThrow('Contributor-mode model');
-    expect(resolveRenderProvider({ RENDER_PROVIDER: 'meta', META_API_KEY: KEY, RENDER_MODEL: 'muse-spark-1.3' })!.model).toBe('muse-spark-1.3');
-  });
-
   it('Muse Ember is costed at its own price, Standard mode\'s', () => {
     expect(defaultRenderPrice('muse-ember-1.0')).toEqual({ input: 0.1, output: 0.5 });
   });

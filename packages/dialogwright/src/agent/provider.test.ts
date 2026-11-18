@@ -228,8 +228,6 @@ describe('an app\'s agent client (style.yaml\'s agent)', () => {
     await resolveMetaAgent({ META_API_KEY: KEY }, { model: 'muse-ember-1.0', effort: 'low' }, fetchFn).answer(ctx, 5000);
     expect(sent[1]!.body).toMatchObject({ reasoning_effort: 'low' });
     expect(agentKeyVar({ provider: 'meta' })).toBe('META_API_KEY');
-    // Never a Contributor-mode model, which Meta trains on what it is sent.
-    expect(() => appAgentClient({ META_API_KEY: KEY }, { provider: 'meta', model: 'muse-spark-1.3-contributor', effort: 'instant' })).toThrow('Contributor-mode model');
     expect(() => appAgentClient({}, { provider: 'meta', model: 'muse-ember-1.0', effort: 'instant' })).toThrow('missing required environment variable META_API_KEY');
   });
 });

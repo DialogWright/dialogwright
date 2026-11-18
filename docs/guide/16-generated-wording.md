@@ -229,7 +229,7 @@ In the stub regression the judge is a test double (`stubDrift`, `stubSpanDrift`)
 
 | Setting | What it is | Default |
 |---|---|---|
-| `RENDER_PROVIDER` | `openrouter` (any model OpenRouter serves), `anthropic`, `inception` (Inception's own API, its Mercury models) or `meta` (Meta's own API, its Muse models, in Standard mode, which does not train on what it is sent: a Contributor-mode id, `…-contributor`, which Meta trains on, is refused here, in agent mode and in the converse runtime); over style.yaml's `model` (16.4) | style.yaml's `model`'s provider; with none, unset: no line is generated, every line is said fixed, and the server says so at start |
+| `RENDER_PROVIDER` | `openrouter` (any model OpenRouter serves), `anthropic`, `inception` (Inception's own API, its Mercury models) or `meta` (Meta's own API, its Muse models, in Standard mode, which does not train on what it is sent); over style.yaml's `model` (16.4) | style.yaml's `model`'s provider; with none, unset: no line is generated, every line is said fixed, and the server says so at start |
 | `RENDER_MODEL` | the model id, read only with `RENDER_PROVIDER` set; over style.yaml's `model` | style.yaml's `model`'s id where its provider is in force; else a current Claude Haiku: `claude-haiku-5-5` on Anthropic, `anthropic/claude-haiku-5.5` on OpenRouter; `mercury-3` on Inception; `muse-ember-1.0` on Meta |
 | `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `INCEPTION_API_KEY`, `META_API_KEY` | the provider's key, from its own variable, never a flag; never logged, never in a trace | none |
 | `RENDER_SHARE` | the share of calls (0 to 100) served generated; the rest are served fixed | `100` |
