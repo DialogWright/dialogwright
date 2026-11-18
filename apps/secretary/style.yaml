@@ -8,17 +8,13 @@ persona: a warm, brief receptionist at a small design studio
 avoid:
   - unfortunately
   - I apologize for the inconvenience
-# The model that words the summary: Inception's Mercury 3 (a diffusion model), on Inception's own API
-# (provider: inception, key INCEPTION_API_KEY), at its fastest reasoning (reasoning_effort instant, the
-# default) with realtime on. It was reached through OpenRouter (inception/mercury-3) until OpenRouter
-# dropped it, on or before 2026-11-09 (HTTP 404: no provider serves this model anymore), so every line
-# fell back on a call. Measured 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low
-# reasoning (render:bakeoff, 43 lines): p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around
-# 2 of 144 for both, a third of the cost. (gemini-3.1-flash-lite-preview, the model before, was shut
-# down by Google on 2026-05-25.) No temperature is set: Mercury takes only 0.5 to 1.
-# On this app's own spans through Inception (2026-11-08, the recorded replay): 39 tried, 18 worded, 19 the
-# message's own words, 2 fell back; wording p50 280 ms, p95 568 ms (render:bakeoff), none of 18 over the
-# 900 ms call budget. DESIGN.md, "The render model moved to Inception's own API", has the detail.
+# The model that words the summary: Meta's Muse Ember, on Meta's own API (provider: meta, key META_API_KEY),
+# in Standard mode (which does not train on what it is sent), at its least reasoning (reasoning_effort minimal,
+# the default; a Muse model always reasons). Inception shuts Mercury 3, the model before, down on 2026-12-28.
+# On this app's own spans (render:bakeoff, 2026-11-18): 39 tried, 8 worded, 27 the message's own words, 4
+# refused (drift 2, foreign 2); wording p50 811 ms, p95 1347 ms, 7 of 18 over the 900 ms call budget (a line
+# over it is said with the message's own words). Beside it: Mercury 3 18 worded, p50 280 ms, none over;
+# Claude Haiku 5.5 14 worded and 23 refused by the judge. DESIGN.md, Recording of 2026-11-18, has the detail.
 model:
-  provider: inception
-  id: mercury-3
+  provider: meta
+  id: muse-ember-1.0
