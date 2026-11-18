@@ -1039,71 +1039,148 @@
               "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
             },
             "choose": {
-              "description": "A choice above the conversation, as pills: the one chosen is sent as the chat's start context (chat.<key>), and choosing another ends the chat and starts a new one with it, so nothing said under one choice is read under the next. The app reads it as call data (callData: { <name>: { from: chat.<key> } }). Default: none.",
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
-                  "description": "The key of the chat's start context the choice sets (chat.<key> in callData, which must name it)."
+              "description": "A choice above the conversation, as pills, or a list of up to three, each its own row: the one chosen in each is sent as the chat's start context (chat.<key>), and choosing another in any row ends the chat and starts a new one with every value, so nothing said under one choice is read under the next; the address keeps each (?<key>=<value>&...). The app reads each as call data (callData: { <name>: { from: chat.<key> } }). An option's starters are taken from the first choice whose chosen option gives them. Default: none.",
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                      "description": "The key of the chat's start context the choice sets (chat.<key> in callData, which must name it)."
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40,
+                      "description": "What is chosen, beside the pills (\"Plan document\")."
+                    },
+                    "options": {
+                      "minItems": 2,
+                      "maxItems": 12,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+                            "description": "The value the chat starts with (chat.<key>)."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "description": "The pill's words."
+                          },
+                          "detail": {
+                            "description": "A line shown under the pills while this option is chosen.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "starters": {
+                            "description": "This option's own ways to start, in place of the page's.",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            }
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>)."
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "label",
+                    "options"
+                  ],
+                  "additionalProperties": false,
+                  "description": "One choice above the conversation, as pills: the one chosen is sent as the chat's start context (chat.<key>)."
                 },
-                "label": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 40,
-                  "description": "What is chosen, beside the pills (\"Plan document\")."
-                },
-                "options": {
-                  "minItems": 2,
-                  "maxItems": 12,
+                {
+                  "minItems": 1,
+                  "maxItems": 3,
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "value": {
+                      "key": {
                         "type": "string",
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
-                        "description": "The value the chat starts with (chat.<key>)."
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                        "description": "The key of the chat's start context the choice sets (chat.<key> in callData, which must name it)."
                       },
                       "label": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 40,
-                        "description": "The pill's words."
+                        "description": "What is chosen, beside the pills (\"Plan document\")."
                       },
-                      "detail": {
-                        "description": "A line shown under the pills while this option is chosen.",
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "starters": {
-                        "description": "This option's own ways to start, in place of the page's.",
-                        "minItems": 1,
-                        "maxItems": 8,
+                      "options": {
+                        "minItems": 2,
+                        "maxItems": 12,
                         "type": "array",
                         "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 60
-                        }
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+                              "description": "The value the chat starts with (chat.<key>)."
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "description": "The pill's words."
+                            },
+                            "detail": {
+                              "description": "A line shown under the pills while this option is chosen.",
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "starters": {
+                              "description": "This option's own ways to start, in place of the page's.",
+                              "minItems": 1,
+                              "maxItems": 8,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              }
+                            }
+                          },
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>)."
                       }
                     },
                     "required": [
-                      "value",
-                      "label"
+                      "key",
+                      "label",
+                      "options"
                     ],
-                    "additionalProperties": false
-                  },
-                  "description": "The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>)."
+                    "additionalProperties": false,
+                    "description": "One choice above the conversation, as pills: the one chosen is sent as the chat's start context (chat.<key>)."
+                  }
                 }
-              },
-              "required": [
-                "key",
-                "label",
-                "options"
-              ],
-              "additionalProperties": false
+              ]
             },
             "about": {
               "description": "Sections under the conversation, each a heading and its text in the chat formatting: what the line does and how (\"How answers are checked\"). Default: none.",
@@ -2008,6 +2085,34 @@
       },
       "additionalProperties": false,
       "description": "What the app says about its prompts besides their text (which is in prompts.yaml): the opening lines, the variables the clip generator must treat specially, and the clips' vocabulary and voice tags."
+    },
+    "personas": {
+      "description": "Personas: other ways the app's lines sound (the words of its fixed lines, the persona text and word budgets its generated wording is given), each a file, picked for a call or chat by a callData value. A call or chat whose value is absent, or names no persona, gets the app as it is; so does every line a persona does not name. What is done never changes: the policy, forms, identity and tools are the app's. Default: none.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "description": "The callData key whose value picks the persona (callData must name it): a chat page's choice (chat.<key>), or a custom parameter of a call."
+        },
+        "files": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!(?:.*[/\\\\])?\\.\\.(?:[/\\\\]|$))[^\\\\]+\\.ya?ml$"
+          },
+          "description": "Each persona, by the value of `from` that picks it, and its file (schemas/persona.schema.json), from the app folder."
+        }
+      },
+      "required": [
+        "from",
+        "files"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

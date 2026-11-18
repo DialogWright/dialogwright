@@ -158,6 +158,16 @@ export function validateApp(app: App): void {
       if (app.generated?.lines[id]?.spans !== undefined && (entry.text ?? '').includes(SPAN_GAP)) fail(`the framed line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has "${SPAN_GAP}" in its text, which marks a span's place in the sentence its model is shown: write it some other way`);
     }
   }
+  // A persona (App.personas) words only lines the app has, and gives budgets only to spans it generates.
+  for (const [value, overlay] of Object.entries(app.personas?.overlays ?? {})) {
+    for (const id of Object.keys(overlay.prompts ?? {})) {
+      if (!Object.hasOwn(app.prompts?.manifest ?? {}, id)) fail(`the persona "${value}" words the line "${id}", which is not a prompt of the app`);
+      if (app.generated?.prescribed.includes(id) === true) fail(`the persona "${value}" words the line "${id}", which the app prescribed: its words are the app's for every call`);
+    }
+    for (const [id, spans] of Object.entries(overlay.spans ?? {})) {
+      for (const span of Object.keys(spans)) if (app.generated?.lines[id]?.spans?.[span] === undefined) fail(`the persona "${value}" gives the span "${span}" of the line "${id}" a budget, and the app generates no such span`);
+    }
+  }
   // Where the drift judge refuses (RenderStyle.refuseAt): a probability, more than 0 and at most 1.
   const refuseAt = app.generated?.style.refuseAt;
   if (refuseAt !== undefined && !(typeof refuseAt === 'number' && refuseAt > 0 && refuseAt <= 1)) fail(`App.generated.style.refuseAt is ${JSON.stringify(refuseAt)}: the drift judge's cutoff is a probability, more than 0 and at most 1 (absent: 0.5)`);

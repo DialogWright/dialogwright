@@ -1,7 +1,7 @@
 import type { AppPagesFactory } from '../server/appRoutes';
 import { resolve } from 'node:path';
 import type {
-  App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
+  App, AppBrand, AppLocales, ChatPageChoice, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse, TransferConfig, TransferSend,
   RouteOutcome, RouteRule, Routes,
 } from '../core/app/types';
@@ -46,6 +46,8 @@ import type { HoursConfig } from '../core/hours';
 import { formsEnteredByRoutes, routeProblems, type RouteProblem, type RouteWorld } from '../core/routes';
 import type { RouteRuleYaml, RoutesYaml } from './schema/index';
 import { transferProblems, type TransferProblem, type TransferWorld } from '../core/transfer';
+import { personaOverlayOf } from './personas';
+import { personaApp } from '../core/app/personas';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -217,6 +219,18 @@ export function defineApp(dir: string, code: AppCode, options: DefineAppOptions 
       { file: '.', line: 0, column: 0, path: WHOLE_FILE, message: `validateApp refused the app: ${message}`, fix: `correct the reference it names, in the YAML file or in ${codeFile}` },
     ], undefined, code);
   }
+  // Each persona's app is held to the same contract (its lines' variants, chat versions, frames): the backstop
+  // of what the loader and check hold a persona file to.
+  const personaProblems: Problem[] = [];
+  for (const value of Object.keys(app.personas?.overlays ?? {})) {
+    try {
+      validateApp(personaApp(app, value));
+    } catch (error) {
+      const file = loaded.config.app.personas?.files[value] ?? 'app.yaml';
+      personaProblems.push({ file, line: 1, column: 1, path: WHOLE_FILE, message: `validateApp refused the app as the persona "${value}" words it: ${error instanceof Error ? error.message : String(error)}`, fix: 'correct the line it names in the persona file' });
+    }
+  }
+  if (personaProblems.length > 0) throw new AppDefinitionError(dir, personaProblems, undefined, code);
   return app;
 }
 
@@ -626,9 +640,12 @@ export function crossLink(
 
   // A chat page's choice sets a start context key: callData must read it as chat.<key>, or the server keeps
   // nothing of it and the choice changes nothing.
-  const choice = app.chat?.page?.choose;
-  if (choice !== undefined && !Object.values(app.callData ?? {}).some((d) => d.from === `chat.${choice.key}`)) {
-    yaml('app.yaml', ['chat', 'page', 'choose', 'key'], `the choice sets the chat's start context "${choice.key}", which no callData key reads: the server keeps nothing of it`, `add callData: { ${choice.key}: { from: chat.${choice.key}, redact: keep } }`);
+  // A list of choices: each key so.
+  const chosen = app.chat?.page?.choose;
+  const choices = chosen === undefined ? [] : Array.isArray(chosen) ? chosen.map((c, i) => ({ c, at: ['chat', 'page', 'choose', i, 'key'] as DataPath })) : [{ c: chosen as Exclude<typeof chosen, readonly unknown[]>, at: ['chat', 'page', 'choose', 'key'] as DataPath }];
+  for (const { c: choice, at } of choices) {
+    if (Object.values(app.callData ?? {}).some((d) => d.from === `chat.${choice.key}`)) continue;
+    yaml('app.yaml', at, `the choice sets the chat's start context "${choice.key}", which no callData key reads: the server keeps nothing of it`, `add callData: { ${choice.key}: { from: chat.${choice.key}, redact: keep } }`);
   }
 
   // The app's own conditions (code.predicates), each a function, named by routes.yaml and transfer's { named }.
@@ -1176,7 +1193,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
       ...(a.chat.page.starters !== undefined ? { starters: [...a.chat.page.starters] } : {}),
       ...(a.chat.page.phone !== undefined ? { phone: a.chat.page.phone.replace(/^env\./, '') } : {}),
       ...(a.chat.page.about !== undefined ? { about: a.chat.page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
-      ...(a.chat.page.choose !== undefined ? { choose: { key: a.chat.page.choose.key, label: a.chat.page.choose.label, options: a.chat.page.choose.options.map((o) => ({ value: o.value, label: o.label, ...(o.detail !== undefined ? { detail: o.detail } : {}), ...(o.starters !== undefined ? { starters: [...o.starters] } : {}) })) } } : {}),
+      ...(a.chat.page.choose !== undefined ? { choose: chatChoicesOf(a.chat.page.choose) } : {}),
     } } : {}),
   });
   put(app, 'waiting', a.waiting === undefined ? undefined : {
@@ -1224,6 +1241,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     identifierVars: identifierVarsFrom(slots, config.identity?.levels[1].factors ?? []),
   }));
   put(app, 'locales', localesOf(config));
+  // The personas (app.yaml's personas, each file read and checked by the loader: ./personas.ts).
+  put(app, 'personas', a.personas !== undefined && config.personas !== undefined ? { from: a.personas.from, overlays: Object.fromEntries(Object.entries(config.personas).map(([value, persona]) => [value, personaOverlayOf(persona)])) } : undefined);
   put(app, 'principals', code.principals);
   put(app, 'portal', code.portal);
   put(app, 'pages', code.pages);
@@ -1450,4 +1469,10 @@ function slotFactsOf(slots: Readonly<Record<string, unknown>>): Record<string, S
     const said = spec.type === 'choice' && spec.config?.options !== undefined && typeof spec.display === 'function' ? Object.keys(spec.config.options).map((o) => spec.display!(o)) : undefined;
     return [id, { type: spec.type, ...(spec.redact !== undefined ? { redact: spec.redact } : {}), ...(said !== undefined ? { said } : {}) }];
   }));
+}
+
+/** app.yaml's chat.page.choose as the page is built from it: one choice as the object it is, a list as a list. */
+function chatChoicesOf(choose: NonNullable<NonNullable<NonNullable<AppYaml['chat']>['page']>['choose']>): ChatPageChoice | ChatPageChoice[] {
+  const one = (c: Exclude<typeof choose, readonly unknown[]>): ChatPageChoice => ({ key: c.key, label: c.label, options: c.options.map((o) => ({ value: o.value, label: o.label, ...(o.detail !== undefined ? { detail: o.detail } : {}), ...(o.starters !== undefined ? { starters: [...o.starters] } : {}) })) });
+  return Array.isArray(choose) ? choose.map(one) : one(choose as Exclude<typeof choose, readonly unknown[]>);
 }

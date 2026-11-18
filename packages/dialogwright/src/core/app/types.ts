@@ -1160,8 +1160,12 @@ export interface ChatPageConfig {
   readonly phone?: string;
   /** Sections under the conversation, each a heading and its text in the chat formatting. */
   readonly about?: readonly { readonly title: string; readonly text: string }[];
-  /** A choice above the conversation, as pills: the chosen option's value is the chat's start context `key`; another ends the chat and starts a new one. */
-  readonly choose?: ChatPageChoice;
+  /**
+   * A choice above the conversation, as pills: the chosen option's value is the chat's start context `key`;
+   * another ends the chat and starts a new one. A list (up to three) is a row of pills each, every chosen value
+   * in the start context; one given as an object is the one row it always was.
+   */
+  readonly choose?: ChatPageChoice | readonly ChatPageChoice[];
 }
 
 /** A chat page's choice (app.yaml's chat.page.choose): the start context key it sets, its label, and its options. */
@@ -1830,6 +1834,27 @@ export interface App {
    * the app generates nothing, and every turn, trace and audit row is as it was before generated wording.
    */
   generated?: GeneratedWording;
+  /**
+   * The app's personas (app.yaml's `personas`, each a persona file): other ways its lines sound, picked
+   * for a call or chat by the value of its call data key `from`. A session whose value names one of
+   * `overlays` runs the app with that overlay applied (core/app/personas.ts personaApp; appOf resolves
+   * it): some fixed lines' words, the persona text and word budgets its generated wording is given, a
+   * span's budget. What is done never changes. Absent, or a value that names none: the app as it is.
+   */
+  personas?: { readonly from: string; readonly overlays: Readonly<Record<string, PersonaOverlay>> };
+}
+
+/**
+ * One persona (a persona file, as App.personas holds it): only what it changes. Its lines are the default
+ * locale's; each part a line gives replaces the app's (every other field of the line is the app's own).
+ */
+export interface PersonaOverlay {
+  /** style.yaml's persona and word budgets for this persona: each given replaces the app's. */
+  readonly style?: { readonly persona?: string; readonly words?: { readonly voice?: number; readonly chat?: number } };
+  /** A generated span's word budget, by prompt id and span. */
+  readonly spans?: Readonly<Record<string, Readonly<Record<string, { readonly words: number }>>>>;
+  /** The lines this persona words, by prompt id: its text, its other wordings, its chat version. */
+  readonly prompts?: Readonly<Record<string, { readonly text?: string; readonly variants?: readonly string[]; readonly chat?: string }>>;
 }
 
 /** The situations a generated line may be limited to (prompts.yaml's `when.situations`). */
@@ -2026,6 +2051,11 @@ export interface PromptManifestEntry {
    * prompts/segments.ts wordingId). Absent: `text` every time.
    */
   variants?: readonly string[];
+  /**
+   * The persona whose words the line is (App.personas: its text or variants reworded by that persona), so it
+   * is said by text-to-speech, never with the clips recorded of the app's own words. Absent: the app's own line.
+   */
+  persona?: string;
 }
 
 /** The languages an app speaks (App.locales). */

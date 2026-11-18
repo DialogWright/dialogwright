@@ -12,6 +12,7 @@ import type { S3TraceReader } from '../../trace/store';
 import type { Chained } from '../../audit/types';
 import { isConverseRecord, type TraceRecord } from '../../trace/types';
 import { defaultAppId, getApp } from '../../core/app/registry';
+import { personaApp } from '../../core/app/personas';
 import type { App } from '../../core/app/types';
 import { spokenText } from '../../prompts/render';
 import { generatedSaid } from '../../render/said';
@@ -132,6 +133,18 @@ function readTrace(traceDir: string, sid: string, app?: HostedApp): { records: R
 }
 
 /**
+ * The app a stored call's lines are read as: the hosted app (or the default), as the persona its start's call
+ * data picked (App.personas), read from the record on disk before redaction; the app itself for a call in none.
+ */
+function spokenAppOf(raw: readonly TraceRecord[], app: HostedApp | undefined): App | undefined {
+  const base = (app ?? getApp(defaultAppId())) as App;
+  if (base.personas === undefined) return app as App | undefined;
+  const start = raw.find((r) => r.event?.type === 'session.start')?.event;
+  const callData = start !== undefined && start.type === 'session.start' ? start.callData : undefined;
+  return personaApp(base, callData?.[base.personas.from]);
+}
+
+/**
  * A trace as the replay route answers it: its records redacted with the line each said, its frames
  * redacted, and its delivery facts. A converse call's records are as its turns wrote them (each value its
  * business records masked, masked), with the line they said; its frames as written (a start's context
@@ -142,9 +155,11 @@ function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[]
     const records = (raw as readonly unknown[]).filter(isConverseRecord).map((r) => ({ ...r, spokenText: r.replies.join(' ') }) as unknown as ReplayRecord);
     return { records, frames: read.map((l) => ({ ...l })), deliveries: [] };
   }
+  // A call in one of the app's personas (App.personas) said its lines: read by the call data its start came with.
+  const said = spokenAppOf(raw, app);
   const records = raw.map((r) => {
     const record = app === undefined ? redactRecord(r) : redactRecord(r, app);
-    return { ...record, spokenText: spokenOf(record, app) };
+    return { ...record, spokenText: spokenOf(record, said) };
   });
   // redactFrameLine widens the type back to FrameLogLine; readFrameLog's line number survives the
   // spread, so it is restored here rather than dropped from what the page gets.

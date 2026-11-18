@@ -5,7 +5,7 @@ import { parse } from 'yaml';
 import type { ZodType } from 'zod';
 import { SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
 import { SCHEMAS_DIR } from './generate';
-import { agentJsonSchema, businessJsonSchema, hostJsonSchema, jsonSchemas, kbJsonSchemas, localeLabelsJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
+import { agentJsonSchema, businessJsonSchema, personaJsonSchema, hostJsonSchema, jsonSchemas, kbJsonSchemas, localeLabelsJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 import { slotsSchema } from './slots';
 import { personasJsonSchema } from '../../eval/personas';
 
@@ -229,6 +229,11 @@ describe('the JSON Schemas', () => {
   it('schemas/host.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {
     const committed = readFileSync(join(SCHEMAS_DIR, 'host.schema.json'), 'utf8');
     expect(committed, 'schemas/host.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(hostJsonSchema()));
+  });
+
+  it('schemas/persona.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {
+    const committed = readFileSync(join(SCHEMAS_DIR, 'persona.schema.json'), 'utf8');
+    expect(committed, 'schemas/persona.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(personaJsonSchema()));
   });
 
   it('schemas/personas.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {

@@ -11,6 +11,7 @@ import { businessSchema } from './business';
 import { agentBusinessSchema } from '../../converse/business/schema';
 import { localeIntentsSchema } from './intents';
 import { localeFormsSchema } from './forms';
+import { personaSchema } from './persona';
 
 /** A JSON Schema document, as zod generates it. */
 export type JsonSchema = Record<string, unknown>;
@@ -97,6 +98,11 @@ export function hostJsonSchema(): JsonSchema {
 /** business.yaml's JSON Schema (an app in agent mode): schemas/business.schema.json. */
 export function businessJsonSchema(): JsonSchema {
   return { ...(z.toJSONSchema(businessSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright business.yaml' };
+}
+
+/** A persona file's JSON Schema (app.yaml's personas.files): schemas/persona.schema.json. */
+export function personaJsonSchema(): JsonSchema {
+  return { ...(z.toJSONSchema(personaSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright persona file' };
 }
 
 /** agent.yaml's JSON Schema (the converse runtime's business file): schemas/agent.schema.json. */

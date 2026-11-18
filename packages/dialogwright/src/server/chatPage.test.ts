@@ -85,6 +85,31 @@ describe('the chat page\'s parts', () => {
     expect(chatPageHtml(base)).toContain("DialogWright.mountConversation('#talk', { endpoint: \"/chat\", starters: [\"Hi\"] });");
     expect(chatPageHtml(base)).not.toContain('class="choose"');
   });
+
+  it('draws a list of choices as a row of pills each, every chosen value in the start context and the address, the first option\'s starters that give any', () => {
+    const base = { name: 'Acme', logo: null, colors: {}, starters: ['Hi'], phone: null, chatPath: '/chat', lang: 'en' };
+    const choose = [
+      { key: 'plan', label: 'Plan', options: [{ value: 'basic', label: 'Basic', detail: 'The basic plan' }, { value: 'plus', label: 'Plus', starters: ['What does Plus add?'] }] },
+      { key: 'persona', label: 'Voice <style>', options: [{ value: 'default', label: 'Ours' }, { value: 'calm', label: 'Calm', detail: 'Slow and gentle', starters: ['Hello?'] }] },
+    ];
+    const html = chatPageHtml({ ...base, choose });
+    expect(html).toContain('<nav class="choose" data-key="plan" aria-label="Plan"><span class="choose-label">Plan</span><button type="button" class="pill" data-key="plan" data-value="basic" aria-pressed="true">Basic</button><button type="button" class="pill" data-key="plan" data-value="plus" aria-pressed="false">Plus</button></nav><p class="choose-detail" id="choose-detail-0"></p>');
+    expect(html).toContain('<nav class="choose" data-key="persona" aria-label="Voice &lt;style&gt;"><span class="choose-label">Voice &lt;style&gt;</span><button type="button" class="pill" data-key="persona" data-value="default" aria-pressed="true">Ours</button><button type="button" class="pill" data-key="persona" data-value="calm" aria-pressed="false">Calm</button></nav><p class="choose-detail" id="choose-detail-1"></p>');
+    expect(html.indexOf('data-key="persona"')).toBeLessThan(html.indexOf('<main id="talk">'));
+    expect(html).toContain('var choices = [{"key":"plan"');
+    expect(html).toContain('"label":"Voice \\u003cstyle>"');
+    // Every chosen value goes into the start context, and the address keeps each.
+    expect(html).toContain('context[choice.key] = option.value;');
+    expect(html).toContain('choices.forEach(function (choice) { q.set(choice.key, chosen[choice.key]); });');
+    // The starters of the first choice whose chosen option gives any, else the page's.
+    expect(html).toContain('if (own === null && option.starters) own = option.starters;');
+    expect(html).toContain('starters: own || starters, context: context');
+    expect(html).toContain('if (conversation) conversation.destroy();');
+    // One choice as an object is drawn as it always was.
+    const one = chatPageHtml({ ...base, choose: choose[0]! });
+    expect(one).toContain('var choice = {"key":"plan"');
+    expect(one).not.toContain('data-key=');
+  });
 });
 
 const TARGETS = { MAIN_LINE: '+15555550101', PRIORITY_LINE: '+15555550102', CALLBACK_DESK: '+15555550103', SECURITY_DESK: '+15555550104' };

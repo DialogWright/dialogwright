@@ -5,7 +5,7 @@ import * as entry from './index';
 describe('the package entry', () => {
   it('exports the registry, validation, lookups, channel model, server and harness by name', () => {
     for (const name of [
-      'registerApp', 'getApp', 'defaultAppId', 'appOf', 'resetAppsForTest',
+      'registerApp', 'getApp', 'defaultAppId', 'appOf', 'resetAppsForTest', 'personaApp', 'personaOf',
       'validateApp', 'formOf', 'slotSpecOf', 'toolOf',
       // the app definition: a folder's YAML joined with the app's code
       'defineApp', 'AppDefinitionError', 'isAppDefinitionError', 'formatProblem', 'checkApp', 'loadAppFolder',

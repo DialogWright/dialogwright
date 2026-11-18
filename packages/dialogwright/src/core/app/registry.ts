@@ -1,6 +1,7 @@
 import type { App } from './types';
 import type { ConverseApp } from '../../converse/app';
 import { validateApp } from './validate';
+import { personaApp } from './personas';
 import { requireEmbedder } from '../../kb/fallback';
 
 /**
@@ -40,8 +41,14 @@ export function defaultAppOrNull(): App | null {
   return first === null ? null : getApp(first);
 }
 
-export function appOf(session: { readonly appId?: string }): App {
-  return getApp(session.appId ?? defaultAppId());
+/**
+ * The session's app: the one its appId names (the default without one), as the persona its call data picks
+ * words it (App.personas; ./personas.ts personaApp): the same object for every session of that persona, and
+ * the app itself for a session with no persona's value.
+ */
+export function appOf(session: { readonly appId?: string; readonly callData?: Readonly<Record<string, string>> }): App {
+  const app = getApp(session.appId ?? defaultAppId());
+  return app.personas === undefined ? app : personaApp(app, session.callData?.[app.personas.from]);
 }
 
 /**

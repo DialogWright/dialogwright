@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LineCounter, parseDocument } from 'yaml';
 import { z } from 'zod';
-import type { App, AppBrand, ChatPageConfig } from '../core/app/types';
+import type { App, AppBrand, ChatPageChoice, ChatPageConfig } from '../core/app/types';
 import { positionOf, problemsOfIssues, type Problem } from '../define/problems';
 import { appSchema } from '../define/schema/app';
 import type { JsonSchema } from '../define/schema/json';
@@ -163,7 +163,7 @@ function chatPageOf(page: NonNullable<NonNullable<AppYaml['chat']>['page']>): Ch
     ...(page.starters !== undefined ? { starters: [...page.starters] } : {}),
     ...(page.phone !== undefined ? { phone: page.phone.replace(/^env\./, '') } : {}),
     ...(page.about !== undefined ? { about: page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
-    ...(page.choose !== undefined ? { choose: { key: page.choose.key, label: page.choose.label, options: page.choose.options.map((o) => ({ value: o.value, label: o.label, ...(o.detail !== undefined ? { detail: o.detail } : {}), ...(o.starters !== undefined ? { starters: [...o.starters] } : {}) })) } } : {}),
+    ...(page.choose !== undefined ? { choose: chatChoicesOf(page.choose) } : {}),
   };
 }
 
@@ -185,3 +185,9 @@ export function businessCalendar(b: AgentBusiness, now: () => Date): (Calendar &
 }
 
 export type { Calendar, Slot };
+
+/** app.yaml's chat.page.choose as the page is built from it: one choice as the object it is, a list as a list. */
+function chatChoicesOf(choose: NonNullable<NonNullable<NonNullable<AppYaml['chat']>['page']>['choose']>): ChatPageChoice | ChatPageChoice[] {
+  const one = (c: Exclude<typeof choose, readonly unknown[]>): ChatPageChoice => ({ key: c.key, label: c.label, options: c.options.map((o) => ({ value: o.value, label: o.label, ...(o.detail !== undefined ? { detail: o.detail } : {}), ...(o.starters !== undefined ? { starters: [...o.starters] } : {}) })) });
+  return Array.isArray(choose) ? choose.map(one) : one(choose as Exclude<typeof choose, readonly unknown[]>);
+}

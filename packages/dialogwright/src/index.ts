@@ -29,6 +29,8 @@ export type * from './core/slots/types';
 
 // The app registry, validation and lookups.
 export { registerApp, getApp, defaultAppId, defaultAppOrNull, appOf, resetAppsForTest } from './core/app/registry';
+// The app as one of its personas words it (App.personas, app.yaml's personas): what appOf gives a session in one.
+export { personaApp, personaOf } from './core/app/personas';
 export { validateApp, CONSOLE_ELEMENT_IDS, CONTROL_INTENTS, REQUIRED_CONTROL_INTENTS } from './core/app/validate';
 export { formOf, slotSpecOf, toolOf } from './core/app/lookup';
 export { intentList, formIntents, isFormIntent, intentLabel, informationalPrompt, informationalIntents, intentCriteria } from './core/app/intents';
@@ -286,7 +288,7 @@ export { generatesLines } from './render/config';
 export { RenderClientError, DEFAULT_RENDER_TIMEOUT_MS, DEFAULT_RENDER_PRICE } from './render/types';
 export type { Renderer, RenderClient, RenderRequest, SpeechAct, SpanAct, RenderAct, SpeechItem, Generation, RenderRecord, RenderLine, RenderJudge, RenderFallback, RenderSkip, RenderPrice } from './render/types';
 export type { RenderProvider, RenderProviderName } from './render/providers';
-export type { GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyle, RenderSituation, RenderChannel } from './core/app/types';
+export type { GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyle, RenderSituation, RenderChannel, PersonaOverlay } from './core/app/types';
 export type { JevProvider, JevProviderName } from './jev/provider';
 export { defaultCorpusFile, scenariosDir } from './run/fixtures';
 export { loadScenarios } from './harness-text/runner';

@@ -23,6 +23,8 @@ import { businessFiles } from './businessFiles';
 import { AGENT_FILE, AgentBusinessError, agentSchemaLineProblem } from '../converse/business/load';
 import { agentBusinessSchema, type AgentBusiness } from '../converse/business/schema';
 import { policyOf } from '../converse/policy';
+import { personaSchema, type PersonaYaml } from './schema/persona';
+import { personaContentProblems, personasAppProblems } from './personas';
 
 /** The host file's name (define/host.ts HOST_FILE_NAME), which an app folder may hold beside its own files. */
 const HOST_FILE = 'host.yaml';
@@ -100,6 +102,11 @@ export interface LoadedConfig {
    */
   business?: BusinessYaml;
   /**
+   * Each persona (app.yaml's `personas`), by the value that picks it: its file, read and checked against
+   * the app's lines (./personas.ts). Absent for an app with none.
+   */
+  personas?: Readonly<Record<string, PersonaYaml>>;
+  /**
    * The content hash of every file read (app.yaml, ..., identity.yaml and slots.yaml when there are, and each
    * locale/<tag>/prompts.yaml and locale/<tag>/slots.yaml, and every file of kb/ the knowledge base is read from: not
    * its drafts in kb/pending, which are never read, nor its hidden kb/.index), by its path in the folder, and the combined hash (App.configHashes;
@@ -168,10 +175,11 @@ const STARTS_WITH: Record<Kind, string> = {
   host: '"apps:", the apps the server runs, for example "apps: [apps/clinic, apps/utility]"',
   agent: '"business:" (its name, what it does, its hours), "persona:", "lines:", "model:" and "actions:"',
   business: '"business:" (its name and voice), "services:", the forms ("request:" or "booking:"), "handoff:" and "closing:"',
+  persona: '"prompts:" (the lines it words, by prompt id), "style:" or "spans:", for example "prompts: { greeting: { text: Hi there! } }"',
 };
 
 /** A kind of file the loader checks: the six, the optional slots.yaml, a locale's optional slots.yaml, and the knowledge base's. */
-type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | 'business' | 'agent' | KbKind;
+type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | 'business' | 'agent' | 'persona' | KbKind;
 const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   ...SCHEMAS,
   slots: slotsSchema,
@@ -181,11 +189,12 @@ const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   host: hostSchema,
   business: businessSchema,
   agent: agentBusinessSchema,
+  persona: personaSchema,
   ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.schema])) as unknown as Record<KbKind, z.ZodType>),
 };
 const isKbKind = (kind: Kind): kind is KbKind => Object.hasOwn(KB_KINDS, kind);
 /** A kind that is not one of the folder's own kinds (FILE_KINDS): its JSON Schema is its zod schema's, and no other file shares its keys. */
-const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || kind === 'business' || kind === 'agent' || isKbKind(kind);
+const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || kind === 'business' || kind === 'agent' || kind === 'persona' || isKbKind(kind);
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -279,7 +288,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     }
   }
   if (undecided) return null;
-  strayYamlFiles(top, problems, agent, converse);
+  strayYamlFiles(top, problems, agent, converse, new Set(Object.values(valid.app?.personas?.files ?? {})));
 
   // agent.yaml (the converse runtime's business file): a converse app's, read with its app.yaml; refused
   // beside any other app.
@@ -311,6 +320,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
   // A converse app is not built here: its code joins agent.yaml in defineConverseApp, which the server runs.
   if (converse) {
     seen.converse = true;
+    if (valid.app?.personas !== undefined) problems.push(inFileOf(documents, 'app.yaml', ['personas'], 'personas reword a scripted app\'s lines (prompts.yaml), and a converse app has none: its lines are its agent.yaml\'s', 'delete "personas"'));
     if (businessReadKind(root.real) !== 'missing') problems.push(problemAt(BUSINESS_FILE, WHOLE_FILE, `${BUSINESS_FILE} is read only by an app in agent mode, and app.yaml says "mode: converse"`, `delete ${BUSINESS_FILE}: a converse app's business is its ${AGENT_FILE}`));
     return null;
   }
@@ -346,6 +356,9 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     }
     if (valid.app?.onStart !== undefined) {
       problems.push(inFile('app.yaml', ['onStart'], 'an app in agent mode has no start hook: its code is its tools', 'delete "onStart"'));
+    }
+    if (valid.app?.personas !== undefined) {
+      problems.push(inFile('app.yaml', ['personas'], 'personas reword a scripted app\'s lines (prompts.yaml), and an app in agent mode has none: its lines are built from business.yaml', 'delete "personas"'));
     }
   } else {
     if (businessRead.kind !== 'missing') {
@@ -452,6 +465,9 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     if (knowledge && problems.length === before) problems.push(...kbContentProblems(knowledge, io.locate));
   }
 
+  // The personas (app.yaml's personas): each file read and held to the app's lines (./personas.ts).
+  const personas = valid.app?.personas !== undefined ? readPersonas(root.real, valid.app, valid.prompts?.prompts ?? null, problems, documents, contents) : undefined;
+
   if (!valid.app || !valid.intents || !valid.forms || !valid.policy || !valid.prompts) return null;
   return {
     app: valid.app,
@@ -468,8 +484,53 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     localeIntents,
     localeForms,
     ...(knowledge ? { knowledge } : {}),
+    ...(personas !== undefined ? { personas } : {}),
     hashes: configHashesOf(contents),
   };
+}
+
+/** A problem at a path of a file already read, at its line. */
+function inFileOf(documents: Map<string, { doc: Document; lines: LineCounter }>, file: string, path: DataPath, message: string, fix: string, atKey = false): Problem {
+  const read = documents.get(file);
+  const at = read ? (atKey ? keyPositionOf(read.doc, read.lines, path) : positionOf(read.doc, read.lines, path)) : { line: 1, column: 1 };
+  return { file, line: at.line, column: at.column, path: formatPath(path), message, fix };
+}
+
+/**
+ * app.yaml's personas: `from` a callData key, and each file read with the folder's reading (inside the
+ * folder, size bounded, YAML 1.2 with no tags) against the persona schema, then held to the app's lines
+ * (prompts.yaml, when it was read): ./personas.ts. Each persona by its value; a file with a problem is left out.
+ */
+function readPersonas(
+  root: string,
+  app: AppYaml,
+  prompts: Readonly<Record<string, PromptYaml>> | null,
+  problems: Problem[],
+  documents: Map<string, { doc: Document; lines: LineCounter }>,
+  contents: Record<string, unknown>,
+): Record<string, PersonaYaml> {
+  const report = (file: string, path: DataPath, message: string, fix: string, atKey = false): void => {
+    problems.push(inFileOf(documents, file, path, message, fix, atKey));
+  };
+  personasAppProblems(app, report);
+  const out: Record<string, PersonaYaml> = {};
+  for (const [value, file] of Object.entries(app.personas?.files ?? {})) {
+    const read = readFile(root, file);
+    if (read.kind === 'missing') {
+      report('app.yaml', ['personas', 'files', value], `the persona "${value}" is in ${file}, which is not in the app folder`, `create ${file}; it starts with ${STARTS_WITH.persona}, and its first line is "# yaml-language-server: $schema=<path to>/packages/dialogwright/schemas/persona.schema.json"`);
+      continue;
+    }
+    if (read.kind === 'problem') {
+      problems.push(read.problem);
+      continue;
+    }
+    const before = problems.length;
+    const persona = checkFile(file, 'persona', read.text, problems, documents, contents) as PersonaYaml | undefined;
+    if (persona === undefined) continue;
+    if (prompts !== null) personaContentProblems(file, persona, prompts, report);
+    if (problems.length === before) out[value] = persona;
+  }
+  return out;
 }
 
 /** How the knowledge base's files are read: with this loader's own reading and parsing, under the folder's real path. */
@@ -649,7 +710,7 @@ function agentBuilt(file: string, kind: FileKind | 'slots'): Problem {
 const TOOLING_YAML: ReadonlySet<string> = new Set(['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']);
 
 /** YAML files in the folder that DialogWright does not read: almost always a misspelled name. */
-function strayYamlFiles(top: readonly string[], problems: Problem[], agent: boolean, converse = false): void {
+function strayYamlFiles(top: readonly string[], problems: Problem[], agent: boolean, converse = false, personaFiles: ReadonlySet<string> = new Set()): void {
   const known = new Set<string>(FOLDER_FILES);
   // The files named to the author: an agent-mode app's own, a converse app's, or a scripted app's (business.yaml is agent mode's alone, agent.yaml converse's).
   const listed = agent ? ['app.yaml', BUSINESS_FILE, 'style.yaml'] : converse ? ['app.yaml', AGENT_FILE] : FOLDER_FILES.filter((f) => f !== BUSINESS_FILE && f !== AGENT_FILE);
@@ -657,7 +718,8 @@ function strayYamlFiles(top: readonly string[], problems: Problem[], agent: bool
     // A host file (several apps on one server) sits beside the apps: in a project of its own, whose folder
     // is its app's, that is in the app's folder. It is the server's, never read as part of the app. A
     // hidden file and a tool's file (TOOLING_YAML) are not the app's either.
-    if (!/\.ya?ml$/.test(name) || known.has(name) || name === HOST_FILE || name.startsWith('.') || TOOLING_YAML.has(name)) continue;
+    // A persona file app.yaml's personas name (at the folder's top) is the app's.
+    if (!/\.ya?ml$/.test(name) || known.has(name) || personaFiles.has(name) || name === HOST_FILE || name.startsWith('.') || TOOLING_YAML.has(name)) continue;
     const near = closest(name.replace(/\.ya?ml$/, '.yaml'), listed);
     problems.push(
       problemAt(

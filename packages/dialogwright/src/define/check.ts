@@ -30,6 +30,7 @@ import { checkPromptReferences, checkWarnings, provenLevel } from './formChecks'
 import { moveCycles, slotOutcomeForm, slotOutcomesOf } from '../core/app/next';
 import { digitsMayBeShort } from '../slots/digits/fill';
 import { generatedWordingWarnings } from '../render/config';
+import { personaPromptLines } from './personas';
 import { scenarioGapProblems } from '../harness-text/scenarioGap';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfFolder } from '../channel/speechLanguages';
 
@@ -441,6 +442,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     warnings.push({ file: w.file, line: at.line, column: at.column, path: formatPath(w.path), message: w.message, fix: w.fix });
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
+  problems.push(...checkPersonaLines(config, locate, code));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
   problems.push(...checkLocaleLabels(config, loaded.locateKey ?? locate));
@@ -1362,6 +1364,27 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     problems.push(...checkVariants(locale === config.defaultLocale ? null : locale, prompts, file, locate, { ...(config.slots ?? {}), ...(code?.slots ?? {}) }));
     problems.push(...checkChatVersions(locale === config.defaultLocale ? null : locale, prompts, file, locate));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
+  }
+  return problems;
+}
+
+/**
+ * Each persona's lines (app.yaml's personas, ./personas.ts) held to what a line's words are held to in
+ * prompts.yaml: its other wordings only on a line said in turn, with its text's variables, never on a
+ * generated line; its chat version only on a line said in one wording, in the chat formatting. Each line
+ * as the persona words it (the app's line with the persona's words in place), checked only where the
+ * persona gives the words checked, and reported in the persona's file.
+ */
+function checkPersonaLines(config: LoadedConfig, locate: LoadResult['locate'], code: AppCode | undefined): Problem[] {
+  const problems: Problem[] = [];
+  const prompts = config.prompts[config.defaultLocale] ?? {};
+  for (const [value, persona] of Object.entries(config.personas ?? {})) {
+    const file = config.app.personas?.files[value];
+    if (file === undefined) continue;
+    const lines = personaPromptLines(persona, prompts);
+    const given = (part: 'variants' | 'chat') => Object.fromEntries(Object.entries(lines).filter(([id]) => persona.prompts?.[id]?.[part] !== undefined || (part === 'chat' && persona.prompts?.[id]?.variants !== undefined && lines[id]!.chat !== undefined)));
+    problems.push(...checkVariants(null, given('variants'), file, locate, { ...(config.slots ?? {}), ...(code?.slots ?? {}) }));
+    problems.push(...checkChatVersions(null, given('chat'), file, locate));
   }
   return problems;
 }

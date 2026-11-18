@@ -237,6 +237,17 @@ describe('checkApp: the prompts every locale needs', () => {
     expect(read.filter((l) => l.includes('chat.page.choose'))).toEqual([]);
   });
 
+  it('a chat page may have a list of up to three choices, each key its own and each read by callData', async () => {
+    const choice = (key: string): string => `      - key: ${key}\n        label: ${key}\n        options:\n          - { value: a, label: A }\n          - { value: b, label: B }\n`;
+    const page = (...keys: string[]): string => `chat:\n  page:\n    serve: local\n    choose:\n${keys.map(choice).join('')}`;
+    const unread = await lines(folder({ 'app.yaml': (t: string) => `${t}${page('branch', 'style')}callData:\n  branch: { from: chat.branch, redact: keep }\n` }));
+    expect(unread.filter((l) => l.includes('chat.page.choose'))).toEqual([expect.stringContaining('chat.page.choose[1].key  the choice sets the chat\'s start context "style", which no callData key reads')]);
+    const twice = await lines(folder({ 'app.yaml': (t: string) => `${t}${page('branch', 'branch')}callData:\n  branch: { from: chat.branch, redact: keep }\n` }));
+    expect(twice.filter((l) => l.includes('chat.page.choose'))).toEqual([expect.stringContaining('the key "branch" is set by two choices')]);
+    const four = await lines(folder({ 'app.yaml': (t: string) => `${t}${page('a', 'b', 'c', 'd')}` }));
+    expect(four.filter((l) => l.includes('chat.page.choose'))).toEqual([expect.stringContaining('has more than three')]);
+  });
+
   it('a missing engine line names the variables the engine gives it', async () => {
     const dir = folder({ 'identity.yaml': IDENTITY.replace(', 2: ', ''), 'prompts.yaml': without('ack_intent') });
     const problems = await lines(dir);

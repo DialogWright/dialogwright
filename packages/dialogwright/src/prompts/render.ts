@@ -17,6 +17,8 @@ export interface PromptEntry {
   variants?: readonly string[];
   /** The line's words on a channel that shows them, formatted (prompts.yaml's `chat`, prompts/rich.ts). */
   chat?: string;
+  /** The persona whose words the line is (App.personas): said by text-to-speech, never the app's clips. */
+  persona?: string;
 }
 
 /**
@@ -61,7 +63,7 @@ export function localePromptEntry(app: App, id: string, locale?: string): { entr
   if (line !== id) {
     const found = localePromptEntry(app, line, locale);
     const text = found.entry.variants?.[wordingOf(id) - 2];
-    return { entry: { text: text ?? found.entry.text, interruptible: found.entry.interruptible }, localized: found.localized };
+    return { entry: { text: text ?? found.entry.text, interruptible: found.entry.interruptible, ...(found.entry.persona !== undefined ? { persona: found.entry.persona } : {}) }, localized: found.localized };
   }
   const own = locale === undefined || !app.locales || locale === app.locales.default ? undefined : app.locales.prompts[locale];
   if (own && Object.hasOwn(own, id)) return { entry: own[id]!, localized: true };
@@ -164,7 +166,8 @@ export function lineLang(app: App, locale?: string): string | undefined {
 
 /**
  * One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. A line in
- * a locale's own words is spoken whole by TTS: the clips are recordings of the default locale's.
+ * a locale's own words, or a persona's (App.personas), is spoken whole by TTS: the clips are recordings
+ * of the default locale's own words.
  */
 export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string, spans?: Readonly<Record<string, string>>, channel: LineChannel = {}): Say {
   const { entry, localized } = localePromptEntry(app, promptId, locale);
@@ -177,9 +180,10 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
   const clipId = template === entry.text ? promptId : exactClipId(promptId);
   vars = framedVars(app, promptId, vars, spans);
   const segments = segmentTemplate(clipId, template);
-  // A line that carries data is spoken whole by TTS, even when clips are on.
+  // A line that carries data is spoken whole by TTS, even when clips are on; so is a persona's line, whose
+  // words no clip was recorded of (App.personas), as a locale's own line is.
   const lang = lineLang(app, locale);
-  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(template, vars) }], interruptible, lang);
+  if (!ctx || localized || entry.persona !== undefined || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(template, vars) }], interruptible, lang);
   const parts: SayPart[] = [];
   let pieces: string[] = [];
   const flush = (): void => {

@@ -833,6 +833,40 @@ function chatVersionsSection(app: App): string[] {
   return out;
 }
 
+/**
+ * The app's personas (app.yaml's personas): each value, the persona text and word budgets its generated
+ * wording is given, and the lines it rewords, so a reviewer sees which lines change with a persona. Nothing
+ * for an app with none.
+ */
+function personasSection(app: App): string[] {
+  const personas = app.personas;
+  if (personas === undefined || Object.keys(personas.overlays).length === 0) return [];
+  const out = [
+    '## Personas',
+    '',
+    `A call or chat whose call data ${code(personas.from)} names one of these personas hears the lines it rewords in its words, and its generated wording is given its persona text and word budgets; every other line, and every call or chat with no such value, is the app's own. A persona changes only words: what is done (the policy, the forms, the identity, the tools) is the same for every persona. A prescribed line is never reworded. A persona's lines are the default locale's, said by text-to-speech (never the app's recorded clips).`,
+    '',
+    '| Persona | Persona text | Word budgets | Lines it rewords |',
+    '| --- | --- | --- | --- |',
+  ];
+  for (const [value, overlay] of Object.entries(personas.overlays)) {
+    const words = overlay.style?.words;
+    const budgets = [
+      ...(words?.voice !== undefined ? [`${words.voice} on a call`] : []),
+      ...(words?.chat !== undefined ? [`${words.chat} on a chat`] : []),
+      ...Object.entries(overlay.spans ?? {}).flatMap(([id, spans]) => Object.entries(spans).map(([span, sp]) => `${sp.words} for ${code(`{${span}}`)} of ${code(id)}`)),
+    ];
+    // Each line by what of it the persona words: its text, its other wordings, its chat version.
+    const lines = Object.entries(overlay.prompts ?? {}).map(([id, line]) => {
+      const parts = [...(line.variants !== undefined ? ['variants'] : []), ...(line.chat !== undefined ? ['chat version'] : [])];
+      const also = parts.length === 0 ? '' : line.text === undefined ? ` (its ${parts.join(' and ')} only)` : ` (and its ${parts.join(' and ')})`;
+      return `${code(id)}${also}`;
+    });
+    out.push(`| ${code(value)} | ${overlay.style?.persona !== undefined ? cell(overlay.style.persona) : 'the app\'s'} | ${budgets.length === 0 ? 'the app\'s' : budgets.join('; ')} | ${lines.length === 0 ? 'none' : lines.join(', ')} |`);
+  }
+  return out;
+}
+
 /** A section and the blank line after it; nothing for a section that is not there. */
 const withGap = (lines: string[]): string[] => (lines.length === 0 ? [] : [...lines, '']);
 
@@ -853,6 +887,7 @@ export function policyCardText(app: App, dir: string): string {
     ...withGap(recordingSection(app, source)),
     ...withGap(wordingSection(app)),
     ...withGap(chatVersionsSection(app)),
+    ...withGap(personasSection(app)),
     ...actionsSection(app, source),
     '',
     '### Actions by level, with their rules and what each role gets',

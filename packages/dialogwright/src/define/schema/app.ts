@@ -10,6 +10,7 @@ import { E164 } from '../../core/numberLocales';
 import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
+import { PERSONA_FILE, PERSONA_VALUE } from './persona';
 
 /** How an app's conversation is run (app.yaml's `mode`): scripted, the default, agent (business.yaml), or converse (agent.yaml, the converse runtime). */
 export const APP_MODES = ['scripted', 'agent', 'converse'] as const;
@@ -455,6 +456,37 @@ const textConsent = z
   })
   .describe('Consent to text for the whole call: asked once, on a call, right after the greeting (greeting_offer, then consent_texts with {last4}, then greet_after_offer), when the caller\'s number is kept and the app\'s callerOffer allows the first slot it covers. A yes is recorded as a consent row (scope: call); the slots it covers then use the caller\'s number without asking again. Never asked on a chat. Before a proposal at the greeting, after the caller-ID question at the greeting. Default: none, and every text offer is asked where it is.');
 
+/** One choice of a chat page (chat.page.choose): pills that set one key of the chat's start context. */
+const chatChoice = z
+  .strictObject({
+    key: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/, { error: 'must be a context key: a letter, then letters, digits or _, 64 at most' })
+      .describe('The key of the chat\'s start context the choice sets (chat.<key> in callData, which must name it).'),
+    label: text().max(40, { error: 'is too long: at most 40 characters' }).describe('What is chosen, beside the pills ("Plan document").'),
+    options: z
+      .array(
+        z.strictObject({
+          value: z
+            .string()
+            .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/, { error: 'must be a short value: letters, digits, _ . -, 64 at most' })
+            .describe('The value the chat starts with (chat.<key>).'),
+          label: text().max(40, { error: 'is too long for a pill: at most 40 characters' }).describe('The pill\'s words.'),
+          detail: text().max(200, { error: 'is too long: at most 200 characters' }).optional().describe('A line shown under the pills while this option is chosen.'),
+          starters: z
+            .array(text().max(60, { error: 'is too long for a button: at most 60 characters' }))
+            .min(1)
+            .max(8)
+            .optional()
+            .describe('This option\'s own ways to start, in place of the page\'s.'),
+        }),
+      )
+      .min(2, { error: 'must give two options at least' })
+      .max(12, { error: 'has more than twelve: a page shows at most twelve' })
+      .describe('The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>).'),
+  })
+  .describe('One choice above the conversation, as pills: the one chosen is sent as the chat\'s start context (chat.<key>).');
+
 /** One key of callData: where its value comes from, and how it is recorded. */
 const callDataKey = z
   .strictObject({
@@ -629,35 +661,27 @@ export const appSchema = z
               .optional()
               .describe('A "Prefer to talk?" button that calls a number: the variable holding it (env.<NAME>, an E.164 number), read from the app\'s settings. Default: none.'),
             choose: z
-              .strictObject({
-                key: z
-                  .string()
-                  .regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/, { error: 'must be a context key: a letter, then letters, digits or _, 64 at most' })
-                  .describe('The key of the chat\'s start context the choice sets (chat.<key> in callData, which must name it).'),
-                label: text().max(40, { error: 'is too long: at most 40 characters' }).describe('What is chosen, beside the pills ("Plan document").'),
-                options: z
-                  .array(
-                    z.strictObject({
-                      value: z
-                        .string()
-                        .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/, { error: 'must be a short value: letters, digits, _ . -, 64 at most' })
-                        .describe('The value the chat starts with (chat.<key>).'),
-                      label: text().max(40, { error: 'is too long for a pill: at most 40 characters' }).describe('The pill\'s words.'),
-                      detail: text().max(200, { error: 'is too long: at most 200 characters' }).optional().describe('A line shown under the pills while this option is chosen.'),
-                      starters: z
-                        .array(text().max(60, { error: 'is too long for a button: at most 60 characters' }))
-                        .min(1)
-                        .max(8)
-                        .optional()
-                        .describe('This option\'s own ways to start, in place of the page\'s.'),
+              .union([
+                chatChoice,
+                z
+                  .array(chatChoice, { error: 'must be one choice, or a list of choices' })
+                  .min(1, { error: 'must give at least one choice' })
+                  .max(3, { error: 'has more than three: a page shows at most three rows of pills' })
+                  .check(
+                    checkAlways((value, ctx) => {
+                      if (!Array.isArray(value)) return;
+                      const seen = new Set<string>();
+                      value.forEach((c: unknown, i) => {
+                        const key = typeof c === 'object' && c !== null ? (c as { key?: unknown }).key : undefined;
+                        if (typeof key !== 'string') return;
+                        if (seen.has(key)) ctx.addIssue({ code: 'custom', path: [i, 'key'], message: `the key "${key}" is set by two choices`, params: { fix: 'give each choice a key of its own' } });
+                        seen.add(key);
+                      });
                     }),
-                  )
-                  .min(2, { error: 'must give two options at least' })
-                  .max(12, { error: 'has more than twelve: a page shows at most twelve' })
-                  .describe('The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>).'),
-              })
+                  ),
+              ])
               .optional()
-              .describe('A choice above the conversation, as pills: the one chosen is sent as the chat\'s start context (chat.<key>), and choosing another ends the chat and starts a new one with it, so nothing said under one choice is read under the next. The app reads it as call data (callData: { <name>: { from: chat.<key> } }). Default: none.'),
+              .describe('A choice above the conversation, as pills, or a list of up to three, each its own row: the one chosen in each is sent as the chat\'s start context (chat.<key>), and choosing another in any row ends the chat and starts a new one with every value, so nothing said under one choice is read under the next; the address keeps each (?<key>=<value>&...). The app reads each as call data (callData: { <name>: { from: chat.<key> } }). An option\'s starters are taken from the first choice whose chosen option gives them. Default: none.'),
             about: z
               .array(
                 z.strictObject({
@@ -797,6 +821,20 @@ export const appSchema = z
       .optional()
       .describe("What the app's regression runs beside its corpus and scripted calls."),
     prompts: promptSettings.optional(),
+    personas: z
+      .strictObject({
+        from: identifier().describe('The callData key whose value picks the persona (callData must name it): a chat page\'s choice (chat.<key>), or a custom parameter of a call.'),
+        files: z
+          .record(
+            matching(PERSONA_VALUE, 'is not a persona value: letters, digits, _ . -, 64 at most, starting with a letter or digit', 'write the value the call data gives for this persona, such as "calm"'),
+            matching(PERSONA_FILE, 'is not a persona file in the app folder: a relative path to a .yaml file, with no ".."', 'write the file\'s path from the app folder, such as personas/calm.yaml'),
+            { error: 'must be a map from a persona value to its file' },
+          )
+          .refine((m) => Object.keys(m).length > 0, { error: 'must name at least one persona' })
+          .describe('Each persona, by the value of `from` that picks it, and its file (schemas/persona.schema.json), from the app folder.'),
+      })
+      .optional()
+      .describe('Personas: other ways the app\'s lines sound (the words of its fixed lines, the persona text and word budgets its generated wording is given), each a file, picked for a call or chat by a callData value. A call or chat whose value is absent, or names no persona, gets the app as it is; so does every line a persona does not name. What is done never changes: the policy, forms, identity and tools are the app\'s. Default: none.'),
   })
   .describe('app.yaml: who the app is and how it presents itself.');
 

@@ -353,3 +353,49 @@ A knowledge base's answers are approved passages, said word for word ([12](12-th
 - **Its time.** A long passage takes longer to word, so it is given room: it has `RENDER_ANSWER_TIMEOUT_MS` (16.7) for its wording and checks together. When they are not done within a line's own budgets (the wording's and the checks', 1.4 s on a call by default), the hold line is put before it (`kb_hold`, or the engine's "One moment while I gather that information."), and a channel that can say a line before its turn has ended says it then, with the turn's lines before it: the phone relay (on both carriers, each reply ending on its own `last`) and the chat socket. The answer follows when it is ready, or the passage when it is not ready in time or a check fails. A channel that answers a request with one reply (the harness, the HTTP chat) says the hold line in its place with the rest. The hold line is the call's language's own `kb_hold`, or the engine's words in English; in a language with neither, none is said and the answer has a line's budget only (`pnpm check` warns). Only fixed lines before the answer go early; a server that stops while the answer is worded resumes the call at the question before it, as for any turn in progress (the hold line heard, nothing else of the turn done or saved).
 - **The fake renderer** words an answer from the passage's sentences that bear on the question and every sentence with a figure, a name or a limit (a test double; no model is told it), and the stub's judge (`stubAnswerDrift`) refuses a figure, a name or words of its own, or a figure of the passage left out. A scripted call's `renderDelayMs` makes the renderer slow, to hear the hold line in a regression.
 - **The adversarial suite** tries three hostile wordings over the scripted calls that word an answer (`wording/answer/figure`, `/turned`, `/promise`): another figure, what is covered turned around, and a promise the passage does not make; none may be said ([15](15-the-adversarial-suite.md)).
+
+## 16.15 Personas: the same app in other voices
+
+A persona is another way the app's lines sound: the words of some of its fixed lines, the persona text its generated wording is given, and its word budgets. A call or chat is in a persona when one of its call data values names it; every other call or chat, and every line a persona does not name, is the app's own. A persona changes only words: what is done (the policy, the forms, the slots, the identity, the tools) is the same in every persona, and the gate decides as it always does.
+
+**How one is picked.** app.yaml names the call data key whose value picks the persona, and each persona's file by its value:
+
+```yaml
+# app.yaml
+callData:
+  persona: { from: chat.persona, redact: keep }   # the chat page's choice (13.6), or a call's custom parameter
+personas:
+  from: persona                 # a key of callData
+  files:                        # each persona's value, and its file from the app folder
+    calm: personas/calm.yaml
+    brisk: personas/brisk.yaml
+```
+
+A call or chat whose value is absent, or names no persona (`default`, say), gets the app as it is. On a web chat the value usually comes from the chat page's pills (`chat.page.choose`, [the chat page](13-channels.md#the-apps-chat-page-chatpage)), which may sit beside another choice; a phone line that carries no value always gets the app's own lines.
+
+**The file.** Every part is optional; the first line is the schema comment, as in every file of the folder:
+
+```yaml
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/persona.schema.json
+style:
+  persona: a slow, gentle librarian who never hurries anyone   # in place of style.yaml's persona
+  words: { voice: 30, chat: 60 }                               # in place of those of style.yaml's words it names
+spans:                                                         # a generated span's word budget, by line and span
+  kb_documents_answer: { answer: { words: 110 } }
+prompts:                                                       # a line's words, by prompt id
+  greeting_chat:
+    text: Hello, and welcome. Take your time; what can I look up for you?
+  ack_intent:
+    text: Happy to help you {intentLabel}.
+    variants: ["Of course, let's {intentLabel}."]              # in place of the line's variants
+  goodbye:
+    chat: "Take care, and come back **any time**."              # in place of the line's chat version
+```
+
+- **What it may change.** A line's `text`, its `variants` and its `chat` version, each in place of the app's, every other field of the line kept (`interruptible`, `generate`, `when`, `mode`...): a generated line's reworded text is its fallback and what its wording is held to. style.yaml's `persona` and `words.voice` and `words.chat`. A generated span's `words` (`spans`), up to 300: a knowledge answer's budget is its span's, so this is where a persona gives its answers more room.
+- **What it may not.** A line prompts.yaml does not have; a line marked `prescribed: true` (its words are regulated, the same for every call); a variable the app's own line does not name (its text or its variants; a chat version, also its own chat version's), since the code gives the line only those values; a framed line's text that leaves out one of its spans; a budget for a span the app does not generate; `variants` on a line not said in turn, and a `chat` version on a generated line or beside variants, as in prompts.yaml. `pnpm check` refuses each, in the persona's file, at its line; `personas.from` must be a key of `callData`. Only an app in scripted mode has personas.
+- **Its lines are the default locale's.** A call in another locale hears that locale's lines, as before. A persona's line is said by text-to-speech, never the app's recorded clips, which are of the app's own words; a line the persona does not reword keeps its clips.
+- **What a model is sent** changes with the persona text (16.5): the render cassette keys on the act it is sent, so a persona's generated lines are recorded on their own.
+- **The policy card** lists each persona, its persona text, its word budgets and the lines it rewords, so a reviewer sees what changes with a persona (`pnpm policy:card`).
+
+In the engine, `App.personas` holds each file (its overlay), and `personaApp(app, value)` gives the app with it applied: the lines replaced field by field, the style and the span budgets, everything else the same object; `appOf(session)` gives it for a session whose call data names the persona, from the greeting on.

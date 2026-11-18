@@ -105,8 +105,8 @@ export interface ChatPageContent {
   chatPath: string;
   /** The page's language (the app's default locale). */
   lang: string;
-  /** A choice above the conversation, as pills (app.yaml's chat.page.choose). */
-  choose?: ChatPageChoice;
+  /** A choice above the conversation, as pills (app.yaml's chat.page.choose); a list of them, a row of pills each. */
+  choose?: ChatPageChoice | readonly ChatPageChoice[];
 }
 
 /** The page's HTML. */
@@ -123,14 +123,17 @@ export function chatPageHtml(c: ChatPageContent): string {
     ? ''
     : `<section class="about">${c.about.map((s) => `<div class="about-part"><h2>${escapeHtml(s.title)}</h2>${blocksHtml(chatLine(s.text, {}).blocks)}</div>`).join('')}</section>`;
   const call = c.phone === null ? '' : `<a class="call" href="tel:${escapeHtml(c.phone.tel)}"><span>Prefer to talk?</span> ${escapeHtml(c.phone.shown)}</a>`;
+  // A list of choices: a row of pills each, every chosen value in the start context (choicesMount).
+  if (Array.isArray(c.choose)) return pageHtml(c, choicesHtml(c.choose as readonly ChatPageChoice[]), choicesMount(c, c.choose as readonly ChatPageChoice[]), { own, intro, about, call, name });
+  const one = c.choose as ChatPageChoice | undefined;
   // The choice, as pills: each sends its value as the chat's start context; another starts a new chat.
-  const choose = c.choose === undefined
+  const choose = one === undefined
     ? ''
-    : `<nav class="choose" aria-label="${escapeHtml(c.choose.label)}"><span class="choose-label">${escapeHtml(c.choose.label)}</span>${c.choose.options.map((o, i) => `<button type="button" class="pill" data-value="${escapeHtml(o.value)}" aria-pressed="${i === 0 ? 'true' : 'false'}">${escapeHtml(o.label)}</button>`).join('')}</nav><p class="choose-detail" id="choose-detail"></p>`;
-  const mount = c.choose === undefined
+    : `<nav class="choose" aria-label="${escapeHtml(one.label)}"><span class="choose-label">${escapeHtml(one.label)}</span>${one.options.map((o, i) => `<button type="button" class="pill" data-value="${escapeHtml(o.value)}" aria-pressed="${i === 0 ? 'true' : 'false'}">${escapeHtml(o.label)}</button>`).join('')}</nav><p class="choose-detail" id="choose-detail"></p>`;
+  const mount = one === undefined
     ? `DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: ${inlineJson(c.starters)} });`
     : `(function () {
-    var choice = ${inlineJson(c.choose)};
+    var choice = ${inlineJson(one)};
     var starters = ${inlineJson(c.starters)};
     var talk = document.getElementById('talk');
     var detail = document.getElementById('choose-detail');
@@ -150,6 +153,59 @@ export function chatPageHtml(c: ChatPageContent): string {
     pills.forEach(function (p) { p.addEventListener('click', function () { if (p.getAttribute('aria-pressed') !== 'true') choose(p.getAttribute('data-value'), false); }); });
     choose(new URLSearchParams(location.search).get(choice.key), true);
   })();`;
+  return pageHtml(c, choose, mount, { own, intro, about, call, name });
+}
+
+/**
+ * Several choices, a row of pills each (its label, its pills, the chosen option's detail under it): every
+ * value is in the chat's start context, and choosing another in any row ends the chat and starts a new one.
+ */
+function choicesHtml(choices: readonly ChatPageChoice[]): string {
+  return choices
+    .map((choice, row) => `<nav class="choose" data-key="${escapeHtml(choice.key)}" aria-label="${escapeHtml(choice.label)}"><span class="choose-label">${escapeHtml(choice.label)}</span>${choice.options.map((o, i) => `<button type="button" class="pill" data-key="${escapeHtml(choice.key)}" data-value="${escapeHtml(o.value)}" aria-pressed="${i === 0 ? 'true' : 'false'}">${escapeHtml(o.label)}</button>`).join('')}</nav><p class="choose-detail" id="choose-detail-${row}"></p>`)
+    .join('');
+}
+
+/**
+ * The script of several choices: each row's value from the address (?<key>=<value>), else its first option;
+ * the chat started with every value as its context, and the starters of the first choice whose chosen option
+ * gives any, else the page's; a pill not pressed ends the chat and starts a new one, the address keeping each value.
+ */
+function choicesMount(c: ChatPageContent, choices: readonly ChatPageChoice[]): string {
+  return `(function () {
+    var choices = ${inlineJson(choices)};
+    var starters = ${inlineJson(c.starters)};
+    var talk = document.getElementById('talk');
+    var pills = Array.prototype.slice.call(document.querySelectorAll('.choose .pill'));
+    var conversation = null;
+    var chosen = {};
+    function pick(choice, value) { return choice.options.filter(function (o) { return o.value === value; })[0] || choice.options[0]; }
+    function start(keep) {
+      var context = {};
+      var own = null;
+      choices.forEach(function (choice, row) {
+        var option = pick(choice, chosen[choice.key]);
+        chosen[choice.key] = option.value;
+        context[choice.key] = option.value;
+        if (own === null && option.starters) own = option.starters;
+        document.getElementById('choose-detail-' + row).textContent = option.detail || '';
+      });
+      pills.forEach(function (p) { p.setAttribute('aria-pressed', chosen[p.getAttribute('data-key')] === p.getAttribute('data-value') ? 'true' : 'false'); });
+      if (conversation) conversation.destroy();
+      talk.textContent = '';
+      conversation = DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: own || starters, context: context });
+      if (!keep) { var q = new URLSearchParams(location.search); choices.forEach(function (choice) { q.set(choice.key, chosen[choice.key]); }); history.replaceState(null, '', location.pathname + '?' + q.toString()); }
+    }
+    pills.forEach(function (p) { p.addEventListener('click', function () { if (p.getAttribute('aria-pressed') !== 'true') { chosen[p.getAttribute('data-key')] = p.getAttribute('data-value'); start(false); } }); });
+    var asked = new URLSearchParams(location.search);
+    choices.forEach(function (choice) { chosen[choice.key] = asked.get(choice.key); });
+    start(true);
+  })();`;
+}
+
+/** The page around its parts: the brand, the intro, the choices and their script, the conversation, a number to call and the about sections. */
+function pageHtml(c: ChatPageContent, choose: string, mount: string, parts: { own: string; intro: string; about: string; call: string; name: string }): string {
+  const { own, intro, about, call, name } = parts;
   return `<!doctype html>
 <html lang="${escapeHtml(c.lang)}">
 <head>
