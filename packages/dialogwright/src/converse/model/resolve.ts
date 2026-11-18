@@ -1,4 +1,4 @@
-import { KNOWN } from '../../render/endpoints';
+import { KNOWN, metaTrainingRefusal } from '../../render/endpoints';
 import { anthropicModel } from './anthropic';
 import { openAiCompatModel } from './openaiCompat';
 import type { ConverseModel } from './types';
@@ -42,6 +42,8 @@ export function resolveConverseModel(spec: string, env: Record<string, string | 
   if (!(PROVIDERS as readonly string[]).includes(provider) || model === '') throw new Error(`model "${spec}": give <provider>:<model> with the provider ${PROVIDERS.join(', ')} (anthropic:claude-haiku-5-5, inception:mercury-3)`);
   const p = provider as Provider;
   if (p === 'openrouter' && /anthropic\/|claude/i.test(model)) throw new Error(`model "${spec}": Claude models go through the Anthropic API (anthropic:<model>), not OpenRouter`);
+  const contributor = p === 'meta' ? metaTrainingRefusal(model) : null;
+  if (contributor !== null) throw new Error(`model "${spec}": ${contributor}`);
   if (p !== 'openrouter' && model.includes('@')) throw new Error(`model "${spec}": only an OpenRouter model names its hosts after @`);
   const hosts = p === 'openrouter' ? openRouterHosts(model) : { model, only: [] };
   const keyVar = keyVarOf(p);

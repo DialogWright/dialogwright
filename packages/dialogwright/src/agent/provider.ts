@@ -1,4 +1,4 @@
-import { KNOWN } from '../render/endpoints';
+import { KNOWN, metaTrainingRefusal } from '../render/endpoints';
 import { apiError, mayThink, openRouterReasoningBody, resolveRenderProvider, safeErrorText, type RenderProvider, type RenderThinking } from '../render/providers';
 import type { RenderUsage } from '../render/types';
 import { agentMessages } from './prompt';
@@ -103,6 +103,8 @@ export function inceptionRequest(p: InceptionRequestOptions): AgentRequest {
  * at minimal, live 2026-11-18).
  */
 export function metaRequest(p: { model: string; effort: InceptionEffort }): AgentRequest {
+  const refused = metaTrainingRefusal(p.model);
+  if (refused !== null) throw new Error(`the agent model: ${refused}`);
   return chatRequest(p.model, REASONING_MAX_TOKENS, { reasoning_effort: p.effort === 'instant' ? 'minimal' : p.effort }, 'max_completion_tokens');
 }
 
