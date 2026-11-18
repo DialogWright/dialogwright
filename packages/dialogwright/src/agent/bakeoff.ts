@@ -7,7 +7,7 @@ import { openRouterThinkingOf, RENDER_EFFORTS, RENDER_THINKING_MODES, resolveRen
 import type { RenderPrice, RenderUsage } from '../render/types';
 import type { BakeoffCall, BakeoffCases, BakeoffTurn, TextLabel, ValueLabel } from './bakeoffCases';
 import { AGENT_CASSETTE_MISS } from './cassette';
-import { INCEPTION_EFFORTS, INCEPTION_KEY_VAR, inceptionRequest, openRouterAgent, openRouterRequest, resolveInceptionAgent, type InceptionEffort } from './provider';
+import { INCEPTION_EFFORTS, INCEPTION_KEY_VAR, META_KEY_VAR, metaRequest, resolveMetaAgent, inceptionRequest, openRouterAgent, openRouterRequest, resolveInceptionAgent, type InceptionEffort } from './provider';
 import { NO_ACTION, type AgentAnswer, type AgentClient, type AgentContext, type AgentRequest, type AgentResult } from './types';
 import { hasWords, sameWords } from './words';
 
@@ -43,11 +43,11 @@ export const AGENT_BAKEOFF_BUDGET_MS = 30_000;
 /** Stop asking a model once this many answers in a row failed as requests (a wrong id, a key refused). */
 export const STOP_AFTER_ERRORS = 3;
 
-export const AGENT_PROVIDERS = ['inception', 'openrouter'] as const;
+export const AGENT_PROVIDERS = ['inception', 'openrouter', 'meta'] as const;
 export type AgentProviderName = (typeof AGENT_PROVIDERS)[number];
 
 /** The key variable each provider's recording needs. */
-export const AGENT_KEY_VARS: Readonly<Record<AgentProviderName, string>> = { inception: INCEPTION_KEY_VAR, openrouter: 'OPENROUTER_API_KEY' };
+export const AGENT_KEY_VARS: Readonly<Record<AgentProviderName, string>> = { inception: INCEPTION_KEY_VAR, openrouter: 'OPENROUTER_API_KEY', meta: META_KEY_VAR };
 
 /** A model to compare, as `--models` names it. */
 export interface AgentModelSpec {
@@ -55,7 +55,7 @@ export interface AgentModelSpec {
   entry: string;
   provider: AgentProviderName;
   model: string;
-  /** Inception: `reasoning_effort` (instant, low, medium, high). OpenRouter: RENDER_EFFORT (low, medium, high). Absent: the provider's default. */
+  /** Inception: `reasoning_effort` (instant, low, medium, high); Meta the same words, instant its least, minimal. OpenRouter: RENDER_EFFORT (low, medium, high). Absent: the provider's default. */
   effort?: InceptionEffort | RenderEffort;
   /** OpenRouter only: RENDER_THINKING. With neither it nor an effort, no reasoning setting is sent: the model's own default. */
   thinking?: RenderThinkingMode;
@@ -65,7 +65,7 @@ export interface AgentModelSpec {
 
 /**
  * Reads `--models`: comma-separated entries, `inception:<model>[:<effort>][:realtime]` (effort: instant,
- * low, medium, high) or `openrouter:<vendor/model>[:<thinking>][:<effort>]` (render:bakeoff's words; an
+ * low, medium, high), `meta:<model>[:<effort>]` (the same efforts, instant a Muse model's least, minimal) or `openrouter:<vendor/model>[:<thinking>][:<effort>]` (render:bakeoff's words; an
  * effort alone, `openrouter:<model>:low`, turns reasoning on at it). Throws, saying which entry is wrong.
  */
 export function parseAgentModelSpecs(list: readonly string[]): AgentModelSpec[] {
@@ -76,7 +76,13 @@ export function parseAgentModelSpecs(list: readonly string[]): AgentModelSpec[] 
     const at = entry.indexOf(':');
     const provider = at === -1 ? '' : entry.slice(0, at);
     const parts = at === -1 ? [] : entry.slice(at + 1).split(':');
-    if (!(AGENT_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${AGENT_PROVIDERS.map((p) => `${p}:`).join(' or ')} (inception:mercury-3:instant:realtime, openrouter:<vendor/model>)`);
+    if (!(AGENT_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${AGENT_PROVIDERS.map((p) => `${p}:`).join(' or ')} (inception:mercury-3:instant:realtime, openrouter:<vendor/model>, meta:muse-ember-1.0)`);
+    if (provider === 'meta') {
+      const effort = parts.length > 1 && (INCEPTION_EFFORTS as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as InceptionEffort) : undefined;
+      if (parts.length !== 1 || parts[0]!.trim() === '') throw new Error(`"${entry}": give meta:<model>, then its effort (${INCEPTION_EFFORTS.join(', ')}) if any`);
+      out.push({ entry, provider: 'meta', model: parts[0]!, ...(effort !== undefined ? { effort } : {}), realtime: false });
+      continue;
+    }
     if (provider === 'inception') {
       const realtime = parts.length > 1 && parts.at(-1) === 'realtime' ? (parts.pop(), true) : false;
       const effort = parts.length > 1 && (INCEPTION_EFFORTS as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as InceptionEffort) : undefined;
@@ -119,6 +125,7 @@ function openRouterEnv(s: AgentModelSpec, env: Env): Env {
 
 /** The request an entry sends, built with no key: what a replay keys its turns by. */
 export function agentRequestOf(s: AgentModelSpec): AgentRequest {
+  if (s.provider === 'meta') return metaRequest({ model: s.model, effort: (s.effort ?? 'instant') as InceptionEffort });
   if (s.provider === 'inception') return inceptionRequest({ model: s.model, ...(s.effort !== undefined ? { effort: s.effort as InceptionEffort } : {}), realtime: s.realtime });
   const thinking = openRouterThinkingOf(openRouterEnv(s, {}));
   return openRouterRequest({ model: s.model, ...(thinking !== null ? { thinking } : {}) });
@@ -126,6 +133,7 @@ export function agentRequestOf(s: AgentModelSpec): AgentRequest {
 
 /** The live client of a model's entry, its key read from the provider's own variable (throws, naming it, when unset). */
 export function liveAgentClient(s: AgentModelSpec, env: Env, fetchFn: typeof fetch = fetch): AgentClient {
+  if (s.provider === 'meta') return resolveMetaAgent(env, { model: s.model, effort: (s.effort ?? 'instant') as InceptionEffort }, fetchFn);
   if (s.provider === 'inception') return resolveInceptionAgent(env, { model: s.model, ...(s.effort !== undefined ? { effort: s.effort as InceptionEffort } : {}), realtime: s.realtime }, fetchFn);
   return openRouterAgent(resolveRenderProvider(openRouterEnv(s, env))!, fetchFn);
 }

@@ -273,7 +273,7 @@ export interface AgentAppForm {
 
 /** The model that leads the conversation of an app in agent mode (style.yaml's `agent`). */
 export interface AgentModelChoice {
-  provider: 'inception' | 'openrouter';
+  provider: 'inception' | 'openrouter' | 'meta';
   model: string;
   effort: 'instant' | 'low' | 'medium' | 'high';
 }

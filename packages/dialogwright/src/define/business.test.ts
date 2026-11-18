@@ -391,8 +391,10 @@ describe('business.yaml', () => {
 });
 
 describe('style.yaml\'s agent model', () => {
-  it('defaults to Mercury 3 on Inception at instant', () => {
-    expect(SCHEMAS.style.parse({ agent: {} }).agent).toEqual({ provider: 'inception', model: 'mercury-3', effort: 'instant' });
+  it('defaults to Muse Ember on Meta at instant (since 2026-11-18); a provider named alone, its own model; openrouter names one', () => {
+    expect(SCHEMAS.style.parse({ agent: {} }).agent).toEqual({ provider: 'meta', effort: 'instant' });
+    expect(SCHEMAS.style.safeParse({ agent: { provider: 'openrouter' } }).success).toBe(false);
+    expect(SCHEMAS.style.safeParse({ agent: { provider: 'openrouter', model: 'vendor/model' } }).success).toBe(true);
     expect(SCHEMAS.style.parse({}).agent).toBeUndefined();
   });
 

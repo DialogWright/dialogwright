@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveRenderProvider } from '../render/providers';
-import { agentKeyVar, appAgentClient, INCEPTION_URL, inceptionAgent, openRouterAgent, resolveInceptionAgent, AGENT_MAX_TOKENS } from './provider';
+import { agentKeyVar, appAgentClient, INCEPTION_URL, inceptionAgent, META_URL, openRouterAgent, resolveInceptionAgent, resolveMetaAgent, AGENT_MAX_TOKENS } from './provider';
 import type { AgentContext } from './types';
 
 /**
@@ -214,5 +214,20 @@ describe('an app\'s agent client (style.yaml\'s agent)', () => {
     expect(sent[0]!.body).not.toHaveProperty('reasoning');
     expect(agentKeyVar({ provider: 'openrouter' })).toBe('OPENROUTER_API_KEY');
     expect(() => appAgentClient({}, { provider: 'openrouter', model: 'vendor/model', effort: 'low' })).toThrow('OPENROUTER_API_KEY');
+  });
+  it('on Meta: its model at its least reasoning (instant is minimal), max_completion_tokens with room for the reasoning, its key from META_API_KEY', async () => {
+    const { fetchFn, sent } = fakeFetch(answer);
+    const r = await appAgentClient({ META_API_KEY: KEY }, { provider: 'meta', model: 'muse-ember-1.0', effort: 'instant' }, fetchFn).answer(ctx, 5000);
+    expect(r).toMatchObject({ ok: true, answer });
+    expect(sent[0]!.url).toBe(META_URL);
+    expect(META_URL).toBe('https://api.meta.ai/v1/chat/completions');
+    expect(sent[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(sent[0]!.body).toMatchObject({ model: 'muse-ember-1.0', reasoning_effort: 'minimal', max_completion_tokens: 4000, temperature: 0.6, response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true } } });
+    expect(sent[0]!.body).not.toHaveProperty('max_tokens');
+    expect(sent[0]!.body).not.toHaveProperty('realtime');
+    await resolveMetaAgent({ META_API_KEY: KEY }, { model: 'muse-ember-1.0', effort: 'low' }, fetchFn).answer(ctx, 5000);
+    expect(sent[1]!.body).toMatchObject({ reasoning_effort: 'low' });
+    expect(agentKeyVar({ provider: 'meta' })).toBe('META_API_KEY');
+    expect(() => appAgentClient({}, { provider: 'meta', model: 'muse-ember-1.0', effort: 'instant' })).toThrow('missing required environment variable META_API_KEY');
   });
 });

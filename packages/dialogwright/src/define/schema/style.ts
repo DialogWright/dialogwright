@@ -13,11 +13,17 @@ import { INCEPTION_EFFORTS } from '../../agent/provider';
  */
 
 /** Where an agent model is reached (style.yaml's `agent.provider`). */
-export const AGENT_PROVIDERS = ['inception', 'openrouter'] as const;
+export const AGENT_PROVIDERS = ['inception', 'openrouter', 'meta'] as const;
 export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
 
-/** The agent model when style.yaml does not name one: Mercury 3 on Inception at instant, measured on 2026-11-09 (the agent-mode design, "Measured"). */
-export const DEFAULT_AGENT_MODEL = { provider: 'inception', model: 'mercury-3', effort: 'instant' } as const;
+/**
+ * The agent model when style.yaml does not name one: Muse Ember on Meta at instant (its least, minimal), the
+ * maintainer's call of 2026-11-18, as Inception ends Mercury 3 on 2026-12-28; measured that day on the wheel
+ * shop's cases (agent:bakeoff): values right 24 of 24 (Mercury 20), p50 1048 ms, p95 1647 ms. Before it, Mercury 3 on Inception at instant, measured on 2026-11-09 (the agent-mode design, "Measured"). */
+export const DEFAULT_AGENT_MODEL = { provider: 'meta', model: 'muse-ember-1.0', effort: 'instant' } as const;
+
+/** The model id an agent provider is asked for where style.yaml names none: its own; OpenRouter serves many, so it has none (style.yaml names one). */
+export const DEFAULT_AGENT_MODEL_ID: Readonly<Record<AgentProvider, string | undefined>> = { meta: 'muse-ember-1.0', inception: 'mercury-3', openrouter: undefined };
 
 /** The most words a generated line may use on each channel when style.yaml does not say. */
 export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;
@@ -144,17 +150,20 @@ export const styleSchema = z
         provider: z
           .enum(AGENT_PROVIDERS)
           .default(DEFAULT_AGENT_MODEL.provider)
-          .describe(`Where the agent model is reached: inception (Inception's own API, INCEPTION_API_KEY; the way to Mercury Voice) or openrouter (any model OpenRouter serves, OPENROUTER_API_KEY). Default ${DEFAULT_AGENT_MODEL.provider}.`),
+          .describe(`Where the agent model is reached: inception (Inception's own API, INCEPTION_API_KEY; the way to Mercury Voice), openrouter (any model OpenRouter serves, OPENROUTER_API_KEY) or meta (Meta's own API, META_API_KEY: its Muse models, in Standard mode, which does not train on what it is sent). Default ${DEFAULT_AGENT_MODEL.provider}.`),
         model: text()
-          .default(DEFAULT_AGENT_MODEL.model)
-          .describe(`The model id, as the provider names it ("mercury-3" on Inception). Default ${DEFAULT_AGENT_MODEL.model}.`),
+          .optional()
+          .describe(`The model id, as the provider names it ("muse-ember-1.0" on Meta, "mercury-3" on Inception, any OpenRouter serves on openrouter). Default the provider's own: muse-ember-1.0 on meta, mercury-3 on inception; on openrouter, required.`),
         effort: z
           .enum(INCEPTION_EFFORTS)
           .default(DEFAULT_AGENT_MODEL.effort)
-          .describe(`How hard the model reasons before it answers (reasoning_effort on Inception): instant, low, medium or high. Measured on 2026-11-09 (pnpm agent:bakeoff): Mercury 3 at instant met the bar for a call (p50 under 1.0 s and p95 under 1.8 s with the judge), at low it did not. On openrouter, instant asks for no reasoning. Default ${DEFAULT_AGENT_MODEL.effort}.`),
+          .describe(`How hard the model reasons before it answers (reasoning_effort on Inception): instant, low, medium or high. Measured on 2026-11-09 (pnpm agent:bakeoff): Mercury 3 at instant met the bar for a call (p50 under 1.0 s and p95 under 1.8 s with the judge), at low it did not. On openrouter, instant asks for no reasoning; on meta, instant is a Muse model's least, minimal (it always reasons). Default ${DEFAULT_AGENT_MODEL.effort}.`),
+      })
+      .superRefine((a, ctx) => {
+        if (a.model === undefined && DEFAULT_AGENT_MODEL_ID[a.provider] === undefined) ctx.addIssue({ code: 'custom', path: ['model'], message: `${a.provider} serves many models: name the one`, params: { fix: 'add model: <vendor/model>' } });
       })
       .optional()
-      .describe('The model that leads the conversation of an app in agent mode (app.yaml\'s `mode: agent`): it understands the caller and words the replies, and the engine checks every value and every reply. The key is read from the environment only, never from here. Read only in agent mode. Default: Mercury 3 on Inception at instant.'),
+      .describe('The model that leads the conversation of an app in agent mode (app.yaml\'s `mode: agent`): it understands the caller and words the replies, and the engine checks every value and every reply. The key is read from the environment only, never from here. Read only in agent mode. Default: Muse Ember on Meta at instant (since 2026-11-18; Mercury 3 on Inception before, which Inception ends on 2026-12-28).'),
   })
   .describe('style.yaml: how a generated line sounds, and in agent mode the model that leads the conversation. Only read when the app generates a line, or is in agent mode.');
 

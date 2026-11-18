@@ -113,6 +113,7 @@ export function stepAgent(): AgentClient & { step(index: number, answers: Script
 /** The model of an app's agent (style.yaml's `agent`) as the bake-off names it: its request and its cassette's name follow from it. */
 export function agentSpecOf(model: AgentModelChoice): AgentModelSpec {
   if (model.provider === 'inception') return { entry: `inception:${model.model}`, provider: 'inception', model: model.model, effort: model.effort, realtime: true };
+  if (model.provider === 'meta') return { entry: `meta:${model.model}`, provider: 'meta', model: model.model, effort: model.effort, realtime: false };
   return { entry: `openrouter:${model.model}`, provider: 'openrouter', model: model.model, ...(model.effort !== 'instant' ? { effort: model.effort } : {}), realtime: false };
 }
 

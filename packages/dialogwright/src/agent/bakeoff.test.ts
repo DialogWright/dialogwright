@@ -249,6 +249,14 @@ describe('parseAgentModelSpecs', () => {
     expect(() => parseAgentModelSpecs(['inception:mercury-3:realtime:instant'])).toThrow('in that order');
     expect(() => parseAgentModelSpecs(['openrouter:vendor/model:realtime'])).toThrow("realtime is Inception's");
     expect(() => parseAgentModelSpecs(['inception:mercury-3', 'inception:mercury-3'])).toThrow('named twice');
+    // Meta: its model, then its effort in the agent's words (instant is a Muse model's least, minimal).
+    expect(parseAgentModelSpecs(['meta:muse-ember-1.0', 'meta:muse-ember-1.0:low'])).toEqual([
+      { entry: 'meta:muse-ember-1.0', provider: 'meta', model: 'muse-ember-1.0', realtime: false },
+      { entry: 'meta:muse-ember-1.0:low', provider: 'meta', model: 'muse-ember-1.0', effort: 'low', realtime: false },
+    ]);
+    expect(agentCassetteName(parseAgentModelSpecs(['meta:muse-ember-1.0'])[0]!)).toBe('meta/muse-ember-1.0');
+    expect(agentRequestOf(parseAgentModelSpecs(['meta:muse-ember-1.0'])[0]!).body(WARM_UP_CONTEXT)).toMatchObject({ reasoning_effort: 'minimal', max_completion_tokens: 4000 });
+    expect(() => parseAgentModelSpecs(['meta:muse-ember-1.0:realtime'])).toThrow('give meta:<model>');
   });
 
   it('reads --examples', () => {

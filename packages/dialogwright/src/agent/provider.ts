@@ -1,3 +1,4 @@
+import { KNOWN } from '../render/endpoints';
 import { apiError, mayThink, openRouterReasoningBody, resolveRenderProvider, safeErrorText, type RenderProvider, type RenderThinking } from '../render/providers';
 import type { RenderUsage } from '../render/types';
 import { agentMessages } from './prompt';
@@ -6,8 +7,9 @@ import type { AgentClient, AgentContext, AgentModelChoice, AgentRequest, AgentRe
 
 /**
  * Where the agent model is asked: OpenRouter (any model it serves, the render provider's settings and
- * key, OPENROUTER_API_KEY) or Inception's own OpenAI-compatible API (INCEPTION_API_KEY; the way to
- * Mercury Voice, which only Inception's API serves). Both get the same request: the agent's messages
+ * key, OPENROUTER_API_KEY), Inception's own OpenAI-compatible API (INCEPTION_API_KEY; the way to
+ * Mercury Voice, which only Inception's API serves) or Meta's (META_API_KEY; its Muse models, in Standard
+ * mode, which does not train on what it is sent). Each gets the same request: the agent's messages
  * (agent/prompt.ts), structured output with the answer's JSON Schema (`strict: true`), temperature
  * 0.6. A client never rejects: a reply past its budget (or a gateway's 504) is `timeout`, a body that
  * is not the shape `invalid`, a turn the provider's content filter refused `filtered` (filteredBy), and any
@@ -19,6 +21,10 @@ import type { AgentClient, AgentContext, AgentModelChoice, AgentRequest, AgentRe
 export const INCEPTION_URL = 'https://api.inceptionlabs.ai/v1/chat/completions';
 /** The variable Inception's key is read from. */
 export const INCEPTION_KEY_VAR = 'INCEPTION_API_KEY';
+
+/** Meta's chat completions endpoint and the variable its key is read from. */
+export const META_URL = KNOWN.meta.url;
+export const META_KEY_VAR = KNOWN.meta.keyVar;
 
 /** The temperature an agent is asked at: Inception's for structured and tool work (Mercury takes 0.5 to 1.0 and resets anything else). */
 export const AGENT_TEMPERATURE = 0.6;
@@ -42,7 +48,7 @@ const REASONING_MAX_TOKENS = 4000;
 type Env = Record<string, string | undefined>;
 
 /** The request every provider is sent for a turn, with what that provider takes besides. Throws where the turn cannot be put into one. */
-function chatRequest(model: string, maxTokens: number, extra: Record<string, unknown>): AgentRequest {
+function chatRequest(model: string, maxTokens: number, extra: Record<string, unknown>, tokensAs: 'max_tokens' | 'max_completion_tokens' = 'max_tokens'): AgentRequest {
   return {
     body(ctx: AgentContext): Record<string, unknown> {
       const { system, user } = agentMessages(ctx);
@@ -50,7 +56,7 @@ function chatRequest(model: string, maxTokens: number, extra: Record<string, unk
         model,
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         temperature: AGENT_TEMPERATURE,
-        max_tokens: maxTokens,
+        [tokensAs]: maxTokens,
         response_format: { type: 'json_schema', json_schema: { name: AGENT_SCHEMA_NAME, strict: true, schema: agentJsonSchema(ctx.actions.map((a) => a.name), ctx.fields.map((f) => f.name), ctx.lines) } },
         ...extra,
       };
@@ -88,6 +94,16 @@ export function inceptionRequest(p: InceptionRequestOptions): AgentRequest {
     ...(p.effort !== undefined ? { reasoning_effort: p.effort } : {}),
     ...(p.realtime ? { realtime: true } : {}),
   });
+}
+
+/**
+ * What Meta's API is sent: `reasoning_effort` (`instant`, the agent's least, is a Muse model's least,
+ * `minimal`: it always reasons and refuses `none`), and the token limit as `max_completion_tokens`, with
+ * the room a reasoning model needs always, since its reasoning counts against it (44 to 111 tokens a turn
+ * at minimal, live 2026-11-18).
+ */
+export function metaRequest(p: { model: string; effort: InceptionEffort }): AgentRequest {
+  return chatRequest(p.model, REASONING_MAX_TOKENS, { reasoning_effort: p.effort === 'instant' ? 'minimal' : p.effort }, 'max_completion_tokens');
 }
 
 /**
@@ -207,6 +223,13 @@ export function inceptionAgent(p: InceptionAgentOptions, fetchFn: typeof fetch =
   return chatAgent({ provider: 'inception', url: INCEPTION_URL, model: p.model, apiKey: p.apiKey, request: inceptionRequest(p) }, fetchFn);
 }
 
+/** The agent model on Meta's own API (metaRequest), its key read from META_API_KEY; throws, naming the variable (never a value), when it is unset. */
+export function resolveMetaAgent(env: Env, p: { model: string; effort: InceptionEffort }, fetchFn: typeof fetch = fetch): AgentClient {
+  const apiKey = env[META_KEY_VAR]?.trim() || null;
+  if (apiKey === null) throw new Error(`missing required environment variable ${META_KEY_VAR} (the agent model, ${p.model} from meta)`);
+  return chatAgent({ provider: 'meta', url: META_URL, model: p.model, apiKey, request: metaRequest(p) }, fetchFn);
+}
+
 /** inceptionAgent with its key read from INCEPTION_API_KEY; throws, naming the variable (never a value), when it is unset. */
 export function resolveInceptionAgent(env: Env, p: InceptionRequestOptions, fetchFn: typeof fetch = fetch): AgentClient {
   return inceptionAgent({ ...p, apiKey: env[INCEPTION_KEY_VAR]?.trim() || null }, fetchFn);
@@ -214,17 +237,19 @@ export function resolveInceptionAgent(env: Env, p: InceptionRequestOptions, fetc
 
 /** The variable an app's agent model's key is read from (style.yaml's `agent.provider`). */
 export function agentKeyVar(model: Pick<AgentModelChoice, 'provider'>): string {
-  return model.provider === 'inception' ? INCEPTION_KEY_VAR : 'OPENROUTER_API_KEY';
+  return model.provider === 'inception' ? INCEPTION_KEY_VAR : model.provider === 'meta' ? META_KEY_VAR : 'OPENROUTER_API_KEY';
 }
 
 /**
  * The client of an app's agent model (App.agent.model, style.yaml's `agent`), its key read from `env` (the
- * app's own settings): Mercury on Inception's API with its effort and `realtime`, or a model through
+ * app's own settings): Mercury on Inception's API with its effort and `realtime`, a Muse model on Meta's API
+ * at its effort (`instant` its least, `minimal`), or a model through
  * OpenRouter at its effort (`instant` there asks for no reasoning setting, the model's own default).
  * Throws, naming the variable (never a value), when the key is unset.
  */
 export function appAgentClient(env: Env, model: AgentModelChoice, fetchFn: typeof fetch = fetch): AgentClient {
   if (model.provider === 'inception') return resolveInceptionAgent(env, { model: model.model, effort: model.effort, realtime: true }, fetchFn);
+  if (model.provider === 'meta') return resolveMetaAgent(env, { model: model.model, effort: model.effort }, fetchFn);
   const provider = resolveRenderProvider({ ...env, RENDER_PROVIDER: 'openrouter', RENDER_MODEL: model.model, RENDER_THINKING: undefined, RENDER_EFFORT: model.effort === 'instant' ? undefined : model.effort });
   return openRouterAgent(provider!, fetchFn);
 }

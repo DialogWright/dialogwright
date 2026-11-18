@@ -16,7 +16,7 @@ import { styleOf } from '../render/config';
 import type { AppCode } from './defineApp';
 import type { LoadedConfig } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
-import { DEFAULT_AGENT_MODEL } from './schema/style';
+import { DEFAULT_AGENT_MODEL, DEFAULT_AGENT_MODEL_ID } from './schema/style';
 import type { BusinessFieldYaml, BusinessFormName, BusinessYaml } from './schema/business';
 
 /**
@@ -86,7 +86,7 @@ export function agentAppOf(b: BusinessYaml, style: LoadedConfig['style']): Agent
     examples: [...(b.business.examples ?? [])],
     forms,
     sees,
-    model: { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL.model, effort: chosen?.effort ?? DEFAULT_AGENT_MODEL.effort },
+    model: { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL_ID[chosen?.provider ?? DEFAULT_AGENT_MODEL.provider] ?? DEFAULT_AGENT_MODEL.model, effort: chosen?.effort ?? DEFAULT_AGENT_MODEL.effort },
     // The price line, where the business has one: an answer may name it in place of its reply, so a price is never worded.
     lines: b.prices !== undefined ? { price: PRICE_PROMPT } : {},
     // The forms the price line may be named in (prices.forms), where the business limits it.
