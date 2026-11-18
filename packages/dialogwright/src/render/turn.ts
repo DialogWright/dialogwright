@@ -15,7 +15,7 @@ import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isF
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
-import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
+import { DEFAULT_RENDER_PREFACE, DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
 import { applyGlossary } from '../kb/glossary';
 import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_LINE_HEADINGS_VAR, KB_LINES_VAR, KB_SOURCE_VAR, openingFramed, sectionLinesSaid, type SectionLine } from '../kb/answer';
@@ -833,16 +833,28 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   let hold: RenderHold | undefined;
   let early = 0;
   const pending = answers.filter((_, i) => answering[i] !== null);
+  // The fixed lines before the first answer still being worded (an acknowledgement, say), sent at once where the
+  // channel can say lines early and RENDER_PREFACE is `early` (the default): a call hears them over the wait, and a
+  // chat shows them in their own bubble before the answer. Only lines said as their fixed text go early (a
+  // wording's checks are all done by now, but a line said before its turn's record is written keeps nothing back:
+  // a span the records mask, say).
+  const firstPending = pending.length > 0 ? Math.min(...pending.map((a) => a.index)) : -1;
+  const fixedUpTo = (at: number): boolean => [...lines, ...spanLines].every((l) => l.index >= at || l.mode === 'fixed') && actions.slice(0, at).every((a) => a.type === 'say');
+  let prefaceSent = false;
+  if (firstPending > 0 && (renderer.preface ?? DEFAULT_RENDER_PREFACE) === 'early' && input.early !== undefined && fixedUpTo(firstPending)) {
+    const before = actions.slice(0, firstPending);
+    prefaceSent = input.early(before, { ...result, actions: before });
+    if (prefaceSent) early = firstPending;
+  }
   if (pending.length > 0 && holdLine !== null) {
     const done = await Promise.race([Promise.all(answering).then(() => true as const), deadline.then(() => false as const)]);
     if (!done) {
-      const at = Math.min(...pending.map((a) => a.index));
+      const at = firstPending;
       const { line, own } = holdLine;
       const before = actions.slice(0, at);
-      // Only lines said as their fixed text go early (a wording's checks are all done by now, but a line
-      // said before its turn's record is written keeps nothing back: a span the records mask, say).
-      const fixedBefore = [...lines, ...spanLines].every((l) => l.index >= at || l.mode === 'fixed') && before.every((a) => a.type === 'say');
-      const sent = fixedBefore && input.early !== undefined ? input.early([...before, line], { ...result, actions: [...before, line] }) : false;
+      const fixedBefore = fixedUpTo(at);
+      // The lines before it went already where the preface went early: the hold line alone now.
+      const sent = fixedBefore && input.early !== undefined ? (prefaceSent ? input.early([line], { ...result, actions: [...before, line] }) : input.early([...before, line], { ...result, actions: [...before, line] })) : false;
       actions.splice(at, 0, line);
       hold = { index: at, promptId: own ? KB_HOLD_PROMPT : null, atMs: performance.now() - t0, early: sent };
       if (sent) early = at + 1;

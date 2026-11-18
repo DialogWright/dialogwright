@@ -4,7 +4,7 @@ import { actMessage, instructionsOf } from './prompt';
 
 /** Moved to the leaf module endpoints.ts; kept here for the importers of this one. */
 export { apiError, safeErrorText };
-import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
+import { DEFAULT_RENDER_PREFACE, RENDER_PREFACES, type RenderPreface, DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
 /**
  * Where generated lines are worded (generated wording, design section 5): a model reached through
@@ -405,6 +405,14 @@ function bounded(env: Env, name: string, min: number, max: number, fallback: num
   return n;
 }
 
+/** RENDER_PREFACE: `early` or `with-hold` (RendererConfig.preface); default DEFAULT_RENDER_PREFACE. */
+function preface(env: Env): RenderPreface {
+  const raw = value(env, 'RENDER_PREFACE');
+  if (raw === null) return DEFAULT_RENDER_PREFACE;
+  if (!(RENDER_PREFACES as readonly string[]).includes(raw)) throw new Error(`RENDER_PREFACE must be ${RENDER_PREFACES.join(' or ')}, got "${raw}"`);
+  return raw as RenderPreface;
+}
+
 function price(env: Env, name: string, fallback: number): number {
   const raw = value(env, name);
   if (raw === null) return fallback;
@@ -450,13 +458,14 @@ export function defaultRenderPrice(model: string | undefined): RenderPrice {
  * RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, and the price, with their
  * defaults; the price's default is `model`'s where it is known (defaultRenderPrice), else the default model's.
  */
-export function renderSettings(env: Env = process.env, model?: string): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
+export function renderSettings(env: Env = process.env, model?: string): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice; preface: RenderPreface } {
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
     timeoutMs: perChannel(env, 'RENDER_TIMEOUT', DEFAULT_RENDER_TIMEOUT_MS),
     checkTimeoutMs: perChannel(env, 'RENDER_CHECK_TIMEOUT', DEFAULT_RENDER_CHECK_TIMEOUT_MS),
     answerTimeoutMs: perChannel(env, 'RENDER_ANSWER_TIMEOUT', DEFAULT_RENDER_ANSWER_TIMEOUT_MS),
     documentsTimeoutMs: perChannel(env, 'RENDER_DOCUMENTS_TIMEOUT', DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS),
+    preface: preface(env),
     price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', defaultRenderPrice(model).input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', defaultRenderPrice(model).output) },
   };
 }

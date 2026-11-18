@@ -90,7 +90,8 @@ afterEach(async () => {
 });
 afterAll(cleanScratch);
 
-async function start(client: GatedRenderClient, app = APP, answerMs = 10_000): Promise<string> {
+// RENDER_PREFACE=with-hold by default here: these tests hold the hold line's own path (the lines before it go with it).
+async function start(client: GatedRenderClient, app = APP, answerMs = 10_000, preface: 'early' | 'with-hold' = 'with-hold'): Promise<string> {
   resetAppsForTest();
   registerApp(app);
   const traceDir = mkdtempSync(join(tmpdir(), 'answer-hold-'));
@@ -100,7 +101,7 @@ async function start(client: GatedRenderClient, app = APP, answerMs = 10_000): P
     TODAY_OVERRIDE: TODAY, TRACE_DIR: traceDir, AUDIT_DIR: join(traceDir, 'audit'), AUDIO_DIR: traceDir, DASHBOARD: 'off', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com',
   });
   // The line's budgets small, the answer's own limit long: the hold line is due at once, the answer whenever the test lets it be.
-  const renderer: Renderer = { client, timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, drift: new HeuristicStubClient({ todayIso: TODAY, app }) };
+  const renderer: Renderer = { client, timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, preface, drift: new HeuristicStubClient({ todayIso: TODAY, app }) };
   running = await startServer(config, { host: '127.0.0.1', client: perception, log: () => {}, renderer });
   return `ws://127.0.0.1:${running.port}`;
 }
@@ -150,6 +151,62 @@ describe('the hold line on the phone', () => {
       }
     });
   }
+});
+
+describe('the acknowledgement before an answer still being worded (RENDER_PREFACE=early, the default)', () => {
+  it('telnyx: the acknowledgement goes at once as a reply of its own, the hold line once it has played, then the answer once that has', async () => {
+    const render = new GatedRenderClient();
+    const ws = await start(render, APP, 10_000, 'early');
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${running!.tokens.mint('CA-ack', 'telnyx')}`);
+    try {
+      relay.setup('CA-ack');
+      await relay.waitForTexts(1);
+      relay.prompt(QUESTION);
+      await render.asked;
+      // The acknowledgement alone, ending its reply, while the answer is still being worded.
+      expect((await relay.waitForTexts(2)).slice(1).map((t) => t.trim())).toEqual(['Sure, I can help you answer a question.']);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(relay.texts()).toHaveLength(2);
+      // The hold line, due by now, waits for Telnyx to report the acknowledgement played: never two replies in flight.
+      relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+      relay.send({ type: 'info', name: 'tokensPlayed', value: 'Sure, I can help you answer a question.' });
+      expect((await relay.waitForTexts(3)).slice(2).map((t) => t.trim())).toEqual([HOLD]);
+      render.answer();
+      relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+      relay.send({ type: 'info', name: 'tokensPlayed', value: HOLD });
+      const texts = await relay.waitForTexts(5);
+      expect(texts.slice(3).map((t) => t.trim())).toEqual([`${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
+      expect(texts.filter((t) => t.trim() === 'Sure, I can help you answer a question.')).toHaveLength(1);
+    } finally {
+      relay.close();
+    }
+  });
+
+  it('in a chat: the acknowledgement is shown at once, in its own message, before the answer', async () => {
+    const render = new GatedRenderClient();
+    const ws = await start(render, APP, 10_000, 'early');
+    const socket = new WebSocket(`${ws}/chat`, { origin: 'https://www.example.com' });
+    const got: { type: string; text?: string }[] = [];
+    socket.on('message', (d) => got.push(JSON.parse(d.toString()) as { type: string; text?: string }));
+    await new Promise((resolve) => socket.once('open', resolve));
+    try {
+      socket.send(JSON.stringify({ type: 'start', v: 1 }));
+      await until(() => got.some((m) => m.type === 'say'));
+      const opening = got.length;
+      socket.send(JSON.stringify({ type: 'text', text: QUESTION }));
+      await render.asked;
+      await until(() => got.slice(opening).some((m) => m.type === 'say'));
+      expect(got.slice(opening).find((m) => m.type === 'say')!.text).toBe('Sure, I can help you answer a question.');
+      render.answer();
+      await until(() => got.slice(opening).some((m) => m.type === 'say' && m.text!.includes(WORDED)));
+      await new Promise((r) => setTimeout(r, 50));
+      const shown = got.slice(opening).flatMap((m) => (m.type === 'say' ? [m.text] : []));
+      expect(shown.filter((t) => t === 'Sure, I can help you answer a question.')).toHaveLength(1);
+      expect(shown.at(-1)).toBe('Is there anything else I can help with?');
+    } finally {
+      socket.close();
+    }
+  });
 });
 
 describe('a hold line\'s turn on Telnyx, its answer reported played too soon', () => {

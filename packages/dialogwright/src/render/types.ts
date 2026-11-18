@@ -393,6 +393,14 @@ export interface Renderer {
   answerTimeoutMs?: { voice: number; chat: number };
   /** RENDER_DOCUMENTS_TIMEOUT_MS: an answer from documents' limit, as answerTimeoutMs; default 6000 on voice, 8000 in a chat. */
   documentsTimeoutMs?: { voice: number; chat: number };
+  /**
+   * RENDER_PREFACE: when the fixed lines before a knowledge answer still being worded (an acknowledgement, say)
+   * go to a channel that can say lines before its turn ends (RunOptions.early). `early` (the default, the
+   * maintainer's decision of 2026-11-18): at once, as the answer begins to be worded, so a call hears them over
+   * the wait and a chat shows them in their own bubble before the answer; `with-hold` (as before): only with the
+   * hold line, where the answer runs past the line's budgets, else with the answer at the turn's end.
+   */
+  preface?: RenderPreface;
   /** The model's price, for the cost in the trace and Insights; default the default model's. */
   price?: RenderPrice;
   /**
@@ -403,6 +411,12 @@ export interface Renderer {
 }
 
 /** The default budget of a line's wording, ms, on each channel. */
+/** RENDER_PREFACE's values (RendererConfig.preface). */
+export const RENDER_PREFACES = ['early', 'with-hold'] as const;
+export type RenderPreface = (typeof RENDER_PREFACES)[number];
+/** RENDER_PREFACE's default: the maintainer's decision of 2026-11-18. */
+export const DEFAULT_RENDER_PREFACE: RenderPreface = 'early';
+
 export const DEFAULT_RENDER_TIMEOUT_MS = { voice: 900, chat: 1500 } as const;
 
 /** The default budget of a line's checks by the decision model, ms, on each channel. */

@@ -216,10 +216,37 @@ describe('the checks and the judge: the passage word for word whenever one refus
 
 describe('room for a long passage: the hold line, then the answer, within its own limit', () => {
   // The line's budgets small (30 ms and 20 ms), the answer's limit 1000 ms: a wording that takes 150 ms runs past the first.
-  const slow = (delayMs: number, answerMs = 1000, channel: 'voice' | 'chat' = 'voice') => renderer(
+  // RENDER_PREFACE=with-hold (as before 2026-11-18): the lines before the answer go only with the hold line.
+  const slow = (delayMs: number, answerMs = 1000, channel: 'voice' | 'chat' = 'voice', preface: 'early' | 'with-hold' = 'with-hold', lineMs = 30) => renderer(
     { delayMs, eachSpan: () => 'A late book costs 25 cents a day, up to 5 dollars a book.' },
-    { timeoutMs: { voice: channel === 'voice' ? 30 : 5000, chat: channel === 'chat' ? 30 : 5000 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs } },
+    { timeoutMs: { voice: channel === 'voice' ? lineMs : 5000, chat: channel === 'chat' ? lineMs : 5000 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, preface },
   );
+
+  it('RENDER_PREFACE=early (the default): the lines before the answer go at once, the hold line alone when it is due, then the answer', async () => {
+    const turn = asked(FRAMED, 'late_fees', 'how much for a late book');
+    const handed: string[] = [];
+    const out = await rendered(FRAMED, turn, slow(150, 1000, 'voice', 'early'), (actions) => {
+      handed.push(sayText(actions));
+      return true;
+    });
+    expect(handed).toEqual(['Sure, I can help you answer a question.', 'Just a moment while I look that up.']);
+    expect(said(out)).toBe(`Sure, I can help you answer a question. Just a moment while I look that up. A late book costs 25 cents a day, up to 5 dollars a book. ${ACCOUNT} Is there anything else I can help with?`);
+    expect(out.early).toBe(2);
+    expect(out.record.hold).toMatchObject({ index: 1, promptId: 'kb_hold', early: true });
+  });
+
+  it('RENDER_PREFACE=early: an answer worded within the line\'s budgets still has the lines before it sent at once, and no hold line', async () => {
+    const turn = asked(FRAMED, 'late_fees', 'how much for a late book');
+    const handed: string[] = [];
+    const out = await rendered(FRAMED, turn, slow(60, 1000, 'voice', 'early', 2000), (actions) => {
+      handed.push(sayText(actions));
+      return true;
+    });
+    expect(handed).toEqual(['Sure, I can help you answer a question.']);
+    expect(out.early).toBe(1);
+    expect(out.record.hold).toBeUndefined();
+    expect(sayText(out.actions.slice(out.early))).toBe(`A late book costs 25 cents a day, up to 5 dollars a book. ${ACCOUNT} Is there anything else I can help with?`);
+  });
 
   it('on a call: the lines before the answer and the hold line go to the channel at once, the answer when it is ready', async () => {
     const turn = asked(FRAMED, 'late_fees', 'how much for a late book');
