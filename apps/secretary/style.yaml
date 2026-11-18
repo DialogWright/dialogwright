@@ -11,10 +11,10 @@ avoid:
 # The model that words the summary: Meta's Muse Ember, on Meta's own API (provider: meta, key META_API_KEY),
 # in Standard mode (which does not train on what it is sent), at its least reasoning (reasoning_effort minimal,
 # the default; a Muse model always reasons). Inception shuts Mercury 3, the model before, down on 2026-12-28.
-# On this app's own spans (render:bakeoff, 2026-11-18): 39 tried, 8 worded, 27 the message's own words, 4
-# refused (drift 2, foreign 2); wording p50 811 ms, p95 1347 ms, 7 of 18 over the 900 ms call budget (a line
-# over it is said with the message's own words). Beside it: Mercury 3 18 worded, p50 280 ms, none over;
-# Claude Haiku 5.5 14 worded and 23 refused by the judge. DESIGN.md, Recording of 2026-11-18, has the detail.
+# On this app's own spans (render:bakeoff, 2026-11-18, the read-back's goal asking for a summary in the line's
+# own words): 39 tried, 36 worded, 1 the message's own words, 2 refused by the judge (0.55 and 0.56, the
+# maintainer's example); wording p50 763 ms, p95 1496 ms, 5 of 18 over the 900 ms call budget (a line over it
+# is said with the message's own words). DESIGN.md, the render model moved to Meta's Muse Ember, has the detail.
 model:
   provider: meta
   id: muse-ember-1.0

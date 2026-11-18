@@ -66,7 +66,7 @@ describe('the read-back and the inbox', () => {
     expect(Object.keys(lines)).toEqual(['confirm_take_message']);
     expect(lines.confirm_take_message!.spans).toEqual({
       // Spoken to the caller: their "I" said as "you", the recipient's name allowed for a pronoun that means them.
-      summary: { from: 'message', goal: "Fill in the blank for this text with the summary, repeating the caller's words back to them in a way that reflects a secretary reading back the message they left.", words: 30, speaks: 'to-caller', names: ['recipient'] },
+      summary: { from: 'message', goal: "Fill in the blank with a short summary of the message the caller left, in your own words and spoken to the caller, the way a secretary reads back the gist of a message to the person who left it, never their exact words.", words: 30, speaks: 'to-caller', names: ['recipient'] },
     });
     expect(app.generated?.prescribed).toContain('message_taken');
   });
