@@ -28,7 +28,7 @@ export const JUDGE_EVAL_USAGE = [
   '  records what the cassette lacks with the decision model\'s key (TYPESAFE_API_KEY, or JEV_PROVIDER\'s; from the environment, ENV_FILE or a .env where it is run), refused in CI;',
   '  --replay: table the cassette alone, asking nothing; --out: also write the report as Markdown; --json: the results as JSON on stdout',
   '  --documents-ask added|both: answers from documents (speaks: documents) asked how much of each is its own (alone, or beside the drift question), as style.yaml judge.documentsAsk asks on a call',
-  '  --style <style.yaml>: an app\'s judge settings, its documentsAsk (unless --documents-ask says) and its compareFigures, asked as its calls ask them',
+  '  --style <style.yaml>: an app\'s judge settings, its documentsAsk (unless --documents-ask says) and its compareFigures, asked as its calls ask them, and its persona, who speaks each answer case that names none',
 ].join('\n');
 
 export interface JudgeEvalIo {
@@ -78,6 +78,8 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
   const out = args.out === undefined ? null : resolve(io.invokedFrom, args.out);
   // An app's judge settings (its style.yaml), read as a call reads them.
   let styleJudge: { documentsAsk?: string; compareFigures?: FigureComparison } = {};
+  // Its persona, too: who speaks each answer case that names none (JudgeCase.persona), as a call tells the judge.
+  let stylePersona: string | undefined;
   if (args.style !== undefined) {
     const path = resolve(io.invokedFrom, args.style);
     const parsed = styleSchema.safeParse(parseYaml(readFileSync(path, 'utf8')) ?? {});
@@ -86,6 +88,7 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
       return 2;
     }
     const j = parsed.data.judge;
+    stylePersona = parsed.data.persona;
     styleJudge = { ...(j?.documentsAsk !== undefined ? { documentsAsk: j.documentsAsk } : {}), ...(j?.compareFigures !== undefined ? { compareFigures: { ...j.compareFigures, refuseAt: j.compareFigures.refuseAt ?? COMPARE_FIRE } } : {}) };
   }
   const documentsAsk = args['documents-ask'] ?? styleJudge.documentsAsk ?? 'drift';
@@ -124,7 +127,7 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
   }
   let cases;
   try {
-    cases = loadJudgeCases(casesFile);
+    cases = loadJudgeCases(casesFile).map((c) => (c.persona === undefined && stylePersona !== undefined && (c.speaks === 'answer' || c.speaks === 'documents') ? { ...c, persona: stylePersona } : c));
   } catch (e) {
     io.err(`dialogwright render:judge-eval: ${e instanceof Error ? e.message : String(e)}`);
     return 1;

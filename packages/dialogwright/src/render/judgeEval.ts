@@ -81,6 +81,8 @@ const caseSchema = z.strictObject({
   span: z.string().min(1),
   goal: z.string().min(1).optional(),
   words: z.number().int().positive().optional(),
+  /** Who speaks an answer case (speaks: answer or documents), as style.yaml's persona or a persona's says it; default the eval's --style persona, else a plain-spoken agent. */
+  persona: z.string().min(1).optional(),
   /** Other values of the frame's items (another recipient), the `conflict` check's. */
   conflicts: z.array(z.string().min(1)).optional(),
   note: z.string().min(1),
@@ -134,7 +136,7 @@ export function actOf(c: JudgeCase): SpanAct {
       content: c.content.split('\n\n').map((value) => ({ name: 'answer', value })),
       channel: 'voice',
       language: 'en-US',
-      style: { persona: 'a plain-spoken agent', words: c.words ?? DEFAULT_DOCUMENTS_WORDS, avoid: [] },
+      style: { persona: c.persona ?? 'a plain-spoken agent', words: c.words ?? DEFAULT_DOCUMENTS_WORDS, avoid: [] },
       answer: { question: c.question ?? '', from: 'sections', ...(c.earlier !== undefined ? { earlier: c.earlier } : {}) },
     };
   }
@@ -146,7 +148,7 @@ export function actOf(c: JudgeCase): SpanAct {
       content: [{ name: 'answer', value: c.content }],
       channel: 'voice',
       language: 'en-US',
-      style: { persona: 'a plain-spoken agent', words: c.words ?? answerWordBudget(wordCount(c.content)), avoid: [] },
+      style: { persona: c.persona ?? 'a plain-spoken agent', words: c.words ?? answerWordBudget(wordCount(c.content)), avoid: [] },
       answer: { question: c.question ?? '' },
     };
   }
@@ -420,7 +422,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
       ? [`The judge's latency, timed on the ${report.latency.measured} requests this run sent it (the connection opened first; answers replayed from the cassette are not timed): p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording (default ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.voice} ms by voice, ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.chat} ms in a chat); a judge that answers later leaves the fixed text said.`, '']
       : []),
     ...(all.some((r) => r.case.speaks === 'documents')
-      ? ['Documents cases (speaks: documents): an answer worded for the caller\'s question from sections of approved documents (`content`, each section as `Heading: text`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, 60 unless the case sets one, avoid, a figure the sections do not have); stub: stubDocumentsDrift; judge: the decision model asked renderDocumentsDriftQuestion with the state a call sends (the goal, the wording heard in its line, the sections and the question).', '']
+      ? ['Documents cases (speaks: documents): an answer worded for the caller\'s question from sections of approved documents (`content`, each section as `Heading: text`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, 60 unless the case sets one, avoid, a figure the sections do not have); stub: stubDocumentsDrift; judge: the decision model asked renderDocumentsDriftQuestion with the state a call sends (the goal, who speaks, the wording heard in its line, the sections and the question).', '']
       : []),
     ...(all.some((r) => r.case.speaks === 'value')
       ? ['Value cases (speaks: value): a text value the agent model gave (`span`) for the caller\'s words it cites (`content`); data checks: the text slot\'s agent-mode check (a web address the words do not have; with figures: cited, a figure too; a value that is its words is not judged); stub: stubAgentValue, following the case\'s figures; judge: the decision model asked renderAgentValueQuestion with the state judgeTextValues sends (the field, its goal, the other fields, the value and the words).', '']

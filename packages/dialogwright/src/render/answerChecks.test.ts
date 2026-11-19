@@ -126,11 +126,11 @@ describe('checkAnswer: the wording held to the passage\'s data and shape', () =>
 });
 
 describe('the answer drift judge', () => {
-  it('is asked one question, with the goal, the passage, the question, the wording and the sentence it is heard in, and nothing else', () => {
+  it('is asked one question, with the goal, who speaks, the passage, the question, the wording and the sentence it is heard in, and nothing else', () => {
     const q = renderAnswerDriftQuestion()[ANSWER_DRIFT_QUESTION_ID]!;
     expect(q.type).toBe('noul');
     expect(renderAnswerDriftState(act(), 'Prescriptions are not covered by this plan.')).toEqual({
-      answer: { goal: act().goal, said: 'Prescriptions are not covered by this plan.', sentence: 'Prescriptions are not covered by this plan.', passage: PASSAGE, question: 'do you pay for prescriptions' },
+      answer: { goal: act().goal, speaker: act().style.persona, said: 'Prescriptions are not covered by this plan.', sentence: 'Prescriptions are not covered by this plan.', passage: PASSAGE, question: 'do you pay for prescriptions' },
     });
   });
 
