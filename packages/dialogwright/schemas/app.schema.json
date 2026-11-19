@@ -1182,6 +1182,33 @@
                 }
               ]
             },
+            "script": {
+              "description": "A script of questions to run through, for whoever tests the line: a button that sends the next one as the person's message (with how far along it is, \"3 of 20\"), and the whole list, each sent with a click. It starts again at the first whenever a new chat starts (a choice changed). Default: none.",
+              "type": "object",
+              "properties": {
+                "label": {
+                  "description": "What the list is, beside its buttons. Default: Test questions.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "questions": {
+                  "minItems": 1,
+                  "maxItems": 60,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": "The questions, in the order they are run through."
+                }
+              },
+              "required": [
+                "questions"
+              ],
+              "additionalProperties": false
+            },
             "about": {
               "description": "Sections under the conversation, each a heading and its text in the chat formatting: what the line does and how (\"How answers are checked\"). Default: none.",
               "minItems": 1,

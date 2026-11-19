@@ -110,6 +110,26 @@ describe('the chat page\'s parts', () => {
     expect(one).toContain('var choice = {"key":"plan"');
     expect(one).not.toContain('data-key=');
   });
+
+  it('draws a script of questions to run through: the next one as a button, how far along, the whole list, attached to each chat mounted', () => {
+    const base = { name: 'Acme', logo: null, colors: {}, starters: ['Hi'], phone: null, chatPath: '/chat', lang: 'en' };
+    const script = { label: 'Test <questions>', questions: ['What are your hours?', 'Can I book for "Tuesday"?'] };
+    const html = chatPageHtml({ ...base, script });
+    expect(html).toContain('<section class="script" aria-label="Test &lt;questions&gt;">');
+    expect(html).toContain('<li><button type="button" class="script-q" data-i="0">What are your hours?</button></li><li><button type="button" class="script-q" data-i="1">Can I book for &quot;Tuesday&quot;?</button></li>');
+    expect(html.indexOf('<section class="script"')).toBeLessThan(html.indexOf('<main id="talk">'));
+    // The questions go to the page's script as JSON; it is defined before the chat is mounted, which attaches to it.
+    expect(html).toContain('var questions = ["What are your hours?","Can I book for \\"Tuesday\\"?"];');
+    expect(html.indexOf('window.dwScript = ')).toBeLessThan(html.indexOf('DialogWright.mountConversation('));
+    expect(html).toContain('if (window.dwScript) window.dwScript.attach(conversation);');
+    expect(html).toContain('conversation.send(questions[i]);');
+    // With one choice and with a list, each new chat is attached too (and starts the script again).
+    expect(chatPageHtml({ ...base, script, choose: { key: 'plan', label: 'Plan', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } })).toContain('if (window.dwScript) window.dwScript.attach(conversation);');
+    expect(chatPageHtml({ ...base, script, choose: [{ key: 'plan', label: 'Plan', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] }] })).toContain('if (window.dwScript) window.dwScript.attach(conversation);');
+    // No script: none of it.
+    expect(chatPageHtml(base)).not.toContain('class="script"');
+    expect(chatPageHtml(base)).not.toContain('window.dwScript = ');
+  });
 });
 
 const TARGETS = { MAIN_LINE: '+15555550101', PRIORITY_LINE: '+15555550102', CALLBACK_DESK: '+15555550103', SECURITY_DESK: '+15555550104' };

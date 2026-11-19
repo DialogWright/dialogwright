@@ -107,6 +107,8 @@ export interface ChatPageContent {
   lang: string;
   /** A choice above the conversation, as pills (app.yaml's chat.page.choose); a list of them, a row of pills each. */
   choose?: ChatPageChoice | readonly ChatPageChoice[];
+  /** A script of questions to run through (app.yaml's chat.page.script). */
+  script?: { readonly label: string; readonly questions: readonly string[] };
 }
 
 /** The page's HTML. */
@@ -131,7 +133,8 @@ export function chatPageHtml(c: ChatPageContent): string {
     ? ''
     : `<nav class="choose" aria-label="${escapeHtml(one.label)}"><span class="choose-label">${escapeHtml(one.label)}</span>${one.options.map((o, i) => `<button type="button" class="pill" data-value="${escapeHtml(o.value)}" aria-pressed="${i === 0 ? 'true' : 'false'}">${escapeHtml(o.label)}</button>`).join('')}</nav><p class="choose-detail" id="choose-detail"></p>`;
   const mount = one === undefined
-    ? `DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: ${inlineJson(c.starters)} });`
+    ? `var conversation = DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: ${inlineJson(c.starters)} });
+  if (window.dwScript) window.dwScript.attach(conversation);`
     : `(function () {
     var choice = ${inlineJson(one)};
     var starters = ${inlineJson(c.starters)};
@@ -148,6 +151,7 @@ export function chatPageHtml(c: ChatPageContent): string {
       var context = {};
       context[choice.key] = option.value;
       conversation = DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: option.starters || starters, context: context });
+      if (window.dwScript) window.dwScript.attach(conversation);
       if (!keep) { var q = new URLSearchParams(location.search); q.set(choice.key, option.value); history.replaceState(null, '', location.pathname + '?' + q.toString()); }
     }
     pills.forEach(function (p) { p.addEventListener('click', function () { if (p.getAttribute('aria-pressed') !== 'true') choose(p.getAttribute('data-value'), false); }); });
@@ -194,6 +198,7 @@ function choicesMount(c: ChatPageContent, choices: readonly ChatPageChoice[]): s
       if (conversation) conversation.destroy();
       talk.textContent = '';
       conversation = DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: own || starters, context: context });
+      if (window.dwScript) window.dwScript.attach(conversation);
       if (!keep) { var q = new URLSearchParams(location.search); choices.forEach(function (choice) { q.set(choice.key, chosen[choice.key]); }); history.replaceState(null, '', location.pathname + '?' + q.toString()); }
     }
     pills.forEach(function (p) { p.addEventListener('click', function () { if (p.getAttribute('aria-pressed') !== 'true') { chosen[p.getAttribute('data-key')] = p.getAttribute('data-value'); start(false); } }); });
@@ -203,9 +208,47 @@ function choicesMount(c: ChatPageContent, choices: readonly ChatPageChoice[]): s
   })();`;
 }
 
+/**
+ * A script of questions to run through (chat.page.script), for whoever tests the line: a button that sends the
+ * next one as the person's message, how far along it is, and the whole list, each sent with a click. The chat
+ * mounted is attached to it (dwScript.attach), and each new chat starts the script again at the first.
+ */
+function scriptHtml(script: { readonly label: string; readonly questions: readonly string[] } | undefined): { html: string; js: string } {
+  if (script === undefined) return { html: '', js: '' };
+  const html = `<section class="script" aria-label="${escapeHtml(script.label)}"><div class="script-row"><span class="choose-label">${escapeHtml(script.label)}</span><button type="button" class="pill script-next" id="script-next"></button><span class="script-count" id="script-count"></span><button type="button" class="pill script-all" id="script-all" aria-expanded="false">All</button></div><ol class="script-list" id="script-list" hidden>${script.questions.map((q, i) => `<li><button type="button" class="script-q" data-i="${i}">${escapeHtml(q)}</button></li>`).join('')}</ol></section>`;
+  const js = `window.dwScript = (function () {
+    var questions = ${inlineJson(script.questions)};
+    var next = document.getElementById('script-next');
+    var count = document.getElementById('script-count');
+    var all = document.getElementById('script-all');
+    var list = document.getElementById('script-list');
+    var at = 0;
+    var conversation = null;
+    function show() {
+      var done = at >= questions.length;
+      next.textContent = done ? 'Start over' : 'Ask: ' + questions[at];
+      count.textContent = done ? questions.length + ' of ' + questions.length : (at + 1) + ' of ' + questions.length;
+      Array.prototype.forEach.call(list.querySelectorAll('.script-q'), function (b) { b.setAttribute('aria-current', Number(b.getAttribute('data-i')) === at ? 'true' : 'false'); });
+    }
+    function ask(i) {
+      if (conversation === null || i >= questions.length) return;
+      conversation.send(questions[i]);
+      at = i + 1;
+      show();
+    }
+    next.addEventListener('click', function () { if (at >= questions.length) { at = 0; show(); } else ask(at); });
+    all.addEventListener('click', function () { var open = list.hidden; list.hidden = !open; all.setAttribute('aria-expanded', open ? 'true' : 'false'); });
+    Array.prototype.forEach.call(list.querySelectorAll('.script-q'), function (b) { b.addEventListener('click', function () { ask(Number(b.getAttribute('data-i'))); }); });
+    show();
+    return { attach: function (c) { conversation = c; at = 0; show(); } };
+  })();`;
+  return { html, js };
+}
+
 /** The page around its parts: the brand, the intro, the choices and their script, the conversation, a number to call and the about sections. */
 function pageHtml(c: ChatPageContent, choose: string, mount: string, parts: { own: string; intro: string; about: string; call: string; name: string }): string {
   const { own, intro, about, call, name } = parts;
+  const script = scriptHtml(c.script);
   return `<!doctype html>
 <html lang="${escapeHtml(c.lang)}">
 <head>
@@ -241,6 +284,14 @@ function pageHtml(c: ChatPageContent, choose: string, mount: string, parts: { ow
   .pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .choose-detail { text-align: center; max-width: 640px; margin: 4px auto 14px; padding: 0 16px; font-size: .9rem; color: color-mix(in srgb, var(--page-fg) 70%, var(--page-bg)); min-height: 1.2em; }
+  .script { max-width: 760px; margin: 0 auto 14px; padding: 0 16px; }
+  .script-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+  .script-next { max-width: min(520px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-color: var(--accent); }
+  .script-count { font-size: .85rem; color: color-mix(in srgb, var(--page-fg) 65%, var(--page-bg)); }
+  .script-list { margin: 10px auto 0; padding-left: 1.6em; max-width: 640px; columns: 2 280px; font-size: .9rem; }
+  .script-list li { margin: 2px 0; break-inside: avoid; }
+  .script-q { font: inherit; text-align: left; background: none; border: none; padding: 2px 0; color: var(--page-fg); cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--page-fg) 30%, transparent); }
+  .script-q[aria-current="true"] { font-weight: 600; text-decoration-color: var(--accent); }
   .call { display: block; width: fit-content; margin: 22px auto 0; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--accent); color: var(--page-fg); text-decoration: none; font-weight: 600; }
   .call span { font-weight: 400; color: color-mix(in srgb, var(--page-fg) 70%, var(--page-bg)); }
   .about { max-width: 760px; margin: 40px auto 0; padding: 0 16px; line-height: 1.55; }
@@ -261,12 +312,14 @@ function pageHtml(c: ChatPageContent, choose: string, mount: string, parts: { ow
   ${intro}
 </header>
 ${choose}
+${script.html}
 <main id="talk"></main>
 ${call}
 ${about}
 <footer>${name}</footer>
 <script src="/widget.js"></script>
 <script>
+  ${script.js}
   ${mount}
 </script>
 </body>
@@ -337,6 +390,7 @@ export function chatPageRoutes(deps: ChatPageDeps): AppRoutes {
     chatPath: deps.chatPath,
     lang: app.locales?.default ?? 'en',
     ...(page?.choose !== undefined ? { choose: page.choose } : {}),
+    ...(page?.script !== undefined ? { script: page.script } : {}),
   });
   const route: AppRoute = {
     label: 'chat page',

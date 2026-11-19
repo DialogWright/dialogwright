@@ -682,6 +682,17 @@ export const appSchema = z
               ])
               .optional()
               .describe('A choice above the conversation, as pills, or a list of up to three, each its own row: the one chosen in each is sent as the chat\'s start context (chat.<key>), and choosing another in any row ends the chat and starts a new one with every value, so nothing said under one choice is read under the next; the address keeps each (?<key>=<value>&...). The app reads each as call data (callData: { <name>: { from: chat.<key> } }). An option\'s starters are taken from the first choice whose chosen option gives them. Default: none.'),
+            script: z
+              .strictObject({
+                label: text().max(40, { error: 'is too long: at most 40 characters' }).optional().describe('What the list is, beside its buttons. Default: Test questions.'),
+                questions: z
+                  .array(text().max(200, { error: 'is too long: at most 200 characters' }), { error: 'must be a list of questions' })
+                  .min(1, { error: 'must give at least one question' })
+                  .max(60, { error: 'has more than sixty: a page shows at most sixty' })
+                  .describe('The questions, in the order they are run through.'),
+              })
+              .optional()
+              .describe('A script of questions to run through, for whoever tests the line: a button that sends the next one as the person\'s message (with how far along it is, "3 of 20"), and the whole list, each sent with a click. It starts again at the first whenever a new chat starts (a choice changed). Default: none.'),
             about: z
               .array(
                 z.strictObject({

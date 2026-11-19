@@ -1194,6 +1194,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
       ...(a.chat.page.phone !== undefined ? { phone: a.chat.page.phone.replace(/^env\./, '') } : {}),
       ...(a.chat.page.about !== undefined ? { about: a.chat.page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
       ...(a.chat.page.choose !== undefined ? { choose: chatChoicesOf(a.chat.page.choose) } : {}),
+      ...(a.chat.page.script !== undefined ? { script: { label: a.chat.page.script.label ?? 'Test questions', questions: [...a.chat.page.script.questions] } } : {}),
     } } : {}),
   });
   put(app, 'waiting', a.waiting === undefined ? undefined : {

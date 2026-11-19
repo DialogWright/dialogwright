@@ -1166,6 +1166,8 @@ export interface ChatPageConfig {
    * in the start context; one given as an object is the one row it always was.
    */
   readonly choose?: ChatPageChoice | readonly ChatPageChoice[];
+  /** A script of questions to run through (app.yaml's chat.page.script): a button for the next, and the list. */
+  readonly script?: { readonly label: string; readonly questions: readonly string[] };
 }
 
 /** A chat page's choice (app.yaml's chat.page.choose): the start context key it sets, its label, and its options. */
