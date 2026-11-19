@@ -105,10 +105,22 @@ export const FIGURES: Readonly<Record<'symbols' | 'words', string>> = {
   words: 'write amounts, percentages and other numbers in words (150 dollars, 20 percent), as they are spoken',
 };
 
+/**
+ * The description a turn is worded with: the next of the style's `personas` by the call's turn number, so
+ * a replay says the same; the one `persona` where there is no list.
+ */
+export function personaOfTurn(style: Pick<RenderStyle, 'persona' | 'personas'>, turnIndex: number): string {
+  const list = style.personas;
+  if (list === undefined || list.length === 0) return style.persona;
+  return list[((turnIndex % list.length) + list.length) % list.length]!;
+}
+
 /** style.yaml with its defaults filled in. */
 export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
   return {
-    persona: style?.persona ?? DEFAULT_PERSONA,
+    persona: (typeof style?.persona === 'string' ? style.persona : style?.persona?.[0]) ?? DEFAULT_PERSONA,
+    // Several, said in turn (personaOfTurn): only where style.yaml gives a list, so every other app's style is as it was.
+    ...(Array.isArray(style?.persona) ? { personas: [...style.persona] } : {}),
     words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat, ...(style?.words?.answer !== undefined ? { answer: style.words.answer } : {}) },
     avoid: [...(style?.avoid ?? [])],
     ...(style?.figures !== undefined ? { figures: FIGURES[style.figures] } : {}),

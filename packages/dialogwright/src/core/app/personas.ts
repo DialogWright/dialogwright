@@ -79,8 +79,10 @@ function generatedWith(g: GeneratedWording, overlay: PersonaOverlay): GeneratedW
     ...g,
     lines,
     style: {
-      ...g.style,
-      ...(style?.persona !== undefined ? { persona: style.persona } : {}),
+      // One description in place of the app's (its list too, where it has one), or several said in turn
+      // (RenderStyle.personas), the first of them the persona.
+      ...(style?.persona !== undefined ? withoutPersonas(g.style) : g.style),
+      ...(style?.persona !== undefined ? (typeof style.persona === 'string' ? { persona: style.persona } : { persona: style.persona[0]!, personas: [...style.persona] }) : {}),
       ...(words !== undefined
         ? {
             words: {
@@ -92,4 +94,10 @@ function generatedWith(g: GeneratedWording, overlay: PersonaOverlay): GeneratedW
         : {}),
     },
   };
+}
+
+/** A style without its list of descriptions said in turn: a persona's own description replaces them all. */
+function withoutPersonas<T extends { readonly personas?: readonly string[] }>(style: T): Omit<T, 'personas'> {
+  const { personas: _personas, ...rest } = style;
+  return rest;
 }

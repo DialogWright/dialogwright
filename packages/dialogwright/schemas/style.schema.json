@@ -3,9 +3,22 @@
   "type": "object",
   "properties": {
     "persona": {
-      "description": "Who the agent sounds like, for the model (\"a calm, plain-spoken service agent\"). Default: a calm, plain-spoken agent.",
-      "type": "string",
-      "minLength": 1
+      "description": "Who the agent sounds like, for the model (\"a calm, plain-spoken service agent\"), and for the drift judge as who is speaking. A list of two to six is said in turn: each turn of the call is worded with the next description, by its turn number, so the answers of a character do not all open alike. Default: a calm, plain-spoken agent.",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "minItems": 2,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ]
     },
     "words": {
       "description": "The word budget of a generated line, per channel: a longer one is not said (its fixed line is).",

@@ -131,7 +131,7 @@ export function personaOverlayOf(persona: PersonaYaml): PersonaOverlay {
     ...(persona.style !== undefined
       ? {
           style: {
-            ...(persona.style.persona !== undefined ? { persona: persona.style.persona } : {}),
+            ...(persona.style.persona !== undefined ? { persona: typeof persona.style.persona === 'string' ? persona.style.persona : [...persona.style.persona] } : {}),
             ...(words !== undefined ? { words: { ...(words.voice !== undefined ? { voice: words.voice } : {}), ...(words.chat !== undefined ? { chat: words.chat } : {}) } } : {}),
           },
         }

@@ -1852,7 +1852,7 @@ export interface App {
  */
 export interface PersonaOverlay {
   /** style.yaml's persona and word budgets for this persona: each given replaces the app's. */
-  readonly style?: { readonly persona?: string; readonly words?: { readonly voice?: number; readonly chat?: number } };
+  readonly style?: { readonly persona?: string | readonly string[]; readonly words?: { readonly voice?: number; readonly chat?: number } };
   /** A generated span's word budget, by prompt id and span. */
   readonly spans?: Readonly<Record<string, Readonly<Record<string, { readonly words: number }>>>>;
   /** The lines this persona words, by prompt id: its text, its other wordings, its chat version. */
@@ -1938,7 +1938,14 @@ export interface GeneratedSpan {
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
 export interface RenderStyle {
+  /** Who the agent sounds like, as the model is told it: the first of `personas` where there are several. */
   readonly persona: string;
+  /**
+   * Several descriptions said in turn (style.yaml's or a persona's `persona` given as a list): each turn of
+   * the call is worded with the next, by its turn number (personaOfTurn), so a character's answers do not
+   * all open alike; the judge is told the one that turn used. Absent: `persona` alone.
+   */
+  readonly personas?: readonly string[];
   /**
    * The word budget per channel; `answer`, where style.yaml sets it, the budget of an agent reply that
    * answers from the facts (AgentAnswer.fromFacts) on either channel (absent: the channel's and half again).

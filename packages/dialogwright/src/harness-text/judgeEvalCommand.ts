@@ -88,7 +88,8 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
       return 2;
     }
     const j = parsed.data.judge;
-    stylePersona = parsed.data.persona;
+    // A list said in turn: its first, as a call's first turn tells the judge.
+    stylePersona = typeof parsed.data.persona === 'string' ? parsed.data.persona : parsed.data.persona?.[0];
     styleJudge = { ...(j?.documentsAsk !== undefined ? { documentsAsk: j.documentsAsk } : {}), ...(j?.compareFigures !== undefined ? { compareFigures: { ...j.compareFigures, refuseAt: j.compareFigures.refuseAt ?? COMPARE_FIRE } } : {}) };
   }
   const documentsAsk = args['documents-ask'] ?? styleJudge.documentsAsk ?? 'drift';

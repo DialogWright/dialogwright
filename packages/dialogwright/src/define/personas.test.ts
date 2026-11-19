@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { WEB_CHAT } from '../channel/caps';
 import { startEvent, textEvent, withCallData } from '../channel/events';
 import { personaApp } from '../core/app/personas';
+import { personaOfTurn } from '../render/config';
 import { appOf, registerApp, resetAppsForTest } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { newSession } from '../core/session';
@@ -219,6 +220,26 @@ describe('personaApp: the app as a persona words it', () => {
     expect(calm.generated!.lines.ask_recipient).toBe(message.generated!.lines.ask_recipient);
     expect(calm.generated!.prescribed).toBe(message.generated!.prescribed);
     expect(calm.prompts.manifest).toEqual(message.prompts.manifest);
+  });
+
+  it('a persona\'s descriptions given as a list are said in turn, by the turn number; one description replaces the app\'s list', () => {
+    const message = defineApp(folder(MESSAGE_DIR, {
+      'app.yaml': withPersonas('    calm: personas/calm.yaml\n    brisk: personas/brisk.yaml\n'),
+      'style.yaml': (text: string) => text.replace(/^persona:.*$/m, 'persona: [a warm clerk, a cheerful clerk]'),
+      'personas/calm.yaml': `${SCHEMA_LINE}style:\n  persona: [a slow librarian, a gentle librarian, a quiet librarian]\n`,
+      'personas/brisk.yaml': `${SCHEMA_LINE}style:\n  persona: a brisk librarian\n`,
+    }), messageCode);
+    // The app's own list: the first is the persona, and each turn takes the next.
+    expect(message.generated!.style).toMatchObject({ persona: 'a warm clerk', personas: ['a warm clerk', 'a cheerful clerk'] });
+    expect([0, 1, 2, 3].map((t) => personaOfTurn(message.generated!.style, t))).toEqual(['a warm clerk', 'a cheerful clerk', 'a warm clerk', 'a cheerful clerk']);
+    const calm = personaApp(message, 'calm').generated!.style;
+    expect(calm).toMatchObject({ persona: 'a slow librarian', personas: ['a slow librarian', 'a gentle librarian', 'a quiet librarian'] });
+    expect([0, 1, 2, 3, 4].map((t) => personaOfTurn(calm, t))).toEqual(['a slow librarian', 'a gentle librarian', 'a quiet librarian', 'a slow librarian', 'a gentle librarian']);
+    // One description in a persona replaces the app's list whole.
+    const brisk = personaApp(message, 'brisk').generated!.style;
+    expect(brisk.persona).toBe('a brisk librarian');
+    expect(brisk.personas).toBeUndefined();
+    expect(personaOfTurn(brisk, 3)).toBe('a brisk librarian');
   });
 });
 

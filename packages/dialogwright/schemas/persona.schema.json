@@ -7,9 +7,22 @@
       "type": "object",
       "properties": {
         "persona": {
-          "description": "Who the agent sounds like for this persona, as the model that words a generated line is told it, in place of style.yaml's `persona`.",
-          "type": "string",
-          "minLength": 1
+          "description": "Who the agent sounds like for this persona, as the model that words a generated line is told it (and the judge, who is speaking), in place of style.yaml's `persona`. A list of two to six is said in turn, each turn of the call worded with the next.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "minItems": 2,
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
         },
         "words": {
           "description": "The word budgets it names, each in place of style.yaml's; the others are the app's. A knowledge answer's budget is its span's (spans).",

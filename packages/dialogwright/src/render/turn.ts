@@ -11,7 +11,7 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { ADDED_FIRE, addedReading, compareQuestions, compareReading, compareState, DRIFT_ALONE_FIRE, figuresToCompare, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_EARLIER_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
+import { personaOfTurn, answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_EARLIER_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
@@ -219,7 +219,7 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
         content: [{ name: span.from, value: content }],
         channel,
         language,
-        style: { persona: style.persona, words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
+        style: { persona: personaOfTurn(style, input.result.session.turnIndex), words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
         ...(toCaller ? { speaks: 'to-caller' as const } : {}),
         ...(names.length > 0 ? { names } : {}),
       };
@@ -278,7 +278,7 @@ function planAnswer(app: App, input: RenderInput, line: GeneratedLine, name: str
     content: [{ name: KB_ANSWER_LINE_VAR, value: passage.answer }],
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: span.sizedToPassage === true ? answerWordBudget(wordCount(passage.answer)) : span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
+    style: { persona: personaOfTurn(style, input.result.session.turnIndex), words: span.sizedToPassage === true ? answerWordBudget(wordCount(passage.answer)) : span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
     answer: { question },
   };
   return { ...base, act };
@@ -328,7 +328,7 @@ function planDocumentsAnswer(app: App, input: RenderInput, line: GeneratedLine, 
     content: sections.map((value) => ({ name: KB_ANSWER_LINE_VAR, value })),
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
+    style: { persona: personaOfTurn(style, input.result.session.turnIndex), words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
     answer: { question, from: 'sections', ...(said.vars[KB_EARLIER_VAR] !== undefined && said.vars[KB_EARLIER_VAR]!.trim() !== '' ? { earlier: said.vars[KB_EARLIER_VAR]! } : {}) },
   };
   return { ...base, act };
@@ -387,7 +387,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
     situations,
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: style.words[channel], avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
+    style: { persona: personaOfTurn(style, input.result.session.turnIndex), words: style.words[channel], avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
   };
   // The fixed line as the drift check reads it: each collected value left as its {placeholder}, the content apart.
   const judgeFixed = renderTemplate(template, Object.fromEntries(vars.map((v) => [v, from.has(v) ? `{${v}}` : (said.vars[v] ?? '')])));

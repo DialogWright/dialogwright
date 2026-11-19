@@ -44,7 +44,10 @@ export const personaSchema = z
   .strictObject({
     style: z
       .strictObject({
-        persona: text().optional().describe('Who the agent sounds like for this persona, as the model that words a generated line is told it, in place of style.yaml\'s `persona`.'),
+        persona: z
+          .union([text(), z.array(text(), { error: 'must be a description, or a list of them' }).min(2, { error: 'must give two at least, or be one description' }).max(6, { error: 'has more than six' })])
+          .optional()
+          .describe('Who the agent sounds like for this persona, as the model that words a generated line is told it (and the judge, who is speaking), in place of style.yaml\'s `persona`. A list of two to six is said in turn, each turn of the call worded with the next.'),
         words: z
           .strictObject({
             voice: budget(200, 'The most words a generated line may use on a call, in place of style.yaml\'s.'),

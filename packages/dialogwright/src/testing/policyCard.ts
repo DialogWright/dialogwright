@@ -862,7 +862,7 @@ function personasSection(app: App): string[] {
       const also = parts.length === 0 ? '' : line.text === undefined ? ` (its ${parts.join(' and ')} only)` : ` (and its ${parts.join(' and ')})`;
       return `${code(id)}${also}`;
     });
-    out.push(`| ${code(value)} | ${overlay.style?.persona !== undefined ? cell(overlay.style.persona) : 'the app\'s'} | ${budgets.length === 0 ? 'the app\'s' : budgets.join('; ')} | ${lines.length === 0 ? 'none' : lines.join(', ')} |`);
+    out.push(`| ${code(value)} | ${overlay.style?.persona !== undefined ? (typeof overlay.style.persona === 'string' ? cell(overlay.style.persona) : overlay.style.persona.map((p, i) => `${i + 1}. ${cell(p)}`).join(' <br> ') + ' (said in turn)') : 'the app\'s'} | ${budgets.length === 0 ? 'the app\'s' : budgets.join('; ')} | ${lines.length === 0 ? 'none' : lines.join(', ')} |`);
   }
   return out;
 }

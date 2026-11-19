@@ -30,9 +30,10 @@ export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;
 
 export const styleSchema = z
   .strictObject({
-    persona: text()
+    persona: z
+      .union([text(), z.array(text(), { error: 'must be a description, or a list of them' }).min(2, { error: 'must give two at least, or be one description' }).max(6, { error: 'has more than six' })])
       .optional()
-      .describe('Who the agent sounds like, for the model ("a calm, plain-spoken service agent"). Default: a calm, plain-spoken agent.'),
+      .describe('Who the agent sounds like, for the model ("a calm, plain-spoken service agent"), and for the drift judge as who is speaking. A list of two to six is said in turn: each turn of the call is worded with the next description, by its turn number, so the answers of a character do not all open alike. Default: a calm, plain-spoken agent.'),
     words: z
       .strictObject({
         voice: z.int({ error: 'must be a whole number' }).min(3, { error: 'must be at least 3' }).max(200, { error: 'must be at most 200' }).optional().describe(`The most words a generated line may use on a call. Default ${DEFAULT_WORDS.voice}.`),
