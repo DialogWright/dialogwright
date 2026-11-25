@@ -42,8 +42,8 @@ const turns = (root: ShadowRoot, kind: string) => [...root.querySelectorAll(`.tu
 
 describe('the full-size conversation', () => {
   it('connects at once, to the app on a server of several, and says it is online', () => {
-    const { f, root, open } = mount({ app: 'farragut-shine' });
-    expect(f.made[0]!.endpoint).toBe('wss://x/chat/farragut-shine');
+    const { f, root, open } = mount({ app: 'example-shop' });
+    expect(f.made[0]!.endpoint).toBe('wss://x/chat/example-shop');
     expect(root.querySelector('.state')!.textContent).toBe('Connecting...');
     expect(root.querySelector<HTMLTextAreaElement>('textarea')!.disabled).toBe(true);
     open();
