@@ -55,9 +55,26 @@
             "type": "boolean"
           },
           "callingFrom": {
-            "description": "The number the caller calls from (E.164): the chat names it in its start's context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none.",
+            "description": "The number the caller calls from (E.164): the chat names it in its start's context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none (on the voice path, the call comes from a 555 number of the harness's own).",
             "type": "string",
             "pattern": "^\\+\\d{8,15}$"
+          },
+          "voice": {
+            "description": "How the caller behaves on the voice path (pnpm eval --channel voice): the caller cuts in on long replies; the caller's longer turns reach the line in two parts, as a recognizer that ended a turn early. Ignored over the chat wire.",
+            "type": "object",
+            "properties": {
+              "interrupts": {
+                "default": false,
+                "description": "The caller cuts in on long replies: on a reply of more than 30 words, once 40% of its words have played.",
+                "type": "boolean"
+              },
+              "fragments": {
+                "default": false,
+                "description": "The caller's longer turns (more than 8 words) reach the line in two parts, as a recognizer that ended a turn early.",
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [

@@ -55,4 +55,13 @@ describe('modelCaller', () => {
     const model = fakeModel([[{ type: 'error', kind: 'http', detail: 'overloaded' }]]);
     await expect(modelCaller(model, new Budget(1, () => {}))(persona, [])).rejects.toThrow(/overloaded/);
   });
+
+  it('on the voice path, plays a caller on the phone; over the chat wire, one who types', async () => {
+    const said = (channel?: 'voice'): Promise<string> => {
+      const model = fakeModel([[{ type: 'text', delta: 'Hi.' }, done]]);
+      return modelCaller(model, new Budget(1, () => {}), channel !== undefined ? { channel } : {})(persona, []).then(() => model.requests[0]!.system);
+    };
+    expect(await said('voice')).toContain('phoned a business');
+    expect(await said()).toContain('by text chat');
+  });
 });

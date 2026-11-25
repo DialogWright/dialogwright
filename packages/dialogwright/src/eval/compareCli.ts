@@ -11,9 +11,10 @@ import { Budget } from './budget';
 import { envOf, NO_JUDGE, registerFolderApp, runEval, type EvalIo } from './cli';
 import { compareMarkdown, compareModels, DEFAULT_BARS, parseCandidate, type CandidateResult } from './compare';
 import { loadPersonas, type Persona } from './personas';
+import { EVAL_CHANNELS, type EvalChannel } from './server';
 
 export const COMPARE_USAGE = [
-  'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--parallel N] [--out <dir>] [--stub-decision] [--publish]',
+  'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--parallel N] [--out <dir>] [--stub-decision] [--channel chat|voice] [--publish]',
   '  a converse app\'s models compared on its simulated callers (pnpm eval for each), cheapest first: --candidates in the order given, then --expensive only if none cleared the bars',
   `  the bars: first sentence median <= ${DEFAULT_BARS.firstWordMsMedian} ms, p95 <= ${DEFAULT_BARS.firstWordMsP95} ms; timeouts <= ${DEFAULT_BARS.timeoutRate * 100}% of turns; cooperative calls done correctly >= ${DEFAULT_BARS.correctRate * 100}%; contradicted material claims (a price, a time, a policy that commits the business, a thing said to be done, that the business information or the call\'s own actions and results say otherwise of) <= ${DEFAULT_BARS.unsupportedClaims}; gaps in the business information are listed beside them, not counted`,
   '  once one clears every bar the rest are not run; --reference runs the expensive group at --reference-runs (default 1) per persona if the budget left exceeds its estimate',
@@ -21,6 +22,7 @@ export const COMPARE_USAGE = [
   '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-sonnet-5-5, --budget 45 (US dollars for the caller, the judge and every candidate, shared; the comparison stops once it is spent), --parallel 1',
   '  a candidate whose price is not known (converse/model/price.ts) is skipped, since the budget would under-count it',
   '  --judge none: no judge model is asked; each call waits for its verdict with its judge input beside it (<out>/<model>/judge-inputs/), so no candidate can clear before it is judged and every candidate runs, within the budget; dialogwright eval:rejudge <out> --verdicts <file> then gives the verdicts and the table',
+  '  --channel voice: each candidate\'s calls over the voice path (dialogwright eval --help says what it plays), default chat',
   '  writes each candidate\'s results into <out>/<model>/ and the table into <out>/comparison.md; --publish writes each candidate\'s summary.md as a page to commit (no per-call notes, names and numbers withheld). Refused in CI.',
 ].join('\n');
 
@@ -51,6 +53,7 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
         out: { type: 'string' },
         'stub-decision': { type: 'boolean', default: false },
         publish: { type: 'boolean', default: false },
+        channel: { type: 'string', default: 'chat' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -81,6 +84,11 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
     io.err(`dialogwright eval:compare: ${e instanceof Error ? e.message : String(e)}`);
     return 2;
   }
+  if (!(EVAL_CHANNELS as readonly string[]).includes(values.channel!)) {
+    io.err(`dialogwright eval:compare: --channel is one of ${EVAL_CHANNELS.join(', ')}\n${COMPARE_USAGE}`);
+    return 2;
+  }
+  const channel = values.channel as EvalChannel;
   const noJudge = values.judge === NO_JUDGE;
   for (const [flag, spec] of [['caller', values.caller!], ...(noJudge ? [] : [['judge', values.judge!] as const])] as const) {
     if (costUsd(spec, { inputTokens: 1, outputTokens: 1 }) === null) {
@@ -136,6 +144,7 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
           appDir, app, personas, runs: c.runs, parallel, port: 0, env, callerModel, judgeModel, decision, spend, outDir: join(outDir, slug(c.model)), comparisonFolder: slug(c.model),
           model: { default: c.model, ...(c.effort !== undefined ? { effort: c.effort } : {}) },
           ...(values.publish ? { publish: true } : {}),
+          ...(channel === 'voice' ? { channel } : {}),
         });
         return { summary: out.summary, planned: out.planned, stoppedByBudget: out.stoppedByBudget };
       },

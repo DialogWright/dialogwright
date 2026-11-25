@@ -32,11 +32,23 @@ export interface RunSummary {
   /** What else the line said that nothing supports but that commits the business to nothing; not counted against the bar. */
   benignClaims: number;
   repeatedQuestionsPerCall: number;
-  /** The first sentence of each reply, ms from the caller's words (chat: its first say_delta). */
+  /** The first sentence of each reply, ms from the caller's words (chat: its first say_delta; voice: its first text frame). */
   firstWordMsMedian: number;
   firstWordMsP90: number;
   firstWordMsP95: number;
   firstWordMsP99: number;
+  /**
+   * The calls over the voice path (pnpm eval --channel voice, eval/voiceDriver.ts), where the run has any: how many,
+   * the times the caller cut in on a reply, and the caller's turns sent in two parts (a recognizer that ended the
+   * turn early). Absent for a run over the chat wire alone, and for every run before the voice path.
+   */
+  voice?: { calls: number; cutIns: number; fragments: number };
+  /**
+   * The first sentence by channel, where the run has calls over the voice path: each channel's calls, and the
+   * median and p95 of their first sentences (on the voice path, from the caller's last final prompt to the line's
+   * first text frame).
+   */
+  firstWordByChannel?: Partial<Record<'chat' | 'voice', { calls: number; median: number; p95: number }>>;
   /** The caller's turns whose model requests were timed (the converse runtime's traces). */
   modelTurns: number;
   /**
@@ -170,6 +182,12 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
   const completable = verdicts.filter((r) => !endedBySim(r));
   const cooperative = completable.filter((r) => r.cooperative === true);
   const firstWords = results.flatMap((r) => r.call.firstWordMs);
+  const onVoice = results.filter((r) => r.call.channel === 'voice');
+  const firstWordOf = (rs: readonly RunResult[]): { calls: number; median: number; p95: number } => {
+    const ms = rs.flatMap((r) => r.call.firstWordMs);
+    return { calls: rs.length, median: percentile(ms, 0.5), p95: percentile(ms, 0.95) };
+  };
+  const onChat = results.filter((r) => r.call.channel !== 'voice');
   const costs = results.map((r) => r.agentCostUsd).filter((c): c is number => c !== null);
   const tokens = results.map((r) => r.agentTokens).filter((t): t is { inputTokens: number; outputTokens: number } => t !== undefined && t !== null);
   const turns = results.flatMap((r) => r.turns ?? []).filter((t) => t.requests.length > 0);
@@ -194,6 +212,12 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     firstWordMsP90: percentile(firstWords, 0.9),
     firstWordMsP95: percentile(firstWords, 0.95),
     firstWordMsP99: percentile(firstWords, 0.99),
+    ...(onVoice.length > 0
+      ? {
+          voice: { calls: onVoice.length, cutIns: onVoice.reduce((s, r) => s + (r.call.cutIns ?? 0), 0), fragments: onVoice.reduce((s, r) => s + (r.call.fragments ?? 0), 0) },
+          firstWordByChannel: { ...(onChat.length > 0 ? { chat: firstWordOf(onChat) } : {}), voice: firstWordOf(onVoice) },
+        }
+      : {}),
     modelTurns: turns.length,
     timeoutRate: turns.length === 0 ? null : share((t) => t.requests.some(timedOut) || (o.timeoutMs !== undefined && turnWouldTimeOut(t, o.timeoutMs))),
     wouldTimeout: Object.fromEntries(WOULD_TIMEOUT_MS.map((ms) => [String(ms), share((t) => turnWouldTimeOut(t, ms))])),

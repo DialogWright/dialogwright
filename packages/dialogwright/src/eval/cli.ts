@@ -15,11 +15,12 @@ import { REPO_ROOT } from '../define/home';
 import { fakeTextProvider } from '../texts/record';
 import { readEnvFile } from '../server/envFile';
 import { ClaimsCases } from './claimsCases';
-import { startEvalServer, type EvalModel, type EvalServer, type EvalStyle } from './server';
+import { EVAL_CHANNELS, startEvalServer, type EvalChannel, type EvalModel, type EvalServer, type EvalStyle } from './server';
 import { defaultTimeZone } from '../core/localDate';
 import { Budget } from './budget';
 import { modelCaller } from './caller';
 import { driveChat, type SimCall } from './chatDriver';
+import { CUT_IN_AT, CUT_IN_OVER_WORDS, driveVoice, FRAGMENT_GAP_MS, FRAGMENT_OVER_WORDS, SPEAKING_WORDS_PER_S } from './voiceDriver';
 import { actionsOfCall, agentCostOfCall, JUDGE_FAILED, judgeCall, modelUseOfCall, notJudged, type Judged } from './judge';
 import { summarize, type RunSummary } from './measures';
 import { isCooperative, loadPersonas, type Persona } from './personas';
@@ -52,8 +53,8 @@ export async function registerFolderApp(dir: string): Promise<HostedApp> {
 }
 
 export const EVAL_USAGE = [
-  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--claims-cases] [--publish]',
-  '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire,',
+  'usage: dialogwright eval <app dir> --personas <file> [--runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--model <provider>:<model>] [--effort minimal|low|medium|high|none] [--opener acknowledge] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced] [--stub-decision] [--claims-cases] [--channel chat|voice] [--publish]',
+  '  starts the app\'s server in this process (a temporary audit and trace folder, no text sent) and drives each persona --runs times over the chat wire (or the voice path, below),',
   '  a model playing the caller and a model judging the call (or none, below); writes results.jsonl and summary.md into --out (default eval-results/<timestamp>/) and prints the summary',
   '  writes run.json beside them too (the business text and the personas the calls were judged against), so the calls can be judged again with no call made (dialogwright eval:rejudge)',
   '  --judge none: no judge model is asked or paid for; each call is stored waiting for its verdict, with its judge input (exactly what the judge model would be given) in judge-inputs/<persona>-<run>.md, for judging by hand; dialogwright eval:rejudge <out> --verdicts <file> then gives the verdicts',
@@ -61,6 +62,7 @@ export const EVAL_USAGE = [
   '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
   '  a caller, judge or line model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
   '  the decision model (TYPESAFE_API_KEY) is required, as on a real line; --stub-decision runs with the heuristic stub instead, and the summary says so',
+  '  --channel voice (a converse app): each call over the voice path, the harness playing Twilio\'s carrier over the relay wire in text: each reply played at speaking pace, a persona\'s voice.interrupts cutting in on long replies and its voice.fragments sending its longer turns in two parts, as a recognizer that ended a turn early; the summary adds the cut-ins, the turns in two parts and the first sentence by channel (default chat)',
   '  --claims-cases: also writes claims-cases.jsonl into --out, what the check after speaking was sent for each reply it read and what it read (the business text, then one line per reply: the day, the call\'s actions, the reply, the reading), to measure other questions on the same replies (dialogwright converse:claims-eval); it holds what was said, so it is refused with --publish',
   '  --publish writes summary.md as a page to commit: no per-call notes, each material claim by its sentence alone, the personas\' names and phone numbers withheld (results.jsonl keeps every verdict whole)',
   '  the keys: from the environment, then the app\'s .env, then the repository\'s .env; never printed. Refused in CI.',
@@ -119,6 +121,8 @@ export interface EvalRun {
   comparisonFolder?: string;
   /** Write claims-cases.jsonl into outDir (--claims-cases): each reply the check after speaking read, with its input. */
   claimsCases?: boolean;
+  /** The wire each call goes over (--channel): the chat's (the default), or the voice path's (a converse app only). */
+  channel?: EvalChannel;
 }
 
 export interface EvalOutcome {
@@ -159,8 +163,10 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   });
   // A converse app: a server of its own for each call, on the app made fresh (eval/server.ts); a scripted app: one server for the run.
   const perCall = isConverseApp(app);
+  const voice = o.channel === 'voice';
+  if (voice && !perCall) throw new Error(`the voice path is for a converse app (app.yaml mode: converse); ${app.id} is a scripted app`);
   const cases = o.claimsCases === true ? new ClaimsCases(o.outDir) : null;
-  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, textProvider: fakeTextProvider(), ...(cases !== null ? { onClaimsRead: cases.onClaimsRead } : {}), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
+  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, ...(voice ? { channel: 'voice' as const } : {}), textProvider: fakeTextProvider(), ...(cases !== null ? { onClaimsRead: cases.onClaimsRead } : {}), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
   let shared: EvalServer | null = null;
   try {
     if (!perCall) shared = await serverFor();
@@ -181,8 +187,9 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   writeRunInfo(o.outDir, {
     app: app.id, business: businessText, personas: o.personas, callerModel: o.callerModel.id, decisionClient, runsPerPersona: o.runs,
     ...(lineWords !== undefined ? { lineModel: lineWords } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(o.style?.opener !== undefined ? { opener: o.style.opener } : {}),
+    ...(voice ? { channel: 'voice' as const } : {}),
   });
-  const caller = modelCaller(o.callerModel, spend);
+  const caller = modelCaller(o.callerModel, spend, { channel: voice ? 'voice' : 'chat' });
   const records: RunRecord[] = [];
   const plan = o.personas.flatMap((p) => Array.from({ length: o.runs }, (_, run) => ({ p, run })));
   let nextJob = 0;
@@ -193,7 +200,9 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     let server: EvalServer | null = shared;
     try {
       server ??= await serverFor();
-      call = await driveChat({ url: server.url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN, turnEnds: server.turnEnds });
+      call = voice
+        ? await driveVoice({ url: server.ws, serverHttp: server.http, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, turnEnds: server.turnEnds })
+        : await driveChat({ url: server.url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN, turnEnds: server.turnEnds });
     } catch (e) {
       failures.push(`call failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
     } finally {
@@ -239,11 +248,21 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     rmSync(work, { recursive: true, force: true });
   }
   const limits = [
-    'A chat carries a caller number only where the persona names one (callingFrom): a converse app takes it from the chat\'s context on the harness\'s own server (never a deployed setting); any other persona who would be recognized by the number they call from can only name who they are.',
+    voice
+      ? 'Each call came from the number the persona calls from (callingFrom), or from a 555 number of the harness\'s own.'
+      : 'A chat carries a caller number only where the persona names one (callingFrom): a converse app takes it from the chat\'s context on the harness\'s own server (never a deployed setting); any other persona who would be recognized by the number they call from can only name who they are.',
     ...(perCall ? ['Each call ran on a server of its own, on the app made fresh: no call saw what another booked.'] : ['Every call ran on one server, so a later call sees what earlier ones booked.']),
     ...(timeoutMs !== undefined ? [`Each model request ran to its end (up to 30 s) and its true time was recorded; the timeouts are the turns that would have reached the line's own ${timeoutMs} ms (no first event within half of it, or not done within it), worked out from those times.`] : []),
-    'The first sentence is timed from the caller\'s words being sent to the first sentence of the reply arriving over the chat (its say_delta): no speech, no network to a phone.',
-    'A reply is every line the server says until 2 s pass with none (the chat wire has no end-of-turn marker), so a filler followed by an answer slower than that is split across two caller turns.',
+    ...(voice
+      ? [
+          'Each call went over the voice path in text: the harness played Twilio\'s carrier over the relay wire, with no speech recognition, no text-to-speech and no network to a phone; what a real carrier does on a call (its recognizer, its playback, its reports) is not measured.',
+          `Each reply was played at ${SPEAKING_WORDS_PER_S} words a second from its first frame, and the caller answered once it had played; a caller who cuts in (voice.interrupts) did so once ${CUT_IN_AT * 100}% of a reply of more than ${CUT_IN_OVER_WORDS} words had played, and a fragmenting caller's (voice.fragments) turns of more than ${FRAGMENT_OVER_WORDS} words reached the line in two parts ${FRAGMENT_GAP_MS} ms apart.`,
+          'The first sentence is timed from the caller\'s last final prompt to the line\'s first text frame.',
+        ]
+      : [
+          'The first sentence is timed from the caller\'s words being sent to the first sentence of the reply arriving over the chat (its say_delta): no speech, no network to a phone.',
+          'A reply is every line the server says until 2 s pass with none (the chat wire has no end-of-turn marker), so a filler followed by an answer slower than that is split across two caller turns.',
+        ]),
     ...(o.judgeModel === null
       ? [`No judge was asked (--judge none): each call held waits for its verdict, its judge input in ${JUDGE_INPUTS}/. The caller is a model.`]
       : ['The caller and the judge are models: the judge\'s reading is a judgement, not a guarantee.']),
@@ -294,6 +313,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
         'stub-decision': { type: 'boolean', default: false },
         publish: { type: 'boolean', default: false },
         'claims-cases': { type: 'boolean', default: false },
+        channel: { type: 'string', default: 'chat' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -341,6 +361,11 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     return 2;
   }
   const opener = values.opener as Opener | undefined;
+  if (!(EVAL_CHANNELS as readonly string[]).includes(values.channel!)) {
+    io.err(`dialogwright eval: --channel is one of ${EVAL_CHANNELS.join(', ')}\n${EVAL_USAGE}`);
+    return 2;
+  }
+  const channel = values.channel as EvalChannel;
   if (values.effort !== undefined && values.model === undefined) {
     io.err(`dialogwright eval: --effort goes with --model\n${EVAL_USAGE}`);
     return 2;
@@ -386,6 +411,10 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     io.err('dialogwright eval: --model and --opener are for a converse app (app.yaml mode: converse), whose agent.yaml names its model and persona');
     return 2;
   }
+  if (channel === 'voice' && !isConverseApp(app)) {
+    io.err('dialogwright eval: --channel voice is for a converse app (app.yaml mode: converse): the voice path\'s turns are the converse runtime\'s');
+    return 2;
+  }
   const own = lineModelOf(app);
   if (values.model === undefined && own !== null && costUsd(own, { inputTokens: 1, outputTokens: 1 }) === null && !values['allow-unpriced']) {
     io.err(`dialogwright eval: no price is known for the line's model ${own}, so the budget would under-count it: add its price (converse/model/price.ts) or pass --allow-unpriced`);
@@ -406,6 +435,7 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
       ...(opener !== undefined ? { style: { opener } } : {}),
       ...(values.publish ? { publish: true } : {}),
       ...(values['claims-cases'] ? { claimsCases: true } : {}),
+      ...(channel === 'voice' ? { channel } : {}),
     });
   } catch (e) {
     io.err(`dialogwright eval: ${e instanceof Error ? e.message : String(e)}`);

@@ -9,11 +9,17 @@ const HANG_UP: ModelTool = {
   parameters: { type: 'object', properties: {}, additionalProperties: false },
 };
 
-/** What the model that plays the caller is told: who they are and what is true of them, never what the business says. */
-export function callerSystem(p: Persona): string {
+/**
+ * What the model that plays the caller is told: who they are and what is true of them, never what the business
+ * says. On the voice path (`channel: 'voice'`) they are on the phone: what they say aloud, and the line's words as
+ * they heard them (a reply they cut in on, only as far as it had played).
+ */
+export function callerSystem(p: Persona, channel: 'chat' | 'voice' = 'chat'): string {
   const truth = Object.entries(p.truth).map(([k, v]) => `- ${k}: ${v}`).join('\n');
   return [
-    'You are playing a person who has contacted a business by text chat, for a test of the business\'s automated line. Be that person: write only what they would type, one message at a time, with no stage directions and no quotation marks.',
+    channel === 'voice'
+      ? 'You are playing a person who has phoned a business, for a test of the business\'s automated line. Be that person: write only what they would say aloud, one turn at a time, as speech recognition would write it down, with no stage directions, no quotation marks and no formatting. The line\'s words are what you heard: where you spoke over it, only as far as you heard.'
+      : 'You are playing a person who has contacted a business by text chat, for a test of the business\'s automated line. Be that person: write only what they would type, one message at a time, with no stage directions and no quotation marks.',
     `What you want: ${p.goal}`,
     `What is true of you (state these when asked or when they come up; invent nothing else about yourself, and if you are asked for something not listed, say you are not sure or do not have it):\n${truth}`,
     `How you write: ${p.manner}`,
@@ -42,11 +48,11 @@ function messagesOf(turns: readonly SimTurn[]): ModelMessage[] {
  * `hang_up` (its goodbye, if it said one, is kept and not sent) or as `empty`: a reply with no text and no hang_up
  * is asked for again once (the same request), and only a second empty one ends the call. Both requests are spent.
  */
-export function modelCaller(model: ConverseModel, spend: Budget): CallerFn {
+export function modelCaller(model: ConverseModel, spend: Budget, o: { channel?: 'chat' | 'voice' } = {}): CallerFn {
   const ask = async (persona: Persona, turns: readonly SimTurn[]): Promise<{ said: string; hungUp: boolean }> => {
     let text = '';
     let hungUp = false;
-    for await (const ev of model.stream({ system: callerSystem(persona), messages: messagesOf(turns), tools: [HANG_UP], maxTokens: 300 }, AbortSignal.timeout(30_000))) {
+    for await (const ev of model.stream({ system: callerSystem(persona, o.channel), messages: messagesOf(turns), tools: [HANG_UP], maxTokens: 300 }, AbortSignal.timeout(30_000))) {
       if (ev.type === 'text') text += ev.delta;
       else if (ev.type === 'tool_call' && ev.name === HANG_UP.name) hungUp = true;
       else if (ev.type === 'done') spend.add(model.id, ev.usage);

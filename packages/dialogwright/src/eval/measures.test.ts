@@ -11,6 +11,16 @@ const result = (j: Partial<Judged>, firstWordMs: number[], agentCostUsd: number 
 });
 
 describe('summarize', () => {
+  it('counts the voice path\'s calls, cut-ins and turns sent in two parts, and the first sentence by channel; a chat run has none of it', () => {
+    const voice = (firstWordMs: number[], cutIns: number, fragments: number): RunResult => ({ ...result({}, firstWordMs, null), call: { persona: 'p', turns: [], ended: 'caller', firstWordMs, channel: 'voice', cutIns, fragments } });
+    const s = summarize([result({}, [100, 200], null), voice([900, 1100], 1, 0), voice([700], 2, 1)]);
+    expect(s.voice).toEqual({ calls: 2, cutIns: 3, fragments: 1 });
+    expect(s.firstWordByChannel).toEqual({ chat: { calls: 1, median: 100, p95: 200 }, voice: { calls: 2, median: 900, p95: 1100 } });
+    const chat = summarize([result({}, [100], null)]);
+    expect(chat.voice).toBeUndefined();
+    expect(chat.firstWordByChannel).toBeUndefined();
+  });
+
   it('gives the exact rates over three results', () => {
     const s = summarize([
       result({}, [100, 200], 0.01),

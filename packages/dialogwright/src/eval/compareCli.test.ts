@@ -49,6 +49,13 @@ describe('dialogwright eval:compare', () => {
     expect(t.err.join('\n')).toMatch(/for a converse app/);
   });
 
+  it('refuses a channel it does not know', async () => {
+    const t = io({});
+    expect(await compareCommand(['.', '--personas', 'p.yaml', '--candidates', 'inception:mercury-3', '--channel', 'fax'], t.io)).toBe(2);
+    expect(t.err.join('\n')).toMatch(/--channel is one of chat, voice/);
+    expect(COMPARE_USAGE).toContain('--channel voice');
+  });
+
   it('is for a converse app', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'compare-cli-')), 'p.yaml');
     writeFileSync(file, 'personas:\n  - id: a\n    goal: g\n    truth: { n: m }\n    manner: plain\n    expects: none\n');

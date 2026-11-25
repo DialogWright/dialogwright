@@ -60,6 +60,8 @@ export interface StoredRun {
   lineModel?: string;
   timeoutMs?: number;
   opener?: string;
+  /** The calls went over the voice path (--channel voice); absent: over the chat wire. */
+  channel?: 'voice';
 }
 
 export const RUN_FILE = 'run.json';
@@ -101,6 +103,13 @@ export function appendResult(outDir: string, r: RunRecord): void {
 }
 
 const pct = (x: number): string => `${Math.round(x * 100)}%`;
+/** The wire a run's calls went over, as its page's first line says it. */
+const channelWords = (s: RunSummary): string => {
+  const voice = s.voice?.calls ?? 0;
+  if (voice === 0) return 'over the chat wire';
+  if (voice === s.runs) return 'over the voice path (Twilio\'s relay wire, in text, each reply played at speaking pace)';
+  return `(${s.runs - voice} over the chat wire, ${voice} over the voice path)`;
+};
 const ms = (x: number): string => `${Math.round(x)} ms`;
 /**
  * Numbers of seven digits or more, and phone numbers, are left out of a page that is committed: digits joined by a
@@ -148,7 +157,7 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
   const lines: string[] = [
     `# Simulated callers on ${info.app}`,
     '',
-    `${all.runs} calls over the chat wire, ${info.runsPerPersona} per persona planned.${info.lineModel !== undefined ? ` Line: ${info.lineModel}.` : ''}${info.opener !== undefined ? ` Opener: ${info.opener}.` : ''} Caller: ${info.callerModel}. Judge: ${info.judgeModel}. Decision model: ${info.decisionClient}. Spent: ${usd(info.spentUsd)}${info.budgetUsd === null ? ' (no model was asked)' : ` of ${usd(info.budgetUsd)}`}${info.stoppedByBudget ? ' (stopped at the budget; the runs it had are kept)' : ''}.`,
+    `${all.runs} calls ${channelWords(all)}, ${info.runsPerPersona} per persona planned.${info.lineModel !== undefined ? ` Line: ${info.lineModel}.` : ''}${info.opener !== undefined ? ` Opener: ${info.opener}.` : ''} Caller: ${info.callerModel}. Judge: ${info.judgeModel}. Decision model: ${info.decisionClient}. Spent: ${usd(info.spentUsd)}${info.budgetUsd === null ? ' (no model was asked)' : ` of ${usd(info.budgetUsd)}`}${info.stoppedByBudget ? ' (stopped at the budget; the runs it had are kept)' : ''}.`,
     ...(info.rejudged ? ['', `Re-judged ${judgedBy(info.judgeModel)} from the stored transcripts, actions and results, under the material-claims rubric: no call was made again, and the spend is the judge's alone. The latencies, timeouts and costs are the original run's.`] : []),
     ...(waiting > 0 ? ['', `${waiting} of ${all.runs} calls wait for verdicts: each one's judge input is in ${JUDGE_INPUTS}/ (dialogwright eval:rejudge <results dir> --inputs writes them again), and dialogwright eval:rejudge <results dir> --verdicts <file> gives the verdicts. The figures below are over the calls judged.`] : []),
     '',
@@ -167,6 +176,17 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     `| First sentence, p90 | ${ms(all.firstWordMsP90)} |`,
     `| First sentence, p95 | ${ms(all.firstWordMsP95)} |`,
     `| First sentence, p99 | ${ms(all.firstWordMsP99)} |`,
+    // The voice path's own rows, where the run has calls on it (a run over the chat wire alone has none).
+    ...(all.voice !== undefined
+      ? [
+          ...(['chat', 'voice'] as const).flatMap((c) => {
+            const f = all.firstWordByChannel?.[c];
+            return f === undefined ? [] : [`| First sentence ${c === 'voice' ? 'on the voice path (the caller\'s last words to the line\'s first frame)' : 'over the chat wire'}, median / p95 | ${ms(f.median)} / ${ms(f.p95)} over ${f.calls} calls |`];
+          }),
+          `| Cut-ins on the voice path (the caller spoke over a long reply) | ${all.voice.cutIns} |`,
+          `| Caller turns sent in two parts on the voice path (a recognizer that ended the turn early) | ${all.voice.fragments} |`,
+        ]
+      : []),
     `| Timeouts${info.timeoutMs !== undefined ? ` (at the line's ${info.timeoutMs} ms)` : ''} | ${pctOrNone(all.timeoutRate)} of ${all.modelTurns} turns |`,
     ...(all.modelTurns > 0 ? [`| Would time out at ${Object.keys(all.wouldTimeout).map(seconds).join(' / ')} | ${Object.values(all.wouldTimeout).map((x) => pctOrNone(x)).join(' / ')} |`] : []),
     `| Agent cost per call | ${usd(all.agentCostPerCallUsd)} |`,

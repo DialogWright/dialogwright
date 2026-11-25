@@ -12,7 +12,10 @@ export interface SimCall {
   turns: SimTurn[];
   /** Who ended it: the line (an end or a transfer, or it fell silent), the caller (hung up) or the turn limit. */
   ended: 'line' | 'caller' | 'turns';
-  /** For each caller turn, ms from sending it to the line's first sentence (its first say_delta, else its say). */
+  /**
+   * For each caller turn, ms from sending it to the line's first sentence (its first say_delta, else its say); on the
+   * voice path, from the caller's (last) final prompt to the line's first text frame.
+   */
   firstWordMs: number[];
   /**
    * How the caller ended the call, where it did (`ended: 'caller'`): `hang_up`, with the goodbye it said (not sent to
@@ -20,8 +23,14 @@ export interface SimCall {
    * record made before it was kept.
    */
   callerEnded?: CallerEnd;
-  /** The chat session, which is the call's id in the audit and the trace. */
+  /** The chat session (on the voice path, the call's CallSid), which is the call's id in the audit and the trace. */
   callId?: string;
+  /** The call went over the voice path (eval/voiceDriver.ts); absent: over the chat wire, as every record made before it. */
+  channel?: 'voice';
+  /** On the voice path: the times the caller cut in on a reply (an `interrupt` sent). */
+  cutIns?: number;
+  /** On the voice path: the caller's turns sent in two parts (a recognizer that ended the turn early). */
+  fragments?: number;
 }
 
 /** How a simulated caller ended a call: it hung up (with the goodbye it said, if any), or its model gave no reply twice. */

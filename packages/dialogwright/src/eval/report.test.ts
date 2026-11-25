@@ -10,6 +10,21 @@ const record = (notes: string, claims: string[]): RunRecord => ({
 });
 
 describe('the summary page', () => {
+  it('on the voice path: says so, and gives the first sentence by channel, the cut-ins and the turns sent in two parts; a chat run\'s page has none of it', () => {
+    const info = { app: 'x', callerModel: 'c', judgeModel: 'j', decisionClient: 'd', runsPerPersona: 1, spentUsd: 0, budgetUsd: 1, stoppedByBudget: false, limits: [] };
+    const base = record('', []);
+    const voice: RunRecord = { ...base, call: { ...base.call, firstWordMs: [800], channel: 'voice', cutIns: 2, fragments: 1 } };
+    const text = summaryMarkdown([voice], info);
+    expect(text).toContain('1 calls over the voice path');
+    expect(text).toContain('| First sentence on the voice path (the caller\'s last words to the line\'s first frame), median / p95 | 800 ms / 800 ms over 1 calls |');
+    expect(text).toContain('| Cut-ins on the voice path (the caller spoke over a long reply) | 2 |');
+    expect(text).toContain('| Caller turns sent in two parts on the voice path (a recognizer that ended the turn early) | 1 |');
+    expect(summaryMarkdown([voice, { ...base, run: 1 }], info)).toContain('2 calls (1 over the chat wire, 1 over the voice path)');
+    const chat = summaryMarkdown([base], info);
+    expect(chat).toContain('1 calls over the chat wire');
+    expect(chat).not.toContain('voice path');
+  });
+
   it('gives each persona\'s rates over its judged calls alone, with how many wait, never a waiting call as a failure', () => {
     const judged = (persona: string, run: number): RunRecord => ({ ...record('', []), persona, run, judged: { completed: true, correct: true, unsupportedClaims: [], materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '' } });
     const waiting = (persona: string, run: number): RunRecord => ({ ...record(NOT_JUDGED, []), persona, run });

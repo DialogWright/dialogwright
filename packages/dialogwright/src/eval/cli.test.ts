@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DIR } from '../define/fixture/app';
+import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import { EVAL_USAGE, evalCommand, registerFolderApp, runEval } from './cli';
 import { costUsd } from '../converse/model/price';
 import { fakeModel } from '../converse/model/fake';
@@ -87,6 +88,36 @@ describe('dialogwright eval', () => {
       expect(o.text).toContain('Judge: none.');
       expect(o.text).toContain('| Calls judged | 0 of 1 |');
       expect(o.text).toContain('1 of 1 calls wait for verdicts');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it('refuses a channel it does not know, and the voice path for a scripted app', async () => {
+    const t = io({});
+    expect(await evalCommand(['.', '--personas', 'p.yaml', '--channel', 'fax'], t.io)).toBe(2);
+    expect(t.err.join('\n')).toMatch(/--channel is one of chat, voice/);
+    const file = join(mkdtempSync(join(tmpdir(), 'eval-cli-')), 'p.yaml');
+    writeFileSync(file, 'personas:\n  - id: a\n    goal: g\n    truth: { n: m }\n    manner: plain\n    expects: none\n');
+    const s = io({ ANTHROPIC_API_KEY: 'not-a-key' });
+    expect(await evalCommand([LIBRARY_DIR, '--personas', file, '--channel', 'voice'], s.io)).toBe(2);
+    expect(s.err.join('\n')).toMatch(/--channel voice is for a converse app/);
+    expect(EVAL_USAGE).toContain('--channel voice (a converse app)');
+  });
+
+  it('--channel voice: each call over the voice path, the page and run.json saying so', async () => {
+    const app = await registerFolderApp(CONVERSE_FIXTURE_DIR);
+    const out = mkdtempSync(join(tmpdir(), 'eval-voice-'));
+    try {
+      // The caller hangs up once greeted: the call is the line's greeting alone, played (the line's model is never asked).
+      const caller = fakeModel([[{ type: 'tool_call', id: 'h', name: 'hang_up', args: {} }, { type: 'done', stop: 'tool', usage: { inputTokens: 1, outputTokens: 1 } }]]);
+      const persona: Persona = { id: 'visitor', goal: 'Book a visit.', truth: { name: 'Sam Example' }, manner: 'Plain.', expects: 'booking', voice: { interrupts: true, fragments: true } };
+      const o = await runEval({ appDir: CONVERSE_FIXTURE_DIR, app, personas: [persona], runs: 1, parallel: 1, port: 0, env: { ANTHROPIC_API_KEY: 'not-a-key' }, callerModel: caller, judgeModel: null, decision: 'stub', spend: new Budget(1, () => {}), outDir: out, channel: 'voice' });
+      expect(o.records[0]!.call).toMatchObject({ channel: 'voice', cutIns: 0, fragments: 0, ended: 'caller', turns: [{ who: 'line', text: 'Example Visits, how can I help?' }] });
+      expect(caller.requests[0]!.system).toContain('phoned a business');
+      expect(o.text).toContain('1 calls over the voice path');
+      expect(o.text).toContain('Each call went over the voice path in text');
+      expect(JSON.parse(readFileSync(join(out, 'run.json'), 'utf8'))).toMatchObject({ channel: 'voice' });
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

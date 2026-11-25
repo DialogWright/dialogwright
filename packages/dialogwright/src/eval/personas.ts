@@ -18,7 +18,14 @@ export const personaSchema = z.strictObject({
   expects: z.enum(['request', 'booking', 'callback', 'answer', 'none']).describe('What the call should come to: a request or booking taken, a callback note left, a question answered, or nothing done.'),
   adversarial: text.optional().describe('What the caller tries that they should not get (a free job, the line ignoring its instructions...).'),
   asksIfHuman: z.boolean().optional().describe('The caller asks, at some point, whether they are talking to a person.'),
-  callingFrom: z.string().regex(E164, { error: 'must be an E.164 number like +15555550142' }).optional().describe('The number the caller calls from (E.164): the chat names it in its start\'s context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none.'),
+  callingFrom: z.string().regex(E164, { error: 'must be an E.164 number like +15555550142' }).optional().describe('The number the caller calls from (E.164): the chat names it in its start\'s context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none (on the voice path, the call comes from a 555 number of the harness\'s own).'),
+  voice: z
+    .strictObject({
+      interrupts: z.boolean().default(false).describe('The caller cuts in on long replies: on a reply of more than 30 words, once 40% of its words have played.'),
+      fragments: z.boolean().default(false).describe('The caller\'s longer turns (more than 8 words) reach the line in two parts, as a recognizer that ended a turn early.'),
+    })
+    .optional()
+    .describe('How the caller behaves on the voice path (pnpm eval --channel voice): the caller cuts in on long replies; the caller\'s longer turns reach the line in two parts, as a recognizer that ended a turn early. Ignored over the chat wire.'),
 });
 export type Persona = z.infer<typeof personaSchema>;
 
