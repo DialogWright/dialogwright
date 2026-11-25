@@ -2377,6 +2377,16 @@ describe('converseTurn: stopped from outside', () => {
     ]);
   });
 
+  it('a read-back stopped before the line said it counts as a refusal of its action', async () => {
+    const ac = new AbortController();
+    const h = harness([...lookupThenBook], { edit: (t) => `${t}${OFF}` });
+    let s = await h.run(fresh(), { kind: 'start' });
+    const audit = h.deps.audit;
+    h.deps.audit = { append: (callId, channel, d) => (d.type === 'gate' && (d.detail as { tool?: unknown }).tool === 'book' && ac.abort(), audit.append(callId, channel, d)) };
+    s = await converseTurn(s, { kind: 'text', text: 'Can I bring my lamp in Friday morning?' }, h.deps, h.out, ac.signal);
+    expect(s.refusals).toEqual({ book: 1 });
+  });
+
   it('an abort that comes after the turn ended changes nothing', async () => {
     const ac = new AbortController();
     const h = harness([[text('Hello there.'), done()]], { edit: (t) => `${t}${OFF}` });
@@ -2477,6 +2487,45 @@ describe('converseTurn: what the caller heard', () => {
     s = await h.run(s, { kind: 'text', text: 'yes', heard: { cutIn: false, text: READ_BACK, spokeBefore: true } });
     expect(h.calendar.bookings).toHaveLength(0);
     expect(confirmAsks(h)).toHaveLength(0);
+  });
+
+  it('the third unheard read-back of one action brings the offer of a person', async () => {
+    const again = (id: string): ModelEvent[] => [call(id, 'book', { slot: SLOT, item: 'lamp' }), done('tool')];
+    const h = harness([...lookupThenBook, again('c3'), again('c4'), [text('Let me get someone for you.'), done()]], {
+      edit: (t) => `${t.replace('refusalsPerAction: 2', 'refusalsPerAction: 3')}${OFF}`,
+    });
+    const spokeBefore: Heard = { cutIn: false, text: null, spokeBefore: true };
+    let s = await upToReadBack(h);
+    // The first: the caller spoke before the read-back played.
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: spokeBefore });
+    expect(s.refusals).toEqual({ book: 1 });
+    expect(lastMessage(h)).not.toContain('offer the caller a person');
+    // The second: a yes over a read-back heard in part.
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: { cutIn: true, text: READ_BACK.slice(0, Math.floor(READ_BACK.length * 0.5)), spokeBefore: false } });
+    expect(s.refusals).toEqual({ book: 2 });
+    expect(lastMessage(h)).not.toContain('offer the caller a person');
+    // The third: the caller went on speaking while their yes was read.
+    const ac = new AbortController();
+    const reads = h.jev;
+    h.deps.jev = { asked: reads.asked, ask: async (req) => (ac.abort(), reads.ask(req)) } as Harness['jev'];
+    s = await converseTurn(s, { kind: 'text', text: 'yes' }, h.deps, h.out, ac.signal);
+    expect(s.refusals).toEqual({ book: 3 });
+    h.deps.jev = reads;
+    s = await h.run(s, { kind: 'text', text: 'hello?' });
+    expect(lastMessage(h)).toContain('\\"book\\" has been refused 3 times on this call: offer the caller a person rather than trying it again.');
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(h.traces.filter((r) => r.tools.some((x) => x.outcome === 'notConfirmed')).map((r) => r.tools.find((x) => x.outcome === 'notConfirmed')!.reason)).toEqual([
+      'the caller spoke over the read-back',
+      'the caller spoke over the read-back',
+      'the caller went on speaking',
+    ]);
+  });
+
+  it('a plain no to a read-back counts no refusal', async () => {
+    const h = harness([...lookupThenBook, [text('What should I change?'), done()]], { edit: (t) => `${t}${OFF}`, reading: { yes: 0.05, no: 0.9 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(s.refusals).toEqual({});
   });
 
   it('readBackHeard: unknown or uncut is heard, a start before it never is, and a cut-in by how much of it was heard', () => {

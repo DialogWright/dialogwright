@@ -69,7 +69,9 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  * - on a call, a turn may be stopped from outside (converseTurn's `signal`: the caller spoke): nothing more
  *   is said or asked, and it is no failure. The channel tells the next turn what the caller heard of the last
  *   reply (Input's `heard`), which the conversation is rewritten to; a yes over a read-back the caller did not
- *   hear nearly to its end confirms nothing (readBackHeard). Where the model has said nothing by
+ *   hear nearly to its end confirms nothing (readBackHeard). A read-back not heard (never said, spoken over, or
+ *   answered by a caller who went on speaking) counts as a refusal of its action, so agent.yaml's
+ *   limits.refusalsPerAction brings the offer of a person as the gate's refusals do. Where the model has said nothing by
  *   BRIDGE_AFTER_MS, the line says the business's bridge (lines.bridge), once, kept out of the conversation.
  */
 
@@ -132,6 +134,11 @@ export interface Out {
   scrubbed?(scrub: (text: string) => string): void;
   /** A bridge line, on a call only: said whole, never interruptible, never part of the reply. */
   bridge?(text: string): void;
+  /**
+   * A change the caller confirmed has run, told at once: until the turn says something after it, a channel whose
+   * turn then throws says the done line (lines.done) rather than the recovery line, as the turn's own failure does.
+   */
+  confirmed?(): void;
 }
 
 /** What the caller heard of the line's last reply, as the channel knows it. */
@@ -388,7 +395,11 @@ function awaitsConfirmation(d: GateDecision): boolean {
   return d.verdict === 'BLOCK' && d.rules.some((r) => r.id === RULE_ID.confirmed) && !passed(d, RULE_ID.confirmed);
 }
 
-/** A refusal as the model is told it: the business's rule that failed, never a value the records hide; past the limit, to offer a person. */
+/**
+ * A refusal as the model is told it: the business's rule that failed, never a value the records hide; past the
+ * limit, to offer a person. A read-back the caller did not hear (they spoke before or over it, or went on
+ * speaking after their answer) counts here too, so a read-back that is never heard comes to the same offer.
+ */
 function refused(t: Turn, action: string, why: string): string {
   const n = (t.st.refusals[action] = (t.st.refusals[action] ?? 0) + 1);
   const limit = t.deps.business.limits.refusalsPerAction;
@@ -957,7 +968,7 @@ function unheardReadBack(t: Turn): void {
   const spec = Object.hasOwn(t.deps.business.actions, p.action) ? t.deps.business.actions[p.action] : undefined;
   // In the trace beside the call's read-back, so the console shows why it waits for no answer.
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke before the line read it back');
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: 'Not read back: the caller spoke before the line read it back, so nothing was done. Call it again to have it read back.', isError: true }]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, 'Not read back: the caller spoke before the line read it back, so nothing was done. Call it again to have it read back.'), isError: true }]);
 }
 
 /**
@@ -1074,7 +1085,7 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
   if (!readBackHeard(p.text, heard)) {
     t.readBack = { text: p.text, confirmed: false };
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke over the read-back');
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) }]);
     return false;
   }
   // Stopped before the decision model is asked: the caller went on speaking, and nothing runs.
@@ -1101,6 +1112,7 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
   traceTool(t, spec, p.action, p.params, parent.outcome === 'ran' ? 'confirmed' : parent.outcome, parent.why);
   if (parent.outcome === 'ran') {
     t.confirmedRan = true;
+    t.out.confirmed?.();
     const j = t.st.journey;
     if (hasJourneys(b) && j !== undefined) {
       const next = completeJourney(b, j, p.action);
@@ -1144,7 +1156,7 @@ function wentOn(t: Turn, p: PendingReadBack, words: string, reading?: { yes: num
   const spec = Object.hasOwn(t.deps.business.actions, p.action) ? t.deps.business.actions[p.action] : undefined;
   t.readBack = { text: p.text, ...(reading != null ? { yes: reading.yes, no: reading.no } : {}), confirmed: false };
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller went on speaking');
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}` }]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) }]);
   return false;
 }
 

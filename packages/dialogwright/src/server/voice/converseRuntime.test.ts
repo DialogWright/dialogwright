@@ -9,7 +9,7 @@ import { newConverseState } from '../../converse/state';
 import { BRIDGE_AFTER_MS, CUT_IN_NOTE, UNHEARD_NOTE, type ConverseDeps } from '../../converse/turn';
 import type { ConverseTraceRecord } from '../../converse/trace';
 import { converseFixture } from '../../testing/converse/app';
-import { BOOKING, done, text } from '../../testing/converse/chat';
+import { BOOKING, call, DAY, done, text } from '../../testing/converse/chat';
 import type { ConverseCallEntry } from '../sessions';
 import type { PlaybackEvent } from './provider';
 import type { VoiceIo } from './io';
@@ -130,11 +130,13 @@ function fakeIo(entry: ConverseCallEntry) {
   return { io, sent, records, saves, published, kept, finished: () => finished };
 }
 
-function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?: JevClient; before?: Record<string, () => Promise<void>>; hooks?: Pick<Parameters<typeof converseVoiceRuntime>[0], 'onTurnEnd' | 'onClaimsRead'> }) {
+function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?: JevClient; before?: Record<string, () => Promise<void>>; hooks?: Pick<Parameters<typeof converseVoiceRuntime>[0], 'onTurnEnd' | 'onClaimsRead'>; appending?: (d: AuditDraft, rows: readonly AuditDraft[]) => void }) {
   const { app, calendar, booked } = converseFixture();
   const rows: AuditDraft[] = [];
   const audit: AuditSink = {
     append(callId, channel, d) {
+      // A test's look at each row before it is kept: one that throws fails the append.
+      o.appending?.(d, rows);
       rows.push(d);
       return { ...d, seq: rows.length, at: new Date().toISOString(), callId, channel, prevHash: '', hash: '' };
     },
@@ -700,12 +702,43 @@ describe('the converse voice runtime: final fix wave', () => {
     expect(h.entry.session.failures).toBe(0);
   });
 
-  it('a turn that throws says the business\'s recovery line, as a final text frame', async () => {
-    const h = harness({ model: gatedModel([[text('Good.'), done()]]) });
+  it('a turn that throws before its reply says the business\'s recovery line, as a final text frame', async () => {
+    const h = harness({
+      model: gatedModel([[call('c1', 'availability', { day: DAY }), done('tool')]]),
+      appending: (d) => {
+        if (d.type === 'gate') throw new Error('disk full');
+      },
+    });
     await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
-    h.entry.trace = { write: () => { throw new Error('disk full'); } } as unknown as ConverseCallEntry['trace'];
     await h.prompt('hello');
     expect(h.fio.records).toContainEqual({ dir: 'log', msg: { turnFailed: 'Error: disk full' } });
     expect(h.said().at(-1)).toMatchObject({ token: 'Sorry, could you say that again?', last: true });
+  });
+
+  it('a thrown turn after its final reply says nothing more', async () => {
+    const h = harness({ model: gatedModel([[text('Good.'), done()]]) });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    const before = h.said().length;
+    h.entry.trace = { write: () => { throw new Error('disk full'); } } as unknown as ConverseCallEntry['trace'];
+    await h.prompt('hello');
+    expect(h.fio.records).toContainEqual({ dir: 'log', msg: { turnFailed: 'Error: disk full' } });
+    expect(h.said().slice(before).map((f) => [f.token, f.last])).toEqual([['Good.', true]]);
+  });
+
+  it('a thrown turn after a confirmed change says the done line', async () => {
+    // After the yes, the booking runs; the model's next round calls a lookup, and its gate row fails to be written.
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'availability', { day: DAY }), done('tool')]]);
+    const h = harness({
+      model,
+      appending: (d, rows) => {
+        if (d.type === 'gate' && d.detail.tool === 'availability' && rows.some((r) => r.type === 'confirmed')) throw new Error('disk full');
+      },
+    });
+    await readBackOf(h);
+    const before = h.said().length;
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+    expect(h.fio.records).toContainEqual({ dir: 'log', msg: { turnFailed: 'Error: disk full' } });
+    expect(h.said().slice(before).map((f) => [f.token, f.last])).toEqual([["That's done.", true]]);
   });
 });

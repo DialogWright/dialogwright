@@ -422,6 +422,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         sent.push({ frame, delivered });
       };
       let finalSent = false;
+      // A change the caller confirmed ran this turn, and nothing has been said after it.
+      let changeRan = false;
       const correction: string[] = [];
       let scrub: ((text: string) => string) | null = null;
       const out: Out = {
@@ -433,6 +435,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           }
           const token = final ? text : spaced(text);
           reply.frames.push({ text: token, at: now() });
+          changeRan = false;
           if (final) finalSent = true;
           send({ ...textFrame(token, true), last: final });
         },
@@ -440,6 +443,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         end() {},
         scrubbed(s) {
           scrub = s;
+        },
+        confirmed() {
+          changeRan = true;
         },
         bridge(text) {
           running.bridged = true;
@@ -453,9 +459,11 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       } catch (err) {
         log(`${e.callSid}: converse turn failed: ${describe(err)}`);
         io.record('log', { turnFailed: describe(err) });
-        // The caller is not left in silence: the business's recovery line, unless the turn was stopped (the caller spoke, or left).
-        if (!running.ac.signal.aborted) {
-          const line = lineOn(app.business.lines.recovery, 'voice');
+        // The caller is not left in silence, unless the turn was stopped (the caller spoke, or left) or had already
+        // sent its final reply: the done line where a change the caller confirmed has just run (as the turn's own
+        // failure says it), else the business's recovery line.
+        if (!running.ac.signal.aborted && !finalSent) {
+          const line = lineOn(changeRan ? app.business.lines.done : app.business.lines.recovery, 'voice');
           reply.frames.push({ text: line, at: now() });
           finalSent = true;
           send({ ...textFrame(line, true), last: true });
