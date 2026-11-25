@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Session } from '../../core/session';
 import type { ConverseState } from '../../converse/state';
+import type { Heard } from '../../converse/turn';
 import type { AuditEntry } from '../../audit/types';
 import type { Effect } from '../../core/lifecycle';
 import type { ScrubPart } from '../../core/recording';
@@ -99,6 +100,8 @@ export interface StoredCall<S extends Session | ConverseState = Session> {
    * them. Read only for a converse call; absent when no turn was running.
    */
   readonly turnWords?: string;
+  /** What the caller had heard of the line's last reply as they said `turnWords` (converse/turn.ts Heard): the turn asked again is told the same. */
+  readonly turnHeard?: Heard;
 }
 
 /** A saved call of either runtime: a scripted Session under SESSION_SCHEMA, or a converse call's ConverseState under 'converse-1'. */

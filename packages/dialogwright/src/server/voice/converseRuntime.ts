@@ -68,6 +68,12 @@ export interface ConverseVoiceRuntime {
   frame(entry: ConverseCallEntry, frame: InboundFrame, io: VoiceIo): Promise<void>;
   /** A carrier playback event (Telnyx's agentSpeaking, clientSpeaking, tokensPlayed). */
   playback(entry: ConverseCallEntry, event: PlaybackEvent, io: VoiceIo): void;
+  /**
+   * A carrier's event as the frame log keeps it: a report of a line played (tokensPlayed) says the line as it was
+   * sent, so its text is masked as the trace masked the line (the call's turns' maskings), or by its length where
+   * none has been given yet (the turn saying it still running).
+   */
+  loggedEvent(entry: ConverseCallEntry, message: unknown, event: PlaybackEvent | null): unknown;
   /** The call's socket closed: the turn running is stopped, to be asked again should the carrier reconnect. */
   closed(entry: ConverseCallEntry): void;
   /** A socket replaced after the carrier reconnected: a turn cut by the drop is asked again. */
@@ -134,7 +140,14 @@ interface Live {
   /** The carrier has reported its playback on this call. */
   reports: boolean;
   correction: Correction | null;
+  /** The caller's final words counted so far: a turn queued for earlier words than the latest runs already stopped (superseded). */
+  generation: number;
+  /** How the trace masked what the line said, turn by turn (the latest last, a few kept): what a carrier's report of a line is masked by. */
+  scrubs: ((text: string) => string)[];
 }
+
+/** The turns' maskings kept for a carrier's reports of what played. */
+const SCRUBS_KEPT = 8;
 
 /** A piece that runs into the next on the carrier ends with a space. */
 const spaced = (text: string): string => (/\s$/.test(text) ? text : `${text} `);
@@ -207,7 +220,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   const liveOf = (e: ConverseCallEntry): Live => {
     let l = lives.get(e.callSid);
     if (l === undefined) {
-      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, correction: null };
+      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, correction: null, generation: 0, scrubs: [] };
       lives.set(e.callSid, l);
     }
     return l;
@@ -317,7 +330,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
    * One turn, run now (in the call's queue): its words sent as they are said, its state kept, the call ended
    * where it ended it, else saved.
    */
-  const runNow = async (e: ConverseCallEntry, input: Input, io: VoiceIo): Promise<void> => {
+  const runNow = async (e: ConverseCallEntry, input: Input, io: VoiceIo, generation?: number): Promise<void> => {
     if (e.session.ended !== undefined) return;
     const app = appOf(e);
     const l = liveOf(e);
@@ -330,11 +343,17 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const reply = newReply();
     l.reply = reply;
     l.running = running;
+    // Words the caller went on from before this turn began (a later final prompt): it runs already stopped,
+    // so its words are kept in the conversation and the latest turn answers them all at once.
+    if (generation !== undefined && generation < l.generation) running.ac.abort();
     try {
       const before = e.session;
       const words = input.kind === 'text' ? input.text : null;
       if (words !== null) {
         e.turnWords = words;
+        // What the caller had heard as they said them: a turn asked again is told the same (a yes over a read-back heard in part stays one).
+        if (input.kind === 'text' && input.heard !== undefined) e.turnHeard = input.heard;
+        else delete e.turnHeard;
         await io.save();
       }
       /** Each frame sent this turn, in order, with whether it reached the wire. */
@@ -383,6 +402,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       await chain;
       // The frame log keeps each line as the trace keeps it: each value the records mask, masked.
       const masked = scrub as ((text: string) => string) | null;
+      if (masked !== null) l.scrubs = [...l.scrubs, masked].slice(-SCRUBS_KEPT);
       for (const s of sent) if (await s.delivered) io.record('out', loggedText(s.frame, masked));
       // Stopped as its socket closed, with no change the caller confirmed having run: the call goes on from
       // before it, and its words are asked again when the carrier reconnects.
@@ -393,6 +413,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       }
       e.session = state;
       delete e.turnWords;
+      delete e.turnHeard;
       const ended = state.ended;
       if (ended === 'closing' || ended === 'handoff') {
         endCall(e, app, ended, sent.map((s) => s.frame), io);
@@ -423,7 +444,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /** A turn queued on the call. */
-  const runTurn = (e: ConverseCallEntry, input: Input, io: VoiceIo): Promise<void> => enqueue(e, (held) => runNow(held, input, io));
+  const runTurn = (e: ConverseCallEntry, input: Input, io: VoiceIo, generation?: number): Promise<void> => enqueue(e, (held) => runNow(held, input, io, generation));
 
   /** The caller's final words: what they heard of the last reply, the turn running stopped (unless the bridge alone plays), their turn queued. */
   const finalWords = (e: ConverseCallEntry, l: Live, text: string, io: VoiceIo): Promise<void> => {
@@ -433,7 +454,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const overTheBridge = overBridge(l);
     l.speechAt = null;
     if (!overTheBridge) l.running?.ac.abort();
-    return runTurn(e, { kind: 'text', text, ...(heard !== undefined ? { heard } : {}) }, io);
+    l.generation += 1;
+    return runTurn(e, { kind: 'text', text, ...(heard !== undefined ? { heard } : {}) }, io, l.generation);
   };
 
   return {
@@ -493,9 +515,24 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       l.reports = true;
       if (ev.state === 'started') l.agentSpeaking = true;
       else if (ev.text === undefined) l.agentSpeaking = false;
-      else if (l.reply !== null && folded(ev.text) !== l.reply.bridge) l.reply.played = joined(l.reply.played, ev.text);
+      // What played is what the carrier reported before the caller began to speak: Telnyx reports the text it
+      // handed to its voice, a whole line at once even when the audio stopped on the caller's barge-in.
+      else if (l.reply !== null && l.speechAt === null && !l.reply.cutIn && folded(ev.text) !== l.reply.bridge) l.reply.played = joined(l.reply.played, ev.text);
       const c = l.correction;
       if (c !== null && playedOut(c.after)) sayCorrection(l, c);
+    },
+
+    loggedEvent(entry, message, ev) {
+      if (ev === null || ev.kind !== 'playback' || ev.state !== 'finished' || ev.text === undefined) return message;
+      const scrubs = lives.get(entry.callSid)?.scrubs ?? [];
+      const mask = (text: string): string => (scrubs.length === 0 ? `<${text.length} chars>` : scrubs.reduceRight((t, s) => s(t), text));
+      const walk = (v: unknown): unknown => {
+        if (typeof v === 'string') return v === ev.text ? mask(v) : v;
+        if (Array.isArray(v)) return v.map(walk);
+        if (typeof v === 'object' && v !== null) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+        return v;
+      };
+      return walk(message);
     },
 
     closed(entry) {
@@ -522,7 +559,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         const words = e.turnWords;
         if (words === undefined || e.session.ended !== undefined) return;
         io.record('log', { askedAgain: true });
-        await runNow(e, { kind: 'text', text: words }, io);
+        const heard = e.turnHeard;
+        await runNow(e, { kind: 'text', text: words, ...(heard !== undefined ? { heard } : {}) }, io);
       });
     },
 
@@ -562,6 +600,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       const app = deps.apps.get(entry.session.appId);
       if (app === undefined) return;
       delete entry.turnWords;
+      delete entry.turnHeard;
       // The turn's own record of a caller leaving (converse_left, a read-back waiting dropped), then the end.
       try {
         entry.session = await converseTurn(entry.session, { kind: 'left' }, turnDeps(app, entry), SILENT);

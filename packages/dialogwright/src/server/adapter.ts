@@ -2499,8 +2499,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // A converse call's: logged as it came, read for its held `end`, and handed to its runtime (never through the call's queue).
     if (any !== undefined && isConverseEntry(any)) {
       const message = JSON.parse(raw) as unknown;
-      any.frames.write('in', { carrierEvent: message });
       const ev = playbackEventOf(ctx.provider, message);
+      // A report of a line played says it as sent: masked as the trace masked the line (the runtime's).
+      any.frames.write('in', { carrierEvent: deps.converse ? deps.converse.loggedEvent(any, message, ev) : message });
       if (ev) {
         const io = voiceIoOf(any, deps);
         io.playback(ev);

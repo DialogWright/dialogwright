@@ -2,6 +2,7 @@ import { SESSION_SCHEMA, type Session } from '../core/session';
 import { appOf } from '../core/app/registry';
 import { DEFAULT_LOCALE, localeOf } from '../core/locale';
 import { newConverseState, type ConverseState } from '../converse/state';
+import type { Heard } from '../converse/turn';
 import type { AnyStoredCall, CallLeases, CallStateStore, HeldFrame, LeaseClaim, PendingEffect, ReleaseKind, StoredCall } from './stores/types';
 import type { RunOptions } from '../run/turn';
 import type { TraceSink } from '../trace/writer';
@@ -27,6 +28,13 @@ export interface ConverseCallResources {
   session: ConverseState;
   trace: TraceSink;
   frames: FrameSink;
+}
+
+/** A saved `heard` in its shape (Heard); one that is not is none (the words are asked again as heard in full). */
+function isHeard(h: unknown): h is Heard {
+  if (typeof h !== 'object' || h === null) return false;
+  const v = h as Record<string, unknown>;
+  return typeof v.cutIn === 'boolean' && typeof v.spokeBefore === 'boolean' && (v.text === null || typeof v.text === 'string');
 }
 
 /** The schema a converse call is saved under (StoredCall.schema), as a converse chat is (StoredChat.schema). */
@@ -138,6 +146,8 @@ export interface ConverseCallEntry extends CallEntryBase {
    * has: saved with the call (StoredCall.turnWords), so a server that resumes the call asks the model again on them.
    */
   turnWords?: string;
+  /** What the caller had heard of the line's last reply as they said `turnWords` (Input's `heard`): saved with them (StoredCall.turnHeard). */
+  turnHeard?: Heard;
 }
 
 /** A call of either runtime, as the store-wide work (saves, restores, sweeps, eviction, leases) holds it. */
@@ -468,7 +478,7 @@ export class SessionStore {
       lastActivityMs: e.lastActivityMs,
       auditTail: [...e.auditEntries],
       ...(!isConverseEntry(e) && e.pending ? { pending: e.pending } : {}),
-      ...(isConverseEntry(e) && e.turnWords !== undefined ? { turnWords: e.turnWords } : {}),
+      ...(isConverseEntry(e) && e.turnWords !== undefined ? { turnWords: e.turnWords, ...(e.turnHeard !== undefined ? { turnHeard: e.turnHeard } : {}) } : {}),
       // One machine's: a store many servers share keeps the time with its reconnect count.
       ...(e.droppedAtMs !== undefined && this.lease === null ? { droppedAtMs: e.droppedAtMs } : {}),
       ...extra,
@@ -761,7 +771,7 @@ export class SessionStore {
         this.log(`${callId}: not resumed: saved as a converse call, and "${c.session.appId}" is not a converse app here`);
         return null;
       }
-      entry = { trace: resources.trace, frames: resources.frames, session: c.session, ...transport, ...(typeof c.turnWords === 'string' ? { turnWords: c.turnWords } : {}) };
+      entry = { trace: resources.trace, frames: resources.frames, session: c.session, ...transport, ...(typeof c.turnWords === 'string' ? { turnWords: c.turnWords, ...(isHeard(c.turnHeard) ? { turnHeard: c.turnHeard } : {}) } : {}) };
     } else {
       if (isConverseResources(resources)) {
         this.log(`${callId}: not resumed: saved as a scripted call, and "${c.session.appId}" is a converse app here`);

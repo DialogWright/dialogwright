@@ -185,6 +185,52 @@ describe.each(['twilio', 'telnyx'] as const)('a converse app\'s call on %s', (ca
     expect(auditOf(dir).filter((r) => r.type === 'confirmed')).toEqual([]);
   }, 20_000);
 
+  it('a restart after a yes over a read-back heard in part confirms nothing when asked again', async () => {
+    const dir = folder();
+    const env = settings(dir, carrier, { SESSION_STORE: `file:${join(dir, 'sessions')}` });
+    const { app, booked } = converseFixture();
+    let asked!: () => void;
+    const waiting = new Promise<void>((r) => (asked = r));
+    const script = fakeModel(BOOKING.slice(0, 3));
+    let n = 0;
+    const firstModel: ConverseModel = {
+      id: 'first',
+      stream: (req, signal) => (n++ < 3 ? script.stream(req, signal) : (async function* (): AsyncIterable<ModelEvent> {
+        asked();
+        await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+        yield { type: 'error', kind: 'timeout', detail: 'aborted' };
+      })()),
+    };
+    const first = await boot(app, firstModel, env);
+    const relay = await call(first.base, carrier, callId);
+    await upToReadBack(relay);
+    if (carrier === 'twilio') relay.interrupt('A visit Tuesday, January 15,', 900);
+    else {
+      played(relay, 'A visit Tuesday, January 15,');
+      relay.send({ type: 'info', name: 'clientSpeaking', value: 'on' });
+    }
+    relay.prompt('yes');
+    await waiting;
+    const calls = join(dir, 'sessions', 'calls');
+    const file = join(calls, readdirSync(calls)[0]!);
+    const saved = readFileSync(file, 'utf8');
+    expect(JSON.parse(saved)).toMatchObject({ turnWords: 'yes', turnHeard: { cutIn: true, spokeBefore: false } });
+    relay.close();
+    await new Promise((r) => setTimeout(r, 50));
+    await first.server.close();
+    servers.splice(servers.indexOf(first.server), 1);
+    writeFileSync(file, saved);
+
+    const second = fakeModel([[text('Shall I read it again?'), done()]]);
+    const next = await boot(app, second, env);
+    const doc = await (await fetch(`${next.base}/cr-action/${carrier}`, form({ CallSid: callId, CallStatus: 'in-progress', SessionStatus: 'failed' }))).text();
+    const again = await connect(socketUrl(doc, next.base), carrier, callId);
+    await again.waitFor(() => finals(again).length >= 1, 4000);
+    expect(finals(again)).toEqual(['Shall I read it again?']);
+    expect(booked).toEqual([]);
+    expect(JSON.stringify(second.requests[0]!.messages)).toContain('The caller spoke over the read-back before it finished, so it is not confirmed.');
+  }, 20_000);
+
   it('a restart mid-turn asks the model again once', async () => {
     const dir = folder();
     const env = settings(dir, carrier, { SESSION_STORE: `file:${join(dir, 'sessions')}` });
@@ -235,6 +281,25 @@ describe.each(['twilio', 'telnyx'] as const)('a converse app\'s call on %s', (ca
     expect((calendar as unknown as { bookings: unknown[] }).bookings).toHaveLength(1);
     const results = second.requests[0]!.messages.flatMap((m) => m.content).filter((c) => c.type === 'tool_result');
     expect(results.at(-1)).toMatchObject({ content: expect.stringContaining('book: already booked') });
+  }, 20_000);
+});
+
+describe('a converse app\'s call on telnyx: the frame log', () => {
+  it('a report of a line played is masked as the trace masks the line', async () => {
+    const dir = folder();
+    const { app } = converseFixture();
+    const { base } = await boot(app, fakeModel(BOOKING), settings(dir, 'telnyx'));
+    const callId = 'v3:converse-voice-telnyx-masked';
+    const relay = await call(base, 'telnyx', callId);
+    await upToReadBack(relay);
+    played(relay, READ_BACK);
+    expect(await say(relay, 'yes')).toBe('You are booked for Tuesday morning.');
+    await new Promise((r) => setTimeout(r, 50));
+    const frames = readFileSync(join(dir, 'traces', 'converse', `${callId.replace(/[^A-Za-z0-9_-]/g, '_')}.frames.jsonl`), 'utf8');
+    // The caller's own words are kept as they said them (as the trace keeps them); the line's, as the trace masks them.
+    const lines = frames.trim().split('\n').filter((l) => l.includes('tokensPlayed') || l.includes('"dir":"out"'));
+    expect(lines.some((l) => l.includes('tokensPlayed') && l.includes('<11 chars>'))).toBe(true);
+    expect(lines.filter((l) => l.includes('Sam Example'))).toEqual([]);
   }, 20_000);
 });
 

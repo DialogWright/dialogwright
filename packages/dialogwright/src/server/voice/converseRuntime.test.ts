@@ -340,6 +340,75 @@ describe('the converse voice runtime: a confirmed change', () => {
   });
 });
 
+describe('the converse voice runtime: fix round 1', () => {
+  /** The call up to the booking's read-back. */
+  async function upToReadBack(h: ReturnType<typeof harness>): Promise<string> {
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: h.entry.provider as 'twilio' | 'telnyx' }, h.io);
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    const readBack = h.said().at(-1)!.token;
+    expect(readBack).toContain('Is that right?');
+    return readBack;
+  }
+
+  it('a yes over a read-back heard in part, its turn cut by the socket closing, confirms nothing when asked again', async () => {
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, ['hang'], [text('Shall I read it again?'), done()]]);
+    const h = harness({ model });
+    const readBack = await upToReadBack(h);
+    await h.frame({ type: 'interrupt', utteranceUntilInterrupt: readBack.slice(0, 20), durationUntilInterruptMs: 900 });
+    const yes = h.prompt('yes');
+    await h.settle();
+    h.entry.socket = null;
+    h.rt.closed(h.entry);
+    await h.settle();
+    await yes;
+    expect(h.entry.turnWords).toBe('yes');
+    expect(h.entry.turnHeard).toMatchObject({ cutIn: true, spokeBefore: false });
+    h.entry.socket = { send() {}, close() {} };
+    await h.rt.resumed(h.entry, h.io);
+    expect(h.booked).toEqual([]);
+    expect(h.rows.filter((r) => r.type === 'confirmed')).toEqual([]);
+    expect(h.said().at(-1)!.token).toBe('Shall I read it again?');
+    expect(h.entry.turnHeard).toBeUndefined();
+  });
+
+  it('tokensPlayed after the caller cut in counts for nothing: a yes over the read-back confirms nothing', async () => {
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Shall I read it again?'), done()]]);
+    const h = harness({ model, provider: 'telnyx' });
+    const readBack = await upToReadBack(h);
+    h.event({ kind: 'playback', state: 'started' });
+    h.event({ kind: 'caller', speaking: true });
+    // Telnyx reports the whole line it handed its voice, though the audio stopped on the barge-in.
+    h.event({ kind: 'playback', state: 'finished', text: readBack });
+    await h.prompt('yes');
+    expect(h.booked).toEqual([]);
+    expect(h.rows.filter((r) => r.type === 'confirmed')).toEqual([]);
+    expect(h.traces.at(-1)!.heard).toEqual({ cutIn: true, spokeBefore: false, chars: 0 });
+  });
+
+  it('three finals while a confirmed change still runs are one reply, holding all the words', async () => {
+    const tool = gate();
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Yes, a second visit works.'), done()]]);
+    const h = harness({ model, before: { book: () => tool.gate } });
+    await upToReadBack(h);
+    const asked = model.requests.length;
+    const said = h.said().length;
+    const yes = h.prompt('yes');
+    await h.settle();
+    const finals = [h.prompt('I also'), h.prompt('need a'), h.prompt('second visit')];
+    await h.settle();
+    tool.open();
+    await h.settle();
+    await Promise.all([yes, ...finals]);
+    expect(h.booked).toHaveLength(1);
+    expect(h.said().slice(said).map((f) => f.token)).toEqual(['Yes, a second visit works.']);
+    expect(model.requests.slice(asked)).toHaveLength(1);
+    const last = lastUser(model.requests.at(-1)!);
+    for (const w of ['I also', 'need a', 'second visit']) expect(last).toContain(w);
+    expect(h.entry.session.failures).toBe(0);
+  });
+});
+
 describe('the converse voice runtime: keys and corrections', () => {
   it('keys are logged and ignored', async () => {
     const model = gatedModel([]);
