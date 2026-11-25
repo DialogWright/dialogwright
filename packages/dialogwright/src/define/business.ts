@@ -1,4 +1,3 @@
-import { FREE_VAR, type AgentFacts } from '../agent/types';
 import { BUILT_IN_SLOT_TYPES } from '../slots/registry';
 import { unsupportedCheck } from '../slots/parts/check';
 import type { SlotType, SlotTypes } from '../slots/types';
@@ -7,6 +6,35 @@ import { sayableParty } from '../gate/types';
 import { readBusinessFile } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
 import { BUSINESS_FORMS, WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml, type ThenStepYaml } from './schema/business';
+
+// What the old agent mode's agent model was given, as business.yaml builds it: kept until business.yaml, which
+// still loads and is checked, is taken out with that mode. Nothing runs an agent model now.
+
+/** The variable of a full line that says the options free, as the field says them ("morning or afternoon"). */
+export const FREE_VAR = 'free';
+
+/**
+ * The facts the model may use (an app's business facts, read in agent mode): who speaks and how,
+ * what it may say, its background, and the lines the core says in fixed words.
+ */
+export interface AgentFacts {
+  /** The business's name, as the line says it. */
+  name: string;
+  /** How it sounds: the persona, in the business's own words. */
+  voice: string;
+  /** What kind of business it is (business.yaml's business.kind), for the persona. */
+  kind?: string;
+  /** The owner's name (business.owner), where the line refers to the owner. */
+  owner?: string;
+  /** The business is one person (business.oneOwner): the line never speaks of a team. */
+  oneOwner?: boolean;
+  /** What the model may say: the claims, the services, what is not offered, where it is. */
+  says: string[];
+  /** Context only, never said as a claim. */
+  background: string[];
+  /** The lines the core says in these words (the price line, the handoff, the closing), by name. */
+  fixed: Record<string, string>;
+}
 
 /**
  * business.yaml read and checked (an app in agent mode; ./schema/business.ts says what it holds), and

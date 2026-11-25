@@ -41,7 +41,6 @@
     "converse:route-eval": "tsx packages/dialogwright/src/define/cli.ts converse:route-eval",
     "converse:claims-eval": "tsx packages/dialogwright/src/define/cli.ts converse:claims-eval",
     "render:judge-eval": "tsx packages/dialogwright/src/define/cli.ts render:judge-eval",
-    "agent:bakeoff": "tsx packages/dialogwright/src/define/cli.ts agent:bakeoff",
     "eval": "tsx packages/dialogwright/src/define/cli.ts eval",
     "eval:compare": "tsx packages/dialogwright/src/define/cli.ts eval:compare",
     "eval:rejudge": "tsx packages/dialogwright/src/define/cli.ts eval:rejudge"

@@ -101,12 +101,6 @@ export function validateApp(app: App): void {
   const fail = (msg: string): never => {
     throw new Error(`app "${app.id}": ${msg}`);
   };
-  // Agent mode is built from business.yaml (define/businessApp.ts), which gives it App.agent.
-  if (app.mode === 'agent' && app.agent === undefined) fail('the app is in agent mode but carries no agent (App.agent): build it from business.yaml with defineApp');
-  if (app.personForm !== undefined) {
-    if (!Object.hasOwn(app.forms, app.personForm.form)) fail(`personForm "${app.personForm.form}" is not a form`);
-    if (!Object.hasOwn(app.prompts.manifest, app.personForm.say)) fail(`personForm's line "${app.personForm.say}" is not a prompt`);
-  }
   for (const [formId, form] of Object.entries(app.forms)) {
     for (const slot of form.slots) if (!Object.hasOwn(app.slots, slot)) fail(`form "${formId}" has unknown slot "${slot}"`);
     // A form only a verified caller may open: its line is a line, the form offered instead a form, and the app verifies someone.
@@ -536,9 +530,7 @@ export function validateApp(app: App): void {
       const ways = identity.ways ?? [{ factorSlots: identity.factorSlots, verifyTool: identity.verifyTool }];
       const way = ways.find((w) => callerId.identifies.every((slot) => w.factorSlots.includes(slot)));
       if (way === undefined) fail('identity callerId identifies factors of more than one way; name factors of one way only');
-      // In agent mode (App.mode), the caller-ID match recognizes an account on its own: the business's
-      // accepted risk (the agent-mode design, call 14), which the policy card states. Never elsewhere.
-      else if (way.factorSlots.every((slot) => callerId.identifies.includes(slot)) && app.mode !== 'agent') fail('identity callerId identifies every factor of its way, so the caller-ID match alone would verify; leave at least one factor to be asked');
+      else if (way.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of its way, so the caller-ID match alone would verify; leave at least one factor to be asked');
       if (callerId.ask !== 'on-need' && callerId.ask !== 'greeting') fail(`identity callerId ask "${String(callerId.ask)}" is not "on-need" or "greeting"`);
       if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { lookup })');
       if (typeof app.facts?.callerMatch !== 'function') fail('identity callerId needs facts.callerMatch, which reads the match from what the lookup kept');

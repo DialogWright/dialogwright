@@ -14,8 +14,7 @@ import { resolveJevProvider } from '../jev/provider';
 import { loadAppFolder } from '../define/load';
 import { AGENT_FILE, agentBusinessProblems } from '../converse/business/load';
 import { converseModelKeyVar } from '../converse/model/resolve';
-import { agentKeyVar } from '../agent/provider';
-import { DEFAULT_AGENT_MODEL } from '../define/schema/style';
+import { agentKeyVar, DEFAULT_AGENT_MODEL } from '../define/schema/style';
 import { commandHints, findApp, runCommand, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
 
 /**

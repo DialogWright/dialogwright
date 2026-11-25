@@ -443,7 +443,7 @@ describe('a restart with the file session store', () => {
     const end = await again.waitFor((m) => m.type === 'end');
     expect(JSON.parse(String(end.handoffData))).toEqual({ reasonCode: 'unreadable' });
     expect(again.texts()).toEqual([]);
-    expect(second.logs).toContain(`${callSid}: not resumed: saved under session schema 99, and this server reads 1`);
+    expect(second.logs).toContain(`${callSid}: not resumed: saved under session schema 99, and this server reads 2`);
     // The carrier's callback with that handoff puts the caller through.
     const dial = await (await fetch(`${second.base}/cr-action/twilio`, form({ ...failed('twilio', callSid), HandoffData: String(end.handoffData) }))).text();
     expect(dial).toContain('<Dial>+15551234567</Dial>');
@@ -466,7 +466,7 @@ describe('a restart with the file session store', () => {
     const doc = await (await fetch(`${second.base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
     expect(doc).toContain('<Dial>+15551234567</Dial>');
     expect(doc).toContain('Sorry');
-    expect(second.logs).toContain(`${callSid}: not resumed: saved under session schema 99, and this server reads 1`);
+    expect(second.logs).toContain(`${callSid}: not resumed: saved under session schema 99, and this server reads 2`);
     expect(second.logs.some((l) => l.includes(`${callSid}`) && l.includes('-> dial:unreadable'))).toBe(true);
     expect(storedCalls(dir)).toEqual([]);
   }, 20_000);

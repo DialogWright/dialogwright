@@ -1,13 +1,10 @@
-import { accountSettingsOf } from '../define/accountNumbers';
 import { isConverseApp, type ConverseApp } from '../converse/app';
 import { conversePolicyCardText } from './conversePages';
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
-import { callerMatchAsks, callerMatchWay, matchAloneVerifies, waysOf } from '../core/identityWays';
-import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
+import { callerMatchAsks, callerMatchWay, waysOf } from '../core/identityWays';
 import { recordingOf } from '../core/recording';
-import { namedFields, openPart } from '../core/replyShape';
 import { answerSpanOf, isSectionsSpan, spanNameVars, summarizedFields } from '../render/config';
 import { DEFAULT_HOLD_TEXT, KB_HOLD_PROMPT } from '../render/turn';
 import { DRIFT_FIRE } from '../render/checks';
@@ -245,7 +242,6 @@ function roleLabel(role: string): string {
 // ---------------------------------------------------------------------------------------------
 
 function header(app: App, dir: string): string[] {
-  if (app.mode === 'agent') return agentHeader(app, dir);
   const out = [
     `# Policy card: ${app.brand?.name ?? app.id}`,
     '',
@@ -259,105 +255,6 @@ function header(app: App, dir: string): string[] {
   out.push(`| \`policy.yaml\` | ${policy === null ? 'none' : code(policy)} |`);
   out.push(`| \`identity.yaml\` | ${identity === null ? 'none: this app verifies no one' : code(identity)} |`);
   out.push('', 'The hash is a SHA-256 of the file\'s content (comments and layout do not change it); every call\'s audit record carries the hashes it ran under.');
-  return out;
-}
-
-/** An agent-mode app's header: its policy and identity are built from business.yaml, whose hash its calls carry. */
-function agentHeader(app: App, dir: string): string[] {
-  const business = configHashOf(app, dir, 'business.yaml');
-  return [
-    `# Policy card: ${app.brand?.name ?? app.id}`,
-    '',
-    '*Generated from `business.yaml` by `pnpm policy:card`: this app is in agent mode, and the engine builds its policy and identity from that file. Do not edit it by hand. Change the file, write the card again, and review the diff. A test fails when this page and the file disagree.*',
-    '',
-    '| File | Config hash |',
-    '| --- | --- |',
-    `| \`business.yaml\` | ${business === null ? 'none' : code(business)} |`,
-    '',
-    'The hash is a SHA-256 of the file\'s content (comments and layout do not change it); every call\'s audit record carries the hashes it ran under.',
-  ];
-}
-
-/**
- * An agent-mode app's own section (the agent-mode design, "Records" and the maintainer's decisions): the
- * app is in agent mode, the conversation is sent to the agent model, the tools whose results the model
- * sees, the lines said in fixed words, and what a forged number could do where caller ID recognizes an account.
- */
-function agentSection(app: App, source: PolicySource): string[] {
-  const agent = app.agent;
-  if (app.mode !== 'agent' || agent === undefined) return [];
-  const m = agent.model;
-  const how = { last4: 'by its last four', mask: 'hidden', length: 'by its length' } as const;
-  const hidden = [...new Set(Object.values(agent.forms).flatMap((f) => f.fields).flatMap((f) => {
-    const redact = app.slots[f.slot]?.redact;
-    return redact !== undefined ? [`the ${slotNoun(app, f.slot)} ${how[redact]}`] : [];
-  }))];
-  const out = [
-    '## Agent mode',
-    '',
-    `This app is in agent mode (app.yaml's \`mode: agent\`): a model, ${code(m.model)} on ${m.provider} at ${code(m.effort)} (style.yaml's \`agent\`), leads the conversation from the business's facts in \`business.yaml\`, and the engine decides what is done.`,
-    '',
-    `- **The conversation is sent to the agent model:** the caller's words as they said them (a number they say included), the line's own replies and the fixed lines said, with what the business may say. No identity factor is sent: the app takes none a caller says. ${hidden.length > 0 ? `A value the records hide (${andList(hidden)}) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.` : 'No value of a field is hidden by the records.'}`,
-    '- **The model proposes; the engine decides.** It never calls a tool. Each value it understands is checked by its field\'s slot type, and the caller confirms every value at the read-back, said in fixed words, before any action. Every action is decided by the gate, as below.',
-    `- **What it may say** is the business's: ${agent.facts.says.length} statement${agent.facts.says.length === 1 ? '' : 's'} (its claims, services, what it does not offer, where it is, its days and windows), and ${agent.facts.background.length} line${agent.facts.background.length === 1 ? '' : 's'} of background it is told never to claim. Its sample replies (${agent.examples.length}) are sent as examples of tone.`,
-    '',
-  ];
-  const seen = Object.entries(agent.sees);
-  if (seen.length === 0) {
-    out.push('No tool\'s result is shown to the model.', '');
-  } else {
-    out.push('The tools whose results the model sees (business.yaml\'s `sees`), each called through the gate once its field is filled, its result shown only once the tool\'s reply check passes, and only the fields that check names, each in a closed form (never free text):', '', '| Field | Tool | Reply check |', '| --- | --- | --- |');
-    for (const [slot, tool] of seen) {
-      const check = app.tools[tool]?.check;
-      const checked = check === undefined ? '**none declared**' : openPart(check) !== null ? '**not a closed form**' : `closed form; the model is shown ${shownFields(check)}`;
-      out.push(`| ${slotNoun(app, slot)} (${code(slot)}) | ${cell(actionLabel(source, tool))} (${code(tool)}) | ${checked} |`);
-    }
-    out.push('');
-  }
-  // The actions held to a field's option (business.yaml's `{ tool, when }`): a consent the caller gave, read back and confirmed.
-  const held = Object.entries(agent.forms).flatMap(([form, f]) => Object.entries(f.when ?? {}).map(([tool, w]) => ({ form, tool, w, slot: f.fields.find((x) => x.name === w.field)?.slot })));
-  if (held.length > 0) {
-    out.push(
-      '### Done only on the caller\'s answer',
-      '',
-      'Each of these is called after its form\'s read-back only where the field holds the option named, as the caller answered it and confirmed it in the read-back (business.yaml\'s `when`, a `oneOf` rule on the action). With any other answer the gate refuses the action, the refusal is audited under the reason named, and the form goes on without it: a caller who did not consent is not, for example, texted.',
-      '',
-      '| Action | Only where | Refused as |',
-      '| --- | --- | --- |',
-    );
-    for (const { form, tool, w, slot } of held) out.push(`| ${cell(actionLabel(source, tool))} (${code(tool)}), after the ${form}'s read-back | ${slot !== undefined ? `${slotNoun(app, slot)} (${code(w.field)})` : code(w.field)} is ${code(w.is)} | ${code(w.reason)} |`);
-    out.push('');
-  }
-  // The read-backs, the done lines, a full choice's lines (business.yaml's `full`, call 54) and the business's own fixed lines.
-  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done|full|cancel|agent_wait)_/.test(id) || ['price', 'greeting', 'greeting_chat', 'goodbye', 'goodbye_chat', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
-  out.push('Said in fixed words, never worded by a model:', '', '| Line | Said |', '| --- | --- |');
-  for (const id of fixedIds) out.push(`| ${code(id)} | ${cell(app.prompts.manifest[id]!.text)} |`);
-  const identity = app.identity;
-  if (identity?.callerId !== undefined) {
-    const above = Object.entries(source.actions).filter(([, a]) => a.level >= 1);
-    const booked = above.map(([tool, a]) => `${a.say ?? tool} (${code(tool)})${a.rules.some((r) => r.rule === 'confirmed') ? ', still only once the caller confirms its read-back' : ''}`);
-    out.push(
-      '',
-      '### Recognized by the number calling',
-      '',
-      `A call from a number on file for one account (business.yaml's \`accounts\`) is recognized as that account at level 1 ('${levelName(app, 1)}') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, ${booked.length > 0 ? booked.length === 1 ? booked[0] : `${booked.slice(0, -1).join('; ')}; and ${booked.at(-1)!}` : 'take no action above level 0'}. That risk is the business's to accept (the agent-mode design's call 14). ${(app.callerNumber?.withheld ?? 'use') === 'use' ? "A number the caller withheld still recognizes the account it is on file for (app.yaml's `callerNumber.withheld: use`, the default); `ignore` treats such a call as one with no number." : "A number the caller withheld recognizes no account (app.yaml's `callerNumber.withheld: ignore`)."}`,
-    );
-    // Numbers read from the app's settings (business.yaml's env.<NAME>): named, never their values.
-    const settings = Object.values(app.agent?.accounts ?? {}).flatMap((a) => accountSettingsOf({ [a.name]: a.numbers }).map((s) => `${code(s.variable)} (${a.name})`));
-    if (settings.length > 0) {
-      out.push(
-        '',
-        `Some numbers on file are read from the app's own settings, by name: ${andList(settings)}. Each is the number of the setting of that name where the app runs (its value never in a file of the app); unset, it is left out, and the account is recognized by its other numbers.`,
-      );
-    }
-    const only = Object.entries(app.forms).filter(([, f]) => f.recognizedOnly !== undefined).map(([id]) => code(id));
-    if (only.length > 0) {
-      out.push(
-        '',
-        `${andList(only)} ${only.length === 1 ? 'is' : 'are'} offered only to a caller recognized by the number calling, so in practice only on a phone call: a chat carries no number to recognize, and a caller on it who asks hears ${code(Object.values(app.forms).find((f) => f.recognizedOnly !== undefined)!.recognizedOnly!.say)}.`,
-      );
-    }
-  }
   return out;
 }
 
@@ -403,9 +300,6 @@ function identitySection(app: App, source: PolicySource): string[] {
   // Level 1 by each of its ways (identity.yaml's `ways`), a row each; one row for one set of factors.
   if (identity.ways !== undefined) {
     for (const way of identity.ways) out.push(`| 1 | ${cell(levelName(app, 1))} | their ${slotsInWords(app, way.factorSlots)} | ${cell(`${actionLabel(source, way.verifyTool)} (${code(way.verifyTool)})`)} |`);
-  } else if (app.mode === 'agent' && identity.callerId !== undefined) {
-    // Agent mode: the caller-ID match is the whole of level 1, so the caller says nothing for it.
-    out.push(`| 1 | ${cell(levelName(app, 1))} | nothing they say: the number they call from, on file for one ${identity.subjectKind} | ${cell(verify)} |`);
   } else {
     out.push(`| 1 | ${cell(levelName(app, 1))} | their ${factors} | ${cell(verify)} |`);
   }
@@ -415,12 +309,7 @@ function identitySection(app: App, source: PolicySource): string[] {
     out.push(`| 2 | ${cell(levelName(app, 2))} | level 1, and a ${identity.codeLength ?? 6}-digit one-time code sent to the contact on file | ${cell(send)}; ${cell(check)} |`);
   }
   out.push('');
-  if (app.mode === 'agent' && matchAloneVerifies(app)) {
-    // Agent mode: the caller-ID match is the whole of level 1, so a caller below it is asked nothing.
-    out.push(`- Each level includes the one below it. A caller the number they call from does not recognize is asked nothing to step up: an action that needs level 1 is refused with its line (${code(NOT_RECOGNIZED_PROMPT)}), and a form only for recognized callers says its line and offers another (Agent mode, below).`);
-  } else {
-    out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
-  }
+  out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
   out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
   if (identity.ways !== undefined) {
@@ -436,8 +325,7 @@ function identitySection(app: App, source: PolicySource): string[] {
     const fallback = identity.ways !== undefined
       ? `and the caller is asked the ways as above (a miss at its question moves them to another way)`
       : `and the caller gives their ${factors}`;
-    if (app.mode === 'agent') out.push(`- On a call from a number on file for one ${identity.subjectKind}, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said and never asked, and recognized by ${code(tool)}: in agent mode the caller ID recognizes an account on its own (Agent mode, below).`);
-    else out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(tool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, ${fallback}.`);
+    out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(tool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, ${fallback}.`);
   }
   out.push(identity.signInLevel === undefined
     ? identity.typedFactors === 'ask'
@@ -459,10 +347,7 @@ function ladderDiagram(app: App, source: PolicySource): string[] {
   const top = topLevelOf(identity);
   const out = ['flowchart LR'];
   for (const level of ladderLevels(app)) out.push(`  L${level}(${mermaidLabel(`Level ${level}`, levelName(app, level))})`);
-  const agentMatch = app.mode === 'agent' && identity.callerId !== undefined;
-  if (agentMatch) {
-    // Agent mode: level 1 is the caller-ID match alone (the agent-mode section of the card).
-  } else if (identity.ways !== undefined) {
+  if (identity.ways !== undefined) {
     for (const way of identity.ways) out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, way.factorSlots)}`, `checked by: ${actionLabel(source, way.verifyTool)}`)}| L1`);
   } else {
     out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, identity.factorSlots)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
@@ -470,7 +355,7 @@ function ladderDiagram(app: App, source: PolicySource): string[] {
   const callerId = identity.callerId;
   if (callerId !== undefined) {
     const tool = waysOf(app)[callerMatchWay(app) ?? 0]!.verifyTool;
-    out.push(`  L0 -->|${mermaidLabel(agentMatch ? 'caller ID matched to one account, nothing asked' : `caller ID matched, gives ${slotsInWords(app, callerMatchAsks(app))}`, `checked by: ${actionLabel(source, tool)}`)}| L1`);
+    out.push(`  L0 -->|${mermaidLabel(`caller ID matched, gives ${slotsInWords(app, callerMatchAsks(app))}`, `checked by: ${actionLabel(source, tool)}`)}| L1`);
   }
   if (top === 2) {
     out.push(`  L1 -->|${mermaidLabel(`gives a ${identity.codeLength ?? 6}-digit one-time code`, `sent by: ${actionLabel(source, identity.sendCodeTool!)}`, `checked by: ${actionLabel(source, identity.codeTool!)}`)}| L2`);
@@ -880,7 +765,6 @@ export function policyCardText(app: App, dir: string): string {
     '',
     ...identitySection(app, source),
     '',
-    ...withGap(agentSection(app, source)),
     ...principalsSection(app, source),
     '',
     ...withGap(redactionSection(app, source)),
@@ -918,8 +802,3 @@ function relativeFolder(file: string): string {
   return rel === '' ? '.' : rel;
 }
 
-/** What a model is shown of a tool's result, for the card: each field its check names, or the value where it names none. */
-function shownFields(check: unknown): string {
-  const fields = namedFields(check);
-  return fields.length === 0 ? 'the value' : andList(fields.map((f) => `\`${f}\``));
-}

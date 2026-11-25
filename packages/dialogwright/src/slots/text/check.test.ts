@@ -51,13 +51,8 @@ describe('text check', () => {
     expect(title('The Quiet Harbor 2', 'The Quiet Harbor 2', 'a hold on The Quiet Harbor 2', ctx)).toMatchObject({ ok: true });
   });
 
-  it('compares figures as numbers on both sides, with figures: cited: a year said in pairs, a count in words (a live call, call 47), a number said in groups (call 59)', () => {
+  it('compares figures as numbers on both sides, with figures: cited: a year said in pairs, a count in words (a live call, call 47)', () => {
     const vehicle = defineSlot('vehicle', { type: 'text', what: 'the car', say: null, redact: 'none', maxLength: 80, figures: 'cited' }).check!;
-    expect(vehicle('Vega 911', "It's a it's a Vega nine eleven.", "It's a it's a Vega nine eleven.", ctx)).toMatchObject({ ok: true, value: 'Vega 911' });
-    expect(vehicle('1998 Vega 911', 'In nineteen ninety eight, nine eleven.', 'In nineteen ninety eight, nine eleven.', ctx)).toMatchObject({ ok: true });
-    expect(vehicle('Vega 920', 'Vega nine eleven', 'the Vega nine eleven', ctx)).toEqual({ ok: false, reason: 'words' });
-    // In a language with no such rule, nothing is joined.
-    expect(vehicle('Vega 911', 'Vega nueve once', 'el Vega nueve once', { ...ctx, locale: 'es-US' })).toEqual({ ok: false, reason: 'words' });
     const said = "It's a twenty twenty three Kia Sorento.";
     const cited = 'twenty twenty three Kia Sorento';
     expect(vehicle('2023 Kia Sorento', cited, said, ctx)).toMatchObject({ ok: true, value: '2023 Kia Sorento' });

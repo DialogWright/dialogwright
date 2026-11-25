@@ -36,7 +36,6 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright render:judge-eval [--replay] ...   (../harness-text/judgeEvalCommand.ts: the span drift judge measured against the shape checks)
  *   dialogwright eval <app dir> --personas ...   (../eval/cli.ts: simulated callers over the chat wire)
  *   dialogwright eval:rejudge <results dir> ...   (../eval/rejudge.ts: stored calls judged again)
- *   dialogwright agent:bakeoff --cases ... --models ...   (../harness-text/agentBakeoffCommand.ts: agent models compared on a cases file's calls)
  *   dialogwright configure | start | serve | diagnose | service | fallback | console:link   (../server: running an app, or a host file's apps)
  *   dialogwright audit:verify [dir | postgres://...] (../audit/verifyCli.ts: each audit day file's hash chain, or the audit in Postgres)
  *   dialogwright help
@@ -67,7 +66,6 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['render:judge-eval', 'measure the span drift judge against the span\'s shape checks on labelled cases: the real judge recorded into a cassette, one report (--replay: from the cassette)'],
   ['converse:route-eval', 'journey routing measured on caller turns a person labelled: accuracy, wrong and missed switches by bar, the decision model recorded into a cassette beside the labels (--replay: from the cassette)'],
   ['converse:claims-eval', "the check after speaking's question sets measured on replies a person labelled: recall, precision and average precision by rule, the decision model recorded into a cassette beside the labels (--replay: from the cassette)"],
-  ['agent:bakeoff', "compare agent models on a cases file's calls: answered, valid JSON, values and actions right, figures, latency and cost, each recorded into its own cassette beside the cases (--replay: from the cassettes)"],
   ['eval', "simulated callers over the chat wire: a model plays each persona, a model judges the call (--judge none: each call's judge input written for judging by hand), one summary of the measures (the author's own keys; refused in CI)"],
   ['eval:compare', "a converse app's models compared on its simulated callers, cheapest first, against the bars, within a budget; stops at the first that clears them (the author's own keys; refused in CI)"],
   ['eval:rejudge', "a run's stored calls judged again under the material-claims rubric, with no call made again: rejudged/summary.md beside each, and a comparison's table again (a judge model: the author's own key, refused in CI; --inputs writes each call's judge input and --verdicts reads verdicts given by hand, with no model)"],
@@ -138,8 +136,6 @@ export const USAGE = [
   '  journey routing measured on caller turns a person labelled (calls from dialogwright eval), the decision model recorded into a cassette beside the labels (refused in CI); --replay reads it alone (dialogwright converse:route-eval --help)',
   '       dialogwright converse:claims-eval --cases <claims-cases.jsonl>... --labels <labels.jsonl> --variant <module.ts>... [--replay] [--out <file.md>] [--json] [--timeout-ms N]',
   '  the check after speaking\'s question sets measured on replies a person labelled (cases from dialogwright eval --claims-cases), the decision model recorded into a cassette beside the labels (refused in CI); --replay reads it alone (dialogwright converse:claims-eval --help)',
-  '       dialogwright agent:bakeoff --cases <file> --models <model>[,<model>...] [--recorded <dir>] [--examples on|off|both] [--repeat N] [--replay] [--judge-ms N] [--price <model>=<input>,<output>]... [--by-turn] [--print-prompt] [--out <file.md>] [--json]',
-  '  agent models compared on a cases file\'s calls, each recorded into its own cassette beside the cases (or in --recorded) with your keys (refused in CI); --replay tables the cassettes alone (dialogwright agent:bakeoff --help)',
   '       dialogwright eval <app dir> --personas <file> [--runs N] [--caller <model>] [--judge <model>] [--budget <usd>] [--out <dir>] [--port N] [--parallel N] [--allow-unpriced]',
   '  simulated callers over the chat wire, a model playing each persona and a model judging the call, one summary (refused in CI; dialogwright eval --help)',
   '       dialogwright configure | start | serve | diagnose | service | fallback | console:link | audit:verify [options]',
@@ -283,10 +279,6 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'converse:claims-eval') {
     const { claimsEvalCommand } = await import('../harness-text/claimsEvalCommand');
     return claimsEvalCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
-  }
-  if (command === 'agent:bakeoff') {
-    const { agentBakeoffCommand } = await import('../harness-text/agentBakeoffCommand');
-    return agentBakeoffCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
   }
   if (command === 'eval') {
     const { evalCommand } = await import('../eval/cli');

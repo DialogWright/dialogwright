@@ -3,13 +3,36 @@ import { ACCOUNT_SLOT, businessForms, fullLinesOf, closingsOf, greetingsOf, opti
 export { optionKey };
 import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE, agentWaitPromptOf } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
-import { AGENT_CANCEL_LINE, cancelPromptOf, fullAskPromptOf, fullNonePromptOf, fullPromptOf } from '../agent/types';
 import { WINDOWS_OPTIONS, type BusinessFieldYaml, type BusinessFormName, type BusinessFormYaml, type BusinessYaml } from './schema/business';
 import {
   SCHEMAS, normalizeIdentity, slotsSchema,
   type AppYaml, type FormsYaml, type IdentityFile, type IdentityYaml, type IntentsYaml, type PolicyYaml, type PromptsYaml, type SlotsYaml,
 } from './schema/index';
 import type { AuditMask } from '../core/app/types';
+
+// What the old agent mode's agent model was given, as business.yaml builds it: kept until business.yaml, which
+// still loads and is checked, is taken out with that mode. Nothing runs an agent model now.
+
+/**
+ * The prompts a `freeFrom` field's full lines are said through (business.yaml's `full`; core/agentTurn.ts,
+ * the agent-mode design's call 54): where another option is free, and where nothing is free on the day.
+ */
+export const fullPromptOf = (slot: string): string => `full_${slot}`;
+export const fullNonePromptOf = (slot: string): string => `full_${slot}_none`;
+/**
+ * The question said after a full line where exactly one option is free (business.yaml's `full.ask`, the
+ * agent-mode design's call 55: "Does the {free} work for you?"), in place of the field's own question. The
+ * decision model's yes to it fills the one free option. Absent from an app whose field gives none.
+ */
+export const fullAskPromptOf = (slot: string): string => `full_${slot}_ask`;
+/**
+ * The question an app in agent mode asks at a form's read-back where the caller says they don't want to go ahead
+ * (the `done` intent; the agent-mode design, call 55): business.yaml's form `cancel`, by default
+ * AGENT_CANCEL_LINE. A yes ends the call with nothing sent; a no reads the request back again.
+ */
+export const cancelPromptOf = (form: string): string => `cancel_${form}`;
+/** The cancel question's words where business.yaml's form gives none (cancelPromptOf). */
+export const AGENT_CANCEL_LINE = 'Do you want to cancel this request?';
 
 /**
  * The files an app in agent mode does not have, built from its business.yaml (the agent-mode design,

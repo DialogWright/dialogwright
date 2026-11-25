@@ -24,8 +24,6 @@ import type { JevClient } from '../jev/types';
 import type { Thresholds } from '../core/thresholds';
 import type { ScreenMode } from '../core/screen';
 import { adversarialSuite, adversarialTranscript, formatAdversarialReport, runAdversarialSuite, type AdversarialReport } from '../testing/adversarial/index';
-import { harnessAgent } from './agentScript';
-import type { AgentRunner } from '../agent/types';
 
 /**
  * Whether a run on this client refuses a spoken step whose words no corpus line has: only the
@@ -127,11 +125,6 @@ async function run(argv?: readonly string[]): Promise<void> {
   // cassette replayed, or the model itself when recording (render/harness.ts). None for any other app.
   const rendering = harnessRenderer(kind, getApp(defaultAppId()), recordedDir(), args.render === undefined ? {} : { render: args.render });
   for (const line of rendering.header) header(line);
-  // An app in agent mode: on the stubs, the agent's answers each scripted call's steps name; `recorded`, the
-  // agent cassette replayed beside the decision model's; `record`, the model recorded with the author's own
-  // key (refused in CI); `jev`, the model (agentScript.ts harnessAgent). Nothing for any other app.
-  const agent = harnessAgent(kind, getApp(defaultAppId()), recordedDir());
-  for (const line of agent.header) header(line);
   // A model the knowledge base loads on first use, loaded now, so every turn retrieves alike (runAll.ts warmKnowledge).
   await warmKnowledge();
   const opts: RunOptions = {
@@ -141,8 +134,6 @@ async function run(argv?: readonly string[]): Promise<void> {
     now: () => 0,
     screen,
     ...(rendering.renderer ? { renderer: rendering.renderer } : {}),
-    ...(agent.runner !== null ? { agent: agent.runner } : {}),
-    ...(agent.steps ? { agentSteps: true } : {}),
   };
   // A run that reaches a model is slow and can abort part way; it reports progress on stderr
   // (stdout is the diff artifact) and still gets a summary of what it paid for, from the finally.
@@ -159,7 +150,7 @@ async function run(argv?: readonly string[]): Promise<void> {
     if (cases.length === 0) return;
   }
   if (cases.length > 0) {
-    const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, cases, opts.renderer ?? undefined, opts.agent ?? undefined);
+    const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, cases, opts.renderer ?? undefined);
     for (const r of report.results) console.log([...adversarialTranscript(r, detail), ''].join('\n'));
     if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
     return;
@@ -233,7 +224,7 @@ async function run(argv?: readonly string[]): Promise<void> {
     // cases, held to their properties, never to the baseline. A failed case fails the run; with a
     // recording, a case it has no answers for yet is listed as not yet recorded.
     if (getApp(defaultAppId()).adversarial === true) {
-      const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, undefined, opts.renderer ?? undefined, opts.agent ?? undefined);
+      const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, undefined, opts.renderer ?? undefined);
       console.log('');
       for (const l of formatAdversarialReport(report)) console.log(l);
       if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
@@ -297,7 +288,6 @@ export async function adversarialRun(
   scenarios: readonly Scenario[],
   only?: readonly string[],
   renderer?: Renderer,
-  agent?: AgentRunner,
 ): Promise<AdversarialReport> {
   const app = getApp(defaultAppId());
   const delegates = [...corpus.flatMap((e) => (e.as ? [e.as] : [])), ...scenarios.flatMap((s) => (s.as && s.as !== 'web' ? [s.as] : []))];
@@ -316,7 +306,6 @@ export async function adversarialRun(
     perceiver: kind === 'stub' ? { stub: true, corpus } : { stub: false, client, recorded: kind === 'recorded' },
     scenarios,
     ...(renderer !== undefined ? { renderer } : {}),
-    ...(agent !== undefined ? { agent } : {}),
   });
 }
 

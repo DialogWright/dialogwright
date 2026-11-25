@@ -13,7 +13,7 @@ useTestkit();
  */
 describe('a session saved and loaded between any two turns', () => {
   it('has a schema version, kept beside the session in the store and never inside it', () => {
-    expect(SESSION_SCHEMA).toBe(1);
+    expect(SESSION_SCHEMA).toBe(2);
   });
 
   it('runs every testkit corpus entry and scenario as the live session does, at every turn', async () => {

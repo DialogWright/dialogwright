@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, text, unique } from './common';
 import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from '../../render/checks';
 import { INCEPTION_TEMPERATURE, RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
-import { INCEPTION_EFFORTS } from '../../agent/provider';
+import { KNOWN } from '../../render/endpoints';
 
 /**
  * style.yaml (optional): how a generated line sounds (generated wording, design section 5). Read only
@@ -24,6 +24,20 @@ export const DEFAULT_AGENT_MODEL = { provider: 'meta', model: 'muse-ember-1.0', 
 
 /** The model id an agent provider is asked for where style.yaml names none: its own; OpenRouter serves many, so it has none (style.yaml names one). */
 export const DEFAULT_AGENT_MODEL_ID: Readonly<Record<AgentProvider, string | undefined>> = { meta: 'muse-ember-1.0', inception: 'mercury-3', openrouter: undefined };
+
+/**
+ * The old agent mode's leftovers that its business.yaml, style.yaml's `agent` block, the server's settings and
+ * pnpm diagnose and configure still read until they are taken out with it: how hard Mercury reasons on Inception
+ * (`agent.effort`), the range and default of an agent model's budget (AGENT_TIMEOUT_VOICE_MS,
+ * AGENT_TIMEOUT_CHAT_MS, business.yaml's `waiting.upToMs`), and the variable its key is read from. Nothing runs
+ * an agent model now.
+ */
+export const INCEPTION_EFFORTS = ['instant', 'low', 'medium', 'high'] as const;
+export const DEFAULT_AGENT_TIMEOUT_MS: Readonly<{ voice: number; chat: number }> = Object.freeze({ voice: 1800, chat: 4000 });
+export const AGENT_TIMEOUT_RANGE: Readonly<{ min: number; max: number }> = Object.freeze({ min: 300, max: 15_000 });
+export function agentKeyVar(model: { provider: AgentProvider }): string {
+  return KNOWN[model.provider].keyVar;
+}
 
 /** The most words a generated line may use on each channel when style.yaml does not say. */
 export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;

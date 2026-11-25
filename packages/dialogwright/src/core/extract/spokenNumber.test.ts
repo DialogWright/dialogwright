@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SPANISH } from './lexicon';
-import { numbersInGroups, spokenGroups, spokenToDigits, yearPairAt } from './spokenNumber';
+import { spokenToDigits, yearPairAt } from './spokenNumber';
 
 describe('spokenToDigits', () => {
   it.each([
@@ -85,34 +85,5 @@ describe('a year said in pairs (yearPairAt)', () => {
   });
   it('agrees with the digits spokenToDigits reads', () => {
     for (const said of ['twenty twenty three', 'nineteen ninety nine', 'nineteen oh five', 'twenty twenty']) expect(String(at(said)!.value)).toBe(spokenToDigits(said));
-  });
-});
-
-describe('a number said in groups (numbersInGroups; calls 57 to 59)', () => {
-  it('reads the groups of a run written together', () => {
-    expect(spokenGroups('nine eleven')).toEqual(['9', '11']);
-    expect(numbersInGroups("It's the Vega nine eleven.")).toEqual(['911']);
-    expect(numbersInGroups('a model two eighty')).toEqual(['280']);
-    expect(numbersInGroups('unit seven forty seven')).toEqual(['747']);
-    expect(numbersInGroups('the three fifty')).toEqual(['350']);
-    expect(numbersInGroups('nine one one')).toEqual(['91', '911', '11']);
-  });
-  it('ends a run at a mark between clauses: a year and a model with a comma between are two runs', () => {
-    expect(numbersInGroups('In nineteen ninety eight, nine eleven.')).toEqual(['1998', '911']);
-    expect(numbersInGroups('two, three, four or six')).toEqual([]);
-    expect(numbersInGroups('Two. Three.')).toEqual([]);
-    expect(numbersInGroups('fifteen, thirty')).toEqual([]);
-    expect(numbersInGroups('nine - eleven')).toEqual([]);
-    expect(numbersInGroups('nine eleven... two eighty')).toEqual(['911', '280']);
-    // Said in one breath with no mark, the groups side by side all count.
-    expect(numbersInGroups('nineteen ninety eight nine eleven')).toEqual(expect.arrayContaining(['1998', '911']));
-  });
-  it('never joins runs an ordinary word stands between, nor a number of one group', () => {
-    expect(numbersInGroups('two copies and nine')).toEqual([]);
-    expect(numbersInGroups('one hundred fifty')).toEqual([]);
-    expect(numbersInGroups('nine')).toEqual([]);
-  });
-  it('reads none in a language with no such rule', () => {
-    expect(numbersInGroups('nueve once', SPANISH)).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineApp, type AppCode } from '../../defineApp';
+import type { AppCode } from '../../defineApp';
 import { replyShape } from '../../../core/replyShape';
 import type { ToolDef } from '../../../core/app/types';
 
@@ -107,9 +107,6 @@ export const businessFixtureCode: AppCode = {
     }),
   },
 };
-
-/** The app: the folder joined with the code above. */
-export const businessFixtureApp = defineApp(BUSINESS_FIXTURE_DIR, businessFixtureCode);
 
 /** The code parts under the name `dialogwright check` imports them by. */
 export const code = businessFixtureCode;

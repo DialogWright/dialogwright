@@ -1,5 +1,4 @@
 import type { FormId, Intent, SlotId, ToolName } from './app/types';
-import type { SeenResult } from '../agent/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination, SectionNomination } from '../kb/types';
@@ -17,7 +16,7 @@ import type { Channel, ChannelCaps } from '../channel/caps';
  * (server/sessions.ts restore). Raise it with any change to Session a saved one would not satisfy (a
  * field added that the core reads without a default, a field whose meaning changes).
  */
-export const SESSION_SCHEMA = 1;
+export const SESSION_SCHEMA = 2;
 
 export interface SlotState {
   value: string | null;
@@ -43,12 +42,9 @@ export interface SlotState {
   /**
    * `caller-id`: a factor the caller-ID match identifies (identity.yaml's `callerId`), filled from the
    * match just before the check rather than said, with a value and no display. Absent on every other
-   * slot, and gone when the slot is emptied. `agent`: understood by the agent model of an app in agent
-   * mode (core/agentTurn.ts) and checked by the slot type's `check`, never filled by the slot itself.
-   * `decision-model`: in agent mode, a choice of yes and no the line had just asked, filled from the
-   * decision model's yes or no reading of the answer (core/agentTurn.ts yesNoRead), as at a read-back.
+   * slot, and gone when the slot is emptied.
    */
-  by?: 'caller-id' | 'agent' | 'decision-model';
+  by?: 'caller-id';
   /**
    * The caller's words the value was heard in: kept only for a topic slot whose form's answer line words
    * its answer for the caller's question (App.generated.answerSlots), and never from words said at a
@@ -159,28 +155,7 @@ export type PendingConfirmation =
    * `summary.onNo: read-back`), so the next bare no asks what to change. Absent until then (and in a
    * session saved before it, which behaves as one that has not read it back).
    */
-  | {
-      target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string; readBack?: boolean;
-      /**
-       * An app in agent mode: the turn before at this read-back was an aside (a question answered from the
-       * facts, or the price line), so the next aside in a row is counted (core/agentTurn.ts). Absent otherwise.
-       */
-      aside?: true;
-      /**
-       * An app in agent mode: how many times the cancel question (`cancel`, below) has been asked at this read-back
-       * (call 55's review): from the second, each asking counts an attempt on the read-back's ladder, so a caller
-       * who keeps saying "never mind" and then no still reaches a person. Absent before the first.
-       */
-      cancelAsked?: number;
-      /**
-       * An app in agent mode: the caller said at this read-back that they don't want to go ahead (the `done`
-       * intent), and the line asked whether to cancel the request (`cancel_<form>`; the agent-mode design, call
-       * 55). A yes ends the call with nothing sent, a no reads the request back again, and anything else is
-       * read as at the read-back. Gone as soon as the read-back or "What should I change?" is said again.
-       * Absent otherwise (and in a session saved before it, which never asked).
-       */
-      cancel?: true;
-    }
+  | { target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string; readBack?: boolean }
   /**
    * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts
    * stopForm): the check by its action, and what the gate said (its verdict and reason), so a yes
@@ -345,26 +320,6 @@ export interface Session {
    * the call. Absent until the first, so every other session, and one saved before it, is as it was.
    */
   frustrationHigh?: true;
-  /**
-   * An app in agent mode's own (core/agentTurn.ts): the conversation so far, the caller's words and what
-   * the line said, in order, as the agent model is sent it (each earlier line masked there by what the
-   * records hide); and how many turns in a row the agent model failed (a timeout, an answer not in its
-   * shape, an error), two of which end the call with the handoff line. `scripted`: the call began with no
-   * agent client (no key), so it runs as a scripted app for the whole call (core/agentTurn.ts). `seen`: the
-   * checked results of the tools the app lets the model see (business.yaml's `sees`), the latest of each
-   * tool, each with the field and value it was called with, and only the fields its check names
-   * (core/replyShape.ts namedPart); absent until the first. `judged`: the slots whose text value the drift
-   * judge refused once with no value held since (call 45), so a second refusal counts an attempt. `fullAsked`:
-   * the slots for which a free option was given for words naming a full one (the `full` outcome) once with no
-   * value held since (call 55), so a second counts an attempt. `refused`: by slot, how many times a value the
-   * agent model gave for the field was refused by its slot type's check (its shape, its words), since the field
-   * was last filled, while its form is open (core/agentTurn.ts refusedByCheck; calls 57 to 59): the first
-   * business.yaml's `values.refusedUncounted` (default 2) count no attempt, the rest do. `waitLine`: the index of
-   * the line (business.yaml's `waiting.lines`) said last on the call while the model was slow (run/waiting.ts
-   * agentFiller), so the next is another. Absent for every other app, and until the first such refusal or line,
-   * so every other session, and one saved before it, is as it was.
-   */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[]; fullAsked?: SlotId[]; refused?: Record<SlotId, number>; waitLine?: number };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -646,7 +601,6 @@ export function cloneSession(s: Session): Session {
     completed: [...s.completed],
     ...(s.acknowledged ? { acknowledged: [...s.acknowledged] } : {}),
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
-    ...(s.agent ? { agent: { ...s.agent, conversation: s.agent.conversation.map((u) => ({ ...u })), ...(s.agent.seen ? { seen: s.agent.seen.map((x) => ({ ...x })) } : {}), ...(s.agent.refused ? { refused: { ...s.agent.refused } } : {}) } } : {}),
   };
 }
 

@@ -1,16 +1,14 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { cancelPromptOf, NO_ACTION, type AgentClient, type AgentResult } from '../agent/types';
-import { agentCassetteMissed, agentPropertyMismatches, isScriptedAgentStep, stepAgent, validAgentProperties, type AgentProperties, type ScriptedAgentStep } from './agentScript';
 import { questionVarsFor } from '../core/questionVars';
 import { rulesAt } from '../core/routes';
 import { localDateIso } from '../run/clock';
 import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
-import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type PendingConfirmation, type Session } from '../core/session';
+import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
 import { untilReplied, type ToolMemo } from '../core/toolWait';
 import { callerMatchWay, waysOf } from '../core/identityWays';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerMatch, cancelForm, checkIntent, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
+import { atCallerMatch, checkIntent, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
@@ -35,18 +33,6 @@ import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { matchLocale } from '../core/locale';
 import { localeOfNumber, numberLocalesOf } from '../core/numberLocales';
 
-/**
- * The agent a corpus line of an app in agent mode runs with (runCorpusEntry): an answer that understood
- * nothing (no value, no reply, no action, nothing from the facts), at once. The turn is the agent mode's,
- * decided by the decision model's readings alone; no model is asked.
- */
-export const UNDERSTANDS_NOTHING: AgentClient = {
-  model: 'understands-nothing',
-  async answer(): Promise<AgentResult> {
-    return { ok: true, answer: { reply: '', values: [], action: NO_ACTION, fromFacts: false }, ms: 0 };
-  },
-};
-
 /** How a runner runs one turn: runTurn, unless a test runs each one another way (testing/sessionRoundTrip.ts). */
 export type TurnRunner = typeof runTurn;
 
@@ -59,12 +45,6 @@ export interface ScenarioRunOptions extends RunOptions {
    * is given in its place. Absent, as on every run but such a test, the stand-in's answer is given.
    */
   readonly serviceReply?: (service: string, answer: unknown) => unknown;
-  /**
-   * An app in agent mode on the stubs: each scripted call's agent answers are the ones its steps name
-   * (ScenarioStep `agent`; harness-text/agentScript.ts stepAgent), in place of `agent`. A corpus line runs
-   * with an agent that understands nothing either way (runCorpusEntry). Absent, as for every other app, `agent` answers.
-   */
-  readonly agentSteps?: boolean;
 }
 
 export interface Outcome {
@@ -237,20 +217,6 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   // The entry call, through the gate: ALLOW for the seed customer (facts loaded, entered), STEP_UP for an
   // anonymous caller (the step-up pending, the next factor asked).
   ensureEntry(session, tc, newTurnOut(), []);
-  if (confirming && cancelForm(entry.context, app) !== null) {
-    // An agent-mode app's read-back, the line having just asked whether to cancel it (call 55): its summary
-    // read and its hash taken, then the cancel question the last line said.
-    const promptId = formOf(app, form).summaryPromptId!;
-    const pending: PendingConfirmation = { target: 'form', form, attempts: 0 };
-    session.pendingConfirmation = pending;
-    renderSummary(session, prompt(promptId, 'confirm', summaryVars(session), [], ['yes', 'no']), tc, newTurnOut());
-    pending.cancel = true;
-    session.promptedFor = 'confirm';
-    session.lastPromptId = cancelPromptOf(form);
-    session.lastPromptText = promptText(app, cancelPromptOf(form), {}, session.locale, { shown: !session.caps.speech });
-    session.lastPromptOptions = ['yes', 'no'];
-    return session;
-  }
   if (confirming) {
     const promptId = formOf(app, form).summaryPromptId;
     if (!promptId) throw new Error(`corpus ${entry.id}: form ${form} has no summary prompt`);
@@ -455,13 +421,7 @@ function seededPrompt(s: Session): Pick<Session, 'lastPromptId' | 'lastPromptTex
 }
 
 export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOptions): Promise<{ outcome: Outcome; run: TurnRun; setup: TurnRun }> {
-  // A corpus line is the decision model's alone: in an app in agent mode it runs with an agent that
-  // understands nothing (UNDERSTANDS_NOTHING), never the agent model, so the decision model is asked only
-  // what it is asked in agent mode (the turn-level readings, the yes or no at a read-back) and no field
-  // fills: the stubs and a recording read it alike. Not as a call with no agent client, which runs as a
-  // scripted app and has the decision model fill each field, which a stub's labels never say.
-  const { agent: _agent, agentSteps: _steps, ...own } = opts;
-  const { setup, runs } = await runSeeded(entry, getApp(defaultAppId()).mode === 'agent' ? { ...own, agent: { client: UNDERSTANDS_NOTHING } } : opts);
+  const { setup, runs } = await runSeeded(entry, opts);
   const run = runs.at(-1)!;
   // The setup run is returned as well as traced: a summary that leaves it out would read
   // the seeded placeholders as slots this one utterance filled.
@@ -535,15 +495,10 @@ export async function runSeeded(entry: CorpusEntry, opts: ScenarioRunOptions, ho
  * A spoken step (`say`) heard over a line the caller could not interrupt is `overLine: true`: its event is
  * marked as the voice server marks it under SPEECH_OVER_LINE (UserSpeech.overLine), on a call with speech only.
  */
-export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean; overLine?: boolean; agent?: ScriptedAgentStep } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
+export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean; overLine?: boolean } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
 
-/**
- * A scripted call's expectation: its end (the decision, the prompt, the gate, ...), and, for an app in agent
- * mode, properties over its turns (AgentProperties: the values the write carries, the action taken or not,
- * no figure outside the facts said, the read-back said, nothing done before the confirm), each failing
- * with the turn it is about.
- */
-export interface ScenarioExpectation extends AgentProperties {
+/** A scripted call's expectation: its end (the decision, the prompt, the gate, ...). */
+export interface ScenarioExpectation {
   decision: string;
   promptId?: string;
   reason?: string;
@@ -626,17 +581,15 @@ export interface Scenario {
   env?: Record<string, string>;
   steps: ScenarioStep[];
   /**
-   * An app in agent mode: what the caller says to each question the line asks, by the question, so the call
-   * does not rest on the order the model asks the fields in (the agent-mode design, call 41). The key is the
-   * prompt the line said (`readback_request`, `confirm_intent_explicit`, `offer_request_callbackNumber`), or
-   * the slot a field's question asks (`request_day` answers `ask_request_day`, its retry and the full line's
-   * question for its one free option, `full_request_day_ask`); a question
-   * asked again is answered again with the same words. Once `steps` (the turns tied to no question: the
+   * What the caller says to each question the line asks, by the question, so the call does not rest on the
+   * order the fields are asked in. The key is the prompt the line said (`readback_request`,
+   * `confirm_intent_explicit`, `offer_request_callbackNumber`), or the slot a field's question asks
+   * (`request_day` answers `ask_request_day` and its retry); a question asked again is answered again with
+   * the same words. Once `steps` (the turns tied to no question: the
    * opening, an aside) are said, each turn says the answer to the line's question, until the line says no
    * question (`anything_else`, a handoff, the call's end) or the one `expect.promptId` names. A question with
    * no answer here fails the call, naming it. A list answers the question in turn each time it is asked, its
-   * last again after that ("I'm not sure, what is it?", then "yes"). Each answer's `agent` is the stub's, one
-   * per asking, as a step's. An answer is words (`say`, heard over the line with `overLine: true`) or a
+   * last again after that ("I'm not sure, what is it?", then "yes"). An answer is words (`say`, heard over the line with `overLine: true`) or a
    * silence (`{ "silence": true }`: the no-input wait runs out at the question).
    */
   answers?: Record<string, ScenarioStep | ScenarioStep[]>;
@@ -731,9 +684,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const today = scenario.todayIso ?? (at !== undefined ? dateAt(at) : undefined);
   // A slow renderer, where the call says so (renderDelayMs).
   const renderer = opts.renderer && scenario.renderDelayMs !== undefined && scenario.renderDelayMs > 0 ? { ...opts.renderer, client: slowRenderClient(opts.renderer.client, scenario.renderDelayMs) } : undefined;
-  // An app in agent mode on the stubs: the agent's answers are the ones the steps name.
-  const stepped = opts.agentSteps === true && getApp(defaultAppId()).mode === 'agent' ? stepAgent() : null;
-  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}), ...(renderer !== undefined ? { renderer } : {}), ...(stepped !== null ? { agent: { client: stepped } } : {}) };
+  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}), ...(renderer !== undefined ? { renderer } : {}) };
   const runs: TurnRun[] = [];
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(o)(), scenario.as);
@@ -790,7 +741,6 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
       : 'signIn' in step ? [signedInEvent(signedInSubject(scenario.id, step.signIn))]
       : [overLineOf(saidEvent(session, step.say, step.partial !== true), step.overLine === true)];
     failNext = 'say' in step && step.fail === true;
-    stepped?.step(index, 'say' in step ? step.agent : undefined);
     for (const event of events) {
       last = await turn(session, event, o);
       runs.push(last);
@@ -813,17 +763,6 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result), last.result.actions.find((a) => a.type === 'transfer'));
   for (const q of unanswered) mismatches.push(`answers: the line asked ${q}, which the call has no answer for`);
   if (scenario.answers !== undefined && said.length >= scenario.steps.length + MAX_ANSWERS && !session.ended) mismatches.push(`answers: the line was still asking after ${MAX_ANSWERS} answers`);
-  const stepText = (i: number): string => JSON.stringify((said[i]?.step as { say?: string } | undefined)?.say ?? '');
-  // An app in agent mode: its properties over the turns; a step the agent was asked on that names no
-  // answer (on the stubs), and a turn the agent cassette had no answer for, each fail the call.
-  if (appOf(session).mode === 'agent') {
-    mismatches.push(...agentPropertyMismatches(appOf(session), scenario.expect, runs, o.todayIso));
-    for (const step of stepped?.unscripted ?? []) mismatches.push(`agent: step ${step + 1} (${stepText(step)}) was asked of the agent, but names no agent answer`);
-    for (const s of stepped?.short ?? []) mismatches.push(`agent: step ${s.step + 1} (${stepText(s.step)}) asked the agent ${s.asking === 2 ? 'again' : `a ${s.asking}th time`} (shown a tool's result), but names ${s.named} answer${s.named === 1 ? '' : 's'}: give one per asking`);
-    runs.forEach((r, i) => {
-      if (agentCassetteMissed(r)) mismatches.push(`agent: turn ${i} has no answer in the agent cassette (a miss): record it with --client record`);
-    });
-  }
   return { outcome, runs, stepOf, ...(scenario.answers !== undefined ? { said } : {}), pass: mismatches.length === 0, mismatches };
 }
 
@@ -940,11 +879,8 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).env === undefined || isStringMap((s as Scenario).env)) &&
     ((s as Scenario).renderDelayMs === undefined || (Number.isInteger((s as Scenario).renderDelayMs) && (s as Scenario).renderDelayMs! >= 0 && (s as Scenario).renderDelayMs! <= 30_000)) &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null) &&
-    // An agent-mode call's steps' agent answers and its properties, well formed.
-    (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent)) &&
-    ((s as Scenario).answers === undefined || (typeof (s as Scenario).answers === 'object' && (s as Scenario).answers !== null && !Array.isArray((s as Scenario).answers) && Object.values((s as Scenario).answers!).flatMap((x) => (Array.isArray(x) ? (x.length > 0 ? x : [null]) : [x])).every((step) => typeof step === 'object' && step !== null && (('silence' in step && (step as { silence?: unknown }).silence === true && Object.keys(step).length === 1) || ('say' in step && typeof (step as { say?: unknown }).say === 'string' && (!('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean') && (!('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent))))))) &&
-    (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean') &&
-    validAgentProperties((s as Scenario).expect as unknown as Record<string, unknown>)
+    ((s as Scenario).answers === undefined || (typeof (s as Scenario).answers === 'object' && (s as Scenario).answers !== null && !Array.isArray((s as Scenario).answers) && Object.values((s as Scenario).answers!).flatMap((x) => (Array.isArray(x) ? (x.length > 0 ? x : [null]) : [x])).every((step) => typeof step === 'object' && step !== null && (('silence' in step && (step as { silence?: unknown }).silence === true && Object.keys(step).length === 1) || ('say' in step && typeof (step as { say?: unknown }).say === 'string' && (!('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean')))))) &&
+    (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean')
   );
 }
 
@@ -955,7 +891,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a step's agent answer or an agent property not in its shape, a step's overLine that is not true or false, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a step's overLine that is not true or false, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       const [gapProblem] = scenarioGapProblems(s);
       if (gapProblem !== undefined) throw new Error(`scenarios ${file}: ${gapProblem.message}`);

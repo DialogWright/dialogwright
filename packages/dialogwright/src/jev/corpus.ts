@@ -26,11 +26,9 @@ export interface AnswerOverride {
  * - `anything_else`: a form just completed, no form open, the last prompt "anything else?";
  * - `check_<intent>`: no form open, the line having just checked a request with the caller ("Just to check,
  *   do you want to <the intent's label>?", `confirm_intent_explicit`): an agent-mode app's "do you want to speak
- *   with someone?" is `check_agent` (the agent-mode design, call 54);
- * - `cancel_<form>`: an agent-mode app's form at its read-back, the line having just asked whether to cancel it
- *   ("Do you want to cancel this request?", after the caller said they don't want to go ahead; call 55).
+ *   with someone?" is `check_agent` (the agent-mode design, call 54).
  */
-export type CorpusContext = 'no_form' | FormId | `confirm_${FormId}` | 'offer_transfer' | 'anything_else' | `check_${string}` | `cancel_${FormId}`;
+export type CorpusContext = 'no_form' | FormId | `confirm_${FormId}` | 'offer_transfer' | 'anything_else' | `check_${string}`;
 
 /** check_ contexts only: the intent the line has just checked with the caller, where the app has it; else null. */
 export function checkIntent(context: CorpusContext, app: App = corpusApp()): string | null {
@@ -164,26 +162,13 @@ function isForm(app: App, id: string): id is FormId {
 }
 
 /**
- * confirm_ contexts (and an agent-mode app's cancel_ contexts, cancelForm, which are its summary too) only: the
- * form behind the confirm, else null. Not a prefix test: a confirm_ context is exact membership,
- * confirm_<FormId> for every form that asks a summary question (e.g. report_missing; the other forms complete
- * without one).
+ * confirm_ contexts only: the form behind the confirm, else null. Not a prefix test: a confirm_
+ * context is exact membership, confirm_<FormId> for every form that asks a summary question
+ * (e.g. report_missing; the other forms complete without one).
  */
 export function confirmForm(context: CorpusContext, app: App = corpusApp()): FormId | null {
-  const cancel = cancelForm(context, app);
-  if (cancel !== null) return cancel;
   if (!context.startsWith('confirm_')) return null;
   const form = context.slice('confirm_'.length);
-  return isForm(app, form) && app.forms[form]!.summaryPromptId !== null ? form : null;
-}
-
-/**
- * cancel_ contexts only, in an app in agent mode: the form at whose read-back the line has just asked whether to
- * cancel it ("Do you want to cancel this request?", `cancel_<form>`; the agent-mode design, call 55); else null.
- */
-export function cancelForm(context: CorpusContext, app: App = corpusApp()): FormId | null {
-  if (!context.startsWith('cancel_') || app.mode !== 'agent') return null;
-  const form = context.slice('cancel_'.length);
   return isForm(app, form) && app.forms[form]!.summaryPromptId !== null ? form : null;
 }
 
@@ -212,20 +197,6 @@ export function contextForm(context: CorpusContext, app: App = corpusApp()): For
 export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
   return entry.confirm !== undefined && entry.prompted !== undefined && contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null
     && !offerTransfer(entry.context) && (callerNumberSlots(app).includes(entry.prompted) || factsOfferSlots(app).includes(entry.prompted));
-}
-
-/**
- * A choice of yes and no the line asks in agent mode (core/questions.ts yesNoFieldAsked: a field of the form
- * whose options are exactly yes and no): an entry in a form's context whose `prompted` slot is one, saying
- * how the decision model reads the answer (`confirm`), which fills the field where it is clear (the
- * agent-mode design's call 49).
- */
-export function atYesNoField(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): boolean {
-  const form = contextForm(entry.context, app);
-  if (entry.confirm === undefined || entry.prompted === undefined || form === null || confirmForm(entry.context, app) !== null || offerTransfer(entry.context)) return false;
-  const field = app.agent?.forms[form]?.fields.find((f) => f.slot === entry.prompted);
-  const options = (field?.options ?? []).map((o) => o.trim().toLowerCase()).sort();
-  return field?.type === 'choice' && options.length === 2 && options[0] === 'no' && options[1] === 'yes';
 }
 
 /**
@@ -404,7 +375,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering && checkIntent(entry.context, app) === null && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app) && !atYesNoField(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber) or, in agent mode, is a choice of yes and no, or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent), or a check_<intent> context (a request the line just checked)`);
+      if (cf === null && !offering && checkIntent(entry.context, app) === null && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent), or a check_<intent> context (a request the line just checked)`);
       if (atCallerMatch(entry, app) && entry.confirm === 'yes') throw new Error(`corpus ${entry.id}: the caller-ID question asks for a factor, not a yes: confirm no ("different account") or unanswered (the factor, or anything else)`);
     }
     if (entry.changeSlot !== undefined) {

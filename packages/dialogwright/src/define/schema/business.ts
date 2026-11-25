@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, matching, name, text, unique } from './common';
 import { E164 } from '../../core/numberLocales';
 import { ENV_REFERENCE } from '../../core/app/envReference';
-import { AGENT_TIMEOUT_RANGE } from '../../agent/types';
+import { AGENT_TIMEOUT_RANGE } from './style';
 
 /**
  * business.yaml: the facts of an app in agent mode (app.yaml's `mode: agent`;

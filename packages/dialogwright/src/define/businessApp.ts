@@ -1,10 +1,9 @@
-import type { AgentApp, AgentAppField, AgentAppForm } from '../agent/types';
-import type { App, Completion, CompletionContext, FactsConfig, SummaryContext, ToolDef } from '../core/app/types';
+import type { App, Completion, CompletionContext, FactsConfig, RenderStyle, SummaryContext, ToolDef } from '../core/app/types';
 import type { Session, SessionFacts } from '../core/session';
 import { openPart, replyShape, shapeOf } from '../core/replyShape';
 import { isAnonymous, passed, type Principal } from '../gate/types';
-import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, optionKey, readsThroughHook, saysFor, slotIdOf, stepTool, thenTools, whenOf } from './business';
-import { ACCOUNTS_ONLY_PROMPT, agentWaitPromptOf } from './businessLines';
+import { ACCOUNT_SLOT, BUSINESS_FILE, businessForms, factsOf, type AgentFacts, optionKey, readsThroughHook, saysFor, slotIdOf, stepTool, thenTools, whenOf } from './business';
+import { agentWaitPromptOf } from './businessLines';
 import { accountByNumber } from './accountNumbers';
 import { envVariableOf } from '../core/app/envReference';
 import { accountOptions, BUSINESS_TOOLS, donePromptOf, fieldOptions, fieldSlotConfig, formParams, PRICE_PROMPT, wordsOf } from './businessFiles';
@@ -18,6 +17,113 @@ import type { LoadedConfig } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
 import { DEFAULT_AGENT_MODEL, DEFAULT_AGENT_MODEL_ID } from './schema/style';
 import type { BusinessFieldYaml, BusinessFormName, BusinessYaml } from './schema/business';
+
+// What the old agent mode's agent model was given, as business.yaml builds it: kept until business.yaml, which
+// still loads and is checked, is taken out with that mode. Nothing runs an agent model now.
+
+/** A field of a form in an app in agent mode (App.agent), as the agent model is told of it and the core checks it. */
+export interface AgentAppField {
+  /** Its name in business.yaml: the name the model gives its value by. */
+  name: string;
+  /** The slot it is held in (`<form>_<field>`). */
+  slot: string;
+  /** Its slot type. */
+  type: string;
+  about?: string;
+  /** A choice field's options, by the words each is said by. */
+  options?: string[];
+  required: boolean;
+  /** The tool whose result the model sees once it is filled (`sees`). */
+  sees?: string;
+  /**
+   * A choice field whose value must be free (business.yaml's `freeFrom`): the tool a field of its form sees
+   * and the field of its checked result that lists the free options. Once that result is kept for the form's
+   * value of the seeing field, a value not in its list is refused (`range`).
+   */
+  freeFrom?: { tool: string; list: string };
+  /**
+   * A choice field's options as its read-back says them, where business.yaml's `says` words them (by option key:
+   * the read-back's words), so a line that names an option says it as the read-back does. Absent where none is.
+   */
+  says?: Record<string, string>;
+}
+
+/** A form of an app in agent mode (App.agent), as the agent model is told of it and the core runs it. */
+export interface AgentAppForm {
+  /** What it is for, as the model is told. */
+  about: string;
+  fields: AgentAppField[];
+  /** The tools a yes at its read-back calls, in order: the first is its write. */
+  then: string[];
+  /**
+   * The tools held to a condition (business.yaml's `{ tool, when }`), by tool: called only where the field
+   * holds the option, the gate refusing them otherwise with `reason`. Absent where none is.
+   */
+  when?: Record<string, { field: string; is: string; reason: string }>;
+  /** Who may open it: `accounts`, a caller a caller-ID match recognized; absent, anyone. */
+  for?: 'accounts';
+}
+
+/** The model that leads the conversation of an app in agent mode (style.yaml's `agent`). */
+export interface AgentModelChoice {
+  provider: 'inception' | 'openrouter' | 'meta';
+  model: string;
+  effort: 'instant' | 'low' | 'medium' | 'high';
+}
+
+/**
+ * What an app in agent mode carries for its agent model (App.agent; define/businessApp.ts builds it
+ * from business.yaml): the facts it may use, the owner's sample replies, the forms, the tools whose
+ * checked results it sees, and the model.
+ */
+export interface AgentApp {
+  /** What the model may say, its background and the lines said in fixed words (define/business.ts factsOf). */
+  facts: AgentFacts;
+  /** The owner's sample replies (business.yaml's business.examples), sent as examples of tone (AgentContext.examples). */
+  examples: string[];
+  /** The forms by name (request, booking, callback), in order. */
+  forms: Readonly<Record<string, AgentAppForm>>;
+  /** The tool whose checked result the model sees once a field is filled, by the field's slot (the maintainer's decision 2). */
+  sees: Readonly<Record<string, string>>;
+  /** The model, from style.yaml's `agent` (Mercury 3 on Inception at instant by default). */
+  model: AgentModelChoice;
+  /**
+   * The fixed lines an answer may name in place of its reply (AgentAnswer.fixedLine), by their names in
+   * facts.fixed, each with the prompt it is said through: the price line (`price`), where the business has one.
+   */
+  lines: Readonly<Record<string, string>>;
+  /** The forms each fixed line may be named in (business.yaml's `prices.forms`), by its name; a line absent here may be named in any. */
+  lineForms?: Readonly<Record<string, readonly string[]>>;
+  /** How an agent line is held (render/agentLine.ts): its word budget on each channel, style.yaml's `avoid` and the judge's `refuseAt`. */
+  style: RenderStyle;
+  /**
+   * The accounts by key, each with its name and its numbers as business.yaml writes them: each E.164 or
+   * `env.<NAME>`, a setting of the app's own (define/accountNumbers.ts). Absent for a business with no accounts.
+   */
+  accounts?: Readonly<Record<string, { readonly name: string; readonly numbers: readonly string[] }>>;
+  /**
+   * How many times a field's value the model gave may be refused by its slot type's check (its shape, words the
+   * caller never said) with no attempt counted, before each refusal counts on the field's ladder (business.yaml's
+   * `values.refusedUncounted`; core/agentTurn.ts refusedByCheck). Absent: AGENT_REFUSALS_UNCOUNTED (2). 0: each
+   * counts, as before 2026-11-10.
+   */
+  refusalsUncounted?: number;
+  /**
+   * Whether a value's cited words may be the caller's from an earlier turn, to fill a text, name or digits field
+   * still empty (business.yaml's `values.earlierWords`; core/agentTurn.ts wordsHeldTo). Absent: true. false: this
+   * turn's words only, as before 2026-11-10.
+   */
+  earlierWords?: boolean;
+  /**
+   * On a call, what the caller hears while the model is slow (business.yaml's `waiting`; the maintainer's
+   * decision of 2026-11-10, call 60): past `afterMs` into a turn with the answer not in, one of `lines` (their
+   * prompts, said word for word, in turn) is said at once through the channel's early lines, and the turn
+   * waits for the answer up to `upToMs` in all (or the runner's voice budget where that is longer), the same
+   * request asked again after an answer not in its shape within it (run/turn.ts agentWaitOf). Absent: none,
+   * the runner's budget alone, as before.
+   */
+  waiting?: { afterMs: number; upToMs: number; lines: readonly string[] };
+}
 
 /**
  * An app in agent mode, joined with its code: what the engine adds to the app's code for the app
@@ -422,16 +528,11 @@ export function businessCodeProblems(b: BusinessYaml, code: AppCode, codeFile: s
   return problems;
 }
 
-/** Puts `mode: 'agent'` and App.agent on an app built from business.yaml. */
-export function asAgentApp(app: App, b: BusinessYaml, style: LoadedConfig['style']): App {
-  app.mode = 'agent';
-  app.agent = agentAppOf(b, style);
-  // The booking is offered only to an account the number calling recognized: any other caller is told
-  // so, in the business's words, and begun on the request.
-  // A person asked for is the callback note, where the business takes one: the handoff line, then its number.
-  if (b.callback !== undefined) app.personForm = { form: 'callback', say: 'handoff_live_agent' };
-  if (b.booking !== undefined && app.forms.booking !== undefined) {
-    app.forms.booking = { ...app.forms.booking, recognizedOnly: { say: ACCOUNTS_ONLY_PROMPT, ...(b.request !== undefined ? { instead: 'request' } : {}) } };
-  }
-  return app;
+/**
+ * An app built from business.yaml ran in the old agent mode, which the engine no longer runs: it is refused
+ * here, never run as a scripted app. The converse runtime (app.yaml's mode: converse, with an agent.yaml) is
+ * the agent mode now.
+ */
+export function asAgentApp(app: App, _b: BusinessYaml, _style: LoadedConfig['style']): never {
+  throw new Error(`app "${app.id}": app.yaml says mode: agent, with a business.yaml: that agent mode was taken out of the engine; build the app with an agent.yaml and app.yaml's mode: converse (defineConverseApp)`);
 }

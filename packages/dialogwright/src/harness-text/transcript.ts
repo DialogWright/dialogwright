@@ -108,40 +108,9 @@ function turnLines(run: TurnRun, indent: string): string[] {
   for (const r of run.result.routes ?? []) {
     lines.push(`${indent}   route  ${r.point}${r.form !== undefined ? ` ${r.form}` : ''}: ${r.rule === 'else' ? 'else' : `rule ${r.rule}`} -> ${r.outcome}${r.subjects.length > 0 ? `   read ${r.subjects.join(', ')}` : ''}`);
   }
-  lines.push(...agentLines(run, indent));
   lines.push(`${indent}   form   ${s.form ?? '-'}   level ${s.principal.level}   slots ${slotsOf(s)}`);
   for (const event of run.result.gateEvents) lines.push(`${indent}   gate   ${describeGate(event)}`);
   return lines;
-}
-
-/**
- * An app in agent mode: what the agent model answered on the turn, as the trace keeps it (each value with
- * its check's outcome; the reply, said or replaced and why; the action and what the turn did with it; a
- * second asking), so a recording is triaged from the transcript, never from the cassette's JSON.
- */
-function agentLines(run: TurnRun, indent: string): string[] {
-  const a = run.record.agent;
-  if (a === undefined) return [];
-  const pad = `${indent}   `;
-  const use = a.use === 'used' ? 'used' : a.use === 'dropped' ? `dropped (${a.dropped ?? '?'})` : `failed (${a.fallback ?? '?'}${a.detail !== undefined ? `: ${a.detail}` : ''})`;
-  const again = a.again === undefined ? '' : `; asked again with ${a.again.tools.join(', ')}${a.again.fallback !== undefined ? `, no second answer (${a.again.fallback})` : ''}`;
-  const out = [`${pad}agent  ${use}, ${Math.round(a.ms)} ms${again}`];
-  for (const v of a.values) out.push(`${pad}       value ${v.field}=${JSON.stringify(v.value)} from ${JSON.stringify(v.words)}: ${v.outcome}${v.earlier === true ? ' (its words from an earlier turn)' : ''}${v.counted === false ? ', no attempt counted' : ''}${v.by === 'decision-model' && a.yesNo !== undefined ? ` (the decision model's ${a.yesNo.option}: yes ${a.yesNo.yes.toFixed(2)}, no ${a.yesNo.no.toFixed(2)}, at ${a.yesNo.at})` : ''}`);
-  if (a.action !== 'none') out.push(`${pad}       action ${a.action}${a.actionOutcome !== undefined ? ` (${a.actionOutcome})` : ''}`);
-  if (a.fixedLine !== undefined) out.push(`${pad}       fixedLine ${a.fixedLine}`);
-  // The field the reply said its question asks for (call 55), and whether the turn asked it.
-  if (a.cancel !== undefined) out.push(`${pad}       cancel ${a.cancel === 'asked' ? 'asked (the caller is done at the read-back)' : a.cancel === 'kept' ? 'answered no: read back again' : 'answered yes: nothing sent, the call ended'}`);
-  if (a.asks !== undefined) out.push(`${pad}       asks ${a.asks.field}${a.asks.taken ? '' : ' (not taken: the form\'s next field)'}`);
-  // The decision model's reading of a price asked, where it bore on the turn (the line named, or read as asked: call 43).
-  const p = a.priceAsked;
-  if (p !== undefined && (p.named || a.fixedLine !== undefined)) out.push(`${pad}       price asked ${p.score.toFixed(2)} at ${p.at}${p.named ? ', the line named' : ', the line not named'}${a.fixedLine === undefined ? ': not said' : ''}`);
-  if (a.reply !== undefined && a.reply !== '') {
-    const l = a.line;
-    const how = a.closes === true ? 'not said (it takes leave of the caller)' : l === undefined ? (a.replySaid ? 'said' : 'not said') : l.mode === 'generated' ? 'said' : l.fallback !== undefined ? `replaced (${l.fallback})` : `not said (${l.skipped ?? 'not tried'})`;
-    const judge = l?.judge !== undefined ? `, judge ${l.judge.score.toFixed(2)} at ${l.judge.refuseAt}` : '';
-    out.push(`${pad}       reply ${JSON.stringify(a.reply)}: ${how}${judge}${a.fromFacts === true ? ', from the facts' : ''}`);
-  }
-  return out;
 }
 
 /** A turn the step made that the caller would notice: one that said something, or the step's last. */

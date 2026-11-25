@@ -1,5 +1,5 @@
 import { defaultTimeZone, localDateIso } from '../run/clock';
-import { AGENT_TIMEOUT_RANGE, DEFAULT_AGENT_TIMEOUT_MS } from '../agent/types';
+import { AGENT_TIMEOUT_RANGE, DEFAULT_AGENT_TIMEOUT_MS } from '../define/schema/style';
 import { BRIDGE_AFTER_MS } from '../converse/turn';
 import { resolveJevProvider, type JevProvider } from '../jev/provider';
 

@@ -1,4 +1,3 @@
-import { fullAskPromptOf, PRICE_LINE, PRICE_QUESTION, type AgentAppField } from '../agent/types';
 import type { QuestionMap } from '../jev/types';
 import type { SlotContext, SlotSpec } from './slots/types';
 import { formIntents, intentCriteria } from './app/intents';
@@ -275,81 +274,8 @@ function heldByCallerMatch(session: Session): SlotSpec[] {
   return (app.identity?.callerId?.identifies ?? []).map((id) => slotSpecOf(app, id));
 }
 
-/**
- * What the decision model is asked on a turn of an app in agent mode (core/agentTurn.ts): only what it
- * reads on every turn (side speech, words made out, a person asked for, frustration, the language, the
- * request), and at a pending confirmation the yes or the no, since that decides what is done; where the
- * app has a price line, whether the caller asks what something costs, since that decides whether it is
- * said. No field's question: the agent model understands the values, and each field's slot type checks them.
- */
-function agentModeQuestions(app: App, session: Session): QuestionMap {
-  return {
-    ...alwaysOn(app),
-    ...(app.agent?.lines[PRICE_LINE] !== undefined ? priceAsked() : {}),
-    ...(session.pendingConfirmation || yesNoFieldAsked(app, session) !== null || freeAskAsked(app, session) !== null ? confirmation(app) : {}),
-  };
-}
-
-/**
- * In agent mode, the field of the form open whose question the line has just asked (Session.promptedFor),
- * where it is a choice whose options are exactly yes and no (a consent: "Is it OK if we text you at that
- * number?"): the decision model is asked its yes or no that turn, as at a read-back, and a clear reading
- * fills the field (core/agentTurn.ts yesNoRead; the agent-mode design's call 49). Null on every other turn.
- */
-export function yesNoFieldAsked(app: App, session: Session): AgentAppField | null {
-  if (session.form === null || session.pendingConfirmation !== null || session.promptedFor === null) return null;
-  const field = app.agent?.forms[session.form]?.fields.find((f) => f.slot === session.promptedFor);
-  return field !== undefined && isYesNoField(field) ? field : null;
-}
-
-/**
- * Whether a field of an app in agent mode is a choice whose options are exactly yes and no, in any case and order
- * (a consent). Such a field is filled only by an answer to its own fixed question (an agent reply never stands in
- * for it, core/agentTurn.ts), or by the agent's value from the caller's words; never by a yes to a read-back (the
- * agent-mode design, call 55).
- */
-export function isYesNoField(field: Pick<AgentAppField, 'type' | 'options'>): boolean {
-  if (field.type !== 'choice') return false;
-  const options = (field.options ?? []).map((o) => o.trim().toLowerCase()).sort();
-  return options.length === 2 && options[0] === 'no' && options[1] === 'yes';
-}
-
-/**
- * In agent mode, the `freeFrom` field whose full line's question the line has just asked (business.yaml's
- * `full.ask`, "Does the afternoon work for you?", said where one option is free; the agent-mode design, call 55):
- * the decision model is asked its yes or no that turn, and a clear yes fills the field with the one free option
- * (core/agentTurn.ts yesNoRead). Null on every other turn.
- */
-export function freeAskAsked(app: App, session: Session): AgentAppField | null {
-  if (session.form === null || session.pendingConfirmation !== null || session.promptedFor === null) return null;
-  const field = app.agent?.forms[session.form]?.fields.find((f) => f.slot === session.promptedFor);
-  return field !== undefined && field.freeFrom !== undefined && session.lastPromptId === fullAskPromptOf(field.slot) ? field : null;
-}
-
-/**
- * Whether the caller asks what something costs: asked on every turn of an app in agent mode that has a price
- * line (business.yaml's `prices`), and nowhere else. The price line is said where this reads at
- * AGENT_PRICE_ASKED or above, whether or not the agent model named it, and never where it reads under it
- * (core/agentTurn.ts; the agent-mode design, call 43): a live chat's agent model named it on the turn the
- * caller gave a callback number, as a "what happens next", and the whole line was said with no price asked.
- */
-function priceAsked(): QuestionMap {
-  return {
-    [PRICE_QUESTION]: {
-      type: 'noul',
-      instructions: 'Read asr.text. Does the caller ask what something costs, such as a price, a fee, a quote, or how much it is?',
-      criteria: {
-        true: 'The caller asks what something costs or will cost: a price, a fee, a rate, an estimate or a quote, or how much it is, even roughly, as a range, or by proposing a figure',
-        false: 'The caller asks about something else, gives a detail such as a name, a day, a count or a phone number, answers the question just asked, or says nothing about what anything costs',
-      },
-    },
-  };
-}
-
 export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap {
   const app = appOf(session);
-  // A call of an app in agent mode that began with no agent client runs as a scripted app (Session.agent.scripted).
-  if (app.mode === 'agent' && session.agent?.scripted !== true) return agentModeQuestions(app, session);
   const q: QuestionMap = { ...alwaysOn(app) };
   // Which slot asks each slot question this turn: a slot's question that took another's id, or one
   // of the engine's, would replace it unseen, so it throws instead. A slot that declares its ids

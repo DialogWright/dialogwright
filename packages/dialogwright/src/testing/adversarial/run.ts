@@ -21,8 +21,6 @@ import {
 } from '../../harness-text/runner';
 import { HOSTILE_MARKERS, HOSTILE_PLAIN, HOSTILE_VALUES, hostileAnswer, hostileRun, saysHostile, textPaths, type HostileValue, type ValuePath } from './hostile';
 import { seatSeed } from './seed';
-import { runAgentCase } from './agent';
-import type { AgentRunner } from '../../agent/types';
 import { ANSWER_ATTACKS, type AdversarialCase, type AdversarialSuite, type AnswerAttack, type OutcomeClass, type PropertyName, type RenderAttack } from './types';
 
 /** Whether a renderer's attack is on a knowledge answer's wording (AnswerAttack). */
@@ -62,12 +60,6 @@ export interface AdversarialRunOptions {
    * for an app that generates no line, every line is its fixed text, as before.
    */
   readonly renderer?: Renderer;
-  /**
-   * The agent model of an app in agent mode (the `agent` family): the run's own, under a model or its
-   * recording. Absent on the stub, where each case's agent answers as a fooled model would; a test may
-   * give one (a well-behaved fake) to run the cases against it.
-   */
-  readonly agent?: AgentRunner;
 }
 
 /**
@@ -464,9 +456,7 @@ function lineStub(app: App, c: AdversarialCase, opts: AdversarialRunOptions): Je
 }
 
 function baseOptions(opts: AdversarialRunOptions, client: JevClient, turns: TurnRun[], tools: Tools, renderer: Renderer | undefined = opts.renderer): ScenarioRunOptions {
-  // An app in agent mode: the run's agent model, or on the stub the agent answers each scripted call's steps name (ignored by every other app).
-  const agent = opts.agent !== undefined ? { agent: opts.agent } : opts.perceiver.stub ? { agentSteps: true } : {};
-  return { client, thresholds: opts.thresholds, todayIso: opts.todayIso, now: () => 0, ...(opts.screen !== undefined ? { screen: opts.screen } : {}), turn: recorder(turns), tools, ...(renderer !== undefined ? { renderer } : {}), ...agent };
+  return { client, thresholds: opts.thresholds, todayIso: opts.todayIso, now: () => 0, ...(opts.screen !== undefined ? { screen: opts.screen } : {}), turn: recorder(turns), tools, ...(renderer !== undefined ? { renderer } : {}) };
 }
 
 /** What a hostile renderer writes before a line (RenderAttack), each a marker no line said may hold. */
@@ -806,9 +796,7 @@ export async function runAdversarialSuite(suite: AdversarialSuite, opts: Adversa
   const results: CaseResult[] = [];
   let calls: CleanCall[] | null = null;
   for (const c of suite.cases) {
-    if (c.family === 'agent') {
-      results.push(await runAgentCase(app, c, opts, client));
-    } else if (c.render !== undefined && c.line === undefined) {
+    if (c.render !== undefined && c.line === undefined) {
       calls ??= await cleanCalls(app, opts, client);
       results.push(await runRenderCase(app, c, opts, client, calls));
     } else if (c.hostile) {

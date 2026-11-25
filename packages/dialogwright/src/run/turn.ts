@@ -2,8 +2,8 @@ import { recordingTexts, textAuditRow } from '../texts/record';
 import type { TextProvider, TextRecord, TurnTexts } from '../texts/types';
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
-import { agentSettledWithout, followUpOf, followUpQuestions, plan, sensitiveDigit, slotContext, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
-import { cloneSession, type Session } from '../core/session';
+import { followUpOf, followUpQuestions, plan, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
+import type { Session } from '../core/session';
 import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
 import { pronounceFor, unpronounce } from '../channel/pronounce';
 import { maskId } from '../gate/principal';
@@ -14,7 +14,7 @@ import type { Thresholds } from '../core/thresholds';
 import { DEFAULT_SCREEN_MODE, inlineScreenQuestions, screenQuestions, screenResult, screenState, splitInlineAnswers, withInlineScreen, type ScreenMode, type ScreenResult } from '../core/screen';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
-import { JevClientError, isNoul, noulValue, type AnswerMap, type JevClient, type JevResponse, type JevUsage, type JsonValue, type QuestionMap } from '../jev/types';
+import { JevClientError, type AnswerMap, type JevClient, type JevResponse, type JsonValue, type QuestionMap } from '../jev/types';
 import type { RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceSink } from '../trace/writer';
 import type { FollowUpRecord, TraceRecord } from '../trace/types';
@@ -25,17 +25,10 @@ import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
 import { renderTurn, withRenderAudit, type EarlyLines } from '../render/turn';
-import { holdAgentLine, judgeTextValues } from '../render/agentLine';
-import { DRIFT_FIRE } from '../render/checks';
-import { DEFAULT_RENDER_CHECK_TIMEOUT_MS } from '../render/types';
-import { defaultRenderPrice } from '../render/providers';
 import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
-import { agentFiller, resolveWaiting } from './waiting';
-import { agentAsks, agentContextOf, agentSentRecord, fullLeftOut, narrowedFields, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
-import { isYesNoField } from '../core/questions';
-import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentFailure, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
+import { resolveWaiting } from './waiting';
 
 export interface TurnObserver {
   /**
@@ -120,14 +113,6 @@ export interface RunOptions {
    * sent early are taken to take no time.
    */
   playMs?: (actions: readonly Action[]) => number;
-  /**
-   * The agent model of an app in agent mode (core/agentTurn.ts): its client and its budgets per channel
-   * (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS). Asked beside the decision model on each turn of words
-   * it can answer, so it adds no wait of its own beyond the slower of the two. Unset on a run of an app in
-   * agent mode (no key), the call runs as a scripted app from that turn on (core/agentTurn.ts
-   * scriptedFromNow); every other app never asks it.
-   */
-  agent?: AgentRunner | null;
   /**
    * The server's text sender for the app (texts/types.ts; the guide's 13.17): its provider, the number it
    * sends from and the keys it has sent with. Each turn gives the app's code a sender (ToolContext.texts)
@@ -279,193 +264,6 @@ function clientFailure(reason: unknown): TurnError {
   return { name: reason.name, message: reason.message };
 }
 
-/**
- * The agent model asked for a turn, within its channel's budget (AgentRunner.timeoutMs, else
- * DEFAULT_AGENT_TIMEOUT_MS): its answer, or why there is none. A client never rejects; one that does is an
- * error all the same, its kind and never its message. No client set: NO_AGENT_CLIENT, at once.
- */
-async function askAgent(runner: AgentRunner | null, ctx: Parameters<AgentRunner['client']['answer']>[0], speech: boolean, left?: number, attempt = 1): Promise<AgentResult> {
-  if (runner === null) return NO_AGENT_CLIENT;
-  const budget = left ?? agentBudget(runner, speech);
-  const t0 = performance.now();
-  // The budget is held here too, so a client that does not keep to it cannot hold the turn.
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<AgentResult>((resolve) => {
-    timer = setTimeout(() => resolve({ ok: false, reason: 'timeout', detail: `no answer within ${budget} ms`, ms: budget }), budget);
-  });
-  try {
-    return await Promise.race([attempt === 1 ? runner.client.answer(ctx, budget) : runner.client.answer(ctx, budget, attempt), late]);
-  } catch (err) {
-    return { ok: false, reason: 'error', detail: `the agent client threw (${err instanceof Error ? err.name : 'error'})`, ms: Math.round(performance.now() - t0) };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** The agent model's budget for a turn, ms, on its channel (AgentRunner.timeoutMs, else DEFAULT_AGENT_TIMEOUT_MS). */
-function agentBudget(runner: AgentRunner, speech: boolean): number {
-  return (runner.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)[speech ? 'voice' : 'chat'];
-}
-
-/**
- * The scripted reading of a form's read-back in agent mode (the agent-mode design, calls 38 and 54): the
- * questions the decision model asks there as an app with no key asks them (each slot's, and those
- * correctingFill reads), asked in the turn's own request beside the agent's ask, so the reading is in hand
- * whenever the agent's answer fails, however late it fails. `session` is the session as a scripted app's for
- * this turn alone (Session.agent.scripted), an optional field left empty held as declined (as in agent mode,
- * where the read-back comes once every required field is filled), so it is not asked on the way back. Null
- * where the turn is not at a form's read-back the agent is asked at.
- */
-interface ReadBackReading {
-  session: Session;
-  questions: QuestionMap;
-  /** The optional fields held as declined for this turn alone. */
-  skipped: string[];
-}
-
-function readBackReading(session: Session, event: SessionEvent, tc: TurnContext): ReadBackReading | null {
-  const pc = session.pendingConfirmation;
-  if (pc === null || pc.target !== 'form') return null;
-  const scripted = cloneSession(session);
-  scripted.agent = { conversation: scripted.agent?.conversation ?? [], failures: scripted.agent?.failures ?? 0, ...scripted.agent, scripted: true };
-  const skipped = (appOf(session).agent?.forms[pc.form]?.fields ?? []).filter((f) => !f.required && scripted.slots[f.slot]?.value === null && scripted.slots[f.slot]?.declined !== true).map((f) => f.slot);
-  for (const slot of skipped) scripted.slots[slot]!.declined = true;
-  const p = plan(scripted, event, tc);
-  if (!p.needsModel || p.questions === null) return null;
-  // A choice of yes and no (a consent: "Is it OK if we text you?") is not read here: the caller's yes to the
-  // read-back answers its question too, and was taken as the field's new value, a no to texts turned to a yes
-  // (the agent-mode design, call 55's recording). A correction of it waits for the agent, or for "What should
-  // I change?".
-  // The core fills none from the yes either (core/turn.ts yesNoSlotsOf), so the call run scripted on its own is held the same.
-  const app = appOf(session);
-  const yesNo = (app.agent?.forms[pc.form]?.fields ?? []).filter(isYesNoField).map((f) => f.slot);
-  const dropped = new Set(yesNo.flatMap((slot) => app.slots[slot]?.questionIds ?? [slot]));
-  const questions = Object.fromEntries(Object.entries(p.questions).filter(([id]) => !dropped.has(id)));
-  return { session: scripted, questions, skipped };
-}
-
-/** The answers of `answers` to the questions of `questions` alone. */
-function answersTo(answers: AnswerMap, questions: QuestionMap): AnswerMap {
-  return Object.fromEntries(Object.entries(answers).filter(([id]) => Object.hasOwn(questions, id)));
-}
-
-/**
- * The turn of an app in agent mode whose agent answer failed (a timeout, an answer not in its shape, an
- * error) at a form's read-back, decided the scripted way from the reading asked beside the agent
- * (readBackReading; the agent-mode design, calls 38 and 54): a plain yes completes the form, a yes or a no
- * with a correction corrects it and says the read-back again. The reading's answers came in the turn's own
- * request, so they are there however late the agent failed: no second request is made, and none is charged.
- * Where the turn's request failed, or carried no reading, the turn stands as it first did (the read-back again,
- * nothing done; `scripted: 'none'`). The second failure in a row hands off as ever: the reading is not used
- * (`scripted: 'unused'`). Where the agent answered, the reading was asked and not needed (`unused`). The session
- * goes on in agent mode, its failure counted. Null for every other turn.
- */
-async function scriptedReading(
-  session: Session, event: SessionEvent, first: TurnResult, tc: TurnContext, screen: ScreenResult | null, reading: ReadBackReading | null, answers: AnswerMap | null,
-  channel: Parameters<typeof resolveWaiting>[6], toolTimeout: number,
-): Promise<{ result: TurnResult; waited: Awaited<ReturnType<typeof resolveWaiting>>['waited'] | undefined } | null> {
-  const pc = session.pendingConfirmation;
-  if (pc === null || pc.target !== 'form' || first.agent === undefined) return null;
-  const marked = (scripted: 'read' | 'none' | 'unused') => ({ result: { ...first, agent: { ...first.agent!, scripted } }, waited: undefined });
-  // A turn quarantined, or one the screen fired on, is decided without the words: the reading, asked, is not used.
-  if (first.quarantined || screen?.fired === true) return reading !== null ? marked('unused') : null;
-  if (first.agent.use !== 'failed') return reading !== null && answers !== null ? marked('unused') : null;
-  if (reading === null || answers === null) return marked('none');
-  // The second failure in a row hands off, as on any turn: the reading is not used.
-  if ((first.session.agent?.failures ?? 0) >= 2) return marked('unused');
-  const scripted = cloneSession(reading.session);
-  const next = await resolveWaiting(scripted, event, answersTo(answers, reading.questions), { ...tc }, null, screen, channel, toolTimeout);
-  // The call goes on in agent mode: only this turn was the scripted one; the failure is counted as the first reading counted it.
-  const s = next.result.session;
-  for (const slot of reading.skipped) delete s.slots[slot]?.declined;
-  const { scripted: _scripted, ...agent } = s.agent ?? { conversation: [], failures: 0 };
-  s.agent = { ...agent, failures: first.session.agent?.failures ?? agent.failures };
-  // What the turn decided of the cancel question at the read-back (call 55), decided here from the reading.
-  const cancel = next.result.cancel?.step;
-  return { result: { ...next.result, session: s, agent: { ...first.agent, scripted: 'read', ...(cancel !== undefined ? { cancel } : {}) } }, waited: next.waited };
-}
-
-/** The detail of a second answer not asked, the turn's budget spent before it (askAgain). */
-export const AGENT_AGAIN_NO_TIME = "no time left of the agent's budget";
-
-/**
- * The agent model asked again on a turn whose values ran a tool it sees (TurnResult.agentAgain; core/agentTurn.ts),
- * now shown the checked results: within what is left of the turn's budget, counted from when it was first
- * asked, so the two answers together take no longer than one may. Nothing left, it is not asked.
- */
-async function askAgain(runner: AgentRunner, first: AgentContext, seen: readonly SeenResult[], speech: boolean, askedAt: number, budgetMs: number = agentBudget(runner, speech)): Promise<{ result: AgentResult; ctx: AgentContext }> {
-  const ctx: AgentContext = { ...first, seen: seen.map(({ tool, result }) => ({ tool, result })) };
-  const left = Math.floor(budgetMs - (performance.now() - askedAt));
-  if (left <= 0) return { result: { ok: false, reason: 'timeout', detail: AGENT_AGAIN_NO_TIME, ms: 0 }, ctx };
-  return { result: await askAgent(runner, ctx, speech, left), ctx };
-}
-
-/** The failures asked again once (retryAgent): an answer not in its shape, and a turn the provider's content filter refused (call 61). */
-const retriable = (reason: AgentFailure): boolean => reason === 'invalid' || reason === 'filtered';
-
-/**
- * The agent model asked once more, the same request, after an answer not in its shape on a turn that needed it
- * (AgentRunner.retry, AGENT_RETRY; the maintainer's decision, 2026-11-10, call 60), or one the provider's content
- * filter refused (`filtered`, call 61: a false positive on a harmless turn, which a fresh sample at temperature 0.6
- * may not meet): only an `invalid` or `filtered` answer, never one cut off at the token limit (a runaway, which tends to run away again, and has spent the most time),
- * a timeout (no time is left) or an error; and only where the time left of the turn's budget, counted from when
- * the model was first asked, is at least what the first answer took (the second, the same request, is taken to
- * take about as long; asked with less, it would most likely time out, the caller hearing nothing the while).
- * Asked within what is left. Null where it is not asked.
- */
-async function retryAgent(runner: AgentRunner, ctx: AgentContext, budgetMs: number, askedAt: number, first: AgentResult): Promise<AgentResult | null> {
-  if (runner.retry === false || first.ok || !retriable(first.reason) || first.cutOff === true) return null;
-  // The first answer's own time, or the time since it was asked where that is longer (a client that reports less).
-  const spent = Math.max(first.ms, performance.now() - askedAt);
-  const left = Math.floor(budgetMs - spent);
-  if (left < first.ms || left <= 0) return null;
-  return askAgent(runner, ctx, ctx.channel === 'voice', left, 2);
-}
-
-/** Two answers' tokens and costs added (agentSpent of each). */
-function bothSpent(a: ReturnType<typeof agentSpent>, b: ReturnType<typeof agentSpent>): ReturnType<typeof agentSpent> {
-  const usage = a.usage === undefined ? b.usage : b.usage === undefined ? a.usage : { inputTokens: a.usage.inputTokens + b.usage.inputTokens, outputTokens: a.usage.outputTokens + b.usage.outputTokens };
-  const costUsd = a.costUsd === undefined ? b.costUsd : b.costUsd === undefined ? a.costUsd : a.costUsd + b.costUsd;
-  return { ...(usage !== undefined ? { usage } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
-}
-
-/** An answer's tokens and cost: the provider's own cost where it gives one, else the tokens at the model's price. */
-function agentSpent(r: AgentResult, runner: AgentRunner | null | undefined): { usage?: { inputTokens: number; outputTokens: number }; costUsd?: number } {
-  if (r.usage === undefined) return r.costUsd !== undefined ? { costUsd: r.costUsd } : {};
-  const price = runner?.price ?? defaultRenderPrice(runner?.client.model);
-  const costUsd = r.costUsd ?? (r.usage.inputTokens * price.input + r.usage.outputTokens * price.output) / 1_000_000;
-  return { usage: { inputTokens: r.usage.inputTokens, outputTokens: r.usage.outputTokens }, costUsd };
-}
-
-/**
- * The trace's record of the agent's answer (TraceRecord.agent): the turn's, with its tokens and cost, what
- * it was sent (the second time, where it was asked again), and the second asking (`again`): both answers'
- * time and cost together.
- */
-function agentRecord(record: AgentTurnRecord, first: AgentResult | null, again: { result: AgentResult; tools: string[] } | null, runner: AgentRunner | null | undefined, sent: AgentSentRecord | null, retry: AgentResult | null = null): AgentTurnRecord & { sent?: AgentSentRecord } {
-  const firstSpent = first === null ? {} : retry === null ? agentSpent(first, runner) : bothSpent(agentSpent(first, runner), agentSpent(retry, runner));
-  const spent = again === null ? firstSpent : bothSpent(firstSpent, agentSpent(again.result, runner));
-  const firstMs = (first?.ms ?? 0) + (retry?.ms ?? 0);
-  // Asked once more after an answer not in its shape: why the first was not, the second's own time, and why it failed too where it did.
-  // Its first failure by its reason: `invalid`, or `filtered` (the provider's content filter refused it, call 61).
-  const retried = retry === null || first === null || first.ok ? {} : {
-    ms: firstMs,
-    retried: { ...(first.reason === 'filtered' ? { filtered: first.detail } : { invalid: first.detail }), ms: retry.ms, ...(retry.ok ? {} : { fallback: retry.reason, detail: retry.detail }) },
-  };
-  const asked = again === null ? {} : {
-    ms: firstMs + again.result.ms,
-    again: { tools: again.tools, ms: again.result.ms, ...(again.result.ok ? {} : { fallback: again.result.reason, detail: again.result.detail }) },
-  };
-  return { ...record, ...spent, ...retried, ...asked, ...(sent !== null ? { sent } : {}) };
-}
-
-/** Two usages of the decision model added; null where neither was spent. */
-function sumUsage(a: JevUsage | null, b: JevUsage | null): JevUsage | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return { inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens, estimated: a.estimated || b.estimated };
-}
-
 /** The separate screen's error when it had not answered SCREEN_GRACE_MS after perception did. */
 export const SCREEN_LATE = 'screen late';
 
@@ -564,8 +362,6 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     ...digit,
     // A joined turn set aside as speech over a line returns the session it was given (TurnContext.setAsideAs).
     ...(setAsideAs !== undefined ? { setAsideAs } : {}),
-    // An app in agent mode run with no agent client: its call runs as a scripted app (core/agentTurn.ts agentLed).
-    ...(appOf(session).mode === 'agent' && (opts.agent ?? null) === null ? { noAgentClient: true as const } : {}),
   };
   const tr = performance.now();
   // Retrieval, the turn's one async step before planning: questions are built synchronously, so the
@@ -577,319 +373,139 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     : null;
   const tc: TurnContext = retrieved ? { ...base, knowledge: knowledgeOf(retrieved) } : base;
   const t0 = performance.now();
-  const own = plan(session, event, tc);
-  // At a form's read-back the agent is asked at, the form's own questions ride in the turn's request beside the
-  // agent's ask (readBackReading), so the scripted reading is in hand if the agent fails (call 54).
-  const reading = agentAsks(session, event, base) && opts.agent != null && own.needsModel && own.questions !== null ? readBackReading(session, event, tc) : null;
-  const p = reading !== null ? { ...own, questions: { ...reading.questions, ...own.questions } } : own;
+  const p = plan(session, event, tc);
   const t1 = performance.now();
-  // Typed by cast, not narrowed: askJev, below, sets them.
-  let response = null as JevResponse | null;
-  let error = null as TurnError | null;
-  let screenResponse = null as JevResponse | null;
-  let screen = null as ScreenResult | null;
-  // The agent model, for a turn of an app in agent mode it can answer: asked now, beside the decision model.
-  const agentCtx = agentAsks(session, event, base) ? agentContextOf(session, event, base) : null;
-  const agentSent: AgentSentRecord | null = agentCtx !== null ? agentSentRecord(agentCtx) : null;
-  const agentAskedAt = performance.now();
-  // On a call, an app that says what the caller hears while the model is slow (business.yaml's `waiting`): the
-  // turn waits for the answer up to its upToMs (the runner's budget where that is longer), and past its afterMs,
-  // the answer not in, one of its lines is said at once (run/waiting.ts agentFiller). Absent, the runner's budget.
-  // Not at a form's read-back, which is read the scripted way where the answer fails (scriptedReading): there the
-  // turn waits the runner's own budget, says no line and asks nothing again, so a failure never delays the reading.
-  const atReadBack = reading !== null;
-  // Nor on words heard over a line the caller could not interrupt (UserSpeech.overLine, marked only under
-  // SPEECH_OVER_LINE=unless-miss): such a turn may be set aside with nothing said, and a line said for its slowness
-  // would leave the caller in silence after it (call 61: "Okay, one moment.", then nothing until the no-input wait);
-  // and with no line said, the turn waits no longer than the runner's own budget, as before the setting (the
-  // review of call 61: a carrier with no playback report marks many answers so, its estimate running long).
-  const overLine = event.type === 'user.speech' && event.overLine === true;
-  const agentWait = agentCtx !== null && opts.agent != null && session.caps.speech && !atReadBack && !overLine ? (appOf(session).agent?.waiting ?? null) : null;
-  const ownBudgetMs = opts.agent != null ? agentBudget(opts.agent, session.caps.speech) : 0;
-  const agentBudgetMs = Math.max(ownBudgetMs, agentWait?.upToMs ?? 0);
-  const filler = agentWait !== null ? agentFiller(session, agentWait, { ...(opts.early !== undefined ? { early: opts.early } : {}), render: opts.render ?? null }, agentAskedAt) : null;
-  // A turn the decision model's reading shows will be decided without the answer (agentSettledWithout) waits no
-  // longer for it than the runner's own budget: past it, the answer is taken as late, as it was before the setting.
-  let capTimer: ReturnType<typeof setTimeout> | undefined;
-  let capAgent: (() => void) | null = null;
-  const capped = new Promise<AgentResult>((resolve) => {
-    capAgent = () => {
-      capTimer = setTimeout(() => resolve({ ok: false, reason: 'timeout', detail: `no answer within ${ownBudgetMs} ms (the turn decided without it)`, ms: ownBudgetMs }), Math.max(0, ownBudgetMs - (performance.now() - agentAskedAt)));
-      capTimer.unref?.();
-    };
-  });
-  // The decision model's reading is in: the line is said only where it would not be said over a caller not finished,
-  // and never on a turn that will not use the answer (then the wait is the runner's own budget too).
-  const readingIn = (): void => {
-    if (agentWait === null) return;
-    const answers = response?.answers ?? null;
-    if (agentSettledWithout(session, event, error !== null ? null : answers, tc, screen)) {
-      filler?.stop();
-      capAgent?.();
-      return;
-    }
-    filler?.readingIn(answers !== null && isNoul(answers.utteranceComplete) ? noulValue(answers, 'utteranceComplete') : null);
-  };
-  try {
-    // Its answer in, the line waits: a turn still waiting on the decision model or a tool is not the model being slow.
-    const agentAsked: Promise<AgentResult | null> = agentCtx === null
-      ? Promise.resolve(null)
-      : Promise.race([askAgent(opts.agent ?? null, agentCtx, session.caps.speech, agentBudgetMs), capped]).then((r) => (filler?.pause(), r));
-    const askJev = async (): Promise<void> => {
-      if (p.needsModel && words !== null) {
-        try {
-          opts.observe?.asked(p.questions!, p.turnState as TurnState, now());
-        } catch {
-          /* observers are best effort */
-        }
-        const timeoutMs = opts.thresholds.JEV_TIMEOUT_MS;
-        if ((opts.screen ?? DEFAULT_SCREEN_MODE) === 'inline') {
-          // The screen's question rides in perception's request: one request, one timeout. The model
-          // answers each question on its own, and the screen's is told to read asr.text alone, the same
-          // words the separate screen is given. A failed request fails both: the turn takes its
-          // client-failure path, and the screen reports the same error (fails open, as ever).
-          const screenQs = inlineScreenQuestions(appOf(session));
-          const asked = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: withInlineScreen(p.questions!, screenQs), timeoutMs }));
-          if (asked.status === 'fulfilled') {
-            const split = splitInlineAnswers(asked.value.answers, screenQs);
-            response = { ...asked.value, answers: split.perception };
-            screen = screenResult(split.screen, null, opts.thresholds, true);
-          } else {
-            error = clientFailure(asked.reason);
-            screen = screenResult(null, error.message, opts.thresholds, true);
-          }
-        } else {
-          // The injection screen goes out beside perception, so it costs no latency. Its request holds
-          // the caller's words and nothing else: no session state can sway it. A keypad turn
-          // never gets here, so a digit of the code is never screened. Settled as it is made, so a screen
-          // left behind as late never surfaces as an unhandled rejection.
-          const screening = settle(opts.client.ask({ state: screenState(words), questions: screenQuestions(appOf(session)), timeoutMs }));
-          const perceived = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: p.questions!, timeoutMs }));
-          if (perceived.status === 'fulfilled') response = perceived.value;
-          else error = clientFailure(perceived.reason);
-          // Once perception is back the screen gets SCREEN_GRACE_MS more, not the full timeout: the
-          // caller is waiting on it. The screen fails open: a failed or late screen leaves the turn to
-          // perception and the gate, and says so in the trace.
-          const screened = await settledWithin(screening, opts.thresholds.SCREEN_GRACE_MS);
-          if (screened === 'late') {
-            screen = screenResult(null, SCREEN_LATE, opts.thresholds);
-          } else if (screened.status === 'fulfilled') {
-            screenResponse = screened.value;
-            screen = screenResult(screened.value.answers, null, opts.thresholds);
-          } else {
-            screen = screenResult(null, clientFailure(screened.reason).message, opts.thresholds);
-          }
-        }
-      }
-    };
-    // The decision model and the agent at once: the turn waits for the slower, never the two in turn.
-    const [, agentResult] = await Promise.all([askJev().then(readingIn), agentAsked]);
-    if (capTimer !== undefined) clearTimeout(capTimer);
-    const t2 = performance.now();
-    // The turn reads only its own questions' answers: the read-back reading's are the scripted reading's alone
-    // (scriptedReading), so neither a follow-up nor the agent turn sees them.
-    const ownAnswers = (a: AnswerMap | null): AnswerMap | null => (a === null || reading === null || own.questions === null ? a : answersTo(a, own.questions));
-    // A second request on the same words, when the answers turn out to need one (askFollowUp).
-    const second = response !== null && words !== null && p.turnState !== null
-      ? await askFollowUp(session, event, words, p.turnState, ownAnswers(response.answers)!, tc, screen, opts, t1)
-      : null;
-    let turnTc: TurnContext = { ...(second?.tc ?? tc), ...(agentResult !== null ? { agent: agentResult } : {}) };
-    const t2f = performance.now();
-    // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
-    // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
-    const turnAnswers = ownAnswers(second?.answers ?? response?.answers ?? null);
-    const channel = {
-      ...(opts.early !== undefined ? { early: opts.early } : {}),
-      ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}),
-      render: opts.render ?? null,
-    };
-    const toolTimeout = waitingOf(appOf(session)).timeoutMs ?? TOOL_TIMEOUT_MS;
-    const first = await resolveWaiting(session, event, turnAnswers, turnTc, error, screen, channel, toolTimeout);
-    let { result: resolved, waited } = first;
-    // An app in agent mode whose answer was not in its shape on a turn that needed it (its fallback said): the same
-    // request asked once more, where the turn's budget leaves time for it (retryAgent), and the turn resolved again
-    // from the start with its answer, used as any answer (the calls already made kept). Where it fails too, the turn
-    // as it first stood: the fallback.
-    let retry: AgentResult | null = null;
-    if (agentCtx !== null && opts.agent != null && agentResult !== null && !atReadBack && resolved.agent?.use === 'failed' && resolved.agent.fallback !== undefined && retriable(resolved.agent.fallback)) {
-      filler?.resume();
-      retry = await retryAgent(opts.agent, agentCtx, agentBudgetMs, agentAskedAt, agentResult);
-      filler?.pause();
-      if (retry !== null && retry.ok) {
-        turnTc = { ...turnTc, agent: retry };
-        const next = await resolveWaiting(session, event, turnAnswers, turnTc, error, screen, channel, toolTimeout, first.memo);
-        resolved = next.result;
-        waited = next.waited ?? waited;
-      }
-    }
-    // An app in agent mode whose values ran a tool the model sees: the model asked again, shown its checked
-    // result, within what is left of its budget, and the turn resolved again from the start with that answer
-    // (the calls already made kept, none made twice). Where no second answer comes, the turn as it first stood.
-    let agentShown = agentCtx;
-    let again: { result: AgentResult; tools: string[] } | null = null;
-    // The agent answer the turn was last resolved with, and its context (for the text values' judge below).
-    let used: TurnContext | null = turnTc.agent?.ok === true ? turnTc : null;
-    if (resolved.agentAgain !== undefined && agentCtx !== null && opts.agent != null) {
-      const seen = resolved.agentAgain.seen;
-      // A choice held to the result (`freeFrom`) is offered with its free options only, for the day the turn now holds (call 54).
-      const narrowed: AgentContext = { ...agentCtx, fields: narrowedFields(appOf(session), resolved.session, agentCtx.fields, seen) };
-      filler?.resume();
-      const asked = await askAgain(opts.agent, narrowed, seen, session.caps.speech, agentAskedAt, agentBudgetMs);
-      filler?.pause();
-      again = { result: asked.result, tools: [...new Set(seen.map((x) => x.tool))] };
-      if (asked.result.ok) {
-        // The first answer's accepted values the second leaves out are kept (call 39), a free-from field's only while the result lists it.
-        const carried: AgentResult = resolved.agent !== undefined ? { ...asked.result, answer: withFirstValues(appOf(session), resolved.agent, resolved.session.form, asked.result.answer, seen) } : asked.result;
-        // An option the first answer gave that the result shows full, left out by the second: its full line is said (call 54).
-        const full = resolved.agent !== undefined ? fullLeftOut(appOf(session), opts.todayIso, resolved.agent, resolved.session.form, asked.result.answer, seen) : [];
-        used = { ...turnTc, agent: carried, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}), ...(full.length > 0 ? { full } : {}) } };
-        const next = await resolveWaiting(session, event, turnAnswers, used, error, screen, channel, toolTimeout, first.memo);
-        resolved = next.result;
-        waited = next.waited ?? waited;
-        agentShown = asked.ctx;
-      }
-    }
-    // The model's last answer is in (or its wait is over): no line for its slowness is said after this.
-    filler?.stop();
-    const fillerSaid = filler?.record() ?? null;
-    // An app in agent mode at a form's read-back: where the agent answer failed, the turn decided the scripted way
-    // from the form's own questions, asked in the turn's own request beside the agent (a yes completes, "yes, but
-    // make it three" corrects and reads it back); the record says what became of the reading (the agent-mode
-    // design, calls 38 and 54).
-    const reread = agentResult !== null && opts.agent != null && words !== null
-      ? await scriptedReading(session, event, resolved, tc, screen, reading, response?.answers ?? null, channel, toolTimeout)
-      : null;
-    if (reread !== null) {
-      resolved = reread.result;
-      waited = reread.waited ?? waited;
-    }
-    const rereadUsed = reread !== null && reread.result.agent?.scripted === 'read';
-    // The text values the agent gave that are not the caller's words as cited, each held to them by the drift
-    // judge a framed summary is (call 40): one it refuses, or does not read in time, is not held (call 45: never
-    // as its cited words either), and the turn is resolved again without it, its field's question asked again
-    // (the tools already called kept, none called twice).
-    let textUsage: JevUsage | null = null;
-    if (!rereadUsed && used !== null && used.agent?.ok === true && resolved.agent?.use === 'used' && resolved.agent.values.length > 0) {
-      const app = appOf(session);
-      const budget = (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[session.caps.speech ? 'voice' : 'chat'];
-      const { judged, usage } = await judgeTextValues(app, resolved.agent.values, opts.renderer?.drift ?? opts.client, budget, app.agent?.style.refuseAt ?? DRIFT_FIRE, localeOf(session));
-      textUsage = usage;
-      if (judged.length > 0) {
-        const refusedText = [...new Set(judged.filter((j) => j.held === 'before').map((j) => j.field))];
-        if (refusedText.length > 0) {
-          const next = await resolveWaiting(session, event, turnAnswers, { ...used, agentTextRefused: refusedText }, error, screen, channel, toolTimeout, first.memo);
-          // What became of the read-back reading stays on the record of the turn resolved again.
-          const scripted = resolved.agent?.scripted;
-          resolved = scripted !== undefined && next.result.agent !== undefined ? { ...next.result, agent: { ...next.result.agent, scripted } } : next.result;
-          waited = next.waited ?? waited;
-        }
-        if (resolved.agent !== undefined) resolved = { ...resolved, agent: { ...resolved.agent, textJudged: judged } };
-      }
-    }
-    const t3 = performance.now();
-    // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.
-    const retrievedAny = retrieved ?? second?.retrieved ?? null;
-    // An app in agent mode: the agent's reply, where the turn says it, held to the facts by the checks and the
-    // drift judge (render/agentLine.ts), its fixed line said in its place where one fails, and the records with it.
-    // The line said while the model was slow: the call's next is another (Session.agent.waitLine).
-    if (fillerSaid?.said === true) {
-      const a = resolved.session.agent ?? { conversation: [], failures: 0 };
-      resolved = { ...resolved, session: { ...resolved.session, agent: { ...a, waitLine: fillerSaid.index } } };
-    }
-    let held = appOf(session).mode === 'agent'
-      ? await holdAgentLine({
-        result: resolved, event, judge: opts.renderer?.drift ?? opts.client, clips: opts.render ?? null, seen: agentShown?.seen ?? [], todayIso: opts.todayIso,
-        slotContext: () => slotContext(resolved.session, '', turnTc),
-        // The judge's budget, RENDER_CHECK_TIMEOUT_MS: the agent runner's (an app in agent mode need generate no line), else the renderer's.
-        ...((opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs) !== undefined ? { checkTimeoutMs: (opts.agent?.checkTimeoutMs ?? opts.renderer?.checkTimeoutMs)! } : {}),
-      })
-      : null;
-    // A form done on the call, held back for a reply that its checks or the judge then refused (TurnResult.agentReopen):
-    // the turn resolved again, the form opened and its first question said, never "anything else?" to a caller who
-    // asked for a second job (core/agentTurn.ts requested; the review of call 61). The refused line stays on the record.
-    if (held !== null && resolved.agentReopen !== undefined && held.result.agent?.line?.mode === 'fixed') {
-      const line = held.result.agent.line;
-      const fellBack = held.result.audit.slice(resolved.audit.length);
-      const next = await resolveWaiting(session, event, turnAnswers, { ...(used ?? turnTc), agentReplyRefused: true }, error, screen, channel, toolTimeout, first.memo);
-      resolved = { ...next.result, audit: [...next.result.audit, ...fellBack], ...(next.result.agent !== undefined ? { agent: { ...next.result.agent, line } } : {}) };
-      waited = next.waited ?? waited;
-      held = { ...held, result: resolved };
-    }
-    const decided = held?.result ?? resolved;
-    // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
-    // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
-    const rendered = opts.renderer ? await renderTurn({ before: session, result: decided, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}), ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}) }) : null;
-    // A turn whose answer line words its answer: its knowledge record says whether the passage or a wording of it was said.
-    const kb = rendered?.kbSaid !== undefined && decided.kb !== null ? { ...decided.kb, said: rendered.kbSaid } : decided.kb;
-    const worded = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;
-    // The texts the turn's tools sent, each a row of its audit (text_sent), after what the turn did.
-    const result = sentTexts.length > 0 ? { ...worded, audit: [...worded.audit, ...sentTexts.map(textAuditRow)] } : worded;
-    // The decision model's checks this turn: the agent line's judge and generated wording's, together.
-    // The text values' judge (call 40) is the decision model's too.
-    const driftUsage = sumUsage(sumUsage(held?.usage ?? null, rendered?.driftUsage ?? null), textUsage);
-    // Chained before anything else is written: the audit is the record of what the turn did.
-    // The audit entries are recorded under the session's own channel kind.
-    const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];
-    // A sink that chains in a database is waited for; one that chains at once is not (nothing more to wait for).
-    const audited = Array.isArray(chained) ? chained : await chained;
-    // A sensitive digit (the code, the account ID, the date of birth, or one keyed ahead of the
-    // question that may ask for one) is recorded as keyed, never as the digit: the trace (and the dashboard, which is fed from it) must not be able to rebuild any
-    // of them. The same decision the turn itself acted on, so the frame log, the dashboard and the
-    // trace can never disagree.
-    // A portal sign-in names who signed in: the trace (and the console, fed from it) keeps their kind,
-    // level and first name, and the last four of their id only; their name, contact and the app's own
-    // attributes are left out.
-    const traced: SessionEvent = event.type === 'user.key' && sensitive !== null
-      ? { type: 'user.key', digit: CODE_DIGIT }
-      : event.type === 'auth.signed_in' && !isAnonymous(event.principal)
-        ? { ...event, principal: { kind: event.principal.kind, level: event.principal.level, id: maskId(String(event.principal.id)), first: event.principal.first } }
-        : event;
-    const record = buildTraceRecord({
-      result, event: traced, questions: p.questions, response, error, screenUsage: screenResponse?.usage ?? null,
-      // What answers the call, on its first record only, and only from a client that asks a model.
-      answeredBy: event.type === 'session.start' ? opts.client.answeredBy ?? null : null,
-      // Retrieval's time only on a turn a retriever ran; its total then counts from before it. A
-      // follow-up's time (its retrieval and its request) only on a turn that made one.
-      timing: {
-        ...(retrieved?.ms != null
-          ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - tr }
-          : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - t0 }),
-        ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
-        ...(second?.ms != null ? { followUpMs: second.ms } : {}),
-        ...(agentResult !== null ? { agentMs: agentResult.ms + (retry?.ms ?? 0) + (again?.result.ms ?? 0) } : {}),
-        // A turn that rendered a generated line, or held an agent line, counts its rendering too.
-        ...(rendered?.record.ms !== undefined || held !== null ? { renderMs: (rendered?.record.ms ?? 0) + (held?.ms ?? 0), totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
-      },
-      render: rendered?.record ?? null,
-      ...(result.agent !== undefined ? { agent: agentRecord(result.agent, agentResult, again, opts.agent, agentShown !== null ? agentSentRecord(agentShown) : agentSent, retry) } : {}),
-      // The line said while the model was slow, whatever became of the turn.
-      ...(fillerSaid !== null ? { filler: { promptId: fillerSaid.promptId, atMs: fillerSaid.atMs, said: fillerSaid.said } } : {}),
-      driftUsage,
-      retrieval: retrievedAny?.record ?? null,
-      followUp: second?.run ? followUpRecord(second.run) : null,
-      waited,
-      joined: fragments ?? null,
-      ...(fragments && waitedFor !== undefined ? { joinedWaitedFor: waitedFor } : {}),
-      ts: new Date(now()).toISOString(),
-      pricePerMtok: opts.thresholds.JEV_PRICE_PER_MTOK,
-    });
-    if (sentTexts.length > 0) record.texts = [...sentTexts];
-    opts.trace?.write(record);
+  let response: JevResponse | null = null;
+  let error: TurnError | null = null;
+  let screenResponse: JevResponse | null = null;
+  let screen: ScreenResult | null = null;
+  if (p.needsModel && words !== null) {
     try {
-      opts.observe?.turn(record, now());
+      opts.observe?.asked(p.questions!, p.turnState as TurnState, now());
     } catch {
       /* observers are best effort */
     }
-    if (audited.length > 0) {
-      try {
-        opts.observe?.audit?.(audited, now());
-      } catch {
-        /* observers are best effort */
+    const timeoutMs = opts.thresholds.JEV_TIMEOUT_MS;
+    if ((opts.screen ?? DEFAULT_SCREEN_MODE) === 'inline') {
+      // The screen's question rides in perception's request: one request, one timeout. The model
+      // answers each question on its own, and the screen's is told to read asr.text alone, the same
+      // words the separate screen is given. A failed request fails both: the turn takes its
+      // client-failure path, and the screen reports the same error (fails open, as ever).
+      const screenQs = inlineScreenQuestions(appOf(session));
+      const asked = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: withInlineScreen(p.questions!, screenQs), timeoutMs }));
+      if (asked.status === 'fulfilled') {
+        const split = splitInlineAnswers(asked.value.answers, screenQs);
+        response = { ...asked.value, answers: split.perception };
+        screen = screenResult(split.screen, null, opts.thresholds, true);
+      } else {
+        error = clientFailure(asked.reason);
+        screen = screenResult(null, error.message, opts.thresholds, true);
+      }
+    } else {
+      // The injection screen goes out beside perception, so it costs no latency. Its request holds
+      // the caller's words and nothing else: no session state can sway it. A keypad turn
+      // never gets here, so a digit of the code is never screened. Settled as it is made, so a screen
+      // left behind as late never surfaces as an unhandled rejection.
+      const screening = settle(opts.client.ask({ state: screenState(words), questions: screenQuestions(appOf(session)), timeoutMs }));
+      const perceived = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: p.questions!, timeoutMs }));
+      if (perceived.status === 'fulfilled') response = perceived.value;
+      else error = clientFailure(perceived.reason);
+      // Once perception is back the screen gets SCREEN_GRACE_MS more, not the full timeout: the
+      // caller is waiting on it. The screen fails open: a failed or late screen leaves the turn to
+      // perception and the gate, and says so in the trace.
+      const screened = await settledWithin(screening, opts.thresholds.SCREEN_GRACE_MS);
+      if (screened === 'late') {
+        screen = screenResult(null, SCREEN_LATE, opts.thresholds);
+      } else if (screened.status === 'fulfilled') {
+        screenResponse = screened.value;
+        screen = screenResult(screened.value.answers, null, opts.thresholds);
+      } else {
+        screen = screenResult(null, clientFailure(screened.reason).message, opts.thresholds);
       }
     }
-    return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? null, record, audit: audited, ...(rendered !== null && rendered.early > 0 ? { early: rendered.early } : {}) };
-  } finally {
-    // A turn that threw, or one that ended before its answer (the filler stopped already): no line said after it.
-    filler?.stop();
   }
+  const t2 = performance.now();
+  // A second request on the same words, when the answers turn out to need one (askFollowUp).
+  const second = response !== null && words !== null && p.turnState !== null
+    ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts, t1)
+    : null;
+  const turnTc = second?.tc ?? tc;
+  const t2f = performance.now();
+  // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
+  // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
+  const { result: decided, waited } = await resolveWaiting(session, event, second?.answers ?? response?.answers ?? null, turnTc, error, screen, {
+    ...(opts.early !== undefined ? { early: opts.early } : {}),
+    ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}),
+    render: opts.render ?? null,
+  }, waitingOf(appOf(session)).timeoutMs ?? TOOL_TIMEOUT_MS);
+  const t3 = performance.now();
+  // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.
+  const retrievedAny = retrieved ?? second?.retrieved ?? null;
+  // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
+  // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
+  const rendered = opts.renderer ? await renderTurn({ before: session, result: decided, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}), ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}) }) : null;
+  // A turn whose answer line words its answer: its knowledge record says whether the passage or a wording of it was said.
+  const kb = rendered?.kbSaid !== undefined && decided.kb !== null ? { ...decided.kb, said: rendered.kbSaid } : decided.kb;
+  const worded = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;
+  // The texts the turn's tools sent, each a row of its audit (text_sent), after what the turn did.
+  const result = sentTexts.length > 0 ? { ...worded, audit: [...worded.audit, ...sentTexts.map(textAuditRow)] } : worded;
+  // The decision model's checks this turn: generated wording's.
+  const driftUsage = rendered?.driftUsage ?? null;
+  // Chained before anything else is written: the audit is the record of what the turn did.
+  // The audit entries are recorded under the session's own channel kind.
+  const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];
+  // A sink that chains in a database is waited for; one that chains at once is not (nothing more to wait for).
+  const audited = Array.isArray(chained) ? chained : await chained;
+  // A sensitive digit (the code, the account ID, the date of birth, or one keyed ahead of the
+  // question that may ask for one) is recorded as keyed, never as the digit: the trace (and the dashboard, which is fed from it) must not be able to rebuild any
+  // of them. The same decision the turn itself acted on, so the frame log, the dashboard and the
+  // trace can never disagree.
+  // A portal sign-in names who signed in: the trace (and the console, fed from it) keeps their kind,
+  // level and first name, and the last four of their id only; their name, contact and the app's own
+  // attributes are left out.
+  const traced: SessionEvent = event.type === 'user.key' && sensitive !== null
+    ? { type: 'user.key', digit: CODE_DIGIT }
+    : event.type === 'auth.signed_in' && !isAnonymous(event.principal)
+      ? { ...event, principal: { kind: event.principal.kind, level: event.principal.level, id: maskId(String(event.principal.id)), first: event.principal.first } }
+      : event;
+  const record = buildTraceRecord({
+    result, event: traced, questions: p.questions, response, error, screenUsage: screenResponse?.usage ?? null,
+    // What answers the call, on its first record only, and only from a client that asks a model.
+    answeredBy: event.type === 'session.start' ? opts.client.answeredBy ?? null : null,
+    // Retrieval's time only on a turn a retriever ran; its total then counts from before it. A
+    // follow-up's time (its retrieval and its request) only on a turn that made one.
+    timing: {
+      ...(retrieved?.ms != null
+        ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - tr }
+        : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - t0 }),
+      ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
+      ...(second?.ms != null ? { followUpMs: second.ms } : {}),
+      // A turn that rendered a generated line counts its rendering too.
+      ...(rendered?.record.ms !== undefined ? { renderMs: rendered.record.ms, totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
+    },
+    render: rendered?.record ?? null,
+    driftUsage,
+    retrieval: retrievedAny?.record ?? null,
+    followUp: second?.run ? followUpRecord(second.run) : null,
+    waited,
+    joined: fragments ?? null,
+    ...(fragments && waitedFor !== undefined ? { joinedWaitedFor: waitedFor } : {}),
+    ts: new Date(now()).toISOString(),
+    pricePerMtok: opts.thresholds.JEV_PRICE_PER_MTOK,
+  });
+  if (sentTexts.length > 0) record.texts = [...sentTexts];
+  opts.trace?.write(record);
+  try {
+    opts.observe?.turn(record, now());
+  } catch {
+    /* observers are best effort */
+  }
+  if (audited.length > 0) {
+    try {
+      opts.observe?.audit?.(audited, now());
+    } catch {
+      /* observers are best effort */
+    }
+  }
+  return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? null, record, audit: audited, ...(rendered !== null && rendered.early > 0 ? { early: rendered.early } : {}) };
 }

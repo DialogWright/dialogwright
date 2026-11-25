@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { checkAnswer, checkGenerated, checkSpan, cleanGenerated, copiesFrame, cleanSpan, foreignFigure, sourceFiguresOf, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
+import { checkAnswer, checkGenerated, checkSpan, cleanGenerated, copiesFrame, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { fakeSpanWording } from './fake';
 import { instructionsOf, sentenceSaid, spanSentence, SPAN_INSTRUCTIONS, SPAN_INSTRUCTIONS_TO_CALLER } from './prompt';
 import { SPAN_GAP, type SpanAct, type SpeechAct } from './types';
-import { ENGLISH, SPANISH } from '../core/extract/lexicon';
 
 /** A span's sentence, as a call sends one (SpanAct.sentence): the frame's own words, the span a gap. */
 const SENTENCE = "I'll make sure {recipient} gets your message from {caller}: ____. Shall I pass it on?";
@@ -467,33 +466,6 @@ describe('the fake renderer: a test double that never drops a turning clause (li
     }
     // Spoken to the caller, the whole content turned toward them.
     expect(fakeSpanWording(span('send my invoice to accounts, not to me', { speaks: 'to-caller' }))).toBe('send your invoice to accounts, not to you');
-  });
-});
-
-describe('a number said in groups is said, as a source, in agent mode only (calls 57 to 59)', () => {
-  const en = { groups: ENGLISH };
-  it('"nine eleven" is 911 as well as what it read before; "two eighty" 280, "seven forty seven" 747, "three fifty" 350', () => {
-    expect(sourceFiguresOf('the Vega nine eleven', ENGLISH)).toEqual(expect.arrayContaining(['911']));
-    expect(foreignFigure('Vega 911', ["It's a it's a Vega nine eleven."], en)).toBe(false);
-    expect(foreignFigure('1998 Vega 911', ['In nineteen ninety eight, nine eleven.'], en)).toBe(false);
-    expect(foreignFigure('model 280', ["It's a, um, model two eighty."], en)).toBe(false);
-    expect(foreignFigure('unit 747', ['unit seven forty seven'], en)).toBe(false);
-    expect(foreignFigure('item 350', ['the three fifty'], en)).toBe(false);
-  });
-  it('never licenses another figure: "nine eleven" is no 920, and "two eighty" no 282', () => {
-    expect(foreignFigure('Vega 920', ['the Vega nine eleven'], en)).toBe(true);
-    expect(foreignFigure('model 282', ['a model two eighty'], en)).toBe(true);
-  });
-  it('widens only the source: a line\'s own words "nine eleven" are not 911', () => {
-    expect(foreignFigure('the Vega nine eleven', ['Vega 911'], en)).toBe(true);
-  });
-  it('a run ends at a mark between clauses: "two, three, four or six" joins nothing', () => {
-    for (const joined of ['23', '34', '234']) expect(foreignFigure(`${joined} payments`, ['split it into two, three, four or six payments.'], en)).toBe(true);
-    expect(foreignFigure('23 payments', ['Two. Three.'], en)).toBe(true);
-  });
-  it('a language with no such rule reads no groups, and without a lexicon nothing is joined (as on main)', () => {
-    expect(foreignFigure('Vega 911', ['the Vega nine eleven'], { groups: SPANISH })).toBe(true);
-    expect(foreignFigure('Vega 911', ['the Vega nine eleven'])).toBe(true);
   });
 });
 

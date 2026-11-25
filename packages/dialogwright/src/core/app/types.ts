@@ -1,5 +1,4 @@
 import type { IncomingText, TextContext, Texts } from '../../texts/types';
-import type { AgentApp } from '../../agent/types';
 import type { SlotCandidate, SlotContext, SlotSpec } from '../slots/types';
 import type { Ack } from '../fia';
 import type { Decision } from '../decision';
@@ -1434,21 +1433,6 @@ export interface MenuEntry {
 
 export interface App {
   id: string;
-  /**
-   * How the conversation is run (app.yaml's `mode`): absent or `scripted`, the decision model reads the
-   * caller through typed questions and the app's lines say everything; `agent`, a model leads the
-   * conversation from the business's facts (App.agent), and the engine still checks every value, says
-   * every read-back and gates every action. defineApp builds an agent-mode app from business.yaml.
-   */
-  mode?: 'scripted' | 'agent';
-  /** What an app in agent mode carries for its agent model (agent/types.ts AgentApp). Only with `mode: 'agent'`. */
-  agent?: AgentApp;
-  /**
-   * A person asked for opens this form, after `say` (agent mode: the callback note, where the business
-   * has one and no live transfer). Only a caller's request for a person: frustration, a system's failure
-   * and a person a request needs are handed off as always. Absent: every handoff is a handoff.
-   */
-  personForm?: { readonly form: FormId; readonly say: string };
   intents: Record<Intent, IntentDef>;
   /** Keypad menu order: digit to intent. */
   menu: ReadonlyArray<MenuEntry>;

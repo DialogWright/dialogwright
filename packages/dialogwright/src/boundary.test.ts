@@ -8,7 +8,7 @@ import { dirname, join, normalize } from 'node:path';
  * (src/testing, which registers the default app for vitest). An engine file never reaches into an
  * app; apps are registered by the launchers inside them (src/apps/<app>/serve.ts and the like).
  */
-const ENGINE = ['core', 'gate', 'run', 'channel', 'server', 'jev', 'audit', 'trace', 'handoff', 'prompts', 'harness-text', 'define', 'slots', 'kb', 'render', 'agent', 'texts', 'converse', 'eval'];
+const ENGINE = ['core', 'gate', 'run', 'channel', 'server', 'jev', 'audit', 'trace', 'handoff', 'prompts', 'harness-text', 'define', 'slots', 'kb', 'render', 'texts', 'converse', 'eval'];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -237,9 +237,9 @@ describe('import specifiers', () => {
 
 /**
  * The engine's inner layers (core, run, prompts, gate, jev, the slot library, conformance kit
- * included, generated wording's renderer, and the agent model's client) sit below the server, the test infrastructure and the text harness: they never import them.
+ * included, and generated wording's renderer) sit below the server, the test infrastructure and the text harness: they never import them.
  */
-const INNER = ['core', 'run', 'prompts', 'gate', 'jev', 'slots', 'render', 'agent'];
+const INNER = ['core', 'run', 'prompts', 'gate', 'jev', 'slots', 'render'];
 const OUTER = ['src/server', 'src/testing', 'src/harness-text'];
 
 function importsOuter(file: string, src: string): string[] {
@@ -247,13 +247,8 @@ function importsOuter(file: string, src: string): string[] {
 }
 
 describe('layering', () => {
-  it('core, run, prompts, gate, jev, slots, render and agent never import src/server, src/testing or src/harness-text', () => {
+  it('core, run, prompts, gate, jev, slots and render never import src/server, src/testing or src/harness-text', () => {
     const offenders = INNER.flatMap((d) => files(join('src', d))).flatMap((f) => importsOuter(f, readFileSync(f, 'utf8')).map((t) => `${f}: ${t}`));
-    expect(offenders).toEqual([]);
-  });
-
-  it('slots never import agent: what both read lives below them (core/extract/words.ts)', () => {
-    const offenders = files(join('src', 'slots')).flatMap((f) => importsOf(readFileSync(f, 'utf8')).map((spec) => ({ f, t: normalize(join(dirname(f), spec)) }))).filter(({ t }) => t === 'src/agent' || t.startsWith('src/agent/'));
     expect(offenders).toEqual([]);
   });
 
@@ -326,9 +321,9 @@ describe('the engine carries no private data', () => {
  * black-box tool that starts the whole server.
  */
 const SCRIPTED_ENGINE: readonly string[] = [
-  'core/turn', 'core/gates', 'core/lifecycle', 'core/agentTurn', 'core/questions',
+  'core/turn', 'core/gates', 'core/lifecycle', 'core/questions',
   'run/', 'slots/', 'prompts/', 'harness-text/',
-  'render/turn', 'render/checks', 'render/agentLine',
+  'render/turn', 'render/checks',
   'jev/heuristicStub', 'jev/fixtureStub', 'jev/defaults',
 ];
 

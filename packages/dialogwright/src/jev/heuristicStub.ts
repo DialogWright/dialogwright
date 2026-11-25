@@ -1,11 +1,9 @@
-import { AMOUNT_WORDS, DATE_WORDS, foreignFigure, isFigureWord, straight } from '../render/checks';
+import { AMOUNT_WORDS, DATE_WORDS, isFigureWord, straight } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
 import { defaultAppOrNull } from '../core/app/registry';
 import type { App } from '../core/app/types';
-import { ENGLISH } from '../core/extract/lexicon';
-import type { LibrarySlotSpec } from '../slots/types';
 
 /** The control intents' keywords: said the same way in any app. The app's own come first (App.testing.heuristics.intents). */
 const CONTROL_INTENT_KEYWORDS: Array<[string, RegExp]> = [
@@ -116,34 +114,6 @@ export function stubSpanDrift(state: unknown): boolean {
 }
 
 /**
- * The stub's agent text value judge (render/checks.ts renderAgentValueQuestion): a test double, deterministic,
- * conservative and simple, that reads no grammar. It refuses a value that carries words of an injection or
- * an instruction, a capitalized name its words do not have, or two words or more of its own (in neither the
- * words, its goal nor common filler); with its field's `figures: cited`, a figure (compared as a number) its
- * words do not have too. With `figures: free` (the text slot's default) its figures are not compared, as the
- * slot's own check does not compare them (calls 57 to 59): a figure counts as none of its own words, so the
- * stub refuses no more than the field's setting does. What its words say of other fields it may leave out; a
- * negation dropped or turned around is a real judge's to read.
- */
-export function stubAgentValue(state: unknown, figures: 'free' | 'cited' = 'cited'): boolean {
-  const s = state as { value?: { said?: unknown; goal?: unknown }; quoted?: { words?: unknown }[] } | null;
-  const said = typeof s?.value?.said === 'string' ? s.value.said : '';
-  const goal = new Set(tokens(typeof s?.value?.goal === 'string' ? s.value.goal : ''));
-  const quoted = new Set((s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? tokens(q.words) : [])));
-  const bare = (w: string): string => w.replace(/'s$/, '');
-  const given = (w: string): boolean => quoted.has(w) || quoted.has(bare(w));
-  // Its figures compared as numbers, as the text check compares them (call 47): "2023" from "twenty twenty three" is the words' own.
-  const quotedText = (s?.quoted ?? []).map((q) => (typeof q.words === 'string' ? q.words : '')).join(' ');
-  const figuresHeld = figures === 'free' || !foreignFigure(said, [quotedText], { groups: ENGLISH });
-  const own = tokens(said).filter((w) => !given(w) && !(figuresHeld && isFigureWord(w)));
-  if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
-  if (own.some(isFigureWord)) return true;
-  const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => straight(w).toLowerCase());
-  if (capitalized.some((w) => !given(w))) return true;
-  return own.filter((w) => !FILLER.has(w) && !goal.has(w)).length >= 2;
-}
-
-/**
  * The stub's answer drift judge (render/checks.ts renderAnswerDriftQuestion): a test double, deterministic,
  * conservative and simple, that reads no grammar. It refuses a knowledge answer's wording that leaves out a
  * time, an amount or a name of the passage (mustKeep); that says a figure or a capitalized name the passage
@@ -165,23 +135,6 @@ export function stubDocumentsDrift(state: unknown): boolean {
   return stubAnswerDrift({ answer: { ...s?.answer, passage: sections } }, false);
 }
 
-/**
- * The `figures` setting of the text field an agent value judge's state names (state.value.field), by its slot's
- * options in the app's agent forms: `cited` only where the slot says so; `free` (the text slot's default)
- * otherwise, an unknown field or no app included.
- */
-export function fieldFigures(app: App | null, state: unknown): 'free' | 'cited' {
-  const name = (state as { value?: { field?: unknown } } | null)?.value?.field;
-  if (app === null || typeof name !== 'string') return 'free';
-  for (const form of Object.values(app.agent?.forms ?? {})) {
-    const field = form.fields.find((f) => f.name === name);
-    if (field === undefined) continue;
-    const config = (app.slots[field.slot] as Partial<LibrarySlotSpec<{ figures?: string }>> | undefined)?.config;
-    if (config?.figures === 'cited') return 'cited';
-  }
-  return 'free';
-}
-
 export function stubAnswerDrift(state: unknown, keepAll = true): boolean {
   const s = state as { answer?: { said?: unknown; goal?: unknown; passage?: unknown; question?: unknown } } | null;
   const said = typeof s?.answer?.said === 'string' ? s.answer.said : '';
@@ -197,35 +150,6 @@ export function stubAnswerDrift(state: unknown, keepAll = true): boolean {
   const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => straight(w).toLowerCase());
   if (capitalized.some((w) => !given.has(w))) return true;
   return own.filter((w) => !FILLER.has(w) && !goal.has(w) && !question.has(w)).length >= 2;
-}
-
-/**
- * The stub's agent drift judge (render/checks.ts renderAgentDriftQuestion): a test double, deterministic,
- * lenient and simple, standing in for a judge that reads the reply against the business's facts. It refuses
- * a reply that carries words of an injection or an instruction, or a promise, a guarantee or a refund of its
- * own (DRIFT_CUES); that names itself as a person by a name that is not the business's ("this is Dana");
- * or that calls something available, free, booked or confirmed when no system's result was seen and the
- * facts do not say so. The caller's quoted words are the caller's, never given: a promise the caller asks
- * for and the reply makes is the reply's own (the review of Task 7). What else a reply claims is a real
- * judge's to read.
- */
-export function stubAgentDrift(state: unknown): boolean {
-  const s = state as { agent?: { said?: unknown; speaks?: unknown; may_say?: unknown; fixed_lines?: unknown; seen?: unknown; understood?: unknown } } | null;
-  const a = s?.agent;
-  const said = typeof a?.said === 'string' ? a.said : '';
-  const texts = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-  const understood = Array.isArray(a?.understood) ? (a!.understood as { value?: unknown; words?: unknown }[]).flatMap((u) => [u.value, u.words].filter((x): x is string => typeof x === 'string')) : [];
-  const business = new Set(tokens(typeof a?.speaks === 'string' ? a.speaks : ''));
-  const given = new Set([...texts(a?.may_say), ...texts(a?.fixed_lines), ...understood].flatMap(tokens));
-  const own = tokens(said).filter((w) => !given.has(w) && !business.has(w)).join(' ');
-  if (manipulationPattern(undefined).test(own) || DRIFT_CUES.test(own)) return true;
-  // Named as a person: a name after "this is", "I'm", "my name is" that is not the business's.
-  for (const m of said.matchAll(/\b(?:[Tt]his is|I'm|I am|[Mm]y name is)\s+(\p{Lu}[\p{L}']*)/gu)) {
-    if (!business.has(m[1]!.toLowerCase())) return true;
-  }
-  // Availability or a confirmation no system showed.
-  const seen = Array.isArray(a?.seen) ? a!.seen.length : 0;
-  return seen === 0 && /\b(available|free|booked|reserved|confirmed|works)\b/.test(own);
 }
 
 const DRIFT_CUES = /\b(instructions?|system|prompt|mode|override|transfer(ring)?|refund|credit|guarantee|promise|password|admin|developer|assistant)\b/;
@@ -332,16 +256,12 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'confirmsYes': return noulAnswer(has(text, /\b(yes|yeah|yep|correct|right|sure|that's it)\b/) ? 0.9 : 0.1);
     case 'confirmsNo': return noulAnswer(has(text, /\b(no|nope|wrong|not|incorrect)\b/) ? 0.9 : 0.1);
     case 'callerMatchDeclined': return noulAnswer(has(text, /\b(no|nope|different account|another account|not me|not mine|not my account)\b/) ? 0.9 : 0.05);
-    // Agent mode's price question (core/questions.ts priceAsked).
-    case 'asksPrice': return noulAnswer(has(text, /\b(cost|costs|price|prices|pricing|charge|charges|fee|fees|quote|ballpark|how much|bucks|dollars?)\b/) ? 0.9 : 0.05);
     case 'manipulation': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) ? 0.9 : 0.04);
     // Generated wording's drift check (render/checks.ts), whose state holds the line, not a caller's words.
     case 'renderDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDrift)
     case 'renderSpanDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubSpanDrift)
     case 'renderAnswerDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAnswerDrift)
     case 'renderDocumentsDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDocumentsDrift)
-    case 'renderAgentDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentDrift)
-    case 'renderAgentValue': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAgentValue)
     // The converse runtime's check after speaking (converse/claims.ts), whose state holds a reply, not a
     // caller's words: the stub reads no reply as wrong, so under it nothing is corrected (each reads low).
     case 'contradicted':
@@ -382,10 +302,6 @@ export class HeuristicStubClient implements JevClient {
     if (Object.hasOwn(req.questions, 'renderAnswerDrift')) answers.renderAnswerDrift = noulAnswer(stubAnswerDrift(req.state) ? 0.9 : 0.04);
     // An answer from documents' wording: held to its sections.
     if (Object.hasOwn(req.questions, 'renderDocumentsDrift')) answers.renderDocumentsDrift = noulAnswer(stubDocumentsDrift(req.state) ? 0.9 : 0.04);
-    // An agent line (an app in agent mode): the agent model's reply, held to the business's facts.
-    if (Object.hasOwn(req.questions, 'renderAgentDrift')) answers.renderAgentDrift = noulAnswer(stubAgentDrift(req.state) ? 0.9 : 0.04);
-    // A text value the agent model understood: held to the caller's words it was taken from.
-    if (Object.hasOwn(req.questions, 'renderAgentValue')) answers.renderAgentValue = noulAnswer(stubAgentValue(req.state, fieldFigures(this.app === undefined ? defaultAppOrNull() : this.app, req.state)) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

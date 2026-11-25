@@ -19,12 +19,12 @@ import { maskCallerValue, recordsOf } from '../channel/maskByName';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, unparkTask, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
-import { buildQuestions, callerMatchAsked, isYesNoField } from './questions';
+import { buildQuestions, callerMatchAsked } from './questions';
 import { changeSlotNamed, evaluateGates, frustrationOf, priorityReading, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, sensitiveAt, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { afterSlot, appContext, factorsAsked, recognizeByMatch, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
+import { afterSlot, appContext, factorsAsked, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, callerPrivacyOf, callerUriOfRaw, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, usableCallerNumber, yesNoOffer, type OfferPending } from './callerNumber';
@@ -45,9 +45,7 @@ import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from '.
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
-import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
-import { cancelPromptOf, type AgentResult, type SeenResult } from '../agent/types';
-import { SCRIPTED_VERDICTS, agentDropped, agentLed, agentWords, fullAskAgain, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
+import { callerMatchAsks, callerMatchWay, nextWayAfter, waysOf } from './identityWays';
 
 export interface TurnContext {
   /**
@@ -124,40 +122,6 @@ export interface TurnContext {
    * (run/continuation.ts). Unset, the session the turn ran on.
    */
   setAsideAs?: Session;
-  /**
-   * The agent model's answer to this turn's words, for an app in agent mode (core/agentTurn.ts): asked by
-   * the runner beside the decision model (run/turn.ts), or a failure where it was not ready in time, not in
-   * its shape, or no client is set. Absent on every turn that does not ask it, and for every other app.
-   */
-  agent?: AgentResult;
-  /**
-   * The results the agent model was shown when it was asked again on this turn (core/agentTurn.ts): a
-   * value that filled a field whose tool the model sees (business.yaml's `sees`) ran that tool through the
-   * gate, and the runner asked the model again with its checked result (TurnResult.agentAgain) before
-   * anything was said. Set only on that second resolution of the turn; the turn then asks no more.
-   * `changed`: the first resolution, at a read-back, changed a value, so this one never completes on a yes.
-   * `full`: the first answer's values for `freeFrom` fields the result shows full, which the second answer left
-   * out (core/agentTurn.ts fullLeftOut): each field's full line is said in place of the second answer's reply
-   * (the agent-mode design, call 54).
-   */
-  agentSeen?: { seen: readonly SeenResult[]; changed?: true; full?: readonly { field: string; value: string }[] };
-  /**
-   * The text values (by field) the drift judge refused against the caller's words this turn, or did not read
-   * in time (run/turn.ts, call 45): set only on the turn's resolution after the judge read them. Each is not
-   * held (the field keeps what it held before, or none) and its question is asked again.
-   */
-  agentTextRefused?: readonly string[];
-  /**
-   * The agent's reply on this turn was not said, its checks or the drift judge having refused it (render/agentLine.ts):
-   * set by the runner only to resolve again a turn that held back a form done on the call for that reply
-   * (TurnResult.agentReopen). The form then opens, its first question said, and the reply is not said.
-   */
-  agentReplyRefused?: true;
-  /**
-   * The run has no agent client for an app in agent mode (no key): set by the runner on every turn of
-   * such a run. A call that begins so runs as a scripted app for the whole call (Session.agent.scripted).
-   */
-  noAgentClient?: true;
 }
 
 /**
@@ -237,7 +201,7 @@ export function digitAtRun(session: Session, event: SessionEvent, tc: DigitArriv
   return now;
 }
 
-/** One turn's context and its outputs beside the decision, threaded through the handlers together (core/agentTurn.ts takes it too). */
+/** One turn's context and its outputs beside the decision, threaded through the handlers together. */
 export interface TurnIO {
   /** The session's app, resolved once for the turn. */
   app: App;
@@ -273,12 +237,6 @@ export interface TurnIO {
   missed?: true;
   /** The form's own summary hook said lines in answer (FormDef.onSummaryAnswer): a reply, never a miss, whatever is counted. */
   replied?: true;
-  /** What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts). */
-  agent?: AgentTurnRecord;
-  /** The agent model is to be asked again, with these results shown (TurnResult.agentAgain). */
-  agentAgain?: { seen: SeenResult[]; changed?: true };
-  /** A form done on the call, read as asked for, held back for the reply said in its place (TurnResult.agentReopen). */
-  agentReopen?: FormId;
 }
 
 export interface Plan {
@@ -323,8 +281,6 @@ export interface TurnResult {
   unchecked?: UncheckedReply[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
-  /** an app in agent mode: the cancel question at a form's read-back this turn, asked, answered no or yes (TurnOut.cancel); absent on every other turn */
-  cancel?: TurnOut['cancel'];
   /** the offer of the caller's number this turn settled; absent on every other turn */
   offer?: OfferSettled;
   /** the slots this turn filled from the call's consent to text (app.yaml's textConsent), in order; absent on every other turn */
@@ -347,28 +303,6 @@ export interface TurnResult {
   setAside?: 'speech-over-line';
   /** what this turn tells the audit log, in order; the runner appends them to the chain (core/audit.ts) */
   audit: AuditDraft[];
-  /**
-   * What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts): each value's
-   * check, the action and what became of it, whether the reply was said, or why the answer was dropped
-   * or failed. Only on a turn that asked the agent; absent on every other turn and for every other app.
-   */
-  agent?: AgentTurnRecord;
-  /**
-   * The agent model is to be asked again on this turn's words, now shown these checked results (the tools
-   * whose results it sees, run for the values it gave: core/agentTurn.ts), before anything is said: the
-   * runner asks it and resolves the turn again with its answer (TurnContext.agentSeen). The turn as it
-   * stands is what is said where the second answer does not come in time: its values, the agent's reply
-   * not said (it was written without the results). `changed`: at a read-back, a value changed (carried to
-   * the second resolution, TurnContext.agentSeen). Absent on every other turn.
-   */
-  agentAgain?: { seen: SeenResult[]; changed?: true };
-  /**
-   * A form done on the call that the decision model read as asked for at INTENT_ROUTE, not opened because the
-   * agent's reply, said in its place, answers the caller (core/agentTurn.ts requested; call 61's review). Where
-   * that reply is then not said (its checks or the judge refuse it), the runner resolves the turn again with
-   * TurnContext.agentReplyRefused, and the form opens as it did before call 61. Absent on every other turn.
-   */
-  agentReopen?: FormId;
 }
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */
@@ -453,10 +387,8 @@ export function plan(session: Session, event: SessionEvent, turnContext: TurnCon
   // ignored, so the model is not asked either.
   if ((event.type !== 'user.speech' && event.type !== 'user.text') || session.ended || session.pendingService !== null || turnContext.duringService === true) return { needsModel: false, turnState: null, questions: null };
   const tc = appTurnContext(appOf(session), turnContext);
-  // A turn with no agent client is a scripted one from now on (scriptedFromNow): its questions are a scripted app's.
-  const asked = scriptedFromNow(session, tc) ? { ...session, agent: { conversation: session.agent?.conversation ?? [], failures: session.agent?.failures ?? 0, scripted: true as const } } : session;
-  const turnState = buildTurnState(asked, heard(asked, event), tc.nowMs);
-  const questions = buildQuestions(asked, slotContext(asked, event.text, tc));
+  const turnState = buildTurnState(session, heard(session, event), tc.nowMs);
+  const questions = buildQuestions(session, slotContext(session, event.text, tc));
   return { needsModel: true, turnState, questions };
 }
 
@@ -502,10 +434,10 @@ function summaryState(s: Session): string {
  * answering the question, and it must walk the ladder rather than reset it. `accepted`: the turn is a
  * yes to the summary, with the detail it names to change, if any (FillOptions.accepted).
  */
-function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: FormId, accepted?: FillOptions['accepted'], skip: readonly SlotId[] = []): FillResult {
+function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: FormId, accepted?: FillOptions['accepted']): FillResult {
   const app = appOf(s);
   const before = summaryState(s);
-  const fill = fillSlots(s, answers, ctx, formOf(app, form).slots.filter((id) => !skip.includes(id)).map((id) => slotSpecOf(app, id)), { correcting: true, ...(accepted !== undefined ? { accepted } : {}) });
+  const fill = fillSlots(s, answers, ctx, formOf(app, form).slots.map((id) => slotSpecOf(app, id)), { correcting: true, ...(accepted !== undefined ? { accepted } : {}) });
   // A disambiguation changes no slot yet and still has to be asked, so it is progress either way.
   if (!fill.progress || fill.disambiguate || summaryState(s) !== before) return fill;
   return { ...fill, progress: false };
@@ -530,8 +462,6 @@ function summaryValuesGiven(s: Session, answers: AnswerMap, ctx: SlotContext): R
 function summaryPrompt(s: Session, form: FormId, acks: Ack[]): PromptDecision {
   const promptId = formOf(appOf(s), form).summaryPromptId;
   if (promptId === null) throw new Error(`form ${form} has no summary prompt`);
-  // The read-back said again: the cancel question, if it was asked, is no longer the question (agent mode, call 55).
-  if (s.pendingConfirmation?.target === 'form') delete s.pendingConfirmation.cancel;
   takeSummaryHash(s, form);
   return prompt(promptId, 'confirm', summaryVars(s), acks, ['yes', 'no']);
 }
@@ -594,7 +524,6 @@ function readBackExact(s: Session, form: FormId, acks: Ack[]): PromptDecision {
  * rung so that three answers with nothing usable in them still reach an agent.
  */
 function askChange(pc: Extract<PendingConfirmation, { target: 'form' }>, acks: Ack[]): PromptDecision {
-  delete pc.cancel;
   pc.askedChange = true;
   pc.attempts = Math.max(pc.attempts, 1);
   return prompt('ask_change', 'confirm', {}, acks);
@@ -934,9 +863,6 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   if ((plain === 'frustration' || plain === 'reask') && !toDtmf) return askedAgain(s, target, acks);
   // The slot said why the answer could not be its value, and the generic retry would misstate it.
   if (step === 'open' && retryPromptId !== null) return prompt(retryPromptId, target, {}, acks);
-  // Agent mode: the full line's question for the one option free (call 55), asked again as it was, short of the keypad.
-  const freeAsk = toDtmf ? null : fullAskAgain(s, target, acks);
-  if (freeAsk !== null) return freeAsk;
   // A missed answer: the slot's retry line for this failure (outcome.ts retryLineOf).
   return prompt(toDtmf ? `ask_${target}_dtmf` : retryLineOf(io.app, target, attempts), target, {}, acks);
 }
@@ -1008,7 +934,6 @@ function reaskCurrent(s: Session, acks: Ack[], intentQuestion = 'ask_intent'): D
       case 'form':
         if (s.lastPromptId === 'ask_change') return prompt('ask_change', 'confirm', {}, acks);
         if (s.lastPromptId === 'confirm_dtmf') return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
-        if (pc.cancel === true) return cancelQuestion(pc.form, acks);
         return summaryPrompt(s, pc.form, acks);
       case 'slot':
         return slotConfirmPrompt(pc, acks);
@@ -1286,16 +1211,12 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     return offerTransfer(acks);
   }
   if (pc.target === 'form') {
-    // The cancel question unanswered (agent mode, call 55): the read-back's own ladder from here.
-    const cancelAsked = pc.cancel === true;
-    delete pc.cancel;
     if (!count) return summaryPrompt(s, pc.form, acks);
     pc.attempts += 1;
     const step = rungFor(s, pc.attempts, t);
     if (step === 'agent') { s.pendingConfirmation = null; return handoff(s, 'max-attempts', acks); }
-    // A summary the caller keeps talking past is offered on the keypad rather than read again. Not straight
-    // after the cancel question, whose yes the keypad's 1 would seem to be: the read-back first.
-    if (step === 'dtmf' && !cancelAsked) return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
+    // A summary the caller keeps talking past is offered on the keypad rather than read again.
+    if (step === 'dtmf') return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
     return summaryPrompt(s, pc.form, acks);
   }
   if (!count) return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, pc.intent, s.locale) }, acks, ['yes', 'no']);
@@ -2082,18 +2003,6 @@ function summaryMove(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): 
 }
 
 /**
- * A person asked for, in an app whose person is a form (App.personForm, agent mode: a callback note
- * where there is no live transfer): its line, then the form, unless the caller is in it already. Null
- * for any other handoff (frustration, a system's failure, a person needed) and every other app: the
- * handoff is as always.
- */
-function personForm(s: Session, reason: string, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } | null {
-  const person = io.app.personForm;
-  if (person === undefined || reason !== 'live-agent' || s.form === person.form) return null;
-  return enterForm(s, person.form, answers, ctx, io, undefined, undefined, { acks: [{ promptId: person.say, vars: {} }] });
-}
-
-/**
  * `answers` are what the form fills from; `yes`, after an explicit intent check, the answers of the
  * yes that confirmed it, which the form hears after the opener's (they are newer) but never fills from.
  */
@@ -2227,7 +2136,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (s.pendingConfirmation) return { decision: caughtFrustration(s, io) ?? reaskConfirmation(s, io), events: [] };
       return { decision: caughtFrustration(s, io) ?? failAttempt(s, promptedTarget(s), io), events: [] };
     case 'handoff':
-      return personForm(s, verdict.reason, answers, ctx, io) ?? { decision: handoff(s, verdict.reason), events: [] };
+      return { decision: handoff(s, verdict.reason), events: [] };
     case 'replay': {
       // At "What should I change?", a form whose summary reads back on a no (`summary.onNo: read-back`)
       // reads the pending summary again, word for word, rather than repeat the change question.
@@ -2280,8 +2189,6 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       }
       // A check's refusal read back (its outcome's `confirm`), and the caller agrees: it acts as written.
       if (pc.target === 'check') return { decision: checkConfirmed(s, pc, io), events: [] };
-      // A yes to "Do you want to cancel this request?" (agent mode, call 55): nothing is sent, and the call ends.
-      if (pc.target === 'form' && pc.cancel === true) return { decision: cancelAtReadBack(s, pc.form, io), events: [] };
       if (pc.target === 'form') {
         const acks = enqueue(s, verdict.queue);
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
@@ -2294,10 +2201,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // before, and only that one.
         const read = summaryState(s);
         const asRead = formValues(s, pc.form);
-        // An app in agent mode (its call run as a scripted app from here: no agent key, or resumed on a server without
-        // one): the yes to the read-back never fills a choice of yes and no, whose question it answers too (call 55's
-        // recording: a no to texts read as a yes, and the photo text sent).
-        const fill = correctingFill(s, answers, ctx, pc.form, { except: changeSlotNamed(io.app, answers, pc.form, t) }, yesNoSlotsOf(io.app, pc.form));
+        const fill = correctingFill(s, answers, ctx, pc.form, { except: changeSlotNamed(io.app, answers, pc.form, t) });
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         // A value the yes gave that a library slot reads back ("yes, but I rent", with `confirmValues:
         // [rent]`) is read back first, as it would be anywhere else; the form loop then reads the summary
@@ -2310,7 +2214,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // for a question there was no answer to (a form's completion, or an informational intent's
       // passage: `why: 'no-answer'`) is not a frustrated caller's.
       if (pc.target === 'transfer') return { decision: handoff(s, pc.why === 'no-answer' || pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
-      if (pc.intent === 'agent') return personForm(s, 'live-agent', pc.answers, slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated, pc.sections)), io) ?? { decision: handoff(s, 'live-agent'), events: [] };
+      if (pc.intent === 'agent') return { decision: handoff(s, 'live-agent'), events: [] };
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
       // An informational intent the model was unsure of (gates.ts, `inform_explicit`): the yes says
       // it, as the inform verdict does, and the call goes back to the intent question. Nothing fills:
@@ -2346,10 +2250,6 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const fill = correctingFill(s, answers, ctx, pc.form);
         if (fill.progress) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         s.pendingConfirmation = pc;
-        // Agent mode (call 55): a no to the cancel question reads the request back again; a caller who says at
-        // the read-back that they don't want to go ahead is asked whether to cancel it.
-        const cancel = readBackCancel(s, verdict, answers, io, acks);
-        if (cancel !== null) return { decision: cancel, events: fill.events };
         // "No, anything later?" is the form's own move along what its summary offers: a move is a
         // correction and re-arms the summary; no move, with its line (an edge), is an unchanged
         // summary and counts a turn on its ladder.
@@ -2422,9 +2322,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // A check's refusal read back, and the caller says it was misheard: the slots it reads are asked again.
       if (pc.target === 'check') return checkDeclined(s, pc, answers, ctx, io);
       // Declining a mid-form switch means "stay where we were", so resume the form
-      // rather than counting an intent failure against the caller. In agent mode (a person the agent model
-      // alone asked for, checked: checkPerson) a form whose required fields are all filled is at its read-back.
-      if (s.form && agentLed(s) && requiredFilled(io.app, s, s.form)) return { decision: askSummary(s, s.form, [], io), events: [] };
+      // rather than counting an intent failure against the caller.
       if (s.form) return { decision: continueForm(s, io, [], null), events: [] };
       return { decision: failAttempt(s, 'intent', io), events: [] };
     }
@@ -2449,8 +2347,6 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
           return { decision: continueForm(s, io, [...acks, ...fill.acks, ...move.acks], null), events: fill.events };
         }
         if (move) return { decision: reaskConfirmation(s, io, [...acks, ...move.acks], acks.length === 0), events: fill.events };
-        const cancel = readBackCancel(s, verdict, answers, io, acks);
-        if (cancel !== null) return { decision: cancel, events: fill.events };
         return { decision: (acks.length === 0 ? caughtFrustration(s, io) : null) ?? reaskConfirmation(s, io, acks, acks.length === 0), events: fill.events };
       }
       if (pc?.target === 'slot' && pc.offered) {
@@ -2802,28 +2698,6 @@ function uncheckedHandoff(s: Session, decision: Decision, unchecked: readonly Un
   return { ...handed, ...(own ? {} : { promptId: handoffPromptId('needs-human') }), unchecked: [...unchecked] };
 }
 
-/**
- * A handoff in an app whose person is a form (App.personForm, agent mode: a callback note where there is no
- * live transfer): the handoff's line, then the person form, so a caller handed off for any reason (frustration,
- * attempts run out, a system's failure, a person needed) leaves a note rather than hear "someone will call
- * you" with no number taken. The handoff of the person form itself (it was open before the turn or is now)
- * stays the handoff statement, and so does one for a downstream reply that failed its check
- * (`result-unchecked`), whose record goes with the handoff to the person who reads it. Every other app's
- * handoff is as always.
- */
-function handoffToPersonForm(s: Session, before: Session, decision: Decision, io: TurnIO): Decision {
-  const person = io.app.personForm;
-  if (decision.kind !== 'handoff' || person === undefined || decision.reason === RESULT_UNCHECKED) return decision;
-  // A system's failure in agent mode (the agent model failing twice in a row): the rest of the call runs
-  // as a scripted app, so the callback form is filled by the decision model, not by the model that failed
-  // (the agent-mode design, call 40).
-  if (decision.reason === 'system-failure' && io.app.mode === 'agent' && s.agent?.scripted !== true) s.agent = { conversation: s.agent?.conversation ?? [], failures: s.agent?.failures ?? 0, ...s.agent, scripted: true };
-  if (s.form === person.form || before.form === person.form || s.ended) return decision;
-  s.pendingConfirmation = null;
-  s.pendingHash = null;
-  return enterForm(s, person.form, {}, slotContext(s, '', io.tc), io, undefined, undefined, { acks: [...decision.acks, { promptId: decision.promptId, vars: {} }] }).decision;
-}
-
 /** The purpose the call-start lookup is made with (app.yaml's `callerNumber.lookup`): a gate decision and the audit say what it was. */
 export const CALLER_LOOKUP_PURPOSE = 'caller-lookup';
 
@@ -3023,11 +2897,6 @@ function callerMatchAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
   const identity = io.app.identity;
   if (!s.caps.speech || identity?.callerId?.ask !== 'greeting') return null;
   const match = callerMatchOf(s);
-  // A match that proves the level alone (agent mode): recognized now, nothing asked; the greeting is as always.
-  if (match !== null && matchAloneVerifies(io.app)) {
-    recognizeByMatch(s, io.tc, io.out);
-    return null;
-  }
   const slot = match === null ? undefined : callerMatchAsks(io.app).find((id) => !Object.hasOwn(match, id));
   if (slot === undefined) return null;
   // The way the match stands in for factors of (one, for a level with one set of factors) is asked, and its tool checks it.
@@ -3121,9 +2990,6 @@ const WAIT_PROMPT = 'wait_ack';
  */
 function askedAgain(s: Session, slot: SlotId, acks: Ack[]): PromptDecision {
   if (callerMatchAgain(s)) return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
-  // Agent mode: the full line's question for the one option free (call 55), asked again as it was.
-  const free = fullAskAgain(s, slot, acks);
-  if (free !== null) return free;
   return askSlot(s, slot, null, acks);
 }
 
@@ -3329,6 +3195,17 @@ function overLineMiss(before: Session, after: Session, event: SessionEvent, verd
 }
 
 /**
+ * Whether the decision model reads the caller as done (the `done` intent, where the app has it) at INTENT_ROUTE or
+ * more, as its likeliest request.
+ */
+function doneRead(app: App, answers: AnswerMap, t: Thresholds): boolean {
+  const intent = answers.intent;
+  if (!Object.hasOwn(app.intents, 'done') || !isChoice(intent)) return false;
+  const [top] = rankProbabilities(intent.probabilities);
+  return top?.label === 'done' && atLeast(top.p, t.INTENT_ROUTE);
+}
+
+/**
  * Whether the decision model read the turn as a request that routes whatever question is open, at the bar it
  * routes at with no form open: the caller done (the `done` intent at INTENT_ROUTE or more, doneRead), a person
  * asked for (wantsHuman at GATE_WANTS_HUMAN, or the `agent` intent at INTENT_ROUTE), or a priority intent at its
@@ -3346,111 +3223,6 @@ function routesAnyway(app: App, answers: AnswerMap, t: Thresholds): boolean {
 }
 
 /**
- * The cancel question at a form's read-back in an app in agent mode (the agent-mode design, call 55, decided by
- * the maintainer 2026-11-10): "Do you want to cancel this request?" (`cancel_<form>`, business.yaml's form
- * `cancel`), its yes and no the read-back's own. Null where the read-back's turn goes on as ever.
- *
- * - The cancel question asked last (PendingConfirmation `cancel`): a no (`rejected`, nothing corrected) reads the
- *   request back again, uncounted; a yes is the caller's (handleVerdict's `confirmed`: cancelAtReadBack);
- *   anything else is read as at the read-back (the cancel question set aside).
- * - Otherwise, where the caller's words at the read-back are neither a yes nor a correction and the decision
- *   model reads them as the caller being done (the `done` intent at INTENT_ROUTE or more, the bar a question at
- *   a form's summary is read at, and above any other request): the cancel question, in place of the read-back
- *   asked again or "What should I change?" ("never mind" at call 55 had heard a goodbye, then the read-back).
- *
- * Only in an app in agent mode, whose read-back is reached once every field is in: a scripted app's no at its
- * summary is the app's to word (forms.yaml's `summary.onNo`).
- */
-function readBackCancel(s: Session, verdict: Verdict, answers: AnswerMap, io: TurnIO, acks: Ack[] = []): Decision | null {
-  const pc = s.pendingConfirmation;
-  if (pc?.target !== 'form' || io.app.mode !== 'agent') return null;
-  if (pc.cancel === true) {
-    if (verdict.kind !== 'rejected') return null;
-    io.out.cancel = { form: pc.form, step: 'kept' };
-    return summaryPrompt(s, pc.form, acks);
-  }
-  if ((verdict.kind !== 'rejected' && verdict.kind !== 'confirm_unanswered') || !doneRead(io.app, answers, io.tc.thresholds)) return null;
-  // Asking the first time costs the caller no turn of the read-back's ladder: they answered, though not with a yes
-  // or a no. From the second time at this read-back each asking counts (call 55's review: "never mind", no, the
-  // read-back, "never mind", ... would loop with nothing counted), so the ladder's end, a person, still comes.
-  const asked = pc.cancelAsked ?? 0;
-  pc.cancelAsked = asked + 1;
-  if (asked >= 1) {
-    io.missed = true;
-    pc.attempts += 1;
-    if (rungFor(s, pc.attempts, io.tc.thresholds) === 'agent') {
-      s.pendingConfirmation = null;
-      return handoff(s, 'max-attempts', acks);
-    }
-  }
-  pc.cancel = true;
-  // The read-back's hash is no longer armed: the yes now answers the cancel question, and a server that does not
-  // know it (resuming the call) must not take it as the read-back's yes. The no reads the read-back again, which
-  // takes the hash again (summaryPrompt).
-  s.pendingHash = null;
-  io.out.cancel = { form: pc.form, step: 'asked' };
-  return cancelQuestion(pc.form, acks);
-}
-
-/** The fields of a form of an app in agent mode that are a choice of yes and no (questions.ts isYesNoField); none for any other app. */
-function yesNoSlotsOf(app: App, form: FormId): SlotId[] {
-  return app.mode === 'agent' ? (app.agent?.forms[form]?.fields ?? []).filter(isYesNoField).map((f) => f.slot) : [];
-}
-
-/** "Do you want to cancel this request?": the form's cancel question, its answers a yes or a no (readBackCancel). */
-function cancelQuestion(form: FormId, acks: Ack[]): PromptDecision {
-  return prompt(cancelPromptOf(form), 'confirm', {}, acks, ['yes', 'no']);
-}
-
-/**
- * Whether the decision model reads the caller as done (the `done` intent, where the app has it) at INTENT_ROUTE or
- * more, as its likeliest request.
- */
-function doneRead(app: App, answers: AnswerMap, t: Thresholds): boolean {
-  const intent = answers.intent;
-  if (!Object.hasOwn(app.intents, 'done') || !isChoice(intent)) return false;
-  const [top] = rankProbabilities(intent.probabilities);
-  return top?.label === 'done' && atLeast(top.p, t.INTENT_ROUTE);
-}
-
-/**
- * The yes to the cancel question (readBackCancel): the form closed with nothing sent (no `then` tool is called,
- * and it is not among the completed), the audit told (`form_cancelled`), and the call ends with the app's goodbye.
- */
-function cancelAtReadBack(s: Session, form: FormId, io: TurnIO): CompleteDecision {
-  s.pendingConfirmation = null;
-  s.pendingHash = null;
-  io.out.cancel = { form, step: 'cancelled' };
-  closeForm(s);
-  return goodbye(s);
-}
-
-/**
- * A person asked for by the agent model alone, the decision model not reading one (agent mode: a `callback`
- * proposed on words the gates did not hand off on): checked with the caller first, as a request the
- * decision model is unsure of is ("Just to check, do you want to speak with someone?"). A yes opens the
- * person form (the `agent` intent's yes); a no goes back to the form where it stood, nothing lost.
- */
-function checkPerson(s: Session, answers: AnswerMap, ctx: SlotContext, acks: Ack[], io: TurnIO): PromptDecision {
-  s.pendingConfirmation = { target: 'intent', intent: 'agent', answers, text: ctx.text };
-  return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, 'agent', s.locale) }, acks, ['yes', 'no']);
-}
-
-/** The scripted turn's steps an agent turn takes (core/agentTurn.ts ScriptedSteps). */
-const SCRIPTED_STEPS: ScriptedSteps = {
-  handleVerdict,
-  personForm,
-  checkPerson,
-  readBackCancel: (s, verdict, answers, io) => readBackCancel(s, verdict, answers, io),
-  askSummary,
-  summaryPrompt,
-  askChange,
-  reaskConfirmation,
-  continueForm,
-  failAttempt: (s, slot, io, acks) => failAttempt(s, slot, io, acks),
-};
-
-/**
  * `screen` is the injection screen's reading of a speech or text event's words, asked beside perception;
  * null (or absent) when it was not asked. It is only read on a words turn, and only after the
  * post-filing wait, when a caller's words are ignored anyway.
@@ -3464,7 +3236,6 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
     ...(r.stopped ? { stopped: r.stopped } : {}),
     ...(r.movedOn ? { movedOn: r.movedOn } : {}),
     ...(r.reconfirmed ? { reconfirmed: r.reconfirmed } : {}),
-    ...(r.cancel?.step === 'cancelled' ? { cancelled: r.cancel.form } : {}),
     ...(r.offer ? { offer: r.offer } : {}),
     ...(r.consented ? { consented: r.consented } : {}),
     ...(r.consent ? { consent: r.consent } : {}),
@@ -3478,9 +3249,6 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   const s = cloneSession(session);
   const tc = appTurnContext(appOf(s), turnContext);
   const io: TurnIO = { app: appOf(s), tc, out: newTurnOut(), prefix: [] };
-  // An app in agent mode run with no agent client (no key) runs as a scripted app from this turn for the
-  // rest of the call: a call begun so, and one resumed on a server without the key (Session.agent.scripted).
-  if (scriptedFromNow(s, tc)) s.agent = { conversation: s.agent?.conversation ?? [], failures: s.agent?.failures ?? 0, scripted: true };
   // A moment asked for on the turn before is this turn's to read, and over after it.
   if (s.takingTime === true) {
     io.tookTime = true;
@@ -3497,16 +3265,14 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     return withSources(io.app, withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) }), io.out.kb, { shown: !s.caps.speech });
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
-  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false, ...(io.agent !== undefined ? { agent: io.agent } : {}), ...(io.agentAgain !== undefined ? { agentAgain: io.agentAgain } : {}), ...(io.agentReopen !== undefined ? { agentReopen: io.agentReopen } : {}) });
+  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });
   // A reply that did not pass its tool's check this turn ends the turn with a person, whatever the
   // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
   const settle = (decision: Decision, label: string): Decision => {
-    const settled = handoffToPersonForm(s, session, uncheckedHandoff(s, decision, io.out.unchecked), io);
+    const settled = uncheckedHandoff(s, decision, io.out.unchecked);
     // A slot's own question with the values its lines may say (a record slot's {choices}).
     withQuestionVars(io.app, settled, () => slotContext(s, '', tc));
     bookkeep(s, settled, label);
-    // An app in agent mode keeps the conversation for its agent model: the caller's words (not a quarantined turn's) and the line's.
-    if (io.app.mode === 'agent') noteConversation(s, event, settled, label !== 'screen');
     return settled;
   };
   if (s.ended) return { ...base(), decision: { kind: 'ignore' }, actions: [] };
@@ -3652,14 +3418,12 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const screened: GateRow[] = screen ? [screenRow(screen, tc.thresholds)] : [];
       // Quarantine does not wait on perception: its answers are discarded whether or not they came.
       if (screen?.fired) {
-        io.agent = agentDropped(tc.agent, 'screen');
         const decided = readSummary(s, quarantine(s), io);
         const decision = settle(decided, 'screen');
         s.lastInterrupt = null;
         return { ...base(), turnState, rows: screened, decision, actions: act(decision), quarantined: true };
       }
       if (error || answers === null) {
-        io.agent = agentDropped(tc.agent, 'decision-model-failed');
         const decided = handleFailure(s);
         const decision = settle(decided, 'error');
         // The turn state above already reported the barge-in, failed ask or not.
@@ -3679,10 +3443,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (rung === 'ack' || rung === 'offer') s.frustratedTurns += 1;
       // Acknowledged, the frustration was caught: where the turn would be a miss it is not (caughtFrustration).
       if ((rung === 'ack' || rung === 'ack_only') && frustrationMissOf(io.app) === 'ignore') io.caught = true;
-      // An app in agent mode: the agent turn (core/agentTurn.ts), which takes the scripted turn's own steps where it is the scripted one.
-      const { decision: resolved, events } = agentLed(s)
-        ? agentWords(s, verdict, answers, ctx, io, SCRIPTED_STEPS, event.text)
-        : handleVerdict(s, verdict, answers, ctx, io);
+      const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
       // Speech over a line the caller could not interrupt that would be a miss is set aside, as side speech
       // is: nothing said, nothing counted, the session as it was (overLineMiss). The rows say what was read.
       if (overLineMiss(session, s, event, verdict, events, io, answers)) {
@@ -3695,7 +3456,6 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
         return {
           session: kept, turnState, rows: [...screened, ...read.map((r) => (r.decided ? { ...r, decided: false } : r)), OVER_LINE_ROW],
           verdict: { kind: 'ignore' }, fillEvents: [], ...newTurnOut(), decision: { kind: 'ignore' }, actions: [], screen, quarantined: false, setAside: 'speech-over-line',
-          ...(io.agent !== undefined ? { agent: { ...io.agent, use: 'dropped' as const, dropped: 'speech-over-line', values: [], replySaid: false } } : {}),
         };
       }
       // A frustration-only turn caught is kept for the next (Session.frustrationOnly); any other turn the
@@ -3723,36 +3483,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
  * a task, which the form in hand's request does not ask about (its topic slot is not one of the form's).
  */
 export interface FollowUp {
-  /**
-   * `aside-topic` (above); `agent-failed`, in a trace written before the agent-mode design's call 54 only: an
-   * app in agent mode whose agent answer failed at a form's read-back, read again in a second request. Since
-   * call 54 the form's own questions ride in the turn's request beside the agent (run/turn.ts readBackReading),
-   * so no second request is made.
-   */
-  readonly reason: 'aside-topic' | 'agent-failed';
-  /** The slot whose question it asks: the aside's topic slot; for `agent-failed`, the form at its read-back. */
+  readonly reason: 'aside-topic';
+  /** The slot whose question it asks: the aside's topic slot. */
   readonly slot: SlotId;
-}
-
-/**
- * Whether an agent-mode turn whose decision model's answers are in will be decided without the agent's answer,
- * as the turn will read them (agentWords' scripted turn): the screen quarantined the words, the decision model
- * failed, its gates settled the turn (SCRIPTED_VERDICTS), routed it to a form the agent does not run, or the turn
- * answers a question of the core's own. The runner reads it to say no line while the model is slow, and wait no
- * longer than the runner's own budget, on a turn that will not use the answer (run/turn.ts, business.yaml's
- * `waiting`). Pure: nothing is decided or changed. False for every other turn, and where it cannot tell.
- */
-export function agentSettledWithout(session: Session, event: SessionEvent, answers: AnswerMap | null, turnContext: TurnContext, screen: ScreenResult | null): boolean {
-  if (event.type !== 'user.speech' && event.type !== 'user.text') return false;
-  if (screen?.fired === true || answers === null) return true;
-  const pc = session.pendingConfirmation;
-  if (pc !== null && pc.target !== 'form') return true;
-  const app = appOf(session);
-  const tc = appTurnContext(app, turnContext);
-  const turnState = buildTurnState(session, heard(session, event), tc.nowMs);
-  const ctx = slotContext(session, event.text, tc);
-  const { verdict } = evaluateGates(session, turnState, answers, tc.thresholds, summaryValuesGiven(session, answers, ctx));
-  return SCRIPTED_VERDICTS.has(verdict.kind) || (verdict.kind === 'route' && !isFormIntent(app, verdict.intent));
 }
 
 /**

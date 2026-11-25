@@ -6,12 +6,10 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { KeyObject } from 'node:crypto';
 import { checkJwksUrl, jwksKeys } from './chat/jwks';
-import { accountSettingsFrom, calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
+import { calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
 import type { NumberLocale } from '../core/numberLocales';
 import { defaultLocaleOf } from '../core/locale';
-import { appAgentClient, agentKeyVar } from '../agent/provider';
-import type { AgentRunner } from '../agent/types';
-import { agentSettings, type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, voiceFor, type Env, type ServerConfig } from './config';
+import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, voiceFor, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPEECH_OVER_LINE, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
 import { createRequestHandler, MESSAGES_PATH, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
@@ -82,7 +80,7 @@ import { sameNumber } from '../core/conditions';
 import type { IncomingText, TextProvider, TextRecord, Texts } from '../texts/types';
 import { lastFour } from '../core/callerNumber';
 import type { TurnTexts } from '../run/turn';
-import { appModelKeyMissing, appModelLabel, defaultRenderPrice, holdLabel, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, holdLabel, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import type { Renderer } from '../render/types';
 
 export interface RunningServer {
@@ -141,13 +139,6 @@ export interface ServerOverrides {
    * then its fixed text. An app that generates no line never has one.
    */
   renderer?: Renderer;
-  /**
-   * The agent model of an app in agent mode, for every such app (a test's fake). Left out, each has one
-   * from style.yaml's `agent` with its own settings (its provider's key, AGENT_TIMEOUT_VOICE_MS,
-   * AGENT_TIMEOUT_CHAT_MS), and none with its key unset: each call then runs as a scripted app (its fields'
-   * fixed questions, the decision model understanding the answers; core/agentTurn.ts scriptedFromNow).
-   */
-  agent?: AgentRunner;
   now?: () => number;
   log?: (line: string) => void;
   /**
@@ -576,27 +567,6 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (clamped.length > 0) log(`WARNING: ${tag(a.id)}generated wording: ${clamped.join(', ')}, as Inception takes 0.5 to 1`);
   }
   const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;
-  // Agent mode: each app in it asks its agent model (style.yaml's `agent`) through its own settings.
-  const agents = new Map<string, AgentRunner>();
-  for (const a of appsRun) {
-    if (a.app.mode !== 'agent' || a.app.agent === undefined) continue;
-    const settings = forApp(a.id, () => agentSettings(a.env));
-    // The drift judge's budget on an agent reply, RENDER_CHECK_TIMEOUT_MS, as on a generated line.
-    const checkTimeoutMs = forApp(a.id, () => renderSettings(a.env).checkTimeoutMs);
-    if (overrides.agent) {
-      agents.set(a.id, { ...overrides.agent, timeoutMs: overrides.agent.timeoutMs ?? settings.timeoutMs, checkTimeoutMs: overrides.agent.checkTimeoutMs ?? checkTimeoutMs, retry: overrides.agent.retry ?? settings.retry });
-      continue;
-    }
-    const model = a.app.agent.model;
-    const keyVar = agentKeyVar(model);
-    if (!a.env[keyVar]?.trim()) {
-      log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding (pnpm diagnose fails)`);
-      continue;
-    }
-    agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs, checkTimeoutMs, price: defaultRenderPrice(model.model), retry: settings.retry });
-    log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its judge ${checkTimeoutMs.voice} and ${checkTimeoutMs.chat} ms, ${settings.retry ? 'an answer not in its shape or refused by a content filter asked again once where time allows' : 'an answer not in its shape not asked again (AGENT_RETRY=off)'}${a.app.agent.waiting !== undefined ? `, on a call a line after ${a.app.agent.waiting.afterMs} ms and a wait up to ${Math.max(a.app.agent.waiting.upToMs, settings.timeoutMs.voice)} ms (business.yaml waiting)` : ''}`);
-  }
-  const agentOf = (id: string): AgentRunner | null => agents.get(appRun(id).id) ?? null;
 
   // Texts: each app's sender, from TEXT_FROM (on a host, the app's own settings file's), through Twilio's
   // Messages API with TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN (texts/settings.ts). TEXT_FROM unset is no
@@ -849,7 +819,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings, texts: textsOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings, texts: textsOf(a.id) },
         trace,
         frames,
       };
@@ -957,10 +927,6 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // voice.numbers, each env.<NAME> read from the app's environment: an unset one, or not E.164, stops the server here.
     const numbers = forApp(a.id, () => voiceNumbersFrom(a.app, a.env));
     if (numbers.length > 0) log(`${tag(a.id)}numbers by language: ${describeVoiceNumbers(numbers)}; any other number starts in ${defaultLocaleOf(a.app)}`);
-    // An agent-mode app's accounts' numbers that name a setting: one unset is left out with a note; one not E.164 stops the server here.
-    const accountSettings = forApp(a.id, () => accountSettingsFrom(a.app, a.env));
-    if (accountSettings.set.length > 0) log(`${tag(a.id)}account numbers from settings: ${accountSettings.set.join(', ')}`);
-    if (accountSettings.unset.length > 0) log(`${tag(a.id)}account numbers left out, their settings unset: ${accountSettings.unset.join(', ')}`);
     // On Telnyx, a language with no voice of its own beside one with a voice may keep the start language's
     // voice after a switch (http.ts telnyxUnvoicedLocales): worth saying until a live call shows otherwise.
     const unvoiced = config.voiceProviders.includes('telnyx') ? telnyxUnvoicedLocales(a.app, config.telnyxVoice) : [];
@@ -1070,7 +1036,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
       // No render context: a chat shows a line's words, never a recorded clip.
       return {
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings, texts: textsOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings, texts: textsOf(a.id) },
         frames,
       };
     },
