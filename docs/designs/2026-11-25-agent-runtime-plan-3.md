@@ -25,7 +25,7 @@ All six proposals below were approved by the maintainer on 2026-11-25. Decisions
    - Today agent.yaml `persona.voices.twilio` is a voice name only, and its text-to-speech provider comes from the deployment's `TTS_PROVIDER`/`TTS_VOICE`. On a host, that is one provider for every app.
    - Proposal: `persona.voices.twilio` takes either a name or `{ voice, provider }`, as app.yaml's voice settings do (Task 2).
 2. **When the wheel shop's numbers move.**
-   - The old agent-mode wheel shop answers two numbers on the Mini: the Farragut line (Telnyx) and the wheel shop's Twilio line.
+   - The old agent-mode wheel shop answers two of the maintainer's numbers on his test server, one on Telnyx and one on Twilio.
    - Proposal: move the Twilio line to `wheelshop-agent` first, call it, then move the Telnyx line, all before Task 4 removes the old app.
    - The Mini's host.yaml is yours to change, or mine on your word.
 3. **The test calendar.**
