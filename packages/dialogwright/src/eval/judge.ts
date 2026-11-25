@@ -200,10 +200,14 @@ export function judgeSystem(): string {
   ].join('\n');
 }
 
+/** The mark after a line turn the caller cut in on, in the judge's transcript: where they spoke over the line. */
+export const CUT_IN_MARK = ' [the caller cut in here]';
+
 /** The call as the judge is given it: the business, the day, the caller, the transcript and the actions the gate decided. */
 export function judgeInput(businessText: string, p: Persona, call: SimCall, actions: readonly AuditedAction[], today?: string): string {
   const truth = Object.entries(p.truth).map(([k, v]) => `- ${k}: ${v}`).join('\n');
-  const transcript = call.turns.map((t) => `${t.who === 'caller' ? 'Caller' : 'Line'}: ${t.text}`).join('\n');
+  // A line turn the caller cut in on (the voice path) ends where they spoke over it: marked, its unheard words never shown.
+  const transcript = call.turns.map((t) => `${t.who === 'caller' ? 'Caller' : 'Line'}: ${t.text}${t.cut === true ? CUT_IN_MARK : ''}`).join('\n');
   const acts = actions.length === 0 ? '(none)' : actions.map((a) => `- ${a.tool}(${Object.entries(a.params).map(([k, v]) => `${k}=${v}`).join(', ')}): ${a.verdict}${a.reason ? ` (${a.reason})` : ''}${a.result !== undefined ? `; result: ${a.result}` : a.verdict === 'ALLOW' ? '; no result recorded' : ''}`).join('\n');
   const how = call.callerEnded;
   const ending = how === undefined ? [] : how.how === 'empty' ? ["The caller's model gave no reply twice; the call ended there (a fault of the simulation, not of the line)."] : [`The caller hung up${how.goodbye !== undefined ? `, saying: '${how.goodbye}' (the goodbye was not sent to the line)` : ''}.`];

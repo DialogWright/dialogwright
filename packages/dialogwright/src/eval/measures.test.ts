@@ -14,9 +14,17 @@ describe('summarize', () => {
   it('counts the voice path\'s calls, cut-ins and turns sent in two parts, and the first sentence by channel; a chat run has none of it', () => {
     const voice = (firstWordMs: number[], cutIns: number, fragments: number): RunResult => ({ ...result({}, firstWordMs, null), call: { persona: 'p', turns: [], ended: 'caller', firstWordMs, channel: 'voice', cutIns, fragments } });
     const s = summarize([result({}, [100, 200], null), voice([900, 1100], 1, 0), voice([700], 2, 1)]);
-    expect(s.voice).toEqual({ calls: 2, cutIns: 3, fragments: 1 });
-    expect(s.firstWordByChannel).toEqual({ chat: { calls: 1, median: 100, p95: 200 }, voice: { calls: 2, median: 900, p95: 1100 } });
+    expect(s.voice).toEqual({ calls: 2, cutIns: 3, fragments: 1, bridged: 0, turns: 3 });
+    expect(s.firstWordByChannel).toEqual({ chat: { calls: 1, median: 100, p95: 200 }, voice: { calls: 2, median: 900, p95: 1100, replyMedian: 900, replyP95: 1100 } });
+    // A voice call whose replies began with the bridge: heard at once, the reply's own first frame later.
+    const bridged: RunResult = { ...result({}, [1200, 1250], null), call: { persona: 'p', turns: [], ended: 'caller', firstWordMs: [1200, 1250], replyFirstMs: [2000, 3000], bridged: 2, channel: 'voice', cutIns: 0, fragments: 0 } };
+    const b = summarize([bridged, result({}, [400], null)]);
+    expect(b.voice).toEqual({ calls: 1, cutIns: 0, fragments: 0, bridged: 2, turns: 2 });
+    expect(b.firstWordByChannel!.voice).toEqual({ calls: 1, median: 1200, p95: 1250, replyMedian: 2000, replyP95: 3000 });
+    // The reply's first frame over every call (a chat call's is its first sentence): what eval:compare's bars read.
+    expect(b.replyFirstMs).toEqual({ median: 2000, p90: 3000, p95: 3000, p99: 3000 });
     const chat = summarize([result({}, [100], null)]);
+    expect(chat.replyFirstMs).toBeUndefined();
     expect(chat.voice).toBeUndefined();
     expect(chat.firstWordByChannel).toBeUndefined();
   });

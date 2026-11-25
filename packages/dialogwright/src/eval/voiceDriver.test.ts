@@ -79,6 +79,9 @@ describe('driveVoice', () => {
     expect(call.callerEnded).toEqual({ how: 'hang_up' });
     expect([call.cutIns, call.fragments]).toEqual([0, 0]);
     expect(call.firstWordMs).toHaveLength(3);
+    // No reply waited for the bridge: the first frame heard is the reply's.
+    expect(call.replyFirstMs).toEqual(call.firstWordMs);
+    expect(call.bridged).toBe(0);
     expect(call.firstWordMs.every((m) => m >= 0 && m < 5000)).toBe(true);
     // Each reply was played before the caller answered it: its words at speaking pace, from its first frame.
     for (const [i, at] of c.askedAt.entries()) {
@@ -105,11 +108,38 @@ describe('driveVoice', () => {
     const played = words(long).slice(0, Math.ceil(n * 0.4)).join(' ');
     // The caller was shown the words played, and nothing after them.
     expect(c.seen[1]!.at(-1)).toMatchObject({ who: 'line', text: played });
-    expect(call.turns[2]).toMatchObject({ who: 'line', text: played });
+    expect(call.turns[2]).toMatchObject({ who: 'line', text: played, cut: true, unheard: words(long).slice(Math.ceil(n * 0.4)).join(' ') });
+    // The caller was never shown the words they did not hear, nor the mark.
+    expect(c.seen[1]!.at(-1)).not.toHaveProperty('unheard');
+    expect(call.turns[4]).not.toHaveProperty('cut');
     expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line', 'caller', 'line']);
     expect(call.turns[4]!.text).toBe('Tuesday works.');
     // The line was told the caller cut in where the words played ended (the interrupt's utteranceUntilInterrupt).
     expect(JSON.stringify(model.requests[1]!.messages)).toContain(`${played}${CUT_IN_NOTE}`);
+  }, 20_000);
+
+  it('a model slow enough for the bridge: the first frame heard is the bridge\'s, the reply\'s first frame the model\'s', async () => {
+    const script = fakeModel([[text('Tuesday morning is free.'), done()]]);
+    // The model's first words come well after BRIDGE_AFTER_MS (1200 ms), so the line says the bridge first.
+    const model: ConverseModel = {
+      id: 'fake',
+      stream(req, signal) {
+        return (async function* (): AsyncIterable<ModelEvent> {
+          await new Promise((resolve) => setTimeout(resolve, 1700));
+          yield* script.stream(req, signal);
+        })();
+      },
+    };
+    const s = await server(model);
+    const c = scripted(['Anything free on Tuesday?']);
+    const call = await driveVoice({ url: s.ws, serverHttp: s.http, persona: persona(), caller: c.caller, maxTurns: 6, timeoutMs: 5000, turnEnds: s.turnEnds, timeScale: SCALE });
+    expect(call.turns[2]).toMatchObject({ who: 'line', text: 'One sec. Tuesday morning is free.' });
+    expect(call.bridged).toBe(1);
+    expect(call.firstWordMs).toHaveLength(1);
+    expect(call.replyFirstMs).toHaveLength(1);
+    expect(call.firstWordMs[0]).toBeGreaterThanOrEqual(1100);
+    expect(call.firstWordMs[0]).toBeLessThan(1650);
+    expect(call.replyFirstMs![0]).toBeGreaterThanOrEqual(1650);
   }, 20_000);
 
   it('a fragmenting caller\'s long turn arrives in two parts', async () => {

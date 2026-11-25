@@ -42,13 +42,20 @@ export interface RunSummary {
    * the times the caller cut in on a reply, and the caller's turns sent in two parts (a recognizer that ended the
    * turn early). Absent for a run over the chat wire alone, and for every run before the voice path.
    */
-  voice?: { calls: number; cutIns: number; fragments: number };
+  voice?: { calls: number; cutIns: number; fragments: number; bridged: number; turns: number };
   /**
    * The first sentence by channel, where the run has calls over the voice path: each channel's calls, and the
-   * median and p95 of their first sentences (on the voice path, from the caller's last final prompt to the line's
-   * first text frame).
+   * median and p95 of their first sentences (on the voice path, from the caller's last final prompt to the first
+   * frame heard, the bridge included; and `replyMedian` and `replyP95`, to the reply's own first frame, the bridge
+   * left out).
    */
-  firstWordByChannel?: Partial<Record<'chat' | 'voice', { calls: number; median: number; p95: number }>>;
+  firstWordByChannel?: Partial<Record<'chat' | 'voice', { calls: number; median: number; p95: number; replyMedian?: number; replyP95?: number }>>;
+  /**
+   * The reply's own first frame over every call, where the run has calls over the voice path: a voice call's with
+   * the bridge left out (SimCall.replyFirstMs), a chat call's its first sentence. What eval:compare's latency bars
+   * read in place of the first sentence, so a bridge said while a slow model begins clears no bar.
+   */
+  replyFirstMs?: { median: number; p90: number; p95: number; p99: number };
   /** The caller's turns whose model requests were timed (the converse runtime's traces). */
   modelTurns: number;
   /**
@@ -187,6 +194,10 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     const ms = rs.flatMap((r) => r.call.firstWordMs);
     return { calls: rs.length, median: percentile(ms, 0.5), p95: percentile(ms, 0.95) };
   };
+  /** A call's replies' own first frames: the bridge left out on the voice path, a chat call's first sentences. */
+  const replyFirstOf = (r: RunResult): number[] => r.call.replyFirstMs ?? r.call.firstWordMs;
+  const replyFirsts = results.flatMap(replyFirstOf);
+  const voiceReplies = onVoice.flatMap(replyFirstOf);
   const onChat = results.filter((r) => r.call.channel !== 'voice');
   const costs = results.map((r) => r.agentCostUsd).filter((c): c is number => c !== null);
   const tokens = results.map((r) => r.agentTokens).filter((t): t is { inputTokens: number; outputTokens: number } => t !== undefined && t !== null);
@@ -214,8 +225,12 @@ export function summarize(results: readonly RunResult[], o: { timeoutMs?: number
     firstWordMsP99: percentile(firstWords, 0.99),
     ...(onVoice.length > 0
       ? {
-          voice: { calls: onVoice.length, cutIns: onVoice.reduce((s, r) => s + (r.call.cutIns ?? 0), 0), fragments: onVoice.reduce((s, r) => s + (r.call.fragments ?? 0), 0) },
-          firstWordByChannel: { ...(onChat.length > 0 ? { chat: firstWordOf(onChat) } : {}), voice: firstWordOf(onVoice) },
+          voice: {
+            calls: onVoice.length, cutIns: onVoice.reduce((s, r) => s + (r.call.cutIns ?? 0), 0), fragments: onVoice.reduce((s, r) => s + (r.call.fragments ?? 0), 0),
+            bridged: onVoice.reduce((s, r) => s + (r.call.bridged ?? 0), 0), turns: onVoice.reduce((s, r) => s + r.call.firstWordMs.length, 0),
+          },
+          firstWordByChannel: { ...(onChat.length > 0 ? { chat: firstWordOf(onChat) } : {}), voice: { ...firstWordOf(onVoice), replyMedian: percentile(voiceReplies, 0.5), replyP95: percentile(voiceReplies, 0.95) } },
+          replyFirstMs: { median: percentile(replyFirsts, 0.5), p90: percentile(replyFirsts, 0.9), p95: percentile(replyFirsts, 0.95), p99: percentile(replyFirsts, 0.99) },
         }
       : {}),
     modelTurns: turns.length,

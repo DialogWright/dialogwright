@@ -179,10 +179,14 @@ function pageOf(records: readonly RunRecord[], info: ReportInfo): string {
     // The voice path's own rows, where the run has calls on it (a run over the chat wire alone has none).
     ...(all.voice !== undefined
       ? [
-          ...(['chat', 'voice'] as const).flatMap((c) => {
-            const f = all.firstWordByChannel?.[c];
-            return f === undefined ? [] : [`| First sentence ${c === 'voice' ? 'on the voice path (the caller\'s last words to the line\'s first frame)' : 'over the chat wire'}, median / p95 | ${ms(f.median)} / ${ms(f.p95)} over ${f.calls} calls |`];
-          }),
+          ...(all.firstWordByChannel?.chat !== undefined ? [`| First sentence over the chat wire, median / p95 | ${ms(all.firstWordByChannel.chat.median)} / ${ms(all.firstWordByChannel.chat.p95)} over ${all.firstWordByChannel.chat.calls} calls |`] : []),
+          ...(all.firstWordByChannel?.voice !== undefined
+            ? [
+                `| First frame heard on the voice path (the caller's last words to the line's first frame, the bridge included), median / p95 | ${ms(all.firstWordByChannel.voice.median)} / ${ms(all.firstWordByChannel.voice.p95)} over ${all.firstWordByChannel.voice.calls} calls |`,
+                `| The reply's first frame on the voice path (the bridge left out), median / p95 | ${ms(all.firstWordByChannel.voice.replyMedian ?? all.firstWordByChannel.voice.median)} / ${ms(all.firstWordByChannel.voice.replyP95 ?? all.firstWordByChannel.voice.p95)} |`,
+                `| Caller turns the bridge was said on (the model slow to begin) | ${all.voice.bridged} of ${all.voice.turns} |`,
+              ]
+            : []),
           `| Cut-ins on the voice path (the caller spoke over a long reply) | ${all.voice.cutIns} |`,
           `| Caller turns sent in two parts on the voice path (a recognizer that ended the turn early) | ${all.voice.fragments} |`,
         ]

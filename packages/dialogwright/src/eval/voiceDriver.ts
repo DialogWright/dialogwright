@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
-import type { CallerFn, SimCall, TurnEnds } from './chatDriver';
+import type { CallerFn, SimCall, SimTurn, TurnEnds } from './chatDriver';
 import type { Persona } from './personas';
 
 /**
@@ -17,10 +17,14 @@ import type { Persona } from './personas';
  * - Cutting in (the persona's `voice.interrupts`). On a reply of more than CUT_IN_OVER_WORDS words, the caller
  *   cuts in when CUT_IN_AT of its words have played: an `interrupt` frame whose `utteranceUntilInterrupt` is the
  *   words played, then its next words as a final prompt. The caller is shown only the words played, and the
- *   call's line turn holds only them: what was heard.
+ *   call's line turn holds only them, marked `cut` (the judge is shown the mark), with the words not heard kept
+ *   as `unheard` for the author. A reply still streaming is never cut in on: the cut waits for its final frame, and
+ *   where that came after the 40% point, the caller cuts in at the words played by then.
  * - Fragments (the persona's `voice.fragments`). A caller turn of more than FRAGMENT_OVER_WORDS words is sent as
  *   two final prompts split at its middle word, FRAGMENT_GAP_MS apart, as a recognizer that ended the turn early.
- * - Timing. `firstWordMs` is from the caller's (last) final prompt to the line's first text frame. `timeScale`
+ * - Timing. `firstWordMs` is from the caller's (last) final prompt to the first text frame heard (the bridge
+ *   included), `replyFirstMs` to the reply's own first frame (the bridge left out), and `bridged` counts the turns
+ *   whose reply began with the bridge. `timeScale`
  *   scales every wait the driver makes of its own (playback, the gap between fragments): 1 on a run, so the line
  *   meets real time as on a call; a test runs it faster.
  * - The end. The line's `end` frame ends the call (its handoff data posted back as the carrier's action callback
@@ -105,6 +109,10 @@ const form = (params: Record<string, string>): RequestInit => ({
 /** What became of a reply: when its first frame came, whether the call is over, what the caller heard, and a cut-in's words. */
 interface Reply {
   first: number | null;
+  /** When its own first frame came, the bridge left out. */
+  replyFirst: number | null;
+  /** It began with the bridge (the model slow to begin). */
+  bridged: boolean;
   over: boolean;
   /** The interrupt's utteranceUntilInterrupt (the words played that the caller may interrupt), where the caller cut in. */
   cut: string | null;
@@ -144,7 +152,7 @@ export async function driveVoice(o: {
   const from = o.persona.callingFrom ?? VOICE_FROM;
   const interrupts = o.persona.voice?.interrupts === true;
   const fragmenting = o.persona.voice?.fragments === true;
-  const call: SimCall = { persona: o.persona.id, turns: [], ended: 'turns', firstWordMs: [], callId: callSid, channel: 'voice', cutIns: 0, fragments: 0 };
+  const call: SimCall = { persona: o.persona.id, turns: [], ended: 'turns', firstWordMs: [], callId: callSid, channel: 'voice', cutIns: 0, fragments: 0, replyFirstMs: [], bridged: 0 };
   const callback = (params: Record<string, string>): Promise<unknown> =>
     fetch(`${o.serverHttp}/cr-action/twilio`, form({ CallSid: callSid, ...params })).then((r) => r.text()).catch(() => undefined);
 
@@ -201,6 +209,7 @@ export async function driveVoice(o: {
   const reply = async (turn: number, sentAt: number): Promise<Reply> => {
     const frames: PlayedFrame[] = [];
     let first: number | null = null;
+    let replyFirst: number | null = null;
     let finalAt: number | null = null;
     let turnEnded = false;
     let over = false;
@@ -248,6 +257,7 @@ export async function driveVoice(o: {
         const bridge = m.interruptible === false;
         frames.push({ words, bridge, at: m.at });
         first ??= m.at - sentAt;
+        if (!bridge) replyFirst ??= m.at - sentAt;
         if (m.last === true && !bridge) finalAt = m.at;
       } else if (m.type === 'end') {
         lineEnd = m;
@@ -257,30 +267,43 @@ export async function driveVoice(o: {
     // What the caller heard: every frame, or on a cut-in the bridge and the words played before it.
     let heard: string[];
     let utterance: string | null = null;
+    let unheard: string[] = [];
     if (cut !== null) {
-      const spoken = frames.filter((f) => !f.bridge).flatMap((f) => f.words).slice(0, cut.words);
+      const words = frames.filter((f) => !f.bridge).flatMap((f) => f.words);
+      const spoken = words.slice(0, cut.words);
+      unheard = words.slice(cut.words);
       const bridgeBefore = frames.slice(0, frames.findIndex((f) => !f.bridge)).flatMap((f) => f.words);
       utterance = spoken.join(' ');
       heard = [...bridgeBefore, ...spoken];
     } else heard = frames.flatMap((f) => f.words);
-    if (heard.length > 0) call.turns.push({ who: 'line', text: heard.join(' '), atMs: sentAt - started + Math.max(0, first ?? 0) });
+    // A turn cut in on is marked, with the words the caller did not hear kept for the author (never shown to the caller or the judge).
+    if (heard.length > 0) call.turns.push({ who: 'line', text: heard.join(' '), atMs: sentAt - started + Math.max(0, first ?? 0), ...(cut !== null ? { cut: true as const, ...(unheard.length > 0 ? { unheard: unheard.join(' ') } : {}) } : {}) });
     else over = true;
-    return { first, over, cut: utterance };
+    return { first, replyFirst, bridged: frames.some((f) => f.bridge), over, cut: utterance };
   };
 
-  /** After a cut-in on `turn`: its end waited for (where the server tells it) and whatever else of it arrives passed over, unheard. */
+  /**
+   * After a cut-in on `turn`: its end waited for (where the server tells it) and whatever else of it arrives passed
+   * over, unheard; those words are added to the cut turn's `unheard`.
+   */
   const passOver = async (turn: number): Promise<void> => {
     unheardUntil = turn;
     const deadline = Date.now() + o.timeoutMs;
+    const dropped: string[] = [];
     for (;;) {
-      if (o.turnEnds !== undefined ? ended >= turn : queue.length === 0) return;
+      if (o.turnEnds !== undefined ? ended >= turn : queue.length === 0) break;
       const m = await next(o.turnEnds !== undefined ? deadline : Date.now());
-      if (m === null) return;
+      if (m === null) break;
       if (m.turnEnd !== undefined) ended = Math.max(ended, m.turnEnd);
       else if (m.type === 'end') lineEnd = m;
+      else if (m.type === 'text' && typeof m.token === 'string' && m.interruptible !== false) dropped.push(...wordsOf(m.token));
     }
+    const cutTurn = call.turns.at(-1);
+    if (dropped.length > 0 && cutTurn?.cut === true) cutTurn.unheard = [cutTurn.unheard, dropped.join(' ')].filter((w) => w !== undefined && w !== '').join(' ');
   };
 
+  /** The call as the caller knows it: each turn's words as heard, never the words they did not hear nor the mark. */
+  const heardSoFar = (): SimTurn[] => call.turns.map((t) => ({ who: t.who, text: t.text, atMs: t.atMs }));
   const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms * scale));
   try {
     await new Promise<void>((resolve, reject) => {
@@ -313,13 +336,13 @@ export async function driveVoice(o: {
         // The caller speaks over the line: the carrier's interrupt at once, their words once they have said them.
         socket.send(JSON.stringify({ type: 'interrupt', utteranceUntilInterrupt: r.cut, durationUntilInterruptMs: Math.round((wordsOf(r.cut).length / SPEAKING_WORDS_PER_S) * 1000) }));
         call.cutIns! += 1;
-        [line] = await Promise.all([o.caller(o.persona, call.turns), passOver(turn)]);
+        [line] = await Promise.all([o.caller(o.persona, heardSoFar()), passOver(turn)]);
         // The line ended the call (or its socket closed) while the caller spoke over it: their words reach no one.
         if (lineEnd !== null || closed) {
           call.ended = 'line';
           break;
         }
-      } else line = await o.caller(o.persona, call.turns);
+      } else line = await o.caller(o.persona, heardSoFar());
       if (line === null || typeof line !== 'string') {
         call.ended = 'caller';
         call.callerEnded = line ?? { how: 'hang_up' };
@@ -346,7 +369,10 @@ export async function driveVoice(o: {
       }
       turn += 1;
       r = await reply(turn, sentAt);
+      // The first frame heard (the bridge included), and the reply's own first frame (the bridge left out).
       call.firstWordMs.push(r.first === null ? o.timeoutMs : Math.max(0, r.first));
+      call.replyFirstMs!.push(r.replyFirst === null ? o.timeoutMs : Math.max(0, r.replyFirst));
+      if (r.bridged) call.bridged! += 1;
     }
     if (call.ended === 'line' && lineEnd !== null) {
       // The line ended the call: the carrier's action callback, with the end's handoff data.

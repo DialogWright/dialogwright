@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { fakeModel } from '../converse/model/fake';
 import { Budget } from './budget';
 import type { SimCall } from './chatDriver';
-import { actionsOfCall, agentCostOfCall, handJudgeText, JUDGE_FAILED, judgeCall, judgeInput, judgeSystem, modelUseOfCall, parseVerdict, VERDICT } from './judge';
+import { actionsOfCall, agentCostOfCall, CUT_IN_MARK, handJudgeText, JUDGE_FAILED, judgeCall, judgeInput, judgeSystem, modelUseOfCall, parseVerdict, VERDICT } from './judge';
 import type { Persona } from './personas';
 
 const persona: Persona = { id: 'p', goal: 'Ask the hours.', truth: { name: 'Pat Example' }, manner: 'Plain.', expects: 'answer' };
@@ -13,6 +13,20 @@ const call: SimCall = { persona: 'p', turns: [{ who: 'line', text: 'Welcome.', a
 const done = { type: 'done' as const, stop: 'tool' as const, usage: { inputTokens: 10, outputTokens: 10 } };
 
 const verdictArgs = (o: Record<string, unknown> = {}) => ({ completed: true, correct: true, materialClaims: [], benignClaims: [], honestWhenAsked: null, repeatedQuestions: 0, notes: '', ...o });
+
+describe('the judge\'s transcript of a cut-in', () => {
+  it('marks a line turn the caller cut in on, and never shows the words they did not hear', () => {
+    const p: Persona = { id: 'p', goal: 'Book a visit.', truth: { name: 'Sam Example' }, manner: 'Plain.', expects: 'booking' };
+    const call: SimCall = { persona: 'p', ended: 'caller', firstWordMs: [], channel: 'voice', turns: [
+      { who: 'line', text: 'We have the morning free, or', atMs: 0, cut: true, unheard: 'the afternoon at a lower price.' },
+      { who: 'caller', text: 'The morning.', atMs: 10 },
+    ] };
+    const input = judgeInput('b', p, call, []);
+    expect(input).toContain(`Line: We have the morning free, or${CUT_IN_MARK}\nCaller: The morning.`);
+    expect(input).not.toContain('lower price');
+    expect(judgeInput('b', p, { ...call, turns: [{ who: 'line', text: 'Hello.', atMs: 0 }] }, [])).not.toContain(CUT_IN_MARK);
+  });
+});
 
 describe('judgeCall', () => {
   it('parses the verdict from the verdict tool call and gives the judge the business, the truth, the transcript and the actions', async () => {

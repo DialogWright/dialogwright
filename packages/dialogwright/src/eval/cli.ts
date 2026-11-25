@@ -256,8 +256,8 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     ...(voice
       ? [
           'Each call went over the voice path in text: the harness played Twilio\'s carrier over the relay wire, with no speech recognition, no text-to-speech and no network to a phone; what a real carrier does on a call (its recognizer, its playback, its reports) is not measured.',
-          `Each reply was played at ${SPEAKING_WORDS_PER_S} words a second from its first frame, and the caller answered once it had played; a caller who cuts in (voice.interrupts) did so once ${CUT_IN_AT * 100}% of a reply of more than ${CUT_IN_OVER_WORDS} words had played, and a fragmenting caller's (voice.fragments) turns of more than ${FRAGMENT_OVER_WORDS} words reached the line in two parts ${FRAGMENT_GAP_MS} ms apart.`,
-          'The first sentence is timed from the caller\'s last final prompt to the line\'s first text frame.',
+          `Each reply was played at ${SPEAKING_WORDS_PER_S} words a second from its first frame, and the caller answered once it had played; a caller who cuts in (voice.interrupts) did so once ${CUT_IN_AT * 100}% of the words of a reply of more than ${CUT_IN_OVER_WORDS} words had played, or later where the reply's final frame came after that point, and never on a reply still streaming; the judge was shown where they cut in, and not the words they did not hear. A fragmenting caller's (voice.fragments) turns of more than ${FRAGMENT_OVER_WORDS} words reached the line in two parts ${FRAGMENT_GAP_MS} ms apart.`,
+          'The first sentence is timed from the caller\'s last final prompt twice: to the first frame heard (the bridge included, said while the model is slow to begin) and to the reply\'s own first frame (the bridge left out). The latency bars of eval:compare read the reply\'s.',
         ]
       : [
           'The first sentence is timed from the caller\'s words being sent to the first sentence of the reply arriving over the chat (its say_delta): no speech, no network to a phone.',

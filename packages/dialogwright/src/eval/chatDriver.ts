@@ -3,8 +3,13 @@ import type { Persona } from './personas';
 
 export interface SimTurn {
   who: 'caller' | 'line';
+  /** What was said; on the voice path, a line turn's words as the caller heard them. */
   text: string;
   atMs: number;
+  /** On the voice path: the caller cut in on this line turn, so `text` ends where they spoke over it (the judge is shown a mark). */
+  cut?: true;
+  /** On the voice path, a turn cut in on: the words of the reply the caller did not hear, for the author's reading; never shown to the caller or the judge. */
+  unheard?: string;
 }
 
 export interface SimCall {
@@ -14,9 +19,17 @@ export interface SimCall {
   ended: 'line' | 'caller' | 'turns';
   /**
    * For each caller turn, ms from sending it to the line's first sentence (its first say_delta, else its say); on the
-   * voice path, from the caller's (last) final prompt to the line's first text frame.
+   * voice path, from the caller's (last) final prompt to the first text frame heard, the bridge included.
    */
   firstWordMs: number[];
+  /**
+   * On the voice path, for each caller turn: ms from the caller's (last) final prompt to the reply's own first text
+   * frame, the bridge left out (the line said while the model is slow to begin). What the latency bars read; absent
+   * on a chat call, whose first sentence is its reply's.
+   */
+  replyFirstMs?: number[];
+  /** On the voice path: the caller turns whose reply began with the bridge. */
+  bridged?: number;
   /**
    * How the caller ended the call, where it did (`ended: 'caller'`): `hang_up`, with the goodbye it said (not sent to
    * the line), or `empty`, its model giving no reply twice: a fault of the simulation, not of the line. Absent from a

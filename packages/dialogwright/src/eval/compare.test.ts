@@ -13,6 +13,18 @@ const atBars = (o: Partial<RunSummary> = {}): RunSummary => ({
 
 for (const id of ['inception:cheap-test', 'openrouter:vendor/mid-test', 'anthropic:dear-test', 'anthropic:dearest-test']) addModelPrice(id, { input: 1, output: 5, source: 'a test, 2026-11-11' });
 
+describe('the latency bars on the voice path', () => {
+  it('read the reply\'s first frame (the bridge left out), not the first frame heard', () => {
+    // The bridge heard at 1.2 s clears the bars; the model's own first words, at 1.9 s and 3.4 s, do not.
+    const voice = atBars({ firstWordMsMedian: 1200, firstWordMsP95: 1300, replyFirstMs: { median: 1900, p90: 3000, p95: 3400, p99: 4000 } });
+    expect(missed(voice, DEFAULT_BARS)).toEqual([
+      { bar: 'firstWordMsMedian', value: 1900, limit: 1200, by: '700 ms over' },
+      { bar: 'firstWordMsP95', value: 3400, limit: 2500, by: '900 ms over' },
+    ]);
+    expect(missed(atBars(), DEFAULT_BARS)).toEqual([]);
+  });
+});
+
 describe('clears', () => {
   it('is true exactly at the bars, and false a step past any of them', () => {
     expect(clears(atBars(), DEFAULT_BARS)).toBe(true);

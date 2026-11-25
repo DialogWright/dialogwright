@@ -43,6 +43,14 @@ export interface Miss {
 
 const percent = (x: number): string => `${(x * 100).toFixed(1)} points`;
 
+/**
+ * The first sentence the latency bars read: on the voice path the reply's own first frame, the bridge left out
+ * (RunSummary.replyFirstMs); over the chat wire, the first sentence.
+ */
+export function latencyOf(s: RunSummary): { median: number; p90: number; p95: number; p99: number } {
+  return s.replyFirstMs ?? { median: s.firstWordMsMedian, p90: s.firstWordMsP90, p95: s.firstWordMsP95, p99: s.firstWordMsP99 };
+}
+
 /** The bars a summary misses, each with how far. */
 export function missed(s: RunSummary, bars: Bars): Miss[] {
   const out: Miss[] = [];
@@ -50,8 +58,10 @@ export function missed(s: RunSummary, bars: Bars): Miss[] {
     if (value === null) out.push({ bar, value, limit, by: 'not measured' });
     else if (value > limit) out.push({ bar, value, limit, by: by(value - limit) });
   };
-  over('firstWordMsMedian', s.firstWordMsMedian, bars.firstWordMsMedian, (d) => `${Math.round(d)} ms over`);
-  over('firstWordMsP95', s.firstWordMsP95, bars.firstWordMsP95, (d) => `${Math.round(d)} ms over`);
+  // On the voice path the reply's own first frame (the bridge left out), so a bridge said while a slow model begins clears no bar.
+  const first = latencyOf(s);
+  over('firstWordMsMedian', first.median, bars.firstWordMsMedian, (d) => `${Math.round(d)} ms over`);
+  over('firstWordMsP95', first.p95, bars.firstWordMsP95, (d) => `${Math.round(d)} ms over`);
   over('timeoutRate', s.timeoutRate, bars.timeoutRate, (d) => `${percent(d)} over`);
   if (s.cooperativeJudged === 0) out.push({ bar: 'correctRate', value: null, limit: bars.correctRate, by: 'not measured' });
   else if (s.cooperativeCorrectRate < bars.correctRate) out.push({ bar: 'correctRate', value: s.cooperativeCorrectRate, limit: bars.correctRate, by: `${percent(bars.correctRate - s.cooperativeCorrectRate)} under` });
@@ -200,7 +210,7 @@ export function compareMarkdown(results: readonly CandidateResult[], info: { app
     const miss = missed(s, b);
     const missWords = r.stoppedByBudget ? 'stopped by the budget (not whole)' : miss.length === 0 ? 'none: clears' : miss.map((m) => `${BAR_WORDS[m.bar]} ${m.by}`).join('; ');
     const would = ['1800', '3000', '4000', '6000'].map((k) => pct(s.wouldTimeout[k] ?? null)).join(' / ');
-    lines.push(`| ${name(r)} | ${s.runs} | ${pct(s.cooperativeCorrectRate)} of ${s.cooperativeJudged} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} (${s.gapClaims} gaps, ${s.benignClaims} benign) | ${ms(s.firstWordMsMedian)} / ${ms(s.firstWordMsP90)} / ${ms(s.firstWordMsP95)} / ${ms(s.firstWordMsP99)} | ${pct(s.timeoutRate)} of ${s.modelTurns} | ${would} | ${usd(s.agentCostPerCallUsd)} | ${usd(r.spentUsd !== undefined && s.runs > 0 ? r.spentUsd / s.runs : null)} | ${r.price ? `$${r.price.input} / $${r.price.output}` : 'unknown'} | ${r.price?.source ?? ''} | ${missWords} |`);
+    lines.push(`| ${name(r)} | ${s.runs} | ${pct(s.cooperativeCorrectRate)} of ${s.cooperativeJudged} | ${pct(s.completedRate)} | ${pct(s.correctRate)} | ${s.unsupportedClaims} (${s.gapClaims} gaps, ${s.benignClaims} benign) | ${ms(latencyOf(s).median)} / ${ms(latencyOf(s).p90)} / ${ms(latencyOf(s).p95)} / ${ms(latencyOf(s).p99)} | ${pct(s.timeoutRate)} of ${s.modelTurns} | ${would} | ${usd(s.agentCostPerCallUsd)} | ${usd(r.spentUsd !== undefined && s.runs > 0 ? r.spentUsd / s.runs : null)} | ${r.price ? `$${r.price.input} / $${r.price.output}` : 'unknown'} | ${r.price?.source ?? ''} | ${missWords} |`);
   }
   const winner = results.find((r) => r.cleared && !r.reference);
   const stop = winner ? `Stopped at ${winner.model}: the first to clear every bar.` : results.some((r) => r.stoppedByBudget) ? 'Stopped when the budget was spent.' : 'No candidate cleared every bar.';
