@@ -790,6 +790,8 @@ export const SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS = 2_000;
 interface Settling {
   timer: ReturnType<typeof setTimeout>;
   resolve: (spurious: boolean) => void;
+  /** When the interrupt came: once it is the caller's, when the carrier cut the lines for them (noteCarrierCut). */
+  atMs: number;
 }
 const settling = new Map<string, Settling>();
 
@@ -809,7 +811,7 @@ function interruptUnheard(deps: AdapterDeps, entry: CallEntry): { quietMs: numbe
 }
 
 /** Wait out the settle for an interrupt: true when no caller was heard in it (logged then), false when one was. */
-function settleInterrupt(deps: AdapterDeps, entry: CallEntry, afterMs: number, quietMs: number | null): Promise<boolean> {
+function settleInterrupt(deps: AdapterDeps, entry: CallEntry, afterMs: number, quietMs: number | null, atMs: number): Promise<boolean> {
   const callSid = entry.callSid;
   settleHeard(callSid);
   return new Promise((resolve) => {
@@ -822,6 +824,7 @@ function settleInterrupt(deps: AdapterDeps, entry: CallEntry, afterMs: number, q
         resolve(true);
       }, quietMs === null ? SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS : SPURIOUS_INTERRUPT_SETTLE_MS),
       resolve,
+      atMs,
     };
     s.timer.unref?.();
     settling.set(callSid, s);
@@ -834,6 +837,8 @@ function settleHeard(callSid: string): void {
   if (!s) return;
   clearTimeout(s.timer);
   settling.delete(callSid);
+  // The caller's: the carrier cut the lines for them as it came (speech over a line).
+  noteCarrierCut(callSid, s.atMs);
   s.resolve(false);
 }
 
@@ -1164,7 +1169,16 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   blip 280 ms into a question marked the answer said after it as over it); else, on a carrier that sends partial prompts (Twilio), the first of the run of
  *   partials before it (followPartials, the same pauses); else the prompt's arrival. A pause across the end
  *   of the lines a run began over ends the run (pauseAcrossEnd): noise near a line's end does not carry the
- *   answer after it into the line. Approximate: a "yes" said just before a question ends may count as over it. Only a
+ *   answer after it into the line.
+ * - **The carrier's cut beats the estimate.** A carrier stops playback on a caller's speech only for a line
+ *   speech can interrupt: where it cut the lines during the run of speech a prompt carries (an interrupt taken
+ *   as the caller's at or after the run's start and before the prompt, carrierCutDuring; one settling as the
+ *   prompt comes is theirs, one found spurious is not), the prompt is not over a line under any mode, and no
+ *   `speechOverLine` is logged (replay then runs its turn as any). Every final prompt ends its run, and what was
+ *   noted with it. Seen on a live Telnyx call (2026-11-25, BARGE_IN=speech): an answer sent `interruptible:
+ *   false` (put by the estimate 2.6 s longer than the carrier played it) and the question after it; the caller's speech
+ *   began over the end of the question, the carrier cut it, and the miss was set aside as over the answer.
+ * - Approximate: a "yes" said just before a question ends may count as over it. Only a
  *   miss is ever set aside, so the cost is the question asked again after the no-input wait, never an
  *   answer lost.
  * - **`unless-miss`.** The turn runs on the event marked so (UserSpeech.overLine): what it understands is
@@ -1238,6 +1252,29 @@ const LINE_SPANS_KEPT_MS = 60_000;
 const speechRuns = new Map<string, number>();
 
 /**
+ * When the carrier last cut the lines for the caller's speech (an interrupt taken as theirs: at once, or once its
+ * settle found them, settleHeard), until the next final prompt: whether the speech that prompt carries was over a
+ * line it could interrupt, whatever the estimate says (carrierCutDuring).
+ */
+const carrierCuts = new Map<string, number>();
+
+/** The carrier cut the lines for the caller's speech at `atMs` (an interrupt taken as theirs). */
+function noteCarrierCut(callSid: string, atMs: number): void {
+  carrierCuts.set(callSid, Math.max(atMs, carrierCuts.get(callSid) ?? -Infinity));
+}
+
+/**
+ * Whether the carrier cut the lines for the caller during the run of speech a final prompt arriving now carries,
+ * begun at `atMs` (speechStartOf): an interrupt taken as theirs at or after that start, or one still settling,
+ * which this prompt makes theirs (callerHeard). Every final prompt ends its run: what is noted goes with it.
+ */
+function carrierCutDuring(callSid: string, atMs: number): boolean {
+  const cutMs = Math.max(carrierCuts.get(callSid) ?? -Infinity, settling.get(callSid)?.atMs ?? -Infinity);
+  carrierCuts.delete(callSid);
+  return cutMs >= atMs;
+}
+
+/**
  * The partial prompts since the last final one (Twilio's; a carrier that reports the caller speaking sends
  * none): when the first and the last of the run came. What a carrier that reports nothing says of a
  * caller's speech before its transcript is done.
@@ -1253,6 +1290,7 @@ function forgetLines(callSid: string): void {
   waitWindows.delete(callSid);
   speechRuns.delete(callSid);
   partialRuns.delete(callSid);
+  carrierCuts.delete(callSid);
 }
 
 /**
@@ -2608,7 +2646,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   const overWait = window !== undefined && started!.atMs >= window.fromMs && (window.toMs === null || started!.atMs < window.toMs)
     ? { afterMs: Math.round(started!.atMs - window.fromMs), start: started!.start }
     : null;
-  const read0 = started !== null && overWait === null && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry, started) : null;
+  // Speech the carrier itself cut the lines for was over a line it could interrupt, whatever the estimate says.
+  const cut = started !== null && carrierCutDuring(ctx.callSid, started.atMs);
+  const estimated = started !== null && overWait === null && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry, started) : null;
+  if (estimated !== null && cut) deps.log(`${ctx.callSid}: speech ${seconds(estimated.afterMs, 2)} into lines it could not interrupt by the estimate (~${seconds(estimated.expectedMs, 1)}), but the carrier cut the lines for it: not over them`);
+  const read0 = cut ? null : estimated;
   const over = read0?.mode === 'ignore' && resumesPrompt(deps, entry) ? null : read0;
   // The core's event for it: everything below that is not about the wire itself reads this. Under
   // `unless-miss`, speech over a line is marked so, and a turn on it that would be a miss is set aside.
@@ -2741,7 +2783,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // An interrupt with no caller heard around it settles before it is taken (a spurious interrupt), and the
   // lines it cut, as they are watched now, are said again when no caller is heard in that time either.
   const unheard = event.type === 'user.interrupt' ? interruptUnheard(deps, entry) : null;
-  const settled = event.type === 'user.interrupt' && unheard ? settleInterrupt(deps, entry, event.afterMs, unheard.quietMs) : null;
+  const settled = event.type === 'user.interrupt' && unheard ? settleInterrupt(deps, entry, event.afterMs, unheard.quietMs, arrivedAtMs) : null;
+  // Taken as the caller's at once: the carrier cut the lines for their speech (speech over a line); one settling, once it is theirs (settleHeard).
+  if (event.type === 'user.interrupt' && settled === null) noteCarrierCut(ctx.callSid, arrivedAtMs);
   const cutLines = settled ? watched.get(ctx.callSid) : undefined;
   // Words that are only the start of the value the caller was just asked for, held for the rest (holdWords).
   const held = holdWords(deps, entry, event, arrival);

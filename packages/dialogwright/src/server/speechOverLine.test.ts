@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { forgetNoInput, handleSocketMessage, newConnectionContext, RESAY_SETTLE_MS, type AdapterDeps } from './adapter';
+import { forgetNoInput, handleSocketMessage, newConnectionContext, RESAY_SETTLE_MS, SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS, type AdapterDeps } from './adapter';
 import { SessionStore, type SocketLike } from './sessions';
 import { CallTokens } from './tokens';
 import { FrameLog } from './frameLog';
@@ -824,5 +824,170 @@ describe('every final prompt ends the run of speech it carries', () => {
     await vi.advanceTimersByTimeAsync(300);
     await call.say(ASIDE);
     expect(noteBefore(call, ASIDE)).toMatchObject({ afterMs: 1_700, start: 'speaking' });
+  });
+});
+
+/**
+ * Speech the carrier itself cut the lines for (a live Telnyx call, 2026-11-25, BARGE_IN=speech): a knowledge
+ * answer sent `interruptible: false` and the question after it, interruptible, went out together; the estimate
+ * put the answer 2.6 s longer than the carrier played it. The caller began speaking over the end of the
+ * question, where the estimate still had the answer playing; the carrier cut the question for it (a real
+ * interrupt, the caller still speaking); the words came garbled, a miss, and were set aside as over the answer:
+ * nothing said, and silence until the no-input line. A carrier stops playback on speech only for a line speech
+ * can interrupt: its cut beats the estimate. Here the answer is the test app's acknowledgement, sent
+ * `interruptible: false` (3.2 s by the estimate), and the question behind it (1.6 s).
+ */
+describe('speech the carrier cut the lines for is never over a line the caller cannot interrupt', () => {
+  const INTERRUPT = { type: 'interrupt', utteranceUntilInterrupt: 'Where is the', durationUntilInterruptMs: 600 };
+
+  function heldAck(): void {
+    resetAppsForTest();
+    const app = placeApp();
+    registerApp({ ...app, prompts: { ...app.prompts, manifest: { ...app.prompts.manifest, ack_intent: { ...app.prompts.manifest.ack_intent!, interruptible: false } } } });
+    registerTestkit();
+  }
+
+  /** The reply's two lines, sent together: the acknowledgement held, the question interruptible. */
+  async function toHeldReply(call: Call): Promise<void> {
+    await toPlace(call);
+    const reply = call.sent.filter((f) => f.type === 'text').slice(-2);
+    expect(reply.map((f) => f.interruptible)).toEqual([false, true]);
+  }
+
+  /** The caller heard 3.0 s into the reply (still the acknowledgement, by the estimate), stopping 0.9 s later. */
+  async function speechOverTheEstimate(call: Call, interrupt: boolean): Promise<void> {
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(600);
+    if (interrupt) await call.send(INTERRUPT);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(700);
+    await call.say(ASIDE);
+  }
+
+  describe.each(['unless-miss', 'ignore'] as const)('SPEECH_OVER_LINE=%s', (mode: SpeechOverLine) => {
+    it('Telnyx: the carrier cut the lines during the run of speech: the turn runs, its miss is said, and nothing is noted', async () => {
+      heldAck();
+      const call = liveCall('telnyx', 'speech', { speechOverLine: mode });
+      await toHeldReply(call);
+      await speechOverTheEstimate(call, true);
+      expect(notes(call)).toHaveLength(0);
+      expect(call.lines().at(-1)).toBe(REASK);
+      expect(call.session().slots.place?.attempts).toBe(1);
+      expect(call.records().at(-1)!.event).not.toHaveProperty('overLine');
+      await sameOnReplay(call);
+    });
+  });
+
+  it('Telnyx with no interrupt: set aside as before', async () => {
+    heldAck();
+    const call = liveCall('telnyx', 'speech');
+    await toHeldReply(call);
+    await speechOverTheEstimate(call, false);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 3_000, expectedMs: 4_800, start: 'speaking' });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    expect(call.session().slots.place?.attempts).toBe(0);
+    await sameOnReplay(call);
+  });
+
+  it('an interrupt found spurious (settled, the lines said again) does not count: set aside as before', async () => {
+    heldAck();
+    const call = liveCall('telnyx', 'speech', { spuriousInterrupts: { windowMs: 700 } });
+    await toHeldReply(call);
+    const before = call.lines().length;
+    // 1.0 s into the reply, an interrupt with no caller heard: not awaited, as the call's queue waits out its settle.
+    await vi.advanceTimersByTimeAsync(1_000);
+    void call.send(INTERRUPT);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS);
+    expect(call.logs().some((l) => l.dir === 'log' && l.msg.spuriousInterrupt !== undefined)).toBe(true);
+    // Said again from the start: the acknowledgement, held, then the question.
+    expect(call.lines().length).toBe(before + 2);
+    // Someone in the room 1.0 s into the lines said again, with no interrupt of its own.
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toMatchObject({ mode: 'unless-miss', afterMs: 1_000, start: 'speaking' });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    expect(call.session().slots.place?.attempts).toBe(0);
+  });
+
+  it('an interrupt still settling as the prompt comes is the caller\'s (the prompt makes it so): the turn runs', async () => {
+    heldAck();
+    const call = liveCall('telnyx', 'speech', { spuriousInterrupts: { windowMs: 700 } });
+    await toHeldReply(call);
+    // Heard 3.0 s into the reply for 0.5 s; 0.8 s later (past the window) the interrupt, then the words within its settle.
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(800);
+    void call.send(INTERRUPT);
+    await vi.advanceTimersByTimeAsync(200);
+    await call.say(ASIDE);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(call.logs().some((l) => l.dir === 'log' && l.msg.spuriousInterrupt !== undefined)).toBe(false);
+    expect(notes(call)).toHaveLength(0);
+    expect(call.lines().at(-1)).toBe(REASK);
+    expect(call.session().slots.place?.attempts).toBe(1);
+  });
+
+  it('Twilio: the carrier cut the lines during the run of partials: the turn runs and its miss is said', async () => {
+    heldAck();
+    const call = liveCall('twilio', 'speech');
+    await toHeldReply(call);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.partial('can you');
+    await vi.advanceTimersByTimeAsync(600);
+    await call.send(INTERRUPT);
+    await call.partial('can you pass me');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say(ASIDE);
+    expect(notes(call)).toHaveLength(0);
+    expect(call.lines().at(-1)).toBe(REASK);
+    expect(call.session().slots.place?.attempts).toBe(1);
+    await sameOnReplay(call);
+  });
+
+  it('Twilio with no interrupt: set aside as before, from the first partial', async () => {
+    heldAck();
+    const call = liveCall('twilio', 'speech');
+    await toHeldReply(call);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.partial('can you');
+    await vi.advanceTimersByTimeAsync(1_600);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 3_000, expectedMs: 4_800, start: 'partial' });
+    expect(call.session().slots.place?.attempts).toBe(0);
+  });
+
+  it('an interrupt in an earlier run of speech does not carry to a later prompt whose own speech began over a held line', async () => {
+    heldAck();
+    const call = liveCall('telnyx', 'speech');
+    await call.start();
+    // The caller cuts the greeting with the request: a real interrupt, then the prompt.
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.send(INTERRUPT);
+    await vi.advanceTimersByTimeAsync(900);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say('i want to report a problem');
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
+    // Someone in the room 2.5 s into the reply (not the caller coming back in: 2.8 s since they stopped), over
+    // the held acknowledgement, with no interrupt of its own.
+    await vi.advanceTimersByTimeAsync(2_500);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 2_500, expectedMs: 4_800, start: 'speaking' });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    expect(call.session().slots.place?.attempts).toBe(0);
   });
 });
