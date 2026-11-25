@@ -316,6 +316,7 @@ Say `I need to move my appointment to next week`, then quit.
 6. **Noise near a line's end.** Have the noise stop just before a question ends and answer just after it: the answer is a turn of its own (a miss is said), with no `speechOverLine` line.
 7. **A line said again.** With a line Telnyx reports cut short and says again (check 15), answer just after the second playing's end: a turn, and the no-input wait from that end.
 8. **`take` and `ignore`.** With `SPEECH_OVER_LINE=take`, step 1 is the old behaviour (each miss said over the line, counted); with `ignore`, step 2's request over the greeting is not taken, and the question comes after the no-input wait.
+9. **The carrier's cut.** With barge-in by speech on (`BARGE_IN_<CARRIER>=speech`), on a line that sends a long `interruptible: false` line and an interruptible question after it together, speak over the end of the question with something the app does not do. The carrier cuts the question, and the no-match line is said at once: no silence until the no-input wait, and no `speechOverLine` line before the prompt (the server log says the estimate placed it over the lines and the carrier cut them). Seen 2026-11-25 on Telnyx before the fix: the estimate put the long line 2.6 s past its real end, and the miss was set aside.
 
 **Record.** One row per carrier and step in the results log; any gap between `expectedMs` and the playback heard, and anything that differed, in the design's As built ([2026-11-08](designs/2026-11-08-speech-over-a-line.md)).
 
