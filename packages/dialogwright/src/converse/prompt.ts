@@ -138,7 +138,7 @@ const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of h
  * model took ending the call as the answer to the caller's goodbye, so the words say it is the answer to their
  * having nothing more, however they say it.
  */
-const ON_A_CALL = `On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175"). A caller cannot hear that your reply has ended, so end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need, unless you are saying goodbye. When the caller tells you they need nothing more, in whatever words ("that's all", "no thanks", "I'm all set"), the call is over: call ${END_CALL} in that same reply, with your goodbye, without waiting for them to say goodbye. A reply that only says goodbye leaves the caller holding an open line.`;
+const ON_A_CALL = `On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175"). A caller cannot hear that your reply has ended, so end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need, unless you are saying goodbye. When the caller tells you they need nothing more, in whatever words ("that's all", "no thanks", "I'm all set", or a bare "no" when you have just asked whether there is anything else), the call is over: call ${END_CALL} in that same reply, with your goodbye, without waiting for them to say goodbye. A reply that only says goodbye leaves the caller holding an open line.`;
 
 /**
  * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
@@ -243,7 +243,7 @@ function toolOf(name: string, spec: ActionSpec): ModelTool {
 /** The runtime's own action, offered on every call: it ends the call, on the model's own goodbye or, where it wrote none, the business's closing line. */
 const END_CALL_TOOL: ModelTool = {
   name: END_CALL,
-  description: 'End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", or a goodbye): never wait for them to say goodbye. Write your goodbye in the same reply as this call: a goodbye alone does not end it, and leaves the caller in a conversation that is still open. If you write none, the line says the business\'s closing line.',
+  description: 'End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", a bare "no" when just asked whether there is anything else, or a goodbye): never wait for them to say goodbye. Write your goodbye in the same reply as this call: a goodbye alone does not end it, and leaves the caller in a conversation that is still open. If you write none, the line says the business\'s closing line.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 

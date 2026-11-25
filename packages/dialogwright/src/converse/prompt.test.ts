@@ -318,6 +318,6 @@ describe('writing for the ear, and one thing at a time', () => {
     }
   });
   it('a call is told that its goodbye goes with end_call in the same reply, or the caller is left on an open line', () => {
-    expect(systemPrompt(plain, voice(), NOW)).toContain('When the caller tells you they need nothing more, in whatever words ("that\'s all", "no thanks", "I\'m all set"), the call is over: call end_call in that same reply, with your goodbye, without waiting for them to say goodbye.');
+    expect(systemPrompt(plain, voice(), NOW)).toContain('When the caller tells you they need nothing more, in whatever words ("that\'s all", "no thanks", "I\'m all set", or a bare "no" when you have just asked whether there is anything else), the call is over: call end_call in that same reply, with your goodbye, without waiting for them to say goodbye.');
   });
 });

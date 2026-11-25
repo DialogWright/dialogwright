@@ -42,8 +42,10 @@ services: # assumption: the owner corrects these
     about: Deeper damage on the face of the wheel.
   - name: refinishing worn or faded finishes
     about: A tired finish brought back.
+# Said with every price, whatever the caller chose: "from a photo we ask you for" contradicted a caller who had said
+# no to texts (a live call, 2026-11-25), so the caveat names no photo.
 priceCaveat:
-  en: "That's a ballpark; the shop firms up the price once it sees the damage, from a photo we ask you for once your request is in."
+  en: "That's a ballpark; the shop firms up the price once it sees the damage."
 notOffered: # assumption: the owner corrects these
   - cracked wheels
   - straightening bent wheels

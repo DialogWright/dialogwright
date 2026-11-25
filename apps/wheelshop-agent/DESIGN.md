@@ -20,7 +20,7 @@ The demo needs answers only the owner can give. As with a real client, `agent.ya
 
 | Assumption | In agent.yaml | How the owner corrects it |
 |---|---|---|
-| Ballpark prices: curb rash repair $125 to $175 a wheel, diamond-cut refinishing $175 to $250, powder coat $150 to $200, said with "That's a ballpark; the shop firms up the price once it sees the damage, from a photo we ask you for once your request is in." | `services`, `priceCaveat` | Change a range or the caveat; delete a `price` to have the model give none for that service. |
+| Ballpark prices: curb rash repair $125 to $175 a wheel, diamond-cut refinishing $175 to $250, powder coat $150 to $200, said with "That's a ballpark; the shop firms up the price once it sees the damage." | `services`, `priceCaveat` | Change a range or the caveat; delete a `price` to have the model give none for that service. |
 | The shop works Monday to Friday, 7:30 am to 5:30 pm, closed at weekends, with two drop-off windows: the morning (drop off by 8, ready by about noon) and the afternoon (by noon, ready by about 5), each up to three cars; today's window is not offered once its drop-off time has passed (`until`: 08:00 and 12:00, in the shop's time zone). | `business.hours`, `sources.calendar`, `facts` | Change the days, the windows' labels, capacity and `until` (the last time a car may be dropped off in it; leave it out to offer a window all day), and the fact that says the turnaround. |
 | Curb rash on a diamond cut wheel is usually a same-day fix. | `facts` | Change it, or delete it: then the model promises no turnaround. |
 | The shop doesn't do cracked wheels, straightening, tyres, paint or anything that isn't a wheel, and has no mobile service. | `notOffered` | Add or remove. |
