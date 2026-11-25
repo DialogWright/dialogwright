@@ -608,7 +608,7 @@ const CONVERSE_HAS_NO: readonly (FileKind | 'slots')[] = ['intents', 'forms', 'p
 const OLD_BUSINESS_FILE = 'business.yaml';
 
 /** The fix for an app folder of the old agent mode, which was removed (`pnpm check`, `pnpm diagnose`, defineApp). */
-export const OLD_AGENT_MODE_FIX = 'the old agent mode was removed: rebuild the app on the converse runtime (an agent.yaml; guide chapter 18)';
+export const OLD_AGENT_MODE_FIX = 'the old agent mode was removed: rebuild it as an agent app (an agent.yaml, app.yaml mode: agent; guide chapter 18)';
 
 /** Whether an app folder is one of the old agent mode: a business.yaml and no agent.yaml beside it. */
 export function isOldAgentModeFolder(dir: string): boolean {
