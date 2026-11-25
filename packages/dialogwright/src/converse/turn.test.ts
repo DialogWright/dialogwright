@@ -584,7 +584,8 @@ describe('converseTurn: the caller\'s number', () => {
     const h = harness([[call('c1', 'callback', { phone: 'caller' }), done('tool')], [text('We will call you back.'), done()]]);
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'please call me back on this number' });
-    expect(h.said.at(-1)).toEqual(['A call back to the number you\'re calling from, ending in 0142. Is that right?', true]);
+    // On a call the last four are said digit by digit (speakable.ts).
+    expect(h.said.at(-1)).toEqual(['A call back to the number you\'re calling from, ending in 0 1 4 2. Is that right?', true]);
     s = await h.run(s, { kind: 'text', text: 'yes' });
     expect(h.calledBack).toEqual([CALLER_NUMBER]);
     for (const req of h.model.requests) expect(JSON.stringify(req)).not.toContain('5555550142');
@@ -614,6 +615,60 @@ describe('converseTurn: the caller\'s number', () => {
     await h.run(chat, { kind: 'text', text: 'call me back' });
     expect(JSON.stringify(h.model.requests[1]!.messages.at(-1))).toMatch(/not known on this call; ask the caller/);
     expect(h.traces[0]!.tools.map((t) => t.outcome)).toEqual(['invalid']);
+  });
+});
+
+describe('converseTurn: words for the ear on a call', () => {
+  const SCREEN = [text("It's $40–$90 an item. "), text('Could you tell me:\n- the item\n- the day\n\n'), done()];
+  const SPOKEN = ["It's $40 to $90 an item. ", 'Could you tell me: the item, the day '];
+
+  it('on a call, the model\'s words go out speakable, and the conversation and the trace keep them as said', async () => {
+    const h = harness([SCREEN]);
+    const s = await h.run(fresh(), { kind: 'text', text: 'how much is it?' });
+    expect(h.said).toEqual([[SPOKEN[0], false], [SPOKEN[1], true]]);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: SPOKEN.join('').trim() }] });
+    expect(h.traces.at(-1)!.replies).toEqual([SPOKEN.join('').trim()]);
+  });
+
+  it('a chat is sent the model\'s words as it wrote them', async () => {
+    const h = harness([SCREEN]);
+    const chat = newConverseState({ appId: 'menders', callId: 'chat-1', channel: 'chat' });
+    await h.run(chat, { kind: 'text', text: 'how much is it?' });
+    expect(h.said).toEqual([["It's $40–$90 an item. ", false], ['Could you tell me:\n- the item\n- the day\n\n', true]]);
+  });
+
+  it('a read-back with the caller\'s last four: the text waiting for the yes is the text said, and the trace masks it as before', async () => {
+    const h = harness([[call('c1', 'callback', { phone: 'caller' }), done('tool')], [text('We will call you back.'), done()]]);
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'please call me back on this number' });
+    const said = h.said.at(-1)![0];
+    expect(said).toContain('ending in 0 1 4 2.');
+    expect(s.pending!.text).toBe(said);
+    expect(JSON.stringify(h.traces.at(-1)!.readBack)).not.toContain('0 1 4 2');
+  });
+
+  it('a read-back heard to its end, as the carrier reports what was sent, still confirms; one cut at half does not', async () => {
+    const script = (): ModelEvent[][] => [[call('c1', 'callback', { phone: 'caller' }), done('tool')], [text('We will call you back.'), done()]];
+    const upTo = async (h: Harness): Promise<{ s: ConverseState; said: string }> => {
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: 'please call me back on this number' });
+      return { s, said: h.said.at(-1)![0] };
+    };
+    const whole = harness(script());
+    const w = await upTo(whole);
+    await whole.run(w.s, { kind: 'text', text: 'yes', heard: { cutIn: true, text: w.said, spokeBefore: false } });
+    expect(whole.calledBack).toEqual([CALLER_NUMBER]);
+    const half = harness(script());
+    const c = await upTo(half);
+    await half.run(c.s, { kind: 'text', text: 'yes', heard: { cutIn: true, text: c.said.slice(0, Math.floor(c.said.length / 2)), spokeBefore: false } });
+    expect(half.calledBack).toEqual([]);
+  });
+
+  it('a fixed line goes out speakable too', async () => {
+    const h = harness([], { edit: (t) => t.replace('Example Menders, how can I help?', 'Example Menders: items $40–$90. How can I help?') });
+    const s = await h.run(fresh(), { kind: 'start' });
+    expect(h.said).toEqual([['Example Menders: items $40 to $90. How can I help?', true]]);
+    expect(s.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text: 'Example Menders: items $40 to $90. How can I help?' }] }]);
   });
 });
 

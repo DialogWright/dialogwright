@@ -26,7 +26,8 @@ import { callbackApp } from '../testing/callback/app';
 
 const TELNYX_PUBLIC_KEY = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
 const GREETING = 'Example Visits, how can I help?';
-const READ_BACK = "A visit Tuesday, January 15, 9 to 12 for Sam Example, on the number you're calling from, ending in 0123. Is that right?";
+// On a call the caller's last four are said digit by digit (converse/speakable.ts).
+const READ_BACK = "A visit Tuesday, January 15, 9 to 12 for Sam Example, on the number you're calling from, ending in 0 1 2 3. Is that right?";
 const CLOSING = 'Thanks for getting in touch. Goodbye.';
 
 const servers: RunningServer[] = [];

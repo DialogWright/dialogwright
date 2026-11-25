@@ -7,6 +7,7 @@ import type { JevClient, JsonValue } from '../jev/types';
 import { localDateIso } from '../core/localDate';
 import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
+import { speakableOn } from './speakable';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, lineOn, type ActionSpec, type AgentBusiness } from './business/schema';
 import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
@@ -288,12 +289,19 @@ class Speaker {
 
   constructor(private readonly t: Turn) {}
 
-  /** A piece to the caller, unless the turn was stopped from outside; the first piece said ends the bridge's wait. */
-  private say(text: string, final: boolean): boolean {
-    if (cut(this.t)) return false;
+  /**
+   * A piece to the caller, unless the turn was stopped from outside; the first piece said ends the bridge's wait.
+   * On a call it goes out speakable (speakable.ts), and what is returned, kept in the conversation and the
+   * trace, is the text sent; null where nothing was said.
+   */
+  private say(text: string, final: boolean): string | null {
+    if (cut(this.t)) return null;
     clearBridge(this.t);
-    this.t.out.say(text, final);
-    return true;
+    const spoken = speakableOn(this.t.st, text);
+    // A piece that was only a list's marker or line breaks: as it came, as Out never takes an empty piece.
+    const piece = spoken.trim() === '' ? text : spoken;
+    this.t.out.say(piece, final);
+    return piece;
   }
 
   delta(d: string): void {
@@ -304,7 +312,7 @@ class Speaker {
     }
     if (cut(this.t)) return;
     this.heard();
-    for (const s of this.sentences.push(d)) if (this.say(s, false)) this.said += s;
+    for (const s of this.sentences.push(d)) this.said += this.say(s, false) ?? '';
   }
 
   /** The first text the caller could hear, timed from the turn's start. */
@@ -325,7 +333,7 @@ class Speaker {
     if (cut(this.t)) return this.discard();
     this.kept = null;
     if (this.heldText) this.heard();
-    for (const s of kept) if (this.say(s, false)) this.said += s;
+    for (const s of kept) this.said += this.say(s, false) ?? '';
   }
 
   /** The kept sentences are dropped, with the one not yet finished (abandon's effect on the held part), and the hold ends. */
@@ -347,8 +355,8 @@ class Speaker {
    */
   endRound(final: boolean): string {
     const rest = this.sentences.rest();
-    const saidRest = rest.trim() !== '' && this.say(rest, final);
-    const all = (this.said + (saidRest ? rest : '')).trim();
+    const saidRest = rest.trim() !== '' ? this.say(rest, final) : null;
+    const all = (this.said + (saidRest ?? '')).trim();
     this.said = '';
     if (all !== '') this.t.replies.push(all);
     return all;
@@ -369,8 +377,14 @@ class Speaker {
 
   /** A fixed line, said whole: the turn's final piece unless another line follows it. */
   line(text: string, final = true): void {
-    if (this.say(text, final)) this.t.replies.push(text);
+    const said = this.say(text, final);
+    if (said !== null) this.t.replies.push(said);
   }
+}
+
+/** A business's line in the call's channel's words, as the channel is sent it (made speakable on a call). */
+function lineFor(t: Turn, line: Parameters<typeof lineOn>[0]): string {
+  return speakableOn(t.st, lineOn(line, t.st.channel));
 }
 
 /** Adds content to the conversation, into the last message where it is the same speaker's. */
@@ -461,7 +475,13 @@ function traceTool(t: Turn, spec: ActionSpec | undefined, name: string, args: Re
   for (const [k, v] of Object.entries(args)) raw[k] = typeof v === 'string' ? v : JSON.stringify(v) ?? '';
   const scrub = scrubOf(spec, { tool: name, params: raw });
   t.tools.push({ name, args: recordedArgs(spec, args), outcome, ...(reason !== undefined ? { reason: scrub(reason) } : {}) });
-  t.masked.push(...saidPairs(spec, { tool: name, params: raw }, shownParams(t.deps.business, name, raw, 'en', t.st.seen, t.st.caller.number)));
+  const pairs = saidPairs(spec, { tool: name, params: raw }, shownParams(t.deps.business, name, raw, 'en', t.st.seen, t.st.caller.number));
+  t.masked.push(...pairs);
+  // On a call a value is said as the voice is sent it (speakable.ts): masked in that form too.
+  for (const [value, form] of pairs) {
+    const spoken = speakableOn(t.st, value);
+    if (spoken !== value) t.masked.push([spoken, form]);
+  }
 }
 
 /**
@@ -548,7 +568,9 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     const call: ToolCall = { tool: c.name, params };
     const d = await gate(t, spec, call, confirmedHashFor(call, t.st.pending));
     if (spec !== undefined && spec.kind === 'change' && awaitsConfirmation(d)) {
-      const text = readBackText(b, c.name, params, 'en', t.st.seen, t.st.caller.number);
+      // As the channel says it (speakable on a call): the text waiting for the yes is the text the caller hears, so
+      // what the carrier reports played is compared with it as it was sent (readBackHeard).
+      const text = speakableOn(t.st, readBackText(b, c.name, params, 'en', t.st.seen, t.st.caller.number));
       t.st.pending = { action: c.name, params, hash: confirmationHash(params, confirmedFields(spec)), text, id: c.id };
       t.readBack = { text };
       traceTool(t, spec, c.name, params, 'readBack');
@@ -827,7 +849,7 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
  */
 async function endUnclear(t: Turn, sp: Speaker): Promise<void> {
   const lines = t.deps.business.lines;
-  const line = lineOn(lines.unclear ?? lines.closing, t.st.channel);
+  const line = lineFor(t, lines.unclear ?? lines.closing);
   await record(t, { type: 'converse_end', detail: { by: 'unclear' } });
   sp.line(line);
   add(t.st, 'assistant', [{ type: 'text', text: line }]);
@@ -851,10 +873,10 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
   const doneOwed = t.confirmedRan;
   if (doneOwed) {
     t.confirmedRan = false;
-    said.push(lineOn(lines.done, t.st.channel));
+    said.push(lineFor(t, lines.done));
   }
-  if (handoff) said.push(lineOn(lines.handoff, t.st.channel));
-  else if (said.length === 0) said.push(lineOn(why === 'stuck' ? lines.stuck : lines.recovery, t.st.channel));
+  if (handoff) said.push(lineFor(t, lines.handoff));
+  else if (said.length === 0) said.push(lineFor(t, why === 'stuck' ? lines.stuck : lines.recovery));
   said.forEach((line, i) => sp.line(line, i === said.length - 1));
   if (doneOwed) t.out.replied?.();
   add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
@@ -950,7 +972,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     if (t.ending) {
       // The model's own words written with end_call alone are the goodbye; the closing line is said where it wrote none.
       if (!goodbye || said === '') {
-        const closing = lineOn(t.deps.business.lines.closing, t.st.channel);
+        const closing = lineFor(t, t.deps.business.lines.closing);
         sp.line(closing);
         add(t.st, 'assistant', [{ type: 'text', text: closing }]);
       }
@@ -1323,7 +1345,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
       delete t.bridgeTimer;
       if (cut(t)) return;
       t.bridged = true;
-      bridge.call(out, lineOn(deps.business.lines.bridge, st.channel));
+      bridge.call(out, lineFor(t, deps.business.lines.bridge));
     }, deps.bridgeAfterMs ?? BRIDGE_AFTER_MS);
   }
   const onAbort = (): void => clearBridge(t);
@@ -1434,7 +1456,7 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
     const started = st.journey?.active ? deps.business.journeys?.[st.journey.active] : undefined;
     // A business that is closed as the call starts (business.open) says its after-hours greeting first of all: a journey's greeting may speak of today.
     const closedGreeting = openAt(deps.business, now.getTime()) === false ? deps.business.lines.greetingAfterHours : undefined;
-    const greeting = lineOn(closedGreeting ?? started?.greeting ?? deps.business.lines.greeting, st.channel);
+    const greeting = lineFor(t, closedGreeting ?? started?.greeting ?? deps.business.lines.greeting);
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);
   } else if (input.kind === 'left') {

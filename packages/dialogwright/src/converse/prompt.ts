@@ -15,7 +15,9 @@ import { businessZone, openSchedule, type ConverseState } from './state';
  * to be done that no action's result says was done; nothing is said to be noted that no confirmed action's
  * params carry; the caller's own details said back as they gave them, nothing added), the honesty
  * rule, the date and time in the business's zone, what is known of the caller (the account, and the
- * number by its last four only), and the line's record of what has been done on the call. It gives context and goals, never a procedure for the words.
+ * number by its last four only), the line's record of what has been done on the call, how to ask (one thing at a
+ * time, taking what the caller gives in any order) and, on a call, to write for the ear. It gives context and goals,
+ * never a procedure for the words.
  */
 
 /** The last four digits of a number, the only part of it the model is sent. */
@@ -113,6 +115,20 @@ function callSoFar(s: ConverseState): string {
 const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgement of what the caller just said, one that commits the business to nothing (such as "Got it." or "Sure, let me look."), in different words from one reply to the next, and leave it out where it would sound odd. The caller hears each reply a sentence at a time, so this gives them a first whole sentence almost as soon as you begin, while the rest of the reply follows.';
 
 /**
+ * How the model asks, on either channel: a caller asked for several things in one breath has too much to take in
+ * (the first live calls, 2026-11-25: a name, the item, how many and what it looks like, asked at once), so one thing
+ * at a time, and whatever the caller gives is taken as it comes.
+ */
+const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most where they naturally go together (such as a day and a time of day): several questions at once are a lot to take in. Take everything the caller gives you, in whatever order it comes, and never ask again for what they have already said.';
+
+/**
+ * What a call adds: the caller cannot see the questions, and a voice reads a screen's marks badly (a range
+ * "$125–$175" said "125 175", a list read out). The words sent are made speakable too (speakable.ts); this is the
+ * context that has the model write for the ear in the first place.
+ */
+const ON_A_CALL = 'On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175").';
+
+/**
  * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
  * `checks.claims.mode: correct`); with any other mode no note is ever sent, so nothing is said of one.
  */
@@ -163,6 +179,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
   return [
     `You are the automated assistant answering ${where}. You speak for the business, in this style: ${b.persona.style} The style shapes how you sound, never what you claim.`,
     ...(b.persona.opener === 'acknowledge' ? [OPENER_ACKNOWLEDGE] : []),
+    s.channel === 'voice' ? `${ONE_AT_A_TIME} ${ON_A_CALL}` : ONE_AT_A_TIME,
     '',
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),

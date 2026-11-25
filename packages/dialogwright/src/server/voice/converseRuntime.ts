@@ -1,6 +1,7 @@
 import type { ConverseApp } from '../../converse/app';
 import { lineOn } from '../../converse/business/schema';
 import { accountOf } from '../../converse/sources/accounts';
+import { speakableOn } from '../../converse/speakable';
 import { businessZone, type ConverseState } from '../../converse/state';
 import { ConverseTurnError, converseTurn, lineSaid, type ConverseDeps, type Heard, type Input, type Out } from '../../converse/turn';
 import { E164 } from '../../core/numberLocales';
@@ -20,7 +21,11 @@ import type { ConverseCallEntry } from '../sessions';
  * carrier events, socket close and reconnect here before any scripted code runs; the http callback hands it
  * the caller's hangup.
  *
- * - Sending. Each piece of the model's reply goes out as it is said: a sentence as a text frame with
+ * - Sending. On a call the turn makes every line speakable before it is said (converse/speakable.ts: a range in
+ *   words, a screen's list as speech, the caller's last four digit by digit), so the text sent, the text kept and
+ *   a read-back's text waiting for the yes are the same, and what the carrier reports played is compared with them
+ *   as sent; the line this runtime says itself after a turn threw is made speakable here.
+ *   Each piece of the model's reply goes out as it is said: a sentence as a text frame with
  *   `last: false` (with a space after it, as the carrier joins the pieces), the reply's last piece with
  *   `last: true`, every one interruptible by speech (the converse line always is: plan ruling 2). The bridge
  *   (lines.bridge) goes whole, not interruptible. The call's end follows the turn that ended it: the closing
@@ -474,7 +479,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         // failure says it), else the business's recovery line.
         let line: string | null = null;
         if (!running.ac.signal.aborted && !finalSent) {
-          line = lineOn(changeRan ? app.business.lines.done : app.business.lines.recovery, 'voice');
+          line = speakableOn(state, lineOn(changeRan ? app.business.lines.done : app.business.lines.recovery, 'voice'));
           if (state !== before) lineSaid(state, line);
           reply.frames.push({ text: line, at: now() });
           finalSent = true;

@@ -816,3 +816,49 @@ describe('the converse voice runtime: final fix wave', () => {
     expect(h.entry.session).toEqual(before);
   });
 });
+
+describe('the converse voice runtime: words for the ear', () => {
+  it('a reply with a price range and a screen list goes out speakable', async () => {
+    const h = harness({ model: gatedModel([[text("It's $60–$120 a visit. "), text('Could you tell me:\n- your name\n- the day\n\n'), done()]]) });
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: 'twilio' }, h.io);
+    await h.prompt('how much is a visit?');
+    expect(h.said().slice(1).map((f) => [f.token, f.last])).toEqual([["It's $60 to $120 a visit. ", false], ['Could you tell me: your name, the day ', true]]);
+  });
+
+  /** The call up to the booking's read-back, on the number the caller is calling from: the read-back's token. */
+  async function readBackOf(h: ReturnType<typeof harness>): Promise<string> {
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: 'twilio' }, h.io);
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    return h.said().at(-1)!.token;
+  }
+
+  it('a read-back says the caller\'s last four digit by digit, and is what waits for the yes', async () => {
+    const h = harness({ model: gatedModel(BOOKING.slice(0, 4)) });
+    const readBack = await readBackOf(h);
+    expect(readBack).toContain('ending in 0 1 2 3. Is that right?');
+    expect(h.entry.session.pending!.text).toBe(readBack);
+    // The frame log keeps it as the trace masks it: the name by its length, the number by its last four.
+    const logged = h.fio.records.filter((r) => r.dir === 'out').map((r) => (r.msg as { token: string }).token).at(-1)!;
+    expect(logged).toContain('Is that right?');
+    expect(logged).not.toContain('Sam Example');
+    expect(logged).toBe(h.traces.at(-1)!.readBack!.text);
+  });
+
+  it('a read-back with the caller\'s last four heard to its end (Twilio\'s report of it whole) still confirms on a yes', async () => {
+    const h = harness({ model: gatedModel(BOOKING.slice(0, 4)) });
+    const readBack = await readBackOf(h);
+    await h.frame({ type: 'interrupt', utteranceUntilInterrupt: readBack, durationUntilInterruptMs: 4000 });
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+    expect(h.said().at(-1)!.token).toBe('You are booked for Tuesday morning.');
+  });
+
+  it('one cut at half confirms nothing', async () => {
+    const h = harness({ model: gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Shall I read it again?'), done()]]) });
+    const readBack = await readBackOf(h);
+    await h.frame({ type: 'interrupt', utteranceUntilInterrupt: readBack.slice(0, Math.floor(readBack.length / 2)), durationUntilInterruptMs: 2000 });
+    await h.prompt('yes');
+    expect(h.booked).toEqual([]);
+  });
+});
