@@ -761,6 +761,48 @@ describe('the converse voice runtime: final fix wave', () => {
     expect(h.said().at(-1)!.token).toBe('Anything else?');
   });
 
+  it('a thrown turn writes its trace record: what was said, the tools as far as they ran, the done line after it, failed; the kept state moves on a turn', async () => {
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'availability', { day: DAY }), done('tool')]]);
+    const h = harness({
+      model,
+      appending: (d, rows) => {
+        if (d.type === 'gate' && d.detail.tool === 'availability' && rows.some((r) => r.type === 'confirmed')) throw new Error('disk full at /secret/path');
+      },
+    });
+    await readBackOf(h);
+    const index = h.entry.session.turnIndex;
+    await h.prompt('yes');
+    const r = h.traces.at(-1)!;
+    expect(r).toMatchObject({ kind: 'converse', turnIndex: index, said: 'yes', failed: 'internal' });
+    expect(r.tools[0]).toMatchObject({ name: 'book', outcome: 'confirmed' });
+    expect(r.replies.at(-1)).toBe("That's done.");
+    expect(JSON.stringify(r)).not.toContain('disk full');
+    expect(JSON.stringify(r)).not.toContain('secret');
+    expect(h.entry.session.turnIndex).toBe(index + 1);
+  });
+
+  it('a thrown turn before anything ran writes its record with the recovery line, and keeps the session from before it', async () => {
+    const h = harness({
+      model: gatedModel([[call('c1', 'availability', { day: DAY }), done('tool')]]),
+      appending: (d) => {
+        if (d.type === 'gate') throw new Error('disk full');
+      },
+    });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    const index = h.entry.session.turnIndex;
+    await h.prompt('hello');
+    expect(h.traces.at(-1)).toMatchObject({ turnIndex: index, said: 'hello', failed: 'internal', replies: ['Sorry, could you say that again?'] });
+    expect(h.entry.session.turnIndex).toBe(index);
+  });
+
+  it('a thrown turn whose trace cannot be written either still says its line, and the failure to write is logged', async () => {
+    const h = harness({ model: gatedModel([[call('c1', 'availability', { day: DAY }), done('tool')]]) });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    h.entry.trace = { write: () => { throw new Error('trace down'); } } as unknown as ConverseCallEntry['trace'];
+    await h.prompt('hello');
+    expect(h.said().at(-1)).toMatchObject({ token: 'Sorry, could you say that again?', last: true });
+  });
+
   it('a thrown turn before anything ran keeps the session from before it', async () => {
     const h = harness({
       model: gatedModel([[call('c1', 'availability', { day: DAY }), done('tool')]]),

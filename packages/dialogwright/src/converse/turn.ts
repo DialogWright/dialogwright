@@ -135,10 +135,16 @@ export interface Out {
   /** A bridge line, on a call only: said whole, never interruptible, never part of the reply. */
   bridge?(text: string): void;
   /**
-   * A change the caller confirmed has run, told at once: until the turn says something after it, a channel whose
-   * turn then throws says the done line (lines.done) rather than the recovery line, as the turn's own failure does.
+   * A change the caller confirmed has run, told at once: until the turn tells `replied`, a channel whose turn then
+   * throws says the done line (lines.done) rather than the recovery line, as the turn's own failure does.
    */
   confirmed?(): void;
+  /**
+   * The caller has heard a reply after the change the turn told `confirmed` (the model's own words, or the done
+   * line the turn's own failure says): the done line is no longer owed. A fixed line or a read-back said after
+   * the change never tells it, as the turn's own failure counts them (Turn.confirmedRan).
+   */
+  replied?(): void;
 }
 
 /** What the caller heard of the line's last reply, as the channel knows it. */
@@ -835,13 +841,15 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
   t.st.failures += 1;
   const handoff = t.st.failures >= t.deps.business.limits.failuresPerCall;
   const said: string[] = [];
-  if (t.confirmedRan) {
+  const doneOwed = t.confirmedRan;
+  if (doneOwed) {
     t.confirmedRan = false;
     said.push(lineOn(lines.done, t.st.channel));
   }
   if (handoff) said.push(lineOn(lines.handoff, t.st.channel));
   else if (said.length === 0) said.push(lineOn(why === 'stuck' ? lines.stuck : lines.recovery, t.st.channel));
   said.forEach((line, i) => sp.line(line, i === said.length - 1));
+  if (doneOwed) t.out.replied?.();
   add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
   if (handoff) {
     t.st.ended = 'handoff';
@@ -915,6 +923,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     add(t.st, 'assistant', [...(said !== '' ? [{ type: 'text' as const, text: said }] : []), ...r.calls.map((c) => ({ type: 'tool_call' as const, id: c.id, name: c.name, args: c.args }))]);
     // The caller has heard a reply after the action they confirmed.
     if (said !== '') {
+      if (t.confirmedRan) t.out.replied?.();
       t.confirmedRan = false;
       t.own.push(said);
     }
@@ -1302,7 +1311,13 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   try {
     return await turnBody(t, sp, input, now);
   } catch (e) {
-    throw new ConverseTurnError(reached(t), e);
+    let record: ConverseTraceRecord | null = null;
+    try {
+      record = { ...traceRecordOf(t, input, now).record, failed: 'internal' };
+    } catch {
+      record = null;
+    }
+    throw new ConverseTurnError(reached(t), e, record);
   } finally {
     clearBridge(t);
     signal?.removeEventListener('abort', onAbort);
@@ -1312,12 +1327,16 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
 /**
  * A turn that threw: `cause` is what it threw, and `state` the call's state as far as the turn reached (reached).
  * A channel keeps that state where a change the caller confirmed ran in the turn (its `done` grew), so the change
- * is never read back or answered again; else it keeps the state from before the turn.
+ * is never read back or answered again, and moves its turnIndex on past the turn; else it keeps the state from
+ * before the turn. `record` is the turn's trace record as far as it reached (`failed: 'internal'`; null where it
+ * could not be made): the channel writes it, with the line it says after the throw among its replies, so the turn
+ * is in the console as it is in the audit. It holds nothing of what was thrown.
  */
 export class ConverseTurnError extends Error {
   constructor(
     readonly state: ConverseState,
     readonly cause: unknown,
+    readonly record: ConverseTraceRecord | null = null,
   ) {
     super(cause instanceof Error ? cause.message : String(cause));
     this.name = 'ConverseTurnError';
@@ -1339,6 +1358,42 @@ function reached(t: Turn): ConverseState {
   const open = st.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_call' && !answered.has(c.id) && c.id !== st.pending?.id ? [c.id] : [])));
   add(st, 'user', open.map((id) => ({ type: 'tool_result' as const, id, content: 'The line failed before this call\'s result was kept: what has been done on this call is in the line\'s own record of it.', isError: true })));
   return st;
+}
+
+/**
+ * The turn's trace record as far as it has come, with the scrub its replies were masked by: every value of the
+ * turn's calls that is recorded masked, masked in what the line said too.
+ */
+function traceRecordOf(t: Turn, input: Input, now: Date): { record: ConverseTraceRecord; scrubbed: (text: string) => string } {
+  const { st, deps } = t;
+  // Stopped from outside before it ended (an abort after the turn ended changes nothing).
+  const interruptedNow = cut(t);
+  const openNow = openAt(deps.business, now.getTime());
+  const scrub = scrubberOfValues(t.masked);
+  const scrubbed = (text: string): string => (scrub === null ? text : scrub(text));
+  const record: ConverseTraceRecord = {
+    v: 3,
+    kind: 'converse',
+    sessionId: st.callId,
+    turnIndex: st.turnIndex,
+    ts: now.toISOString(),
+    said: input.kind === 'text' ? input.text : null,
+    replies: t.replies.map(scrubbed),
+    tools: t.tools,
+    model: { ...t.model, costUsd: input.kind === 'text' ? costUsd(deps.model.id, t.model.usage) : null },
+    ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
+    ...(t.check !== undefined ? { check: t.check } : {}),
+    ...(t.carriedNote ? { carriedNote: true as const } : {}),
+    ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
+    ...(t.route !== undefined ? { route: t.route } : {}),
+    ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
+    ...(t.ended !== undefined ? { ended: t.ended } : {}),
+    ...(openNow !== undefined ? { open: openNow } : {}),
+    ...(interruptedNow ? { interrupted: true as const } : {}),
+    ...(t.bridged ? { bridge: true as const } : {}),
+    ...(input.kind === 'text' && input.heard !== undefined ? { heard: { cutIn: input.heard.cutIn, spokeBefore: input.heard.spokeBefore, chars: input.heard.text === null ? null : input.heard.text.length } } : {}),
+  };
+  return { record, scrubbed };
 }
 
 /** A line the channel said itself after a turn threw, kept in the conversation as the line's. */
@@ -1395,35 +1450,9 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
     // A reply the caller cut in on is not read: they did not hear it through, and the next turn answers them.
     if (!cut(t)) await checkAfterSpeaking(t, sp);
   }
-  // Stopped from outside before it ended (an abort after the turn ended changes nothing).
-  const interruptedNow = cut(t);
-  // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
-  const openNow = openAt(deps.business, now.getTime());
-  const scrub = scrubberOfValues(t.masked);
-  const scrubbed = (text: string): string => (scrub === null ? text : scrub(text));
-  out.scrubbed?.(scrubbed);
-  deps.trace({
-    v: 3,
-    kind: 'converse',
-    sessionId: st.callId,
-    turnIndex: st.turnIndex,
-    ts: now.toISOString(),
-    said: input.kind === 'text' ? input.text : null,
-    replies: t.replies.map(scrubbed),
-    tools: t.tools,
-    model: { ...t.model, costUsd: input.kind === 'text' ? costUsd(deps.model.id, t.model.usage) : null },
-    ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
-    ...(t.check !== undefined ? { check: t.check } : {}),
-    ...(t.carriedNote ? { carriedNote: true as const } : {}),
-    ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
-    ...(t.route !== undefined ? { route: t.route } : {}),
-    ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
-    ...(t.ended !== undefined ? { ended: t.ended } : {}),
-    ...(openNow !== undefined ? { open: openNow } : {}),
-    ...(interruptedNow ? { interrupted: true as const } : {}),
-    ...(t.bridged ? { bridge: true as const } : {}),
-    ...(input.kind === 'text' && input.heard !== undefined ? { heard: { cutIn: input.heard.cutIn, spokeBefore: input.heard.spokeBefore, chars: input.heard.text === null ? null : input.heard.text.length } } : {}),
-  });
+  const traced = traceRecordOf(t, input, now);
+  out.scrubbed?.(traced.scrubbed);
+  deps.trace(traced.record);
   st.turnIndex += 1;
   return st;
 }

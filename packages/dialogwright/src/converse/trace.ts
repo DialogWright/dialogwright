@@ -107,6 +107,13 @@ export interface ConverseTraceRecord {
    * call): what it had not said was dropped, and it counted no failure.
    */
   interrupted?: true;
+  /**
+   * The turn threw (the line's own failure: an audit row or a trace that could not be written, a fault of the
+   * runtime's): the record holds what was said and the tools as far as they ran, with the line the channel said
+   * after it (the done line where a change the caller confirmed had just run, else the recovery line) at the end
+   * of `replies`. What was thrown is in the server's log alone, never here.
+   */
+  failed?: 'internal';
   /** The line said the business's bridge (lines.bridge) on a call while the model was slow to begin; never in `replies`. */
   bridge?: true;
   /**

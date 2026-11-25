@@ -115,6 +115,18 @@ describe('a converse call\'s detail with journeys', () => {
   });
 });
 
+describe('a converse turn that failed in the line', () => {
+  it('is shown as a turn, marked failed, chat and call alike; a turn that did not fail is unmarked', () => {
+    const records: ConverseTraceRecord[] = [
+      { v: 3, kind: 'converse', sessionId: 'c-f', turnIndex: 0, ts: ts(0), said: null, replies: ['Example Visits, how can I help?'], tools: [], model: model(0, null) },
+      { v: 3, kind: 'converse', sessionId: 'c-f', turnIndex: 1, ts: ts(4), said: 'yes', replies: ["That's done."], tools: [{ name: 'book', args: {}, outcome: 'confirmed' }], model: model(800, 0.0002), failed: 'internal' },
+    ];
+    const turns = converseCall(records).turns;
+    expect(turns[1]).toMatchObject({ said: 'yes', line: "That's done.", failed: true, tools: [{ name: 'book', outcome: 'confirmed' }] });
+    expect(turns[0]).not.toHaveProperty('failed');
+  });
+});
+
 describe('a converse phone call in the console', () => {
   const CALL: ConverseTraceRecord[] = [
     { v: 3, kind: 'converse', sessionId: 'CA-1', turnIndex: 0, ts: ts(0), said: null, replies: ['Example Visits, how can I help?'], tools: [], model: model(0, null) },

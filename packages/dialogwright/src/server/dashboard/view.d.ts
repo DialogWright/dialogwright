@@ -479,6 +479,8 @@ export interface ConverseTurnView {
   bridge?: true;
   /** The turn was stopped by the caller speaking: what it had not said was dropped. */
   interrupted?: true;
+  /** The turn threw in the line (the trace's `failed`): what it said and ran as far as it reached, the line said after it last. */
+  failed?: true;
 }
 /** A converse call's detail: its turns, and the totals of its model. */
 export function converseCall(records: readonly unknown[]): { turns: ConverseTurnView[]; totals: { turns: number; modelMs: number; costUsd: number; models: string[] } };

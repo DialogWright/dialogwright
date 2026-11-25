@@ -6,7 +6,8 @@ import { policyOf } from '../../converse/policy';
 import { accountOf } from '../../converse/sources/accounts';
 import { converseTexts } from '../../converse/sources/texts';
 import { newConverseState, type ConverseState, type JourneyState } from '../../converse/state';
-import { ConverseTurnError, converseTurn, type ConverseDeps, type Input, type Out } from '../../converse/turn';
+import { ConverseTurnError, converseTurn, lineSaid, type ConverseDeps, type Input, type Out } from '../../converse/turn';
+import { lineOn } from '../../converse/business/schema';
 import { E164 } from '../../core/numberLocales';
 import type { JevClient } from '../../jev/types';
 import { textAuditRow } from '../../texts/record';
@@ -193,16 +194,29 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       pieces = [];
       if (text !== '') sent.push({ text, log: io.sendLogLater({ type: 'say', text, lang: LANG }) });
     };
+    // The turn's final piece has gone out; and a change the caller confirmed ran with no reply heard after it (the
+    // turn's own rule, Out.replied: a fixed line or a read-back said after it does not count).
+    let finalSent = false;
+    let changeRan = false;
     const out: Out = {
       say(text, final) {
         pieces.push(text);
         if (c.stream) io.send({ type: 'say_delta', text });
-        if (final) flush();
+        if (final) {
+          finalSent = true;
+          flush();
+        }
       },
       // The end is read from the state the turn returns (ConverseState.ended).
       end() {},
       scrubbed(s) {
         scrub = s;
+      },
+      confirmed() {
+        changeRan = true;
+      },
+      replied() {
+        changeRan = false;
       },
     };
     io.lastActivityMs = deps.now();
@@ -212,12 +226,30 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
       const err = thrown instanceof ConverseTurnError ? thrown.cause : thrown;
       log(`chat ${id}: turn failed: ${describeError(err)}`);
       // Where a change the caller confirmed ran, the chat goes on from as far as the turn reached, so the change
-      // is never read back or answered again; else from before the turn.
-      if (thrown instanceof ConverseTurnError && (thrown.state.done?.length ?? 0) > (c.state.done?.length ?? 0)) c.state = thrown.state;
+      // is never read back or answered again, its turn moved on as a turn that ends moves it; else from before the turn.
+      const kept = thrown instanceof ConverseTurnError && (thrown.state.done?.length ?? 0) > (c.state.done?.length ?? 0);
+      if (kept) c.state = { ...thrown.state, turnIndex: thrown.state.turnIndex + 1 };
       // What was sent before the failure is kept in the frame log by its length alone, never whole.
       for (const s of sent) s.log(() => `<${s.text.length} chars>`);
-      io.send({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+      // A change the caller confirmed has just run and they have had no reply since: the business's done line is the
+      // reply (as the turn's own failure, and a call, say it), and the chat goes on. Else the error, as before.
+      const line = kept && changeRan && !finalSent ? lineOn(app.business.lines.done, 'chat') : null;
+      if (line !== null) {
+        lineSaid(c.state, line);
+        // A fixed line: kept whole in the frame log.
+        io.sendLogLater({ type: 'say', text: line, lang: LANG })(null);
+      } else io.send({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
       io.record('log', { turnFailed: describeError(err) });
+      // The turn's trace record, as far as it reached, with the done line after it where it was said: the turn is
+      // in the console as it is in the audit. A trace that cannot be written is logged, never the chat's failure.
+      if (thrown instanceof ConverseTurnError && thrown.record !== null) {
+        try {
+          c.trace.write({ ...thrown.record, replies: [...thrown.record.replies, ...(line !== null ? [line] : [])] });
+        } catch (traceErr) {
+          log(`chat ${id}: the failed turn's trace record could not be written: ${describeError(traceErr)}`);
+        }
+      }
+      if (line !== null) io.save();
       return false;
     }
     // Pieces with no final piece after them (a correction that failed after saying part of itself) go as a last `say`.

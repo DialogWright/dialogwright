@@ -5,6 +5,7 @@ import type { ServerMessage } from '../../channel/chat/protocol';
 import { fakeModel } from '../../converse/model/fake';
 import type { ModelEvent } from '../../converse/model/types';
 import { newConverseState, type ConverseState } from '../../converse/state';
+import type { ConverseTraceRecord } from '../../converse/trace';
 import type { AnswerMap, JevClient } from '../../jev/types';
 import { converseFixture } from '../../testing/converse/app';
 import { BOOKING, call, CALLER, DAY, done, text } from '../../testing/converse/chat';
@@ -174,7 +175,7 @@ async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDo
   rt.prepare('chat-9');
   rt.create('chat-9', t.io);
   await rt.open('chat-9', { context: { callerNumber: CALLER }, stream: false }, t.io);
-  return { ...t, rt, jev, ends, rows };
+  return { ...t, rt, jev, ends, rows, traced: traced as ConverseTraceRecord[] };
 }
 
 describe('converseChatRuntime: a turn that throws', () => {
@@ -196,6 +197,52 @@ describe('converseChatRuntime: a turn that throws', () => {
     await c.rt.text('chat-9', 'yes', c.io);
     expect(c.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail.action)).toEqual(['book']);
     expect(c.says().at(-1)).toBe('Anything else?');
+  });
+});
+
+describe('converseChatRuntime: a turn that throws, said and recorded', () => {
+  const failingAfterYes = (row: AuditDraft, rows: readonly AuditDraft[]): void => {
+    if (row.type === 'gate' && row.detail.tool === 'availability' && rows.some((r) => r.type === 'confirmed')) throw new Error('disk full at /secret/path');
+  };
+
+  it('after a confirmed change says the business\'s done line as the reply, not an error, and saves the chat with its turn moved on', async () => {
+    const c = await chat([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'availability', { day: DAY }), done('tool')]], { contradicted: 0.1, notDone: 0.1, gap: 0.1 }, 0, { appending: failingAfterYes });
+    let saves = 0;
+    c.io.save = () => void (saves += 1);
+    await c.rt.text('chat-9', `Is there a visit free on ${DAY}?`, c.io);
+    await c.rt.text('chat-9', 'The morning please, for Sam Example, on this number.', c.io);
+    const index = (c.rt.snapshot('chat-9').session as ConverseState).turnIndex;
+    const sent = c.sent.length;
+    saves = 0;
+    await c.rt.text('chat-9', 'yes', c.io);
+    expect(c.sent.slice(sent)).toEqual([{ type: 'say', text: "That's done.", lang: 'en' }]);
+    expect(saves).toBe(1);
+    const session = c.rt.snapshot('chat-9').session as ConverseState;
+    expect(session.turnIndex).toBe(index + 1);
+    expect(session.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: "That's done." }] });
+    // The frame log keeps the done line whole (a fixed line).
+    expect(c.frames.at(-2)).toEqual({ dir: 'out', msg: { type: 'say', text: "That's done.", lang: 'en' } });
+    // Its trace record: as far as it reached, the done line after it, failed, nothing of the error.
+    const r = c.traced.at(-1)!;
+    expect(r).toMatchObject({ kind: 'converse', turnIndex: index, said: 'yes', failed: 'internal' });
+    expect(r.tools[0]).toMatchObject({ name: 'book', outcome: 'confirmed' });
+    expect(r.replies.at(-1)).toBe("That's done.");
+    expect(JSON.stringify(r)).not.toContain('disk full');
+    expect(JSON.stringify(r)).not.toContain('secret');
+  });
+
+  it('before anything ran sends the error as before, writes the record, and keeps the chat from before the turn', async () => {
+    const c = await chat([[call('c1', 'availability', { day: DAY }), done('tool')]], { contradicted: 0.1, notDone: 0.1, gap: 0.1 }, 0, {
+      appending: (row) => {
+        if (row.type === 'gate') throw new Error('disk full');
+      },
+    });
+    const before = structuredClone(c.rt.snapshot('chat-9').session as ConverseState);
+    const sent = c.sent.length;
+    await c.rt.text('chat-9', 'hello', c.io);
+    expect(c.sent.slice(sent)).toEqual([expect.objectContaining({ type: 'error', code: 'server_error' })]);
+    expect(c.rt.snapshot('chat-9').session).toEqual(before);
+    expect(c.traced.at(-1)).toMatchObject({ turnIndex: before.turnIndex, said: 'hello', failed: 'internal', replies: [] });
   });
 });
 

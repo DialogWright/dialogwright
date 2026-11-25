@@ -1518,6 +1518,7 @@
       + (turn.bridge ? '<div class="aside mono">bridge said: the model was slow to begin</div>' : '')
       + (turn.line !== '' ? `<div><b class="who sys">Line</b> ${esc(turn.line)}</div>` : '')
       + (turn.interrupted ? '<div class="aside mono">stopped: the caller spoke</div>' : '')
+      + (turn.failed ? '<div class="aside mono">the line failed in this turn: the server\'s log says why</div>' : '')
       + (turn.model !== null ? `<div class="aside mono">${esc(turn.model.id)} · ${turn.model.ms} ms${turn.model.firstTextMs !== null ? `, first text ${turn.model.firstTextMs} ms` : ''} · ${esc(turn.model.tokens)} · ${esc(money(turn.model.costUsd))}${turn.model.retried ? ' · asked again' : ''}${turn.model.error !== null ? ` · ${esc(turn.model.error)}` : ''}</div>` : '')
       + '</div>').join('');
   }

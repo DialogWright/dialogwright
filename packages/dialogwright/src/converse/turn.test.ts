@@ -2406,6 +2406,47 @@ describe('converseTurn: stopped from outside', () => {
     expect(JSON.stringify(s.messages.at(-1))).toContain('Not read back: the line failed before it read it back');
   });
 
+  it('a turn that throws carries its trace record, for the channel to write: what was said, the tools as far as they ran, failed and nothing of the error', async () => {
+    const h = harness([...lookupThenBook, [call('c3', 'leave_note', { note: 'thanks' }), done('tool')]], { edit: (t) => `${t}${OFF}` });
+    const s = await upToReadBack(h);
+    const traced = h.traces.length;
+    const out = h.out;
+    const failing: Out = { ...out, say: (text, final) => (text.startsWith('A note saying') ? (() => { throw new Error('line down at /secret/path'); })() : out.say(text, final)) };
+    const err = (await converseTurn(s, { kind: 'text', text: 'yes' }, h.deps, failing).then(() => null, (e: unknown) => e)) as ConverseTurnError;
+    // The turn wrote none itself: the channel writes it, with the line it says after the throw.
+    expect(h.traces).toHaveLength(traced);
+    expect(err.record).toMatchObject({ v: 3, kind: 'converse', sessionId: 'call-1', turnIndex: s.turnIndex, said: 'yes', failed: 'internal' });
+    expect(err.record!.tools.map((t) => [t.name, t.outcome])).toEqual([['book', 'confirmed'], ['notify', 'ran'], ['leave_note', 'readBack']]);
+    // The note's read-back, set as the turn reached it (its saying threw), with its value masked as the trace masks it.
+    expect(err.record!.readBack).toEqual({ text: 'A note saying •. Is that right?' });
+    expect(JSON.stringify(err.record)).not.toContain('line down');
+    expect(JSON.stringify(err.record)).not.toContain('secret');
+    // The state it reached is the turn's: its index is the channel's to move on where it keeps it.
+    expect(err.state.turnIndex).toBe(s.turnIndex);
+  });
+
+  it('tells the channel when the caller has heard the model\'s own words after a confirmed change, never for a fixed line or a read-back', async () => {
+    const told = (h: Harness): { events: string[]; out: Out } => {
+      const events: string[] = [];
+      const out: Out = { ...h.out, say: (t, f) => (events.push(`say ${t}`), h.out.say(t, f)), confirmed: () => void events.push('confirmed'), replied: () => void events.push('replied') };
+      return { events, out };
+    };
+    // The model's own words after the change: told once they are said.
+    const own = harness([...lookupThenBook, [text('You are all set for Friday.'), done()]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(own);
+    const a = told(own);
+    await converseTurn(s, { kind: 'text', text: 'yes' }, own.deps, a.out);
+    expect(a.events).toEqual(['confirmed', 'say You are all set for Friday.', 'replied']);
+    // A read-back said after it (a second change): never told, the done line still owed.
+    const readBack = harness([...lookupThenBook, [call('c3', 'leave_note', { note: 'thanks' }), done('tool')]], { edit: (t) => `${t}${OFF}` });
+    s = await upToReadBack(readBack);
+    const b = told(readBack);
+    await converseTurn(s, { kind: 'text', text: 'yes' }, readBack.deps, b.out);
+    expect(b.events[0]).toBe('confirmed');
+    expect(b.events.some((e) => e.startsWith('say A note saying'))).toBe(true);
+    expect(b.events).not.toContain('replied');
+  });
+
   it('an abort that comes after the turn ended changes nothing', async () => {
     const ac = new AbortController();
     const h = harness([[text('Hello there.'), done()]], { edit: (t) => `${t}${OFF}` });

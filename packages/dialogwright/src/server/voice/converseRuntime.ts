@@ -422,7 +422,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         sent.push({ frame, delivered });
       };
       let finalSent = false;
-      // A change the caller confirmed ran this turn, and nothing has been said after it.
+      // A change the caller confirmed ran this turn, and the caller has heard no reply after it (the turn's own
+      // rule, Out.replied: a fixed line or a read-back said after it does not count).
       let changeRan = false;
       const correction: string[] = [];
       let scrub: ((text: string) => string) | null = null;
@@ -435,7 +436,6 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           }
           const token = final ? text : spaced(text);
           reply.frames.push({ text: token, at: now() });
-          changeRan = false;
           if (final) finalSent = true;
           send({ ...textFrame(token, true), last: final });
         },
@@ -446,6 +446,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         },
         confirmed() {
           changeRan = true;
+        },
+        replied() {
+          changeRan = false;
         },
         bridge(text) {
           running.bridged = true;
@@ -462,16 +465,29 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         io.record('log', { turnFailed: describe(err) });
         // Where a change the caller confirmed ran, the call goes on from as far as the turn reached, so the change
         // is never read back or answered again; else from before the turn.
-        if (thrown instanceof ConverseTurnError && (thrown.state.done?.length ?? 0) > (before.done?.length ?? 0)) state = thrown.state;
+        if (thrown instanceof ConverseTurnError && (thrown.state.done?.length ?? 0) > (before.done?.length ?? 0)) {
+          // The kept state moves on past the turn, as a turn that ends does (its record below holds its index).
+          state = { ...thrown.state, turnIndex: thrown.state.turnIndex + 1 };
+        }
         // The caller is not left in silence, unless the turn was stopped (the caller spoke, or left) or had already
         // sent its final reply: the done line where a change the caller confirmed has just run (as the turn's own
         // failure says it), else the business's recovery line.
+        let line: string | null = null;
         if (!running.ac.signal.aborted && !finalSent) {
-          const line = lineOn(changeRan ? app.business.lines.done : app.business.lines.recovery, 'voice');
+          line = lineOn(changeRan ? app.business.lines.done : app.business.lines.recovery, 'voice');
           if (state !== before) lineSaid(state, line);
           reply.frames.push({ text: line, at: now() });
           finalSent = true;
           send({ ...textFrame(line, true), last: true });
+        }
+        // The turn's trace record, as far as it reached, with the line said after it: the turn is in the console as
+        // it is in the audit. A trace that cannot be written is logged, never the call's failure.
+        if (thrown instanceof ConverseTurnError && thrown.record !== null) {
+          try {
+            e.trace.write({ ...thrown.record, replies: [...thrown.record.replies, ...(line !== null ? [line] : [])] });
+          } catch (traceErr) {
+            log(`${e.callSid}: the failed turn's trace record could not be written: ${describe(traceErr)}`);
+          }
         }
       } finally {
         // The turn's masking kept before it lets go of the call: a carrier's report of its line from here on is

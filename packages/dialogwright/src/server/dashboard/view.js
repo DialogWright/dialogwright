@@ -2147,7 +2147,8 @@ export function converseRow(records, frames) {
  * says so: what the caller heard of the line before as they spoke (`heard`: whether they cut in, spoke
  * before it began, and its first `chars` characters of the line as the trace keeps it), the bridge said
  * while the model was slow to begin (`bridge`), and the turn stopped by the caller speaking (`interrupted`).
- * Plain text, for the page to escape.
+ * A turn that threw in the line, on a chat or a call (`failed`): what it said and ran as far as it reached, with
+ * the line said after it. Plain text, for the page to escape.
  */
 export function converseCall(records) {
   const list = converseRecords(records);
@@ -2169,6 +2170,8 @@ export function converseCall(records) {
     }
     if (r.bridge === true) callView.bridge = true;
     if (r.interrupted === true) callView.interrupted = true;
+    // The turn threw in the line (an audit row or a trace that could not be written): a chat's turn too.
+    if (r.failed === 'internal') callView.failed = true;
     const m = r.model ?? null;
     const asked = m !== null && (m.ms > 0 || (m.usage?.inputTokens ?? 0) > 0 || typeof m.error === 'string');
     const rb = r.readBack ?? null;
