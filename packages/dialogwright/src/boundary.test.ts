@@ -77,6 +77,7 @@ const RELAY_USERS: Record<string, string> = {
   'src/testing/': 'test infrastructure (FakeRelay, frame helpers) speaks the wire to the adapter',
   'src/server/voice/provider.ts': "a carrier says which of its setup frame's fields is the call's id (setupCallId), so it names the setup frame's type",
   'src/server/voice/registry.ts': "reads the call's id from a setup frame by its carrier (setupCallIdOf), so it names the setup frame's type",
+  'src/server/voice/io.ts': "a voice call's I/O, for either runtime: serializes the frames it sends, spaces a carrier's joined lines and holds the `end` for the lines before it",
   // The two justified exceptions: neither is the adapter, each reads or prints the wire's own content.
   'src/trace/read.ts': 'upgrades v1 trace records, whose events and frames were wire frames, to the channel model',
   'src/harness-text/print.ts': 'prints the handoffData string the wire carries, through endFrame',
