@@ -101,6 +101,8 @@ export interface ConverseDeps {
   trace: (r: ConverseTraceRecord) => void;
   /** How long the decision model may take to read the caller's answer to a read-back, and a reply after it is said. */
   jevTimeoutMs: number;
+  /** On a call, how long a caller turn waits for its reply's first words before the bridge is said; absent, BRIDGE_AFTER_MS. */
+  bridgeAfterMs?: number;
   /** The app's settings by name, as its actions' code reads them (ToolImpl's ctx.env); absent, none is set. */
   env?: (name: string) => string | undefined;
   /**
@@ -159,8 +161,13 @@ export interface Heard {
 
 export type Input = { kind: 'start' } | { kind: 'text'; text: string; heard?: Heard } | { kind: 'left' };
 
-/** How long a caller turn on a call waits for the first words of its reply before the line says the bridge. */
-export const BRIDGE_AFTER_MS = 1200;
+/**
+ * How long a caller turn on a call waits for the first words of its reply before the line says the bridge, by
+ * default (ConverseDeps.bridgeAfterMs, the server's BRIDGE_AFTER_MS). 2500, the maintainer's decision of
+ * 2026-11-25: at 1200 the bridge was said on every turn of the first live call, its reply following it at once
+ * (the first words came about 1.6 s in), so the caller heard "One sec." where a short pause would have done.
+ */
+export const BRIDGE_AFTER_MS = 2500;
 
 /** The share of a read-back's characters the caller must have heard, where they cut in, for their yes to count. */
 export const READ_BACK_HEARD_AT = 0.85;
@@ -1309,7 +1316,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     bridged: false,
   };
   const sp = new Speaker(t);
-  // The bridge: on a call, where the channel can say one, once if nothing of a caller turn's reply is said by BRIDGE_AFTER_MS.
+  // The bridge: on a call, where the channel can say one, once if nothing of a caller turn's reply is said by its wait (bridgeAfterMs).
   const bridge = out.bridge;
   if (input.kind === 'text' && st.channel === 'voice' && bridge !== undefined && signal?.aborted !== true) {
     t.bridgeTimer = setTimeout(() => {
@@ -1317,7 +1324,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
       if (cut(t)) return;
       t.bridged = true;
       bridge.call(out, lineOn(deps.business.lines.bridge, st.channel));
-    }, BRIDGE_AFTER_MS);
+    }, deps.bridgeAfterMs ?? BRIDGE_AFTER_MS);
   }
   const onAbort = (): void => clearBridge(t);
   signal?.addEventListener('abort', onAbort, { once: true });

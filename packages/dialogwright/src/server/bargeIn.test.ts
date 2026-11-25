@@ -85,6 +85,15 @@ describe('a carrier that does not take a barge-in value', () => {
   });
 });
 
+describe('BRIDGE_AFTER_MS', () => {
+  it('is 2500 unless it says otherwise (the maintainer\'s decision, 2026-11-25), takes 0 to 10000, and refuses more', () => {
+    expect(loadConfig(base).bridgeAfterMs).toBe(2500);
+    expect(loadConfig({ ...base, BRIDGE_AFTER_MS: '1200' }).bridgeAfterMs).toBe(1200);
+    expect(loadConfig({ ...base, BRIDGE_AFTER_MS: '0' }).bridgeAfterMs).toBe(0);
+    expect(() => loadConfig({ ...base, BRIDGE_AFTER_MS: '10001' })).toThrow('BRIDGE_AFTER_MS must be from 0 to 10000 milliseconds, got "10001"');
+  });
+});
+
 describe('SPEECH_OVER_LINE', () => {
   it('is unless-miss unless it says otherwise, and takes take and ignore in any case', () => {
     expect(loadConfig(base).speechOverLine).toBe('unless-miss');

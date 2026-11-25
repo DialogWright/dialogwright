@@ -1239,6 +1239,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         business: app.business, model: converseModels.get(a.id)!, jev: clientOf(a.id), policy: policyOf(app.business), audit, tools: app.tools,
         texts: converseTexts(textsOf(a.id), (r) => whenChained(audit.append(callId, 'voice', textAuditRow(r)), () => {}, (err: unknown) => log(`${callId}: a text's audit entry failed: ${err instanceof Error ? err.message : String(err)}`))),
         now: () => new Date(now()), trace: () => {}, jevTimeoutMs: thresholds.JEV_TIMEOUT_MS,
+        ...(config.bridgeAfterMs !== undefined ? { bridgeAfterMs: config.bridgeAfterMs } : {}),
         env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined),
       };
     },

@@ -2643,7 +2643,7 @@ describe('converseTurn: the bridge on a call', () => {
 
   async function slowTurn(o: { channel?: 'chat' | 'voice'; first?: string; bridge?: boolean }): Promise<{ log: string[]; s: ConverseState; h: Harness }> {
     vi.useFakeTimers();
-    const h = harness([], { model: slowModel(2000, o.first), edit: (t) => `${t}${OFF}` });
+    const h = harness([], { model: slowModel(BRIDGE_AFTER_MS + 300, o.first), edit: (t) => `${t}${OFF}` });
     const log: string[] = [];
     const out: Out = {
       say: (t, f) => {
@@ -2664,7 +2664,7 @@ describe('converseTurn: the bridge on a call', () => {
 
   it('the bridge is said once when the model is slow', async () => {
     const { log, s, h } = await slowTurn({});
-    expect(log).toEqual(['...', `bridge@${BRIDGE_AFTER_MS}: One sec.`, 'say@2000: We have mornings free.']);
+    expect(log).toEqual(['...', `bridge@${BRIDGE_AFTER_MS}: One sec.`, `say@${BRIDGE_AFTER_MS + 300}: We have mornings free.`]);
     expect(JSON.stringify(s.messages)).not.toContain('One sec.');
     expect(h.traces[0]!.replies).toEqual(['We have mornings free.']);
     expect(h.traces[0]!.bridge).toBe(true);
@@ -2681,13 +2681,13 @@ describe('converseTurn: the bridge on a call', () => {
     expect(spoke.h.traces[0]!.bridge).toBeUndefined();
     vi.useRealTimers();
     const without = await slowTurn({ bridge: false });
-    expect(without.log).toEqual(['...', 'say@2000: We have mornings free.']);
+    expect(without.log).toEqual(['...', `say@${BRIDGE_AFTER_MS + 300}: We have mornings free.`]);
     expect(without.h.traces[0]!.bridge).toBeUndefined();
   });
 
   it('the bridge comes from the business\'s own line', async () => {
     vi.useFakeTimers();
-    const h = harness([], { model: slowModel(2000), edit: (t) => `${t.replace('lines:\n', 'lines:\n  bridge: { en: "Just a moment." }\n')}${OFF}` });
+    const h = harness([], { model: slowModel(BRIDGE_AFTER_MS + 300), edit: (t) => `${t.replace('lines:\n', 'lines:\n  bridge: { en: "Just a moment." }\n')}${OFF}` });
     const bridged: string[] = [];
     const turn = converseTurn(fresh(), { kind: 'text', text: 'Anything Friday?' }, h.deps, { ...h.out, bridge: (t) => void bridged.push(t) });
     await vi.advanceTimersByTimeAsync(5000);

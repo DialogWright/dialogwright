@@ -1,5 +1,6 @@
 import { defaultTimeZone, localDateIso } from '../run/clock';
 import { AGENT_TIMEOUT_RANGE, DEFAULT_AGENT_TIMEOUT_MS } from '../agent/types';
+import { BRIDGE_AFTER_MS } from '../converse/turn';
 import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
@@ -261,6 +262,13 @@ export interface ServerConfig {
    */
   minSpeechMs?: number;
   /**
+   * BRIDGE_AFTER_MS, 0 to 10000, default 2500 (converse/turn.ts BRIDGE_AFTER_MS, the maintainer's decision,
+   * 2026-11-25): on a converse app's call, how long a caller turn waits for its reply's first words before the
+   * line says the business's bridge (agent.yaml lines.bridge). 1200 restores the wait before it. Optional in the
+   * type only (absent reads as the default).
+   */
+  bridgeAfterMs?: number;
+  /**
    * RESAY_SPURIOUS_INTERRUPTS=on|off, default on, and SPURIOUS_INTERRUPT_WINDOW_MS, 0 to 5000, default 700
    * (DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS). On a carrier that reports the caller's voice (Telnyx with
    * TELNYX_EVENTS speaker-events; reportsCallerVoice), a carrier's interrupt with the caller not speaking and
@@ -507,6 +515,13 @@ function bargeInOf(env: Env, voiceProviders: readonly string[]): { bargeIn: Barg
 }
 
 /** SPEECH_OVER_LINE, DEFAULT_SPEECH_OVER_LINE unless set; any other value is refused, as a BARGE_IN is. */
+/** BRIDGE_AFTER_MS (ServerConfig.bridgeAfterMs): 0 to 10000 ms, default the converse runtime's BRIDGE_AFTER_MS. */
+function bridgeAfterOf(env: Env): number {
+  const ms = integer(env, 'BRIDGE_AFTER_MS', BRIDGE_AFTER_MS);
+  if (ms > 10_000) throw new Error(`BRIDGE_AFTER_MS must be from 0 to 10000 milliseconds, got "${env.BRIDGE_AFTER_MS}"`);
+  return ms;
+}
+
 function speechOverLineOf(env: Env): SpeechOverLine {
   const raw = env.SPEECH_OVER_LINE?.trim().toLowerCase() || '';
   if (raw === '') return DEFAULT_SPEECH_OVER_LINE;
@@ -827,6 +842,7 @@ export function loadConfig(env: Env): ServerConfig {
     ...resayOf(env),
     ...bargeInOf(env, voiceProviders),
     speechOverLine: speechOverLineOf(env),
+    bridgeAfterMs: bridgeAfterOf(env),
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     callerWaitMs: integer(env, 'CALLER_WAIT_MS', 30_000),

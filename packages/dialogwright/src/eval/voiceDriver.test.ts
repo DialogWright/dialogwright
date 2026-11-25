@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeModel } from '../converse/model/fake';
 import type { ConverseModel, ModelEvent, ModelRequest } from '../converse/model/types';
-import { CUT_IN_NOTE } from '../converse/turn';
+import { BRIDGE_AFTER_MS, CUT_IN_NOTE } from '../converse/turn';
 import { converseFixture } from '../testing/converse/app';
 import { BOOKING, CALLER, DAY, done, text, yesJev } from '../testing/converse/chat';
 import type { SimTurn } from './chatDriver';
@@ -120,12 +120,12 @@ describe('driveVoice', () => {
 
   it('a model slow enough for the bridge: the first frame heard is the bridge\'s, the reply\'s first frame the model\'s', async () => {
     const script = fakeModel([[text('Tuesday morning is free.'), done()]]);
-    // The model's first words come well after BRIDGE_AFTER_MS (1200 ms), so the line says the bridge first.
+    // The model's first words come well after BRIDGE_AFTER_MS, so the line says the bridge first.
     const model: ConverseModel = {
       id: 'fake',
       stream(req, signal) {
         return (async function* (): AsyncIterable<ModelEvent> {
-          await new Promise((resolve) => setTimeout(resolve, 1700));
+          await new Promise((resolve) => setTimeout(resolve, BRIDGE_AFTER_MS + 500));
           yield* script.stream(req, signal);
         })();
       },
@@ -137,9 +137,9 @@ describe('driveVoice', () => {
     expect(call.bridged).toBe(1);
     expect(call.firstWordMs).toHaveLength(1);
     expect(call.replyFirstMs).toHaveLength(1);
-    expect(call.firstWordMs[0]).toBeGreaterThanOrEqual(1100);
-    expect(call.firstWordMs[0]).toBeLessThan(1650);
-    expect(call.replyFirstMs![0]).toBeGreaterThanOrEqual(1650);
+    expect(call.firstWordMs[0]).toBeGreaterThanOrEqual(BRIDGE_AFTER_MS - 100);
+    expect(call.firstWordMs[0]).toBeLessThan(BRIDGE_AFTER_MS + 450);
+    expect(call.replyFirstMs![0]).toBeGreaterThanOrEqual(BRIDGE_AFTER_MS + 450);
   }, 20_000);
 
   it('a fragmenting caller\'s long turn arrives in two parts', async () => {
