@@ -309,4 +309,7 @@ describe('writing for the ear, and one thing at a time', () => {
     expect(call).toMatch(/end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need/);
     expect(systemPrompt(plain, fresh(), NOW)).not.toContain('handing the turn back');
   });
+  it('a call is told that its goodbye goes with end_call in the same reply, or the caller is left on an open line', () => {
+    expect(systemPrompt(plain, voice(), NOW)).toContain('When the caller has nothing more, say goodbye and call end_call in that same reply: a goodbye without it leaves the caller holding an open line.');
+  });
 });

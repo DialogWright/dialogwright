@@ -126,9 +126,10 @@ const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most wh
  * "$125–$175" said "125 175", a list read out). The words sent are made speakable too (speakable.ts); this is the
  * context that has the model write for the ear in the first place. And a reply that ends on a statement leaves a
  * caller waiting in silence for more (a live call, 2026-11-25: after a price's caveat, and after the request was in,
- * the caller sat until they said "Okay"), so a reply on a call hands the turn back.
+ * the caller sat until they said "Okay"), so a reply on a call hands the turn back; and a goodbye written without
+ * end_call kept the line open after the caller said they were done, until they said goodbye a second time.
  */
-const ON_A_CALL = 'On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175"). A caller cannot hear that your reply has ended, so end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need, unless you are saying goodbye.';
+const ON_A_CALL = `On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175"). A caller cannot hear that your reply has ended, so end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need, unless you are saying goodbye. When the caller has nothing more, say goodbye and call ${END_CALL} in that same reply: a goodbye without it leaves the caller holding an open line.`;
 
 /**
  * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
