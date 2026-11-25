@@ -32,8 +32,8 @@ import { serverSettingNames } from './serverSettings';
 
 /**
  * An app a server runs: a scripted app (App, the engine's turn) or a converse app (ConverseApp, whose
- * model holds the conversation: src/converse). The server dispatches by it: a converse app's chat runs on
- * the converse runtime, and it takes no calls yet.
+ * model holds the conversation: src/converse). The server dispatches by it: a converse app's chats and calls
+ * run on the converse runtime (server/chat/converseRuntime.ts, server/voice/converseRuntime.ts).
  */
 export type HostedApp = App | ConverseApp;
 

@@ -114,3 +114,35 @@ describe('a converse call\'s detail with journeys', () => {
     for (const t of converseCall(RECORDS).turns) expect(t.journey).toBeUndefined();
   });
 });
+
+describe('a converse phone call in the console', () => {
+  const CALL: ConverseTraceRecord[] = [
+    { v: 3, kind: 'converse', sessionId: 'CA-1', turnIndex: 0, ts: ts(0), said: null, replies: ['Example Visits, how can I help?'], tools: [], model: model(0, null) },
+    { v: 3, kind: 'converse', sessionId: 'CA-1', turnIndex: 1, ts: ts(5), said: 'Is there a visit free on Tuesday?', replies: ['We have the morning free.', 'Or the afternoon, if that suits you better.'], tools: [], model: model(1900, 0.0004), bridge: true, heard: { cutIn: false, spokeBefore: false, chars: 31 } },
+    { v: 3, kind: 'converse', sessionId: 'CA-1', turnIndex: 2, ts: ts(9), said: 'actually, Monday', replies: ['Monday then.'], tools: [], model: model(400, 0.0001), heard: { cutIn: true, spokeBefore: false, chars: 25 } },
+    { v: 3, kind: 'converse', sessionId: 'CA-1', turnIndex: 3, ts: ts(12), said: 'thanks', replies: [], tools: [], model: model(300, 0.0001), interrupted: true, heard: { cutIn: false, spokeBefore: true, chars: null } },
+  ];
+  const callFrames = (ended: string | null, provider = 'twilio'): FrameLogLine[] => [
+    { ts: ts(0), dir: 'in', msg: { type: 'setup', callSid: 'CA-1', from: '...0123', to: '+15555550105' } },
+    { ts: ts(0), dir: 'log', msg: { provider } },
+    ...(ended === null ? [] : [{ ts: ts(20), dir: 'log' as const, msg: { ended } }]),
+  ];
+
+  it('is a call on its carrier, ended as a call ends', () => {
+    expect(converseRow(CALL, callFrames('closing'))).toMatchObject({ callSid: 'CA-1', channel: 'voice', provider: 'twilio', from: 'unknown', turns: 3, status: 'ended', ending: { kind: 'handled', text: 'handled' } });
+    expect(converseRow(CALL, callFrames('handoff', 'telnyx'))).toMatchObject({ channel: 'voice', provider: 'telnyx', status: 'with-person', ending: { kind: 'person', reason: 'handoff' } });
+    expect(converseRow(CALL, callFrames('caller'))).toMatchObject({ status: 'ended', ending: { kind: 'hangup', text: 'hung up' } });
+    expect(converseRow(CALL, callFrames(null))).toMatchObject({ channel: 'voice', status: 'on-track', ending: null });
+  });
+
+  it('shows a cut-in turn\'s heard text, a turn the caller spoke before, a stopped turn and a bridge', () => {
+    const turns = converseCall(CALL).turns;
+    // A chat's turn is as it was: none of these.
+    expect(turns[0]).not.toHaveProperty('heard');
+    expect(turns[1]).toMatchObject({ bridge: true, heard: { cutIn: false, spokeBefore: false, chars: 31, text: 'Example Visits, how can I help?' } });
+    // What was heard of the line before, as the trace keeps the line: its first characters.
+    expect(turns[2]).toMatchObject({ heard: { cutIn: true, spokeBefore: false, chars: 25, text: 'We have the morning free.' } });
+    expect(turns[2]).not.toHaveProperty('bridge');
+    expect(turns[3]).toMatchObject({ interrupted: true, heard: { cutIn: false, spokeBefore: true, chars: null, text: null } });
+  });
+});

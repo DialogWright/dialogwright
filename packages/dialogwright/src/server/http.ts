@@ -50,7 +50,30 @@ export interface HttpApp {
    * voice.numbers writes out, and none of its variables.
    */
   readonly numbers?: readonly NumberLocale[];
+  /**
+   * A converse app's part (src/converse), absent for a scripted app: its calls' answer and reconnect
+   * documents are interruptible by speech whatever BARGE_IN says (the converse line always is), on Telnyx
+   * with the playback events on whatever TELNYX_EVENTS says (CONVERSE_TELNYX_EVENTS: what the caller heard,
+   * and a real cut-in), in the business's own voice per carrier (agent.yaml persona.voices), else the
+   * deployment's. Its `handoffNumber` is agent.yaml's transfer.number, else its HANDOFF_NUMBER.
+   */
+  readonly converseVoice?: ConverseVoiceSettings;
 }
+
+/** A converse app's voices on the phone (agent.yaml persona.voices), each in its carrier's own names. */
+export interface ConverseVoiceSettings {
+  readonly voices: Readonly<Partial<Record<VoiceProviderId, string>>>;
+}
+
+/**
+ * The event streams a converse call on Telnyx asks for (the answer document's `events`, plan ruling 3): the
+ * caller speaking (`clientSpeaking`, which tells a real cut-in from Telnyx's spurious `interrupt`) and what
+ * played (`tokensPlayed`, what the caller heard). Any other stream TELNYX_EVENTS names is kept beside them.
+ */
+export const CONVERSE_TELNYX_EVENTS: readonly string[] = ['speaker-events', 'tokens-played'];
+
+/** The language a converse call's document names (agent.yaml's lines are English for now). */
+const CONVERSE_LANGUAGE = 'en-US';
 
 /**
  * Several apps on one server (host.yaml, server/host.ts): the app the number called reaches (the
@@ -430,6 +453,7 @@ function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, 
 
 /** The start document's options before the app's own parameters (connectOptions). */
 function languageOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string, s: HttpApp = deps): StartDocumentOptions {
+  if (s.converseVoice) return converseOptions(deps, provider, token, s.converseVoice, s.hints);
   const deployment = voiceFor(deps.config, provider.id);
   const deploymentRecognition = recognitionFor(deps.config, provider.id);
   const events = provider.id === 'telnyx' && deps.config.telnyxEvents ? { events: deps.config.telnyxEvents } : {};
@@ -467,6 +491,35 @@ function languageOptions(deps: HttpDeps, provider: VoiceProvider, token: string,
     language: language(locale),
     languages: localesOf(app).map(language),
     parameters: { locale },
+  };
+}
+
+/**
+ * A converse call's start document options (HttpApp.converseVoice): interruptible by speech (plan ruling 2: BARGE_IN
+ * and BARGE_IN_<CARRIER> are the scripted line's), on Telnyx the playback events on (CONVERSE_TELNYX_EVENTS,
+ * with any other stream TELNYX_EVENTS names), and the call's language with the business's voice on this
+ * carrier (agent.yaml persona.voices.<carrier>), else the deployment's (TTS_PROVIDER and TTS_VOICE, or
+ * TELNYX_VOICE), and the deployment's recognizer, as a scripted app's default locale has them: a voice name
+ * alone on Twilio is spoken with TTS_PROVIDER where the deployment sets one, else Twilio's default provider.
+ * Noise suppression is the answer webhook's, as for any call.
+ */
+function converseOptions(deps: HttpDeps, provider: VoiceProvider, token: string, c: ConverseVoiceSettings, hints: string): StartDocumentOptions {
+  const deployment = voiceFor(deps.config, provider.id);
+  const recognition = recognitionFor(deps.config, provider.id);
+  const own = Object.hasOwn(c.voices, provider.id) ? c.voices[provider.id as VoiceProviderId] : undefined;
+  const voice = own ?? deployment.voice;
+  const extra = (deps.config.telnyxEvents ?? '').split(/\s+/).filter((e) => e !== '' && !CONVERSE_TELNYX_EVENTS.includes(e));
+  const language: RelayLanguage = {
+    tts: CONVERSE_LANGUAGE,
+    transcription: CONVERSE_LANGUAGE,
+    ...(voice !== undefined ? { voice, ...(deployment.ttsProvider !== undefined ? { ttsProvider: deployment.ttsProvider } : {}) } : {}),
+    ...(recognition.provider !== undefined || recognition.model !== undefined ? { recognition } : {}),
+  };
+  return {
+    publicHost: deps.config.publicHost, token, hints, recognition, bargeIn: 'speech',
+    ...(provider.id === 'telnyx' ? { events: [...CONVERSE_TELNYX_EVENTS, ...extra].join(' ') } : {}),
+    language,
+    languages: [],
   };
 }
 

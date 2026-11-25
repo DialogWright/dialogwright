@@ -29,7 +29,7 @@ Run these at the repository root.
 pnpm check
 pnpm --filter @dialogwright/example-wheelshop-agent typecheck
 pnpm --filter @dialogwright/example-wheelshop-agent test
-pnpm --filter @dialogwright/example-wheelshop-agent serve      # the chat and the console (a converse app takes no calls yet)
+pnpm --filter @dialogwright/example-wheelshop-agent serve      # the chat, the calls to its number (VOICE_PROVIDERS, .env.example) and the console
 pnpm eval apps/wheelshop-agent --personas apps/wheelshop-agent/eval/personas.yaml --runs 3 --budget 3   # the author's step: real models, the author's keys
 pnpm eval:compare apps/wheelshop-agent --personas apps/wheelshop-agent/eval/personas.yaml --candidates inception:mercury-3#minimal,meta:muse-ember-1.0#minimal --runs 5 --budget 10   # models compared against the bars (docs/designs/eval/2026-11-model-comparison.md); the author's step
 pnpm eval apps/wheelshop-agent --personas apps/wheelshop-agent/eval/personas.yaml --model meta:muse-ember-1.0 --effort minimal --opener acknowledge --judge anthropic:claude-sonnet-5-5 --runs 5   # a model with the acknowledgement opener (docs/designs/eval/2026-11-opener.md); the author's step

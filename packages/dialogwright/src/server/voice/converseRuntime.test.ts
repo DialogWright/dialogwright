@@ -130,7 +130,7 @@ function fakeIo(entry: ConverseCallEntry) {
   return { io, sent, records, saves, published, kept, finished: () => finished };
 }
 
-function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?: JevClient; before?: Record<string, () => Promise<void>> }) {
+function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?: JevClient; before?: Record<string, () => Promise<void>>; hooks?: Pick<Parameters<typeof converseVoiceRuntime>[0], 'onTurnEnd' | 'onClaimsRead'> }) {
   const { app, calendar, booked } = converseFixture();
   const rows: AuditDraft[] = [];
   const audit: AuditSink = {
@@ -140,9 +140,11 @@ function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?
     },
   };
   const traces: ConverseTraceRecord[] = [];
+  /** What was written straight to the call's frame log (not through the io). */
+  const logged: { dir: string; msg: unknown }[] = [];
   const entry: ConverseCallEntry = {
     trace: { write: (r) => void traces.push(r as ConverseTraceRecord) },
-    frames: { write() {} },
+    frames: { write: (dir: string, msg: unknown) => void logged.push({ dir, msg }) } as ConverseCallEntry['frames'],
     callSid: 'CA-converse-1',
     socket: { send() {}, close() {} },
     reconnects: 0,
@@ -164,6 +166,7 @@ function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?
       now: () => new Date(), trace: () => {}, jevTimeoutMs: 1000,
     }),
     now: () => Date.now(),
+    ...(o.hooks ?? {}),
   });
   const fio = fakeIo(entry);
   const said = (): TextFrame[] => fio.sent.filter((f): f is TextFrame => f.type === 'text');
@@ -172,7 +175,7 @@ function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?
   const event = (ev: PlaybackEvent): void => rt.playback(entry, ev, fio.io);
   /** Lets the turns run what they can, with the clock moved on by `ms`. */
   const settle = async (ms = 1): Promise<void> => void (await vi.advanceTimersByTimeAsync(ms));
-  return { rt, entry, io: fio.io, fio, rows, traces, calendar, booked, said, prompt, frame, event, settle, jev };
+  return { rt, entry, io: fio.io, fio, rows, traces, logged, calendar, booked, said, prompt, frame, event, settle, jev };
 }
 
 /** The app's actions, each named in `before` run after its wait. */
@@ -533,5 +536,52 @@ describe('the converse voice runtime: the end and a restart', () => {
     expect(h.entry.session.ended).toBe('left');
     expect(h.rows.slice(-2).map((r) => r.type)).toEqual(['converse_left', 'call_ended']);
     expect(h.rows.at(-1)!.detail).toEqual({ reason: 'hangup' });
+  });
+});
+
+describe('the converse voice runtime: the server\'s hooks and the frame log\'s end', () => {
+  const SLIP = 'We are open Saturdays too.';
+  const CORRECTION = 'Sorry, I should correct that: we are open every day.';
+
+  it('tells onTurnEnd each turn\'s end once all it says is sent, a correction\'s after it is said, and onClaimsRead what the check read', async () => {
+    const ends: string[] = [];
+    const reads: number[] = [];
+    const h = harness({
+      model: gatedModel([[text(SLIP), done()], [text(CORRECTION), done()], [text('Good.'), done()]]),
+      jev: jevOf({ contradicted: 0.9, notDone: 0.1, gap: 0.1 }),
+      hooks: { onTurnEnd: (id) => ends.push(id), onClaimsRead: (_id, read) => reads.push(read.turn) },
+    });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    expect(ends).toEqual(['CA-converse-1']);
+    await h.prompt('Are you open Saturday?');
+    // The reply is sent, its correction waits for it to play: the turn has not ended yet.
+    expect(ends).toHaveLength(1);
+    expect(reads).toHaveLength(1);
+    await h.settle(3000);
+    expect(h.said().at(-1)!.token).toBe(CORRECTION);
+    expect(ends).toEqual(['CA-converse-1', 'CA-converse-1']);
+    await h.prompt('thanks');
+    expect(ends).toHaveLength(3);
+  });
+
+  it('a hook that throws is logged, never the call\'s failure', async () => {
+    const h = harness({ model: gatedModel([[text('Good.'), done()]]), hooks: { onTurnEnd: () => { throw new Error('boom'); } } });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    await h.prompt('hello');
+    expect(h.said().at(-1)!.token).toBe('Good.');
+  });
+
+  it('writes how the call ended to the frame log, as a converse chat does: closing, handoff, or the caller hanging up', async () => {
+    const closing = harness({ model: gatedModel([[{ type: 'tool_call', id: 'c1', name: 'end_call', args: {} }, done('tool')]]) });
+    await closing.rt.open(closing.entry, { callerNumber: null, provider: 'twilio' }, closing.io);
+    await closing.prompt('that is all');
+    await closing.settle();
+    expect(closing.fio.records).toContainEqual({ dir: 'log', msg: { ended: 'closing' } });
+    const left = harness({ model: gatedModel([['hang']]) });
+    await left.rt.open(left.entry, { callerNumber: null, provider: 'twilio' }, left.io);
+    void left.prompt('hello');
+    await left.settle();
+    await left.rt.hangup(left.entry);
+    expect(left.logged).toContainEqual({ dir: 'log', msg: { ended: 'caller' } });
   });
 });

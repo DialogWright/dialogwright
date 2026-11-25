@@ -1474,7 +1474,8 @@
   /**
    * A converse call's detail (view.js converseCall): each turn's caller words and line, the actions with
    * their outcomes, the read-back and how it was answered, and the model's time and cost, in place of the
-   * replay's panels; null puts the panels back.
+   * replay's panels; on a phone call, what the caller heard of the line before, a bridge said and a turn the
+   * caller stopped; null puts the panels back.
    */
   function showConverse(view) {
     const box = el('converse');
@@ -1500,12 +1501,23 @@
       const callEnded = turn.endedBy === 'unclear' ? ' · call ended: three unclear turns in a row' : '';
       return `<div class="aside mono">journey: ${mark}${esc(turn.journey ?? 'the root')}${ended}${unclear}${callEnded}</div>`;
     };
+    // On a phone call: what the caller heard of the line before as they spoke (its start, as the trace keeps the line).
+    const heardLine = (turn) => {
+      const h = turn.heard;
+      if (!h) return '';
+      const how = h.cutIn ? 'cut in' : h.spokeBefore ? 'spoke before the line began' : 'after the line';
+      const heard = h.text !== null ? ` · heard "${esc(h.text)}"` : h.chars === null ? ' · heard: unknown' : '';
+      return `<div class="aside mono">caller ${how}${heard}</div>`;
+    };
     box.innerHTML = head + view.turns.map((turn) => '<div class="cturn">'
       + journeyLine(turn)
+      + heardLine(turn)
       + (turn.said !== null ? `<div><b class="who caller">Caller</b> ${esc(turn.said)}</div>` : '')
       + turn.tools.map((x) => `<div class="mono tool">${esc(x.name)}(${esc(x.args)}) · ${esc(x.outcome)}${x.reason !== null ? ` · ${esc(x.reason)}` : ''}</div>`).join('')
       + (turn.readBack !== null ? `<div><b class="who">Read-back</b> ${esc(turn.readBack.text)} <span class="aside">${esc(turn.readBack.answer)}</span></div>` : '')
+      + (turn.bridge ? '<div class="aside mono">bridge said: the model was slow to begin</div>' : '')
       + (turn.line !== '' ? `<div><b class="who sys">Line</b> ${esc(turn.line)}</div>` : '')
+      + (turn.interrupted ? '<div class="aside mono">stopped: the caller spoke</div>' : '')
       + (turn.model !== null ? `<div class="aside mono">${esc(turn.model.id)} · ${turn.model.ms} ms${turn.model.firstTextMs !== null ? `, first text ${turn.model.firstTextMs} ms` : ''} · ${esc(turn.model.tokens)} · ${esc(money(turn.model.costUsd))}${turn.model.retried ? ' · asked again' : ''}${turn.model.error !== null ? ` · ${esc(turn.model.error)}` : ''}</div>` : '')
       + '</div>').join('');
   }

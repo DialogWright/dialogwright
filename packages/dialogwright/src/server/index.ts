@@ -11,7 +11,7 @@ import type { NumberLocale } from '../core/numberLocales';
 import { defaultLocaleOf } from '../core/locale';
 import { appAgentClient, agentKeyVar } from '../agent/provider';
 import type { AgentRunner } from '../agent/types';
-import { agentSettings, type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { agentSettings, type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, voiceFor, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPEECH_OVER_LINE, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
 import { createRequestHandler, MESSAGES_PATH, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
@@ -211,11 +211,12 @@ export interface ServerOverrides {
    * Told each web chat's turn end, by the chat's id: once a turn of the person (the start, a text) has sent
    * all it says, a converse reply's correction included (chat/runtime.ts). The simulated callers' server
    * gives it (eval/server.ts), so its driver ends a reply there rather than after a pause, the chat wire having
-   * no end-of-turn message. A harness's seam, not a setting: a deployment gives none.
+   * no end-of-turn message. A converse app's call is told the same, by the call's id, once a turn has sent its
+   * lines (voice/converseRuntime.ts). A harness's seam, not a setting: a deployment gives none.
    */
   onTurnEnd?: (chatId: string) => void;
   /**
-   * The converse chat's check after speaking told what it was sent for each reply and what it read (the evaluation's
+   * The converse chat's (and a converse call's) check after speaking told what it was sent for each reply and what it read (the evaluation's
    * --claims-cases, eval/server.ts). A harness's seam, not a setting: a deployment gives none.
    */
   onClaimsRead?: (callId: string, read: { turn: number; state: JsonValue; reading: ClaimsReading | null }) => void;
@@ -990,7 +991,21 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       log(`WARNING: ${tag(a.id)}no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server's HANDOFF_NUMBER, as every such app's do; set HANDOFF_NUMBER in its own settings file`);
     }
   }
-  // The default app's part of the webhooks; none on a server of converse apps alone, which takes no calls.
+  // Each converse app's part of the webhooks: its calls' documents interruptible by speech, with Telnyx's playback
+  // events and the business's voices (http.ts converseOptions), and its handoffs to agent.yaml's transfer number,
+  // else its HANDOFF_NUMBER.
+  const converseHttpApps = new Map<string, HttpApp>();
+  for (const a of conversesRun) {
+    const b = a.app.business;
+    const transferNumber = b.transfer?.number;
+    converseHttpApps.set(a.id, { hints: '', transfer: null, audit: auditOf(a.id), handoffNumber: transferNumber ?? (host ? forApp(a.id, () => handoffNumberOf(a.env, config.handoffNumber)) : config.handoffNumber), converseVoice: { voices: { ...(b.persona.voices ?? {}) } } });
+    if (config.voiceProviders.length > 0) {
+      log(`${tag(a.id)}a converse app's handoffs: ${transferNumber !== undefined ? `agent.yaml's transfer number, ...${transferNumber.slice(-4)}` : 'none put through (agent.yaml names no transfer number): the handoff line, then the call ends'}`);
+      const unvoiced = config.voiceProviders.filter((id) => b.persona.voices?.[id as 'twilio' | 'telnyx'] === undefined && voiceFor(config, id).voice === undefined);
+      if (unvoiced.length > 0) log(`WARNING: ${tag(a.id)}a converse app with no voice on ${unvoiced.join(', ')}: its calls there are in the carrier's default voice; name one in agent.yaml persona.voices`);
+    }
+  }
+  // The default app's part of the webhooks; none on a server of converse apps alone (each its own, above).
   const first = appsRun[0] === undefined ? undefined : httpApps.get(appsRun[0].id)!;
   const app = first?.app;
   const startParameters = first?.startParameters ?? {};
@@ -1213,6 +1228,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     apps: new Map(conversesRun.map((a) => [a.id, a.app])),
     now,
     log,
+    // The server's hooks, as a converse chat's (the simulated callers' server).
+    ...(overrides.onTurnEnd !== undefined ? { onTurnEnd: overrides.onTurnEnd } : {}),
+    ...(overrides.onClaimsRead !== undefined ? { onClaimsRead: overrides.onClaimsRead } : {}),
     enqueue: (e, fn) => store.enqueueConverse(e.callSid, fn),
     converseDeps: (app, callId) => {
       const a = conversesRun.find((r) => r.id === app.id)!;
@@ -1254,7 +1272,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // On a host: each app's part of the webhooks, and its traces for the console.
     ...(host
       ? {
-        host: { appFor: (called: string | null | undefined) => host.appFor(called), served: (id: string) => httpApps.get(id) },
+        host: { appFor: (called: string | null | undefined) => host.appFor(called), served: (id: string) => httpApps.get(id) ?? converseHttpApps.get(id) },
         consoleApps: hosted.map((a) => ({ id: a.id, app: a.app, traceDir: traceDirOf(a.id), ...(traceStores.has(a.id) ? { traces: traceStores.get(a.id)!.reader() } : {}), ...(a.dir !== undefined ? { dir: a.dir } : {}) })),
       }
       : {}),

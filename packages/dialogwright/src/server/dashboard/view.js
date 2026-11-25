@@ -2074,20 +2074,22 @@ const msOfTs = (ts) => {
   return Number.isFinite(t) ? t : null;
 };
 
-/** How a converse chat ended, from its frame log's end (`{ended}`: closing, handoff, caller, idle). */
-function converseEnding(reason) {
+/** How a converse chat or call ended, from its frame log's end (`{ended}`: closing, handoff, caller, idle). */
+function converseEnding(reason, voice = false) {
   if (reason === null) return null;
   if (reason === 'closing') return { kind: 'handled', text: 'handled' };
   if (reason === 'handoff') return { kind: 'person', reason: 'handoff', text: 'to a person' };
-  if (reason === 'caller') return { kind: 'hangup', text: 'left the chat' };
+  if (reason === 'caller') return { kind: 'hangup', text: voice ? 'hung up' : 'left the chat' };
   if (reason === 'idle') return { kind: 'hangup', text: 'left the chat (idle)' };
   return { kind: 'error', text: 'ended in an error' };
 }
 
 /**
- * A converse call as the Calls page lists it (the CallRow callRow makes of a scripted call): a chat, its
- * turns (what the caller said), the actions the caller confirmed as its tasks, how it ended (its frame
- * log's end), and the model's cost (each turn's, where its price is known). No value a caller gave.
+ * A converse call as the Calls page lists it (the CallRow callRow makes of a scripted call): a chat, or a
+ * phone call (its frame log has the carrier's setup) on its carrier, its turns (what the caller said), the
+ * actions the caller confirmed as its tasks, how it ended (its frame log's end), and the model's cost (each
+ * turn's, where its price is known). No value a caller gave: a call's number is the Calls page's to fill in
+ * (calls.ts), as the app's records write it.
  */
 export function converseRow(records, frames) {
   const list = converseRecords(records);
@@ -2095,10 +2097,14 @@ export function converseRow(records, frames) {
   let lastAt = list.length > 0 ? msOfTs(list.at(-1).ts) : null;
   let endReason = null;
   let endedAt = null;
+  let voice = false;
+  let provider = null;
   for (const f of frames ?? []) {
     const at = msOfTs(f?.ts);
     if (at !== null) lastAt = lastAt === null ? at : Math.max(lastAt, at);
     const m = f?.msg;
+    if (f?.dir === 'in' && m && typeof m === 'object' && m.type === 'setup') voice = true;
+    if (f?.dir === 'log' && m && typeof m === 'object' && typeof m.provider === 'string' && provider === null) provider = m.provider;
     if (f?.dir === 'log' && m && typeof m === 'object' && typeof m.ended === 'string') {
       endReason = m.ended;
       endedAt = at;
@@ -2114,10 +2120,10 @@ export function converseRow(records, frames) {
   return {
     callSid: first?.sessionId ?? null,
     app: null,
-    from: 'web chat',
+    from: voice ? 'unknown' : 'web chat',
     caller: null,
-    channel: 'chat',
-    provider: null,
+    channel: voice ? 'voice' : 'chat',
+    provider: voice ? provider : null,
     startedAt: first ? msOfTs(first.ts) : null,
     lastAt,
     endedAt,
@@ -2128,7 +2134,7 @@ export function converseRow(records, frames) {
     status: endReason === 'handoff' ? 'with-person' : endReason !== null ? 'ended' : 'on-track',
     frustrated: false,
     handoffReason: endReason === 'handoff' ? 'handoff' : null,
-    ending: converseEnding(endReason),
+    ending: converseEnding(endReason, voice),
     costUsd: Math.round(cost * 1e6) / 1e6,
   };
 }
@@ -2137,7 +2143,11 @@ export function converseRow(records, frames) {
  * A converse call's detail, turn by turn: what the caller said (null for the start and a caller leaving),
  * the line (each reply and fixed line, joined), each action called with its params as recorded and its
  * outcome, the read-back said or answered (and how the decision model read the answer), and the model's
- * time, first text, tokens and cost (null on a turn that asked no model). Plain text, for the page to escape.
+ * time, first text, tokens and cost (null on a turn that asked no model). On a phone call, where the turn
+ * says so: what the caller heard of the line before as they spoke (`heard`: whether they cut in, spoke
+ * before it began, and its first `chars` characters of the line as the trace keeps it), the bridge said
+ * while the model was slow to begin (`bridge`), and the turn stopped by the caller speaking (`interrupted`).
+ * Plain text, for the page to escape.
  */
 export function converseCall(records) {
   const list = converseRecords(records);
@@ -2146,7 +2156,19 @@ export function converseCall(records) {
   // yes, a start at the root) is in the journey before it. Other calls are unchanged.
   const withJourneys = list.some((r) => r.route != null || r.journeyEnded != null);
   let carried = null;
+  let before = null;
   const turns = list.map((r) => {
+    // The line before this turn, as the trace keeps it: what the caller heard is its start.
+    const previous = before;
+    before = Array.isArray(r.replies) ? r.replies.join(' ') : '';
+    const callView = {};
+    const h = r.heard;
+    if (h && typeof h === 'object') {
+      const chars = typeof h.chars === 'number' ? h.chars : null;
+      callView.heard = { cutIn: h.cutIn === true, spokeBefore: h.spokeBefore === true, chars, text: chars === null || previous === null ? null : previous.slice(0, chars) };
+    }
+    if (r.bridge === true) callView.bridge = true;
+    if (r.interrupted === true) callView.interrupted = true;
     const m = r.model ?? null;
     const asked = m !== null && (m.ms > 0 || (m.usage?.inputTokens ?? 0) > 0 || typeof m.error === 'string');
     const rb = r.readBack ?? null;
@@ -2180,6 +2202,7 @@ export function converseCall(records) {
         ? { id: String(m.id), ms: m.ms, firstTextMs: m.firstTextMs ?? null, tokens: `${m.usage?.inputTokens ?? 0} in, ${m.usage?.outputTokens ?? 0} out`, costUsd: typeof m.costUsd === 'number' ? m.costUsd : null, error: typeof m.error === 'string' ? m.error : null, retried: m.retried === true }
         : null,
       ...journeyView,
+      ...callView,
     };
   });
   const models = [];

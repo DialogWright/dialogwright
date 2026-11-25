@@ -231,7 +231,8 @@ export type { HostApp, HostedApp, HostRouting } from './server/host';
 export { defineConverseApp, isConverseApp, businessCalendar } from './converse/app';
 export { registerConverseApp } from './core/app/registry';
 export type { ConverseApp, ConverseChatSettings, ConversePageDeps, ConversePagesFactory, Calendar as ConverseCalendar, Slot as ConverseSlot } from './converse/app';
-export type { ToolImpl as ConverseToolImpl } from './converse/turn';
+// What a call's channel says the caller heard of the last reply, given with their words (a converse turn's Input).
+export type { ToolImpl as ConverseToolImpl, Heard } from './converse/turn';
 export type { ConverseTraceRecord } from './converse/trace';
 export type { RunningServer, ServerOverrides, Sidecars } from './server/index';
 export { appPagesBase, mountAppPages, routeOwns, validateRoutes } from './server/appRoutes';

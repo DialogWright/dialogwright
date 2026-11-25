@@ -178,6 +178,12 @@ journeys:
     completes: [book_dealer]
 persona:
   style: "A friendly, plain-spoken auto-shop voice; brief on the phone; speaks for the shop as 'we'."
+  # assumption: the owner corrects these (the voice on each carrier the shop's number is on. On Twilio a name is
+  # spoken with the deployment's TTS_PROVIDER, set with TTS_VOICE, else Twilio's default provider: this one is
+  # Google's, for TTS_PROVIDER=Google. On Telnyx a name carries its engine.)
+  voices:
+    twilio: en-US-Neural2-F
+    telnyx: Telnyx.NaturalHD.astra
 lines:
   # assumption: the owner corrects these (a receptionist's opening: what the shop does, then what the line can do; "messaging" in the web chat)
   greeting:

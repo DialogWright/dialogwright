@@ -7,7 +7,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { agentSettings, gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, type Env, type ServerConfig } from './config';
+import { agentSettings, gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, voiceFor, type Env, type ServerConfig } from './config';
 import { describeNoiseSuppression } from './voice/noiseSuppression';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
@@ -437,11 +437,14 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
  * reads them: their problems (pnpm check lists them; the server will not start); the conversation's model
  * (agent.yaml's model.default) with its key's variable, never the key (unset, the server will not start);
  * the decision model that reads a caller's answer to a read-back (JEV_CLIENT=jev with its key: under a stub,
- * or with no key, no read-back is ever confirmed); its chat settings (a chat's number from its context);
- * and that it takes no calls yet where VOICE_PROVIDERS lists a carrier. Nothing for any other app. No model
+ * or with no key, no read-back is ever confirmed); its calls, for each carrier `config.voiceProviders` lists
+ * (the carriers its calls come on: none where no number reaches it): a voice on each (agent.yaml
+ * persona.voices.<carrier>, else the deployment's, else warned: the carrier's default voice), and where a call
+ * handed to a person goes (agent.yaml transfer.number, warned for a 555 number; none is the business's choice,
+ * said as such); and its chat settings (a chat's number from its context). Nothing for any other app. No model
  * is asked.
  */
-export function converseChecks(appDir: string, env: Env, config: Pick<ServerConfig, 'jevClient' | 'jevProvider' | 'voiceProviders'> | null): CheckResult[] {
+export function converseChecks(appDir: string, env: Env, config: Pick<ServerConfig, 'jevClient' | 'jevProvider' | 'voiceProviders' | 'ttsProvider' | 'ttsVoice' | 'telnyxVoice'> | null): CheckResult[] {
   const loaded = loadAppFolder(appDir);
   if (loaded.converse !== true) return [];
   if (loaded.problems.length > 0) {
@@ -472,7 +475,22 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
     } else {
       out.push({ id: 'converse', status: 'ok', message: `a converse app's read-backs are read by ${p.model} from ${p.provider}, key in ${p.keyVar}` });
     }
-    if (config.voiceProviders.length > 0) out.push({ id: 'converse', status: 'warn', message: `a converse app takes no calls yet: its chat only, and VOICE_PROVIDERS (${config.voiceProviders.join(', ')}) is set aside for it`, fix: 'set VOICE_PROVIDERS=none, or serve it on a host whose default app is a scripted app that takes the calls' });
+    for (const carrier of config.voiceProviders) {
+      const own = business.persona.voices?.[carrier as 'twilio' | 'telnyx'];
+      const deployed = voiceFor(config as ServerConfig, carrier).voice;
+      const setting = carrier === 'twilio' ? 'TTS_VOICE' : 'TELNYX_VOICE';
+      const named = `agent.yaml persona.voices.${carrier}`;
+      if (own !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in ${own} (${named})` });
+      else if (deployed !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in the deployment's voice, ${deployed} (${setting}): agent.yaml names none (persona.voices.${carrier})` });
+      else out.push({ id: 'converse', status: 'warn', message: `a converse app's calls on ${carrier} have no voice of the business's own (${named}) nor the deployment's (${carrier === 'twilio' ? 'TTS_PROVIDER and TTS_VOICE' : 'TELNYX_VOICE'}): they are spoken in the carrier's default voice`, fix: `name the voice in ${named}` });
+    }
+    if (config.voiceProviders.length > 0) {
+      const number = business.transfer?.number;
+      if (number === undefined) out.push({ id: 'converse', status: 'ok', message: 'agent.yaml names no transfer number (transfer.number): a call the line hands to a person ends after the handoff line, the caller offered a call back; a call the server cannot keep goes to HANDOFF_NUMBER' });
+      else if (number.startsWith('env.')) out.push({ id: 'converse', status: 'ok', message: `a converse app hands its calls to a person at the number ${number.slice(4)} names (agent.yaml transfer.number), read from its settings as the server starts` });
+      else if (FICTIONAL.test(number)) out.push({ id: 'converse', status: 'warn', message: `a converse app hands its calls to a person at ${number} (agent.yaml transfer.number), a 555 number: calls handed off will go nowhere`, fix: 'set it to a phone a person answers' });
+      else out.push({ id: 'converse', status: 'ok', message: `a converse app hands its calls to a person at ${number} (agent.yaml transfer.number)` });
+    }
   }
   out.push({ id: 'converse', status: chat ? 'warn' : 'ok', message: chat ? 'a chat may name the number it calls from in its context (app.yaml chat.callerNumberFromContext: true): a site could claim an account' : 'a chat calls from no number (app.yaml chat.callerNumberFromContext is off)', ...(chat ? { fix: 'turn it off (delete chat.callerNumberFromContext) outside tests and the simulated callers' } : {}) });
   return out;
@@ -990,17 +1008,9 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
   } catch (e) {
     out.push({ id: 'host', status: 'fail', message: `${e instanceof Error ? e.message : String(e)}: the server will not start`, fix: 'set the number in the server\'s settings file' });
   }
-  // A converse app takes no calls yet: on a host with a scripted app and a carrier, the start refuses a
-  // number (or the default) that would put a call through to one (server/index.ts), and so does this.
-  const converses = host.apps.filter((a) => loadAppFolder(a.dir).converse === true).map((a) => a.id);
-  if (converses.length > 0 && converses.length < host.apps.length && (serverConfigOf(env)?.voiceProviders.length ?? 0) > 0) {
-    for (const id of converses) {
-      const listed = host.numbers.filter((n) => n.app === id).map((n) => n.variable);
-      const why = id === host.defaultApp ? 'it is host.yaml\'s defaultApp, which takes every call to a number no app is listed for'
-        : listed.length > 0 ? `host.yaml lists ${listed.join(', ')} for it` : null;
-      if (why !== null) out.push({ id: 'host', status: 'fail', message: `app ${id} is a converse app, which takes no calls yet (its chat only), but ${why}: the server will not start`, fix: `make a scripted app the default and list no number for "${id}", or set VOICE_PROVIDERS=none` });
-    }
-  }
+  // The apps a call reaches: the default, and each a number is listed for (a converse app's voices are checked
+  // only where its calls come, below).
+  const reached = new Set([host.defaultApp, ...host.numbers.map((n) => n.app)]);
   const signIn = env.CHAT?.trim() === 'on' && env.CHAT_SIGNIN?.trim() === 'jwt';
   const audiences = new Map<string, string[]>();
   for (const app of host.apps) {
@@ -1018,8 +1028,8 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     out.push(...agentChecks(app.dir, read.env).map(tag));
     out.push(...textChecks(read.env).map(tag));
     const server = serverConfigOf(env);
-    // On a host a number that would put a call through to a converse app is the host's check (above), as the start refuses it.
-    out.push(...converseChecks(app.dir, read.env, server === null ? null : { ...server, voiceProviders: [] }).map(tag));
+    // A converse app's calls (its voices, its transfer number): only where a call reaches it, the default or a number listed for it.
+    out.push(...converseChecks(app.dir, read.env, server === null ? null : { ...server, voiceProviders: reached.has(app.id) ? server.voiceProviders : [] }).map(tag));
     if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.
     for (const [name, variable] of Object.entries(app.services)) {
@@ -1071,14 +1081,17 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
   return out;
 }
 
-/** Whether an app folder's app.yaml has transfer targets (`transfer:`), read from the YAML alone. */
+/** Whether an app folder has transfer targets (app.yaml's `transfer:`, or a converse app's agent.yaml `transfer:`), read from the YAML alone. */
 function hasTransfer(dir: string): boolean {
-  try {
-    const doc = parseYaml(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { transfer?: unknown } | null;
-    return doc?.transfer !== undefined && doc.transfer !== null;
-  } catch {
-    return false;
-  }
+  // A scripted app's transfer targets (app.yaml), or a converse app's transfer number (agent.yaml).
+  return [APP_FILE, AGENT_FILE].some((file) => {
+    try {
+      const doc = parseYaml(readFileSync(join(dir, file), 'utf8')) as { transfer?: unknown } | null;
+      return doc?.transfer !== undefined && doc.transfer !== null;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** The command; returns its exit code (0 nothing failed, 1 something did, 2 a command line it does not understand). */

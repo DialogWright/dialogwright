@@ -44,7 +44,10 @@ import type { ConverseCallEntry } from '../sessions';
  *   that resumes the call asks the model again on them, and a change the caller confirmed is not done twice
  *   (its idempotency key). A socket that closes stops the turn running, which is asked again when the carrier
  *   reconnects unless a change it confirmed ran (then nothing is said, as on any reconnect).
- * - Each end is recorded in the audit as `call_ended` (completed, handoff, hangup), as a converse chat's is.
+ * - Each end is recorded in the audit as `call_ended` (completed, handoff, hangup), and in the frame log as
+ *   `{ ended }` (closing, handoff, caller), as a converse chat's is.
+ * - The server's hooks, as on a converse chat: `onTurnEnd` once a turn has sent all it says (its correction
+ *   included), `onClaimsRead` with what the check after speaking read.
  */
 
 /** What the converse voice runtime is given. */
@@ -57,6 +60,15 @@ export interface ConverseVoiceDeps {
   /** The call's turn queue (SessionStore.enqueueConverse); absent, the runtime chains on the entry's tail itself. */
   enqueue?: (entry: ConverseCallEntry, fn: (entry: ConverseCallEntry) => Promise<void>) => Promise<void>;
   log?: (line: string) => void;
+  /**
+   * Called once a turn (the greeting, the caller's words, a turn asked again) has sent all it says: its reply,
+   * and its correction where one waited for the reply to play (said or dropped). As a converse chat's (chat
+   * runtime's `onTurnEnd`): the simulated callers' driver ends a reply on it. A hook that throws is logged.
+   * Absent on a deployment.
+   */
+  onTurnEnd?: (callId: string) => void;
+  /** Called with what the check after speaking was sent for a reply and what it read (ConverseDeps.onClaimsRead), as a converse chat's. Absent on a deployment. */
+  onClaimsRead?: ConverseDeps['onClaimsRead'];
 }
 
 export interface ConverseVoiceRuntime {
@@ -126,6 +138,8 @@ interface Correction {
   after: Reply;
   scrub: ((text: string) => string) | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Told once the correction is said or dropped: its turn's end (ConverseVoiceDeps.onTurnEnd). */
+  settled: () => void;
 }
 
 /** What the runtime keeps of a call beside its saved state: never saved. */
@@ -233,7 +247,26 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /** A turn's dependencies: the app's, each trace record written to the call's own trace. */
-  const turnDeps = (app: ConverseApp, e: ConverseCallEntry): ConverseDeps => ({ ...deps.converseDeps(app, e.callSid), trace: (r) => e.trace.write(r) });
+  const turnDeps = (app: ConverseApp, e: ConverseCallEntry): ConverseDeps => ({ ...deps.converseDeps(app, e.callSid), trace: (r) => e.trace.write(r), ...(claimsRead !== undefined ? { onClaimsRead: claimsRead } : {}) });
+
+  /** A turn's end told (deps.onTurnEnd); a hook that throws is logged, never the call's failure. */
+  const turnEnded = (callId: string): void => {
+    if (deps.onTurnEnd === undefined) return;
+    try {
+      deps.onTurnEnd(callId);
+    } catch (err) {
+      log(`${callId}: the turn's end hook failed: ${describe(err)}`);
+    }
+  };
+
+  /** The check's input told (deps.onClaimsRead); a hook that throws is logged, never the call's failure. */
+  const claimsRead: ConverseDeps['onClaimsRead'] = deps.onClaimsRead === undefined ? undefined : (callId, read) => {
+    try {
+      deps.onClaimsRead!(callId, read);
+    } catch (err) {
+      log(`${callId}: the check's input hook failed: ${describe(err)}`);
+    }
+  };
 
   const enqueue = (e: ConverseCallEntry, fn: (e: ConverseCallEntry) => Promise<void>): Promise<void> => {
     if (deps.enqueue !== undefined) return deps.enqueue(e, fn);
@@ -262,6 +295,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     if (c.timer !== null) clearTimeout(c.timer);
     l.correction = null;
     c.after.unheard = true;
+    c.settled();
   };
 
   /** What the caller heard of the line's last reply as they finished speaking (`atMs`), or undefined where there is no reply. */
@@ -296,6 +330,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const io = l.io;
     if (l.speechAt !== null || l.running !== null || l.reply !== c.after || io === null) {
       c.after.unheard = true;
+      c.settled();
       return;
     }
     const reply = newReply();
@@ -306,7 +341,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       reply.frames.push({ text: token, at: now() });
       return { ...textFrame(token, true), last };
     });
-    void io.send(frames, { logged: (f) => (f.type === 'text' ? loggedText(f, c.scrub) : f) }).catch((err: unknown) => log(`correction not sent: ${describe(err)}`));
+    void io.send(frames, { logged: (f) => (f.type === 'text' ? loggedText(f, c.scrub) : f) })
+      .catch((err: unknown) => log(`correction not sent: ${describe(err)}`))
+      .finally(c.settled);
   };
 
   /** Whether the carrier reported the reply's last line played. */
@@ -346,6 +383,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     // Words the caller went on from before this turn began (a later final prompt): it runs already stopped,
     // so its words are kept in the conversation and the latest turn answers them all at once.
     if (generation !== undefined && generation < l.generation) running.ac.abort();
+    // The turn's end is told here, or by the correction it leaves waiting once that is said or dropped.
+    let endTold = false;
     try {
       const before = e.session;
       const words = input.kind === 'text' ? input.text : null;
@@ -419,10 +458,14 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         endCall(e, app, ended, sent.map((s) => s.frame), io);
         return;
       }
-      if (correction.length > 0) armCorrection(l, { pieces: correction, after: reply, scrub: masked, timer: null });
+      if (correction.length > 0) {
+        endTold = true;
+        armCorrection(l, { pieces: correction, after: reply, scrub: masked, timer: null, settled: () => turnEnded(e.callSid) });
+      }
       await io.save();
     } finally {
       settle();
+      if (!endTold) turnEnded(e.callSid);
     }
   };
 
@@ -430,6 +473,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   const endCall = (e: ConverseCallEntry, app: ConverseApp, ended: 'closing' | 'handoff', lines: readonly OutboundFrame[], io: VoiceIo): void => {
     const reason = ended === 'closing' ? 'completed' : 'handoff';
     audited(app, e.callSid, reason);
+    // How the call ended, in the frame log as a converse chat's (the console's Calls page reads it: view.js converseRow).
+    io.record('log', { ended });
     io.publish({ type: 'ended', callSid: e.callSid, at: now(), reason });
     lives.delete(e.callSid);
     const completed = (e.session.done ?? []).map((d) => d.action);
@@ -611,6 +656,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         log(`${entry.callSid}: the caller's leaving was not recorded: ${describe(err)}`);
       } finally {
         audited(app, entry.callSid, 'hangup');
+        // In the frame log as a converse chat's caller leaving (view.js converseRow).
+        entry.frames.write('log', { ended: 'caller' });
       }
     },
   };

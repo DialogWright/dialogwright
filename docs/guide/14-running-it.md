@@ -328,9 +328,10 @@ apps:                                     # each known by the id its own app.yam
   - { folder: apps/clinic, env: clinic.env }   # with its own settings file named (default: its .env)
   - { folder: apps/repairs, services: { scheduler: env.SCHEDULER_URL } }   # its services' URLs, by variable
   - { package: "@acme/repairs-line" }     # an app installed as a package
-  - apps/wheelshop-agent                  # a converse app (app.yaml mode: converse): its chat only for now, so no number names it
+  - apps/wheelshop-agent                  # a converse app (app.yaml mode: converse): its chat, and the calls to its number
 numbers:                                  # the number called -> the app's id; several numbers may name one app
   - { number: env.POWER_LINE, app: utility }
+  - { number: env.WHEEL_LINE, app: wheelshop-agent }
   - { number: env.CLINIC_LINE, app: clinic }
   - { number: env.CLINIC_LINE_ES, app: clinic }
 default: utility                          # any other number, or none; default: the first app listed

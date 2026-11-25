@@ -982,22 +982,51 @@ describe('a converse app (pnpm diagnose)', () => {
     ]);
   });
 
-  it('is ok with both keys, and warns that it takes no calls where a carrier is listed', () => {
+  it('is ok with both keys; where a carrier is listed, checks a voice for it and the transfer number', () => {
     const keys = { ANTHROPIC_API_KEY: 'x', TYPESAFE_API_KEY: 'y' };
     const found = converseChecks(CONVERSE_FIXTURE_DIR, keys, server({ ...keys, JEV_CLIENT: 'jev', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199' }));
-    expect(found.map((r) => r.status)).toEqual(['ok', 'ok', 'warn', 'warn']);
+    expect(found.map((r) => r.status)).toEqual(['ok', 'ok', 'warn', 'ok', 'warn']);
     expect(found[0]!.message).toBe("a converse app: the conversation's model anthropic:claude-haiku-5-5 (agent.yaml's model.default), key in ANTHROPIC_API_KEY, within 6000 ms a reply");
     expect(found[1]!.message).toMatch(/^a converse app's read-backs are read by .+, key in TYPESAFE_API_KEY$/);
-    expect(found[2]!.message).toMatch(/^a converse app takes no calls yet/);
+    expect(found.slice(2, 4)).toEqual([
+      { id: 'converse', status: 'warn', message: "a converse app's calls on twilio have no voice of the business's own (agent.yaml persona.voices.twilio) nor the deployment's (TTS_PROVIDER and TTS_VOICE): they are spoken in the carrier's default voice", fix: 'name the voice in agent.yaml persona.voices.twilio' },
+      { id: 'converse', status: 'ok', message: 'agent.yaml names no transfer number (transfer.number): a call the line hands to a person ends after the handoff line, the caller offered a call back; a call the server cannot keep goes to HANDOFF_NUMBER' },
+    ]);
     expect(JSON.stringify(found)).not.toMatch(/"x"|"y"/);
+    // No carrier: no call, so no voice and no transfer number to check.
+    expect(converseChecks(CONVERSE_FIXTURE_DIR, keys, server({ ...keys, JEV_CLIENT: 'jev' })).map((r) => r.status)).toEqual(['ok', 'ok', 'warn']);
+  });
+
+  it('diagnose warns of a converse app on a number with no voice for its carrier', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'converse-voices-'));
+    try {
+      writeFileSync(join(dir, 'app.yaml'), readFileSync(join(CONVERSE_FIXTURE_DIR, 'app.yaml'), 'utf8'));
+      writeFileSync(join(dir, 'agent.yaml'), readFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8')
+        .replace('persona:\n  style: Plain, warm and brief.\n', 'persona:\n  style: Plain, warm and brief.\n  voices: { telnyx: Telnyx.NaturalHD.astra }\n')
+        .replace('model:\n', 'transfer: { number: "+15555550177" }\nmodel:\n'));
+      const carriers = server({ JEV_CLIENT: 'stub', VOICE_PROVIDERS: 'twilio,telnyx', TWILIO_AUTH_TOKEN: 't', TELNYX_PUBLIC_KEY, HANDOFF_NUMBER: '+15555550199' });
+      const calls = converseChecks(dir, {}, carriers).filter((r) => /voice|transfer/.test(r.message));
+      expect(calls).toEqual([
+        { id: 'converse', status: 'warn', message: "a converse app's calls on twilio have no voice of the business's own (agent.yaml persona.voices.twilio) nor the deployment's (TTS_PROVIDER and TTS_VOICE): they are spoken in the carrier's default voice", fix: 'name the voice in agent.yaml persona.voices.twilio' },
+        { id: 'converse', status: 'ok', message: "a converse app's calls on telnyx are spoken in Telnyx.NaturalHD.astra (agent.yaml persona.voices.telnyx)" },
+        { id: 'converse', status: 'warn', message: 'a converse app hands its calls to a person at +15555550177 (agent.yaml transfer.number), a 555 number: calls handed off will go nowhere', fix: 'set it to a phone a person answers' },
+      ]);
+      // The deployment's voice, where the business names none: spoken in it.
+      const deployed = converseChecks(dir, {}, server({ JEV_CLIENT: 'stub', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199', TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }));
+      expect(deployed.find((r) => r.message.includes('on twilio'))).toEqual({ id: 'converse', status: 'ok', message: "a converse app's calls on twilio are spoken in the deployment's voice, en-US-Neural2-F (TTS_VOICE): agent.yaml names none (persona.voices.twilio)" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('runs with the app\'s other checks when diagnose is given a converse app\'s folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'converse-run-'));
     try {
       const results = (await runDoctor({ env: { ...goodEnv(dir), ANTHROPIC_API_KEY: 'x' }, cwd: dir, appDir: CONVERSE_FIXTURE_DIR, offline: true }, deps())).filter((r) => r.id === 'converse');
-      expect(results.map((r) => r.status)).toEqual(['ok', 'ok', 'warn', 'warn']);
+      // On Telnyx with no voice of the business's own or the deployment's: warned; no transfer number, by choice.
+      expect(results.map((r) => r.status)).toEqual(['ok', 'ok', 'warn', 'ok', 'warn']);
       expect(results[1]!.message).toMatch(/key in OPENROUTER_API_KEY$/);
+      expect(results[2]!.message).toMatch(/^a converse app's calls on telnyx have no voice/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1012,19 +1041,20 @@ describe('a converse app (pnpm diagnose)', () => {
     expect(converseChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {}, null)).toEqual([]);
   });
 
-  it('on a host with a phone line, fails a number or a default that would put a call through to a converse app, as the start refuses it', () => {
+  it('on a host with a phone line, checks the voices of a converse app a number or the default puts calls through to, and refuses none', () => {
     const app = (dir: string, id: string) => ({ label: dir, dir, id, envFile: join(dir, 'no-such.env'), envNamed: false, services: {} });
     const host = (numbers: { variable: string; app: string }[], defaultApp: string) => ({ file: join(CALLBACK_DIR, 'host.yaml'), dir: CALLBACK_DIR, apps: [app(CALLBACK_DIR, 'callback'), app(CONVERSE_FIXTURE_DIR, 'converse')], numbers, defaultApp });
     const env = { PUBLIC_HOST: 'ivr.example.com', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com', VISIT_LINE: '+15555550105' };
-    const refusals = (h: ReturnType<typeof host>, e: Record<string, string> = env) => hostChecks(h, e).filter((r) => r.id === 'host' && r.status === 'fail').map((r) => [r.message, r.fix]);
-    expect(refusals(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'))).toEqual([[
-      'app converse is a converse app, which takes no calls yet (its chat only), but host.yaml lists VISIT_LINE for it: the server will not start',
-      'make a scripted app the default and list no number for "converse", or set VOICE_PROVIDERS=none',
-    ]]);
-    expect(refusals(host([], 'converse'))[0]![0]).toBe('app converse is a converse app, which takes no calls yet (its chat only), but it is host.yaml\'s defaultApp, which takes every call to a number no app is listed for: the server will not start');
-    // No carrier, or no number and not the default: nothing refused.
-    expect(refusals(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'), { ...env, VOICE_PROVIDERS: 'none' })).toEqual([]);
-    expect(refusals(host([{ variable: 'VISIT_LINE', app: 'callback' }], 'callback'))).toEqual([]);
+    const voices = (h: ReturnType<typeof host>, e: Record<string, string> = env) => hostChecks(h, e).filter((r) => r.message.startsWith('app converse: a converse app\'s calls on')).map((r) => r.status);
+    const refused = (h: ReturnType<typeof host>) => hostChecks(h, env).filter((r) => r.id === 'host' && r.status === 'fail');
+    // On a number, or the default: its voice on each carrier is checked, and nothing is refused.
+    expect(voices(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'))).toEqual(['warn']);
+    expect(voices(host([], 'converse'))).toEqual(['warn']);
+    expect(refused(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'))).toEqual([]);
+    expect(refused(host([], 'converse'))).toEqual([]);
+    // No carrier, or no number and not the default: no call reaches it, and nothing is said of its voices.
+    expect(voices(host([{ variable: 'VISIT_LINE', app: 'converse' }], 'callback'), { ...env, VOICE_PROVIDERS: 'none' })).toEqual([]);
+    expect(voices(host([{ variable: 'VISIT_LINE', app: 'callback' }], 'callback'))).toEqual([]);
   });
 });
 

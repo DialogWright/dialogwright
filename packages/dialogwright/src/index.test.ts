@@ -63,6 +63,9 @@ describe('the package entry', () => {
     // the options type is exported with the function it configures
     const options: import('./index').DefineAppOptions = { codeFile: 'src/app.ts' };
     expect(options.codeFile).toBe('src/app.ts');
+    // what a converse call's channel says the caller heard of the last reply, with the converse types
+    const heard: import('./index').Heard = { cutIn: true, text: 'We have', spokeBefore: false };
+    expect(heard.cutIn).toBe(true);
   });
 
   it('keeps what an app author needs: the helpers a slot type is written with are in dialogwright/slot-kit, and the engine\'s own tables stay inside', () => {

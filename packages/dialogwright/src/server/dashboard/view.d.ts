@@ -455,7 +455,7 @@ export function wordingRows(w: import('./wordingFigures').WordingInsights): { co
 /** Whether a record is a turn set aside as speech over a line (SPEECH_OVER_LINE): words taken as not the caller's. */
 export function setAsideOverLine(record: { gates?: readonly { gate: string; outcome: string; decided: boolean }[] } | null | undefined): boolean;
 
-/** A converse call as the Calls page lists it, from its trace (kind 'converse' records) and its frame log. */
+/** A converse call as the Calls page lists it, from its trace (kind 'converse' records) and its frame log: a chat, or a phone call on its carrier (its number 'unknown', for calls.ts to fill in). */
 export function converseRow(records: readonly unknown[], frames: readonly FrameLogLine[] | null | undefined): CallRow;
 /** One turn of a converse call's detail. */
 export interface ConverseTurnView {
@@ -473,6 +473,12 @@ export interface ConverseTurnView {
   /** On a call with journeys: how many unclear turns in a row this one made (null: it was not unclear), and `unclear` when the line ended the call on it. */
   unclear?: number | null;
   endedBy?: 'unclear' | null;
+  /** On a phone call, where the turn says so: what the caller heard of the line before (its first `chars` characters as the trace keeps the line; null: unknown) and whether they cut in on it or spoke before it began. */
+  heard?: { cutIn: boolean; spokeBefore: boolean; chars: number | null; text: string | null };
+  /** The bridge was said this turn (lines.bridge), the model being slow to begin. */
+  bridge?: true;
+  /** The turn was stopped by the caller speaking: what it had not said was dropped. */
+  interrupted?: true;
 }
 /** A converse call's detail: its turns, and the totals of its model. */
 export function converseCall(records: readonly unknown[]): { turns: ConverseTurnView[]; totals: { turns: number; modelMs: number; costUsd: number; models: string[] } };

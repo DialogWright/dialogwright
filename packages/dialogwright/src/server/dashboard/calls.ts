@@ -174,11 +174,15 @@ function callerOf(records: readonly TraceRecord[], frames: readonly ReadFrameLog
 /**
  * A call's summary from its records and frame log, as raw on disk: redacted first, then folded as the page
  * folds a replay. A converse call's (records of kind 'converse', masked as its turns wrote them) is read by
- * its own view (view.js converseRow).
+ * its own view (view.js converseRow), a phone call's number from its setup frame.
  */
 export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: readonly ReadFrameLogLine[], app: HostedApp): CallRow | null {
   if (rawRecords.length === 0) return null;
-  if (isConverseApp(app) || rawRecords.some(isConverseRecord)) return converseRow(rawRecords, rawFrames);
+  if (isConverseApp(app) || rawRecords.some(isConverseRecord)) {
+    // A converse phone call: its number as its setup frame logged it (already masked), as a scripted call's is read.
+    const row = converseRow(rawRecords, rawFrames);
+    return row.channel === 'voice' ? { ...row, from: callerOf([], rawFrames, recordsOf(null)) ?? 'unknown' } : row;
+  }
   const records = rawRecords.map((r) => ({ ...redactRecord(r, app), spokenText: '' })) as ReplayRecord[];
   const frames = rawFrames.map((l) => ({ ...redactFrameLine(l, app), line: l.line }));
   const meta = consoleMetaOf(app);
