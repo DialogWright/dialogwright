@@ -52,7 +52,7 @@ describe('a tool that texts', () => {
     expect(run.pass).toBe(true);
     const yes = run.runs.at(-1)!;
     expect(provider.sent).toEqual([expect.objectContaining({ from: '+15555550100', body: 'Your callback is set up.' })]);
-    expect(provider.sent[0]!.to).toMatch(/0142$/);
+    expect(provider.sent[0]!.to).toBe('5555550142');
     expect(yes.record.texts).toEqual([{ direction: 'sent', number: '...0142', bodyLength: 24, media: 0, id: 'SMfake1', status: 'queued', provider: 'fake' }]);
     const row = yes.result.audit.find((d) => d.type === 'text_sent');
     expect(row).toEqual({ type: 'text_sent', detail: { number: '...0142', bodyLength: 24, media: 0, id: 'SMfake1', status: 'queued', provider: 'fake' } });

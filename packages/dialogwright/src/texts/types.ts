@@ -5,7 +5,7 @@ import type { TextKeys, TextLimits } from './record';
  * Texts (SMS and MMS): a capability the server gives an app's code, neutral to any app
  * (docs/designs/2026-11-08-texting.md; the guide's 13.17). The engine sends and receives; whether a text
  * is sent at all, to whom and in what words is the app's: a text to a caller goes through a tool, which
- * the gate holds to the app's policy (business.yaml's `when` for an agent-mode app's consent), and a text
+ * the gate holds to the app's policy (policy.yaml, or agent.yaml's actions for a converse app, for its consent), and a text
  * that comes in is handed to the app's own hook (AppCode.onText).
  *
  * - **Sending.** A tool (ToolContext.texts) and the incoming hook (TextContext.texts) send with
