@@ -381,20 +381,22 @@ describe('the web chat on the converse runtime', () => {
     expect(results.at(-1)).toMatchObject({ content: expect.stringContaining('book: already booked (bk-1)') });
   }, 20_000);
 
-  it('refuses a converse app\'s calls as the server starts, and still serves its chat', async () => {
+  it('takes a converse app\'s calls as the server starts, and still serves its chat', async () => {
     const dir = folder();
     const { app } = converseFixture();
-    const env = settings(dir, { VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199' });
+    const env = settings(dir, { VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199', SIGNATURE_CHECK: 'off' });
     const { base, logs } = await boot(app, fakeModel([]), env);
-    expect(logs.some((l) => l.includes('app converse') && l.includes('converse') && l.includes('takes no calls'))).toBe(true);
-    expect((await fetch(`${base}/voice/twilio`, { method: 'POST' })).status).toBe(404);
+    expect(logs.some((l) => l.includes('app converse') && l.includes('its chat and its calls on the converse runtime'))).toBe(true);
+    const answer = await fetch(`${base}/voice/twilio`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ CallSid: 'CAconversechat000000000000000001', From: CALLER, To: '+15555550101' }).toString() });
+    expect(answer.status).toBe(200);
+    expect(await answer.text()).toMatch(/token=[0-9a-f]{32}/);
     const c = await Chat.open(base, sockets);
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
     expect(says(c.received)).toEqual(['Example Visits, how can I help?']);
   });
 
-  it('refuses to start where a number of a host with a phone line would put a call through to a converse app', async () => {
+  it('starts where a number of a host with a phone line puts a call through to a converse app', async () => {
     resetAppsForTest();
     registerApp(callbackApp);
     try {
@@ -405,8 +407,9 @@ describe('the web chat on the converse runtime', () => {
         apps: [{ id: 'callback', app: callbackApp, env, own: [], ignored: [] }, { id: app.id, app, dir: app.dir, env, own: [], ignored: [] }],
         numbers: [{ variable: 'VISIT_LINE', app: app.id }], defaultApp: 'callback', env,
       });
-      await expect(startServer(loadConfig(env), { host: '127.0.0.1', client: yesJev(), log: () => {}, env, apps, converseModel: () => fakeModel([]) }))
-        .rejects.toThrow('app "converse" is a converse app, which takes no calls yet (its chat only), but host.yaml lists VISIT_LINE for it');
+      const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: yesJev(), log: () => {}, env, apps, converseModel: () => fakeModel([]) });
+      servers.push(server);
+      expect(server.port).toBeGreaterThan(0);
     } finally {
       resetAppsForTest();
     }

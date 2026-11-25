@@ -5,6 +5,7 @@ import { DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_EN
 import { endDropsSpeechOf, textLastOf } from './registry';
 import type { PlaybackEvent } from './provider';
 import type { AnyCallEntry, SessionStore, SocketLike } from '../sessions';
+import type { HeldFrame } from '../stores/types';
 import type { DashboardEvent } from '../dashboard/events';
 import { deliveryFactOf } from '../dashboard/delivery';
 import { parseHandoff } from '../transfer';
@@ -187,24 +188,44 @@ const spaced = (token: string, joined: boolean): string => (joined && !/\s$/.tes
 export interface FrameShape {
   /** A frame's words before the spacing (the scripted adapter: digits spelled out). */
   words?(frame: OutboundFrame): OutboundFrame;
-  /** The spaced frame as it goes on the wire, and as the frame log records it. */
-  wire?(spoken: OutboundFrame): { frame: OutboundFrame; logged: OutboundFrame };
+  /**
+   * The spaced frame as it goes on the wire, and as the frame log records it: `logged` null, it is not
+   * written `out` here (a runtime that writes its lines later, masked as its turn masks them), and a frame
+   * dropped or failed is logged by its type alone.
+   */
+  wire?(spoken: OutboundFrame): { frame: OutboundFrame; logged: OutboundFrame | null };
   /** Told of each frame once it is on the wire. */
   sent?(frame: OutboundFrame): void;
+}
+
+/**
+ * How a frame sent by VoiceIo.send or sendEnd is written in the frame log: `logged` gives its form there (a
+ * masked one), or null for none now (the runtime writes it later with `record`). Absent: as it was sent.
+ */
+export interface SendOptions {
+  logged?(frame: OutboundFrame): OutboundFrame | null;
 }
 
 /** A call's I/O (voiceIoOf). */
 export interface VoiceIo {
   /** Sends frames on the call's socket, as the adapter did (textLast spacing, timeout, the frame log); false when not delivered. */
-  send(frames: readonly OutboundFrame[]): Promise<boolean>;
+  send(frames: readonly OutboundFrame[], o?: SendOptions): Promise<boolean>;
   /**
    * Sends the call's end, held until the lines before it have played where the carrier needs it
    * (END_AFTER_PLAYBACK): `said`, else the frames the last send delivered. A held end ends the call here
    * itself (the store, the token, the close grace once sent), so a `finish` after it does nothing more.
+   * Whether the end reached the wire (false: no socket, a send that failed, or a socket that closed while
+   * it was held).
    */
-  sendEnd(end: EndFrame, said?: readonly OutboundFrame[]): Promise<void>;
-  /** Logs a frame in or out in the call's frame log. */
-  record(dir: 'in' | 'out', message: unknown): void;
+  sendEnd(end: EndFrame, said?: readonly OutboundFrame[], o?: SendOptions): Promise<boolean>;
+  /**
+   * The call ended by a turn while it had no socket: its lines and `end` (`frames`) kept for the next socket,
+   * where the store outlives this server and this server still holds the call (SessionStore.endUndelivered),
+   * and true; false, keeping nothing, otherwise (the call is then the runtime's to finish).
+   */
+  keepUndelivered(frames: readonly OutboundFrame[]): boolean;
+  /** Logs a frame in or out in the call's frame log, or a note of the call's (`log`). */
+  record(dir: 'in' | 'out' | 'log', message: unknown): void;
   /** Publishes a console event for the call. */
   publish(event: DashboardEvent): void;
   /** Saves the call (SessionStore.persist). */
@@ -284,12 +305,12 @@ function makeVoiceIo(entry: AnyCallEntry, deps: AdapterTransportDeps): VoiceIo {
       const socket = entry.socket;
       if (!socket) {
         log(`${entry.callSid}: no socket, dropped ${frame.type}`);
-        entry.frames.write('log', { dropped: logged });
+        entry.frames.write('log', { dropped: logged ?? { type: frame.type } });
         continue;
       }
       try {
         await sendOne(socket, frame, timeoutMs);
-        entry.frames.write('out', logged);
+        if (logged !== null) entry.frames.write('out', logged);
         sent.push(frame);
         shape.sent?.(frame);
       } catch (err) {
@@ -446,19 +467,31 @@ function makeVoiceIo(entry: AnyCallEntry, deps: AdapterTransportDeps): VoiceIo {
   };
 
   return {
-    async send(frames) {
-      const sent = await sendShaped(frames);
+    async send(frames, o = {}) {
+      const sent = await sendShaped(frames, shapeOf(o));
       return sent.length === frames.length;
     },
-    async sendEnd(end, said = lastSent) {
-      const held = holdsEnd() ? sendEndAfterPlayback([end], said, (frames) => sendShaped(frames)) : null;
+    async sendEnd(end, said = lastSent, o = {}) {
+      let delivered = false;
+      const sendIt = async (frames: OutboundFrame[]): Promise<OutboundFrame[]> => {
+        const out = await sendShaped(frames, shapeOf(o));
+        if (out.some((f) => f.type === 'end')) delivered = true;
+        return out;
+      };
+      const held = holdsEnd() ? sendEndAfterPlayback([end], said, sendIt) : null;
       if (held === null) {
-        await sendShaped([end]);
-        return;
+        await sendIt([end]);
+        return delivered;
       }
       // The call has ended here, and its grace is armed once the `end` is sent.
       finished = true;
       await held;
+      return delivered;
+    },
+    keepUndelivered(frames) {
+      if (!deps.store.durable || !holds() || !frames.some((f) => f.type === 'end')) return false;
+      deps.store.endUndelivered(entry.callSid, frames as unknown as HeldFrame[]);
+      return true;
     },
     record(dir, message) {
       entry.frames.write(dir, message);
@@ -498,6 +531,12 @@ function makeVoiceIo(entry: AnyCallEntry, deps: AdapterTransportDeps): VoiceIo {
     },
     armEndGrace,
   };
+}
+
+/** The frame shape a send's options make: absent, none (a frame is logged as it is sent). */
+function shapeOf(o: SendOptions): FrameShape | undefined {
+  const logged = o.logged;
+  return logged === undefined ? undefined : { wire: (spoken) => ({ frame: spoken, logged: logged(spoken) }) };
 }
 
 /** Whether an `end`'s handoff puts the caller through (a goodbye's does not). */

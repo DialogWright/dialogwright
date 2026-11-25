@@ -133,6 +133,11 @@ export interface CallEntry extends CallEntryBase {
 /** A converse call held here: the transport, with its ConverseState; its turns are the converse runtime's. */
 export interface ConverseCallEntry extends CallEntryBase {
   session: ConverseState;
+  /**
+   * The caller's words of the turn running (server/voice/converseRuntime.ts), from just before it runs until it
+   * has: saved with the call (StoredCall.turnWords), so a server that resumes the call asks the model again on them.
+   */
+  turnWords?: string;
 }
 
 /** A call of either runtime, as the store-wide work (saves, restores, sweeps, eviction, leases) holds it. */
@@ -463,6 +468,7 @@ export class SessionStore {
       lastActivityMs: e.lastActivityMs,
       auditTail: [...e.auditEntries],
       ...(!isConverseEntry(e) && e.pending ? { pending: e.pending } : {}),
+      ...(isConverseEntry(e) && e.turnWords !== undefined ? { turnWords: e.turnWords } : {}),
       // One machine's: a store many servers share keeps the time with its reconnect count.
       ...(e.droppedAtMs !== undefined && this.lease === null ? { droppedAtMs: e.droppedAtMs } : {}),
       ...extra,
@@ -644,7 +650,10 @@ export class SessionStore {
     if (this.calls.has(callId)) return 'held';
     const fit = await this.fits(c, provider, false);
     if (fit !== 'ok') return fit;
-    this.hold(c);
+    if (this.hold(c) === null) {
+      await this.forget(callId, false);
+      return 'unreadable';
+    }
     // With a shared store, held only to answer the callback: the lease is taken where the socket lands.
     if (this.lease !== null) this.borrowed.add(callId);
     else this.log(`${callId}: restored from the session store (turn ${c.session.turnIndex}, reconnect ${c.reconnects})`);
@@ -717,11 +726,22 @@ export class SessionStore {
     return ms;
   }
 
-  /** A saved call held here, with no socket until its carrier connects. */
-  private hold(c: AnyStoredCall, silentMs?: number | null): AnyCallEntry {
+  /**
+   * A saved call held here, with no socket until its carrier connects; null, holding nothing, when the call
+   * and the app it was saved in are not of one runtime here (a scripted call of an app that is a converse
+   * app on this server, or the other way round), or its app's resources cannot be made: its caller is put
+   * through to a person as for a call this server cannot read.
+   */
+  private hold(c: AnyStoredCall, silentMs?: number | null): AnyCallEntry | null {
     const callId = c.callId;
     // In the app it was saved in: its trace and run options are that app's.
-    const resources = this.factory(callId, callFacts(c.session).appId);
+    let resources: CallResources | ConverseCallResources;
+    try {
+      resources = this.factory(callId, callFacts(c.session).appId);
+    } catch (err) {
+      this.log(`${callId}: not resumed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
     const transport = {
       callSid: callId,
       socket: null,
@@ -737,9 +757,16 @@ export class SessionStore {
     };
     let entry: AnyCallEntry;
     if (isConverseCall(c.session)) {
-      entry = { trace: resources.trace, frames: resources.frames, session: c.session, ...transport };
+      if (!isConverseResources(resources)) {
+        this.log(`${callId}: not resumed: saved as a converse call, and "${c.session.appId}" is not a converse app here`);
+        return null;
+      }
+      entry = { trace: resources.trace, frames: resources.frames, session: c.session, ...transport, ...(typeof c.turnWords === 'string' ? { turnWords: c.turnWords } : {}) };
     } else {
-      if (isConverseResources(resources)) throw new Error(`${callId}: saved as a scripted call, and "${c.session.appId}" is a converse app here`);
+      if (isConverseResources(resources)) {
+        this.log(`${callId}: not resumed: saved as a scripted call, and "${c.session.appId}" is a converse app here`);
+        return null;
+      }
       const session: Session = c.session;
       entry = {
         ...resources,
@@ -833,8 +860,16 @@ export class SessionStore {
           // server tries) and held here for this socket, under this server's lease, to be sent them.
           const taken = await this.takeHeldCall(callId).catch(() => null);
           if (taken?.heldFrames === undefined) return 'ended';
+          // Read here as any saved call is (fits): one saved for an app this server does not run, or under a
+          // schema it does not read, is not held, and its caller is put through to a person.
+          const why = this.unreadable(taken);
+          if (why !== null) this.log(`${callId}: its last turn's lines and end not sent: ${why}`);
+          const entry = why === null ? this.hold(taken) : null;
+          if (entry === null) {
+            await this.inOrder(callId, () => lease.leases.removeAs(callId, lease.owner)).catch(() => undefined);
+            return 'unreadable';
+          }
           await this.inOrder(callId, () => lease.leases.claim(callId, lease.owner, lease.ttlMs)).catch(() => undefined);
-          const entry = this.hold(taken);
           this.restored.delete(callId);
           entry.undelivered = taken.heldFrames;
           this.claimedAt.set(callId, claimedAt);
@@ -852,7 +887,10 @@ export class SessionStore {
         // Past its time or over: forgotten with its lease, which is taken again for the call begun in its place.
         if (fit === 'none') continue;
         if (fit === 'unreadable') return fit;
-        this.hold(r.call, r.silentMs);
+        if (this.hold(r.call, r.silentMs) === null) {
+          await this.forget(callId, true);
+          return 'unreadable';
+        }
         this.claimedAt.set(callId, claimedAt);
         if (r.took === 'socket') this.quiet.add(callId);
         // Let go cleanly (a stop, or this server's own): RESUMED_AFTER_MS decides its apology. A lapsed or
@@ -1057,9 +1095,18 @@ export class SessionStore {
     return gone;
   }
 
-  /** The scripted call's socket is back (a converse call's is Task 4's to attach). */
+  /** The scripted call's socket is back (a converse call's: attachConverse). */
   attach(callSid: string, socket: SocketLike): CallEntry | undefined {
     const e = this.get(callSid);
+    if (!e) return undefined;
+    e.socket = socket;
+    e.lastActivityMs = this.now();
+    return e;
+  }
+
+  /** The converse call's socket is back, as `attach` for a scripted call. */
+  attachConverse(callSid: string, socket: SocketLike): ConverseCallEntry | undefined {
+    const e = this.getConverse(callSid);
     if (!e) return undefined;
     e.socket = socket;
     e.lastActivityMs = this.now();
@@ -1118,6 +1165,13 @@ export class SessionStore {
    */
   enqueue(callSid: string, fn: (entry: CallEntry) => Promise<void>): Promise<void> {
     const e = this.get(callSid);
+    if (!e) return Promise.resolve();
+    return this.queueOn(callSid, e, fn);
+  }
+
+  /** A converse call's work queued on its turn queue, as `enqueue` queues a scripted call's (the converse voice runtime's turns). */
+  enqueueConverse(callSid: string, fn: (entry: ConverseCallEntry) => Promise<void>): Promise<void> {
+    const e = this.getConverse(callSid);
     if (!e) return Promise.resolve();
     return this.queueOn(callSid, e, fn);
   }

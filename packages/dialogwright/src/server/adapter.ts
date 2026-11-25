@@ -22,7 +22,8 @@ import { digitAtRun, keyBurstPending, promptEpoch, sensitiveDigit, type ArrivalD
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
-import type { CallEntry, SessionStore, SocketLike } from './sessions';
+import { isConverseEntry, type CallEntry, type ConverseCallEntry, type SessionStore, type SocketLike } from './sessions';
+import type { ConverseVoiceRuntime } from './voice/converseRuntime';
 import type { HeldFrame, ServerTokenStore } from './stores/types';
 import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
@@ -1741,6 +1742,12 @@ export interface AdapterDeps {
    * (`unless-miss`), as loadConfig's default.
    */
   speechOverLine?: SpeechOverLine;
+  /**
+   * The converse apps' calls (server/voice/converseRuntime.ts): a call whose app is one of them is handed to it
+   * at its setup, each frame, each carrier event and its socket's close, before any scripted code runs. Absent,
+   * a server with no converse app: every call is scripted, as before.
+   */
+  converse?: ConverseVoiceRuntime;
 }
 
 /** A spurious interrupt's setting: how recently before it the caller must have been heard for it to be theirs. */
@@ -2279,7 +2286,10 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   if (deps.store.shared) {
     const claimed = await deps.store.claim(callId, ctx.provider);
     if (claimed === 'replay') {
-      await replayEnd(deps, socket, ctx, deps.store.get(callId)!);
+      // A converse call's are its runtime's to send; a scripted call's the adapter's.
+      const taken = deps.store.getAny(callId);
+      if (taken !== undefined && isConverseEntry(taken)) await converseReplay(deps, socket, ctx, taken);
+      else await replayEnd(deps, socket, ctx, deps.store.get(callId)!);
       return;
     }
     if (claimed === 'ended') {
@@ -2300,7 +2310,7 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
       deps.store.giveBack(callId);
       return;
     }
-  } else if (deps.store.get(callId) === undefined && deps.store.durable) {
+  } else if (deps.store.getAny(callId) === undefined && deps.store.durable) {
     const loaded = await deps.store.restore(callId, ctx.provider);
     if (loaded === 'unreadable') {
       await sendOne(socket, endFrame('unreadable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
@@ -2308,6 +2318,9 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
       return;
     }
   }
+  // A converse call held here (resumed, or loaded from the store): its runtime's from here on.
+  const held = deps.store.getAny(callId);
+  if (held !== undefined && isConverseEntry(held)) return converseResumed(deps, socket, ctx, parsed, held);
   const existing = deps.store.get(callId);
   if (existing) {
     // Masked at write time, not only when the dashboard reads it back: the setup frame carries
@@ -2406,9 +2419,10 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     return;
   }
   // On a host, the app its number reached; on a server of one, the default, as before.
-  const entry = deps.host
-    ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)))
-    : deps.store.create(callId, socket, ctx.provider);
+  const appId = deps.host ? deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)) : undefined;
+  // A converse app's call is its runtime's, from its setup on.
+  if (appId !== undefined && deps.converse?.serves(appId)) return converseBegun(deps, socket, ctx, parsed, callId, appId);
+  const entry = appId !== undefined ? deps.store.create(callId, socket, ctx.provider, appId) : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
   // A new call has sent no lines, and its caller has said nothing yet (speech over a line).
   forgetLines(callId);
@@ -2481,6 +2495,19 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // speaker-events, tokens-played): written to the call's frame log as it came, never acted on or counted
     // as malformed. Before a setup there is no call to write it to.
     // A carrier that reports its playback has it read into the engine's terms, for a line it cut short.
+    const any = ctx.callSid ? deps.store.getAny(ctx.callSid) : undefined;
+    // A converse call's: logged as it came, read for its held `end`, and handed to its runtime (never through the call's queue).
+    if (any !== undefined && isConverseEntry(any)) {
+      const message = JSON.parse(raw) as unknown;
+      any.frames.write('in', { carrierEvent: message });
+      const ev = playbackEventOf(ctx.provider, message);
+      if (ev) {
+        const io = voiceIoOf(any, deps);
+        io.playback(ev);
+        deps.converse?.playback(any, ev, io);
+      }
+      return;
+    }
     const entry = ctx.callSid ? deps.store.get(ctx.callSid) : undefined;
     if (!entry) {
       deps.log(`unknown: carrier event before setup: ${messageShape(raw)}`);
@@ -2507,7 +2534,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   if (!parsed) {
     ctx.malformed += 1;
     deps.log(`${ctx.callSid ?? 'unknown'}: malformed inbound message (${ctx.malformed}): ${messageShape(raw)}`);
-    const entry = ctx.callSid ? deps.store.get(ctx.callSid) : undefined;
+    const entry = ctx.callSid ? deps.store.getAny(ctx.callSid) : undefined;
     entry?.frames.write('log', { malformed: raw.slice(0, 200) });
     // Whatever is on the other end is not ConversationRelay; stop paying for its messages.
     if (ctx.malformed >= MALFORMED_LIMIT) {
@@ -2547,6 +2574,16 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   if (!ctx.callSid) {
     deps.log(`message of type ${parsed.type} before setup, ignored`);
     return;
+  }
+  // A converse call's frame is its runtime's: it logs it and takes its turns.
+  const conversing = deps.store.getConverse(ctx.callSid);
+  if (conversing !== undefined) {
+    if (conversing.ended) {
+      deps.log(`${ctx.callSid}: ${parsed.type} after the call ended, ignored`);
+      return;
+    }
+    if (deps.converse === undefined) return;
+    return deps.converse.frame(conversing, parsed, voiceIoOf(conversing, deps));
   }
   const entry = deps.store.get(ctx.callSid);
   if (!entry) {
@@ -2794,6 +2831,8 @@ function arrivalFlags(event: SessionEvent, arrival: Arrival, pending: boolean): 
 export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContext): Promise<void> {
   ctx.closed = true;
   if (!ctx.callSid) return;
+  const conversing = deps.store.getConverse(ctx.callSid);
+  if (conversing !== undefined) return converseClosed(deps, ctx, conversing);
   const entry = deps.store.get(ctx.callSid);
   if (!entry) {
     // The call is gone from the store, so nothing will ever consult its no-input bookkeeping again.
@@ -2830,4 +2869,74 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
 function hasLocaleParameter(setup: { readonly customParameters?: unknown }): boolean {
   const params = setup.customParameters;
   return typeof params === 'object' && params !== null && typeof (params as Record<string, unknown>).locale === 'string';
+}
+
+/**
+ * A converse app's new call (server/voice/converseRuntime.ts): its entry, its setup in the frame log as a
+ * scripted call's is (the caller's number as the records write it), then its runtime's greeting.
+ */
+async function converseBegun(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, parsed: SetupFrame, callId: string, appId: string): Promise<void> {
+  const entry = deps.store.createConverse(callId, socket, ctx.provider, appId);
+  ctx.setupReady?.();
+  entry.frames.write('in', redactSetupFrame(parsed, undefined));
+  entry.frames.write('log', { provider: ctx.provider });
+  // The number it came with, withheld or not (the framework's data: the business's actions are what use it).
+  await deps.converse!.open(entry, { callerNumber: setupCallerOf(ctx.provider, parsed), provider: ctx.provider }, voiceIoOf(entry, deps));
+}
+
+/**
+ * A converse call's socket after a reconnect or a restart: its setup logged, a live socket it replaces
+ * retired, then its runtime's (a turn cut by the drop asked again). An ended call's lines and `end` that
+ * reached no socket are sent on this one, once; any other ended call's socket is closed.
+ */
+async function converseResumed(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, parsed: SetupFrame, entry: ConverseCallEntry): Promise<void> {
+  entry.frames.write('in', redactSetupFrame(parsed, undefined));
+  if (entry.ended) {
+    if (entry.undelivered !== undefined && !deps.store.shared && (await deps.store.takeUndelivered(entry.callSid))) {
+      entry.ended = false;
+      entry.endedAtMs = null;
+      await converseReplay(deps, socket, ctx, entry);
+      return;
+    }
+    deps.log(`${entry.callSid}: setup for an ended call, closing`);
+    socket.close(1000, 'call ended');
+    return;
+  }
+  const previous = entry.socket;
+  if (previous && previous !== socket) {
+    deps.log(`${entry.callSid}: reconnect replaced a live socket`);
+    entry.frames.write('log', { replacedSocket: true });
+    previous.close(1000, 'replaced by reconnect');
+  }
+  deps.store.attachConverse(entry.callSid, socket);
+  ctx.setupReady?.();
+  const restarted = deps.store.takeRestored(entry.callSid);
+  // The marks a scripted call's resumed line reads: taken here, so none is left for a later call.
+  deps.store.takeQuiet(entry.callSid);
+  deps.store.takeClean(entry.callSid);
+  const silentMs = deps.store.takeSilence(entry.callSid);
+  entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}), ...(silentMs !== undefined ? { silentMs } : {}) });
+  if (restarted) deps.log(`${entry.callSid}: resumed after a restart`);
+  publish(deps, { type: 'reconnect', callSid: entry.callSid, at: Date.now(), attempt: entry.reconnects });
+  await deps.converse?.resumed(entry, voiceIoOf(entry, deps));
+}
+
+/** A converse call that ended with lines and an `end` no socket took: sent on this one by its runtime, once. */
+async function converseReplay(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, entry: ConverseCallEntry): Promise<void> {
+  deps.store.attachConverse(entry.callSid, socket);
+  ctx.setupReady?.();
+  await deps.converse?.replay(entry, voiceIoOf(entry, deps));
+}
+
+/** A converse call's socket closed: the turn running stopped by its runtime, a held `end` let go, the socket detached. */
+function converseClosed(deps: AdapterDeps, ctx: ConnectionContext, entry: ConverseCallEntry): void {
+  if (ctx.socket && entry.socket !== ctx.socket) {
+    entry.frames.write('log', { staleSocketClosed: true });
+    return;
+  }
+  cancelEndGrace(entry.callSid);
+  deps.converse?.closed(entry);
+  releaseHeldEnd(entry.callSid);
+  entry.frames.write('log', { socketClosed: true, ended: entry.ended });
+  deps.store.detach(entry.callSid);
 }

@@ -93,6 +93,12 @@ export interface StoredCall<S extends Session | ConverseState = Session> {
    * outside the session, like the two above.
    */
   readonly stopped?: true;
+  /**
+   * A converse call's words of the caller whose turn was running when the call was saved (saved just before
+   * that turn, server/voice/converseRuntime.ts): the server that resumes the call asks the model again on
+   * them. Read only for a converse call; absent when no turn was running.
+   */
+  readonly turnWords?: string;
 }
 
 /** A saved call of either runtime: a scripted Session under SESSION_SCHEMA, or a converse call's ConverseState under 'converse-1'. */

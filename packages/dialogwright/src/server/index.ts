@@ -64,6 +64,9 @@ import { safeFileStem } from './fileStem';
 import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatByApp, chatEndpoint, chatTransport, type ChatEndpoint, type ChatTransportDeps } from './chat/socket';
 import { converseChatRuntime } from './chat/converseRuntime';
+import { converseVoiceRuntime } from './voice/converseRuntime';
+import { policyOf } from '../converse/policy';
+import { converseTexts } from '../converse/sources/texts';
 import { appWithSettings, isConverseApp, type ConverseApp } from '../converse/app';
 import type { ConverseModel } from '../converse/model/types';
 import { resolveConverseModel } from '../converse/model/resolve';
@@ -461,21 +464,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       if (info !== null) log(`${tag(a.id)}${info}`);
     }
   }
-  // A converse app answers chats only: its calls (the phone on the converse runtime) are not built yet. A
-  // server of converse apps alone answers no carrier, whatever VOICE_PROVIDERS says; on a host with a
-  // scripted app, a number (or the default) that would put a call through to a converse app stops it here.
-  const voiceRefused = conversesRun.length > 0 && appsRun.length === 0 && config.voiceProviders.length > 0;
-  if (host && conversesRun.length > 0 && appsRun.length > 0 && config.voiceProviders.length > 0) {
-    for (const a of conversesRun) {
-      const why = a.id === host.defaultApp ? 'it is host.yaml\'s defaultApp, which takes every call to a number no app is listed for'
-        : host.numbers.some((n) => n.app === a.id) ? `host.yaml lists ${host.numbers.filter((n) => n.app === a.id).map((n) => n.variable).join(', ')} for it` : null;
-      if (why !== null) throw new Error(`app "${a.id}" is a converse app, which takes no calls yet (its chat only), but ${why}: make a scripted app the default and list no number for "${a.id}", or set VOICE_PROVIDERS=none`);
-    }
-  }
+  // A converse app's chats and calls are the converse runtime's (server/chat/converseRuntime.ts,
+  // server/voice/converseRuntime.ts): a call to a number that reaches it (or the default) is its call.
   for (const a of conversesRun) {
-    const how = voiceRefused ? `WARNING: ${tag(a.id)}a converse app, which takes no calls yet: its chat only, and the server answers no carrier (VOICE_PROVIDERS=${config.voiceProviders.join(',')} set aside)`
-      : `${tag(a.id)}a converse app: its chat on the converse runtime (${a.app.business.model.default}); it takes no calls yet`;
-    log(how);
+    const on = config.voiceProviders.length > 0 ? 'its chat and its calls' : 'its chat';
+    log(`${tag(a.id)}a converse app: ${on} on the converse runtime (${a.app.business.model.default})`);
   }
   // Each converse app's model: agent.yaml's model.default with its key from the app's own settings (a test's fake).
   const converseModels = new Map<string, ConverseModel>(conversesRun.map((a) => [a.id, forApp(a.id, () => overrides.converseModel?.(a.id) ?? resolveConverseModel(a.app.business.model.default, a.settings))]));
@@ -1212,9 +1205,30 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       for (const row of rows) await sink.append(m.id, TEXT_CHANNEL, row);
     }
   };
+  /**
+   * The converse apps' calls, each turn's dependencies those of the app's chat (its model, decision model,
+   * audit, actions, texts recorded in its audit and settings), on the voice channel. None without a converse app.
+   */
+  const converseVoice = conversesRun.length === 0 ? null : converseVoiceRuntime({
+    apps: new Map(conversesRun.map((a) => [a.id, a.app])),
+    now,
+    log,
+    enqueue: (e, fn) => store.enqueueConverse(e.callSid, fn),
+    converseDeps: (app, callId) => {
+      const a = conversesRun.find((r) => r.id === app.id)!;
+      const audit = auditOf(a.id);
+      return {
+        business: app.business, model: converseModels.get(a.id)!, jev: clientOf(a.id), policy: policyOf(app.business), audit, tools: app.tools,
+        texts: converseTexts(textsOf(a.id), (r) => whenChained(audit.append(callId, 'voice', textAuditRow(r)), () => {}, (err: unknown) => log(`${callId}: a text's audit entry failed: ${err instanceof Error ? err.message : String(err)}`))),
+        now: () => new Date(now()), trace: () => {}, jevTimeoutMs: thresholds.JEV_TIMEOUT_MS,
+        env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined),
+      };
+    },
+  });
   const deps: HttpDeps = {
-    // A server of converse apps alone answers no carrier's webhook (voiceRefused).
-    config: voiceRefused ? { ...config, voiceProviders: [] } : config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    // A converse call's hangup is recorded by its runtime.
+    ...(converseVoice ? { converse: converseVoice } : {}),
     // The incoming-message webhook, only where some app takes texts in or sends them.
     ...(textSenders.size > 0 || hosted.some((a) => a.app.onText !== undefined) ? { messages: { secret: textSecret, receive: receiveText } } : {}),
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
@@ -1308,6 +1322,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // On a host, a new call starts in the app its number reached, with that app's transfer targets.
       ...(host ? { host: { appOfSetup: (named: string | undefined, called: string | null) => appOfSetup(host, named, called), transferOf: (id: string) => httpApps.get(id)?.transfer ?? null, handoffOf, serviceUrlsOf } } : {}),
       summarizeHandoff: overrides.summarizeHandoff,
+      ...(converseVoice ? { converse: converseVoice } : {}),
       bargeIn: config.bargeIn ?? 'any',
       ...(config.bargeInByCarrier ? { bargeInByCarrier: config.bargeInByCarrier } : {}),
       // SPEECH_OVER_LINE: absent from a config made by hand before it existed reads as unless-miss, as loadConfig's default.
@@ -1328,7 +1343,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         : {}),
     },
     overrides.setupTimeoutMs,
-    voiceRefused ? [] : config.voiceProviders,
+    config.voiceProviders,
     chat ? { path: CHAT_PATH, handleUpgrade: (req, socket, head) => chat.handleUpgrade(req, socket, head), ...(chats ? { owns: (path: string) => chats.owns(path) } : {}) } : null,
     // Closing with the calls saved: a socket belongs to the restarted server (the handover, or a crash's close).
     () => closing && store.durable,
@@ -1352,6 +1367,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // An evicted call with a socket gets here again through the socket's own close, but one
       // whose socket had already gone would otherwise leave its no-input bookkeeping behind.
       forgetNoInput(sid);
+      converseVoice?.forget(sid);
       log(`${sid}: evicted idle session`);
       if (liveBefore.has(sid)) {
         whenChained(auditOf(appIds.get(sid)).append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},

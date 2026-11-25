@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { recognitionFor, voiceFor, type ServerConfig } from './config';
 import { connectRelayTwiml } from './twiml';
-import type { SessionStore } from './sessions';
+import { callFacts, isConverseEntry, type ConverseCallEntry, type SessionStore } from './sessions';
 import type { ServerTokenStore } from './stores/types';
 import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
@@ -115,6 +115,11 @@ export interface HttpDeps extends HttpApp {
   transfer?: ServerTransfer | null;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
+  /**
+   * The converse apps' calls (server/voice/converseRuntime.ts): a converse call's hangup is its runtime's to
+   * record (the turn running stopped, the caller leaving, the audit's `call_ended`). Absent, no converse app.
+   */
+  converse?: { hangup(entry: ConverseCallEntry): Promise<void> };
   /**
    * Several apps on one server (host.yaml): a new call's app is the one its number reaches, and every
    * webhook for a call answers in its app's part. Absent, the server runs one app: this one's fields.
@@ -303,7 +308,8 @@ function isBlank(raw: string | undefined): boolean {
  */
 function servedOf(deps: HttpDeps, callId?: string, to?: string): { id: string | null; s: HttpApp } {
   if (!deps.host) return { id: null, s: deps };
-  const held = callId ? deps.store.get(callId)?.session.appId : undefined;
+  const entry = callId ? deps.store.getAny(callId) : undefined;
+  const held = entry !== undefined ? callFacts(entry.session).appId : undefined;
   const id = held !== undefined && deps.host.served(held) !== undefined ? held : deps.host.appFor(to);
   return { id, s: deps.host.served(id) ?? deps };
 }
@@ -565,6 +571,22 @@ export function decideAction(
     // one place that knows a socket close was a hangup rather than the reconnect branch below,
     // so it is the dashboard's only producer of `ended{hangup}`. A call that ended on its own
     // (complete or handoff) already published its own `ended` from the adapter's turn.
+    const any = deps.store.getAny(callSid);
+    // A converse call's end is its runtime's to record: the turn running stopped, the caller leaving, then `call_ended`.
+    if (any !== undefined && isConverseEntry(any)) {
+      const wasLive = !any.ended;
+      // Its runtime reads the call as it was, so the store's end follows the hangup's first, synchronous part.
+      const recorded = wasLive && deps.converse ? deps.converse.hangup(any) : Promise.resolve();
+      deps.store.end(callSid);
+      deps.tokens.revoke(callSid);
+      if (wasLive) {
+        void recorded
+          .catch((err: unknown) => deps.log(`${callSid}: the hangup's audit entry failed: ${err instanceof Error ? err.message : String(err)}`))
+          .finally(() => deps.bus?.publish({ type: 'ended', reason: 'hangup', callSid, at: Date.now() }));
+      }
+      const reason = params.sessionStatus ?? params.callStatus ?? 'unknown';
+      return { document: provider.hangupDocument(), note: `hangup:${reason}` };
+    }
     const live = deps.store.get(callSid);
     const wasLive = live?.ended === false;
     deps.store.end(callSid);
@@ -593,7 +615,7 @@ export function decideAction(
 
   // (c) Live call, session failed or otherwise ended on the ConversationRelay side: reconnect
   // if we're under the limit, otherwise hand off to a human.
-  const entry = deps.store.get(callSid);
+  const entry = deps.store.getAny(callSid);
   if (entry && !entry.ended) {
     // The drain has closed this call's socket and the server is about to go: with the call only in this
     // process's memory, a reconnect would reach nothing, so the caller is put through to a person. With
@@ -613,13 +635,16 @@ export function decideAction(
       void deps.store.persist(callSid);
       const token = deps.tokens.mint(callSid, provider.id);
       // The call goes on in the language it is in now, which a switch may have changed since it started.
-      const locale = s.app?.locales ? (entry.session.locale ?? s.app.locales.default) : undefined;
+      // (A converse call names no language: agent.yaml's lines are English for now.)
+      const scripted = isConverseEntry(entry) ? null : entry;
+      const locale = scripted !== null && s.app?.locales ? (scripted.session.locale ?? s.app.locales.default) : undefined;
       // A planned restart: the carrier waits before it connects, so its socket reaches the restarted server
       // (which loads the call at setup) and not this one, which turns sockets away until it stops listening.
       const handover = deps.closing?.() && deps.store.durable ? (deps.handover?.() ?? null) : null;
       // The webhook is not sent again: the fields the first document echoed are written from what the session kept.
       // The session keeps what the first setup said of the caller; the new socket's setup says it again.
-      const options = connectOptions(deps, provider, token, locale, { ...webhookParametersOfKept(s.app?.callData, entry.session.callData), ...hostEcho(appId), ...callerEcho({ callId: callSid, raw: {} }, entry.session.callerPrivacy === 'withheld') }, s);
+      const kept = scripted !== null ? webhookParametersOfKept(s.app?.callData, scripted.session.callData) : {};
+      const options = connectOptions(deps, provider, token, locale, { ...kept, ...hostEcho(appId), ...callerEcho({ callId: callSid, raw: {} }, scripted?.session.callerPrivacy === 'withheld') }, s);
       const document = start(handover !== null ? { ...options, pauseS: handover.pauseS } : options);
       return { document, note: `reconnect:${entry.reconnects}${handover !== null ? ` after ${handover.pauseS} s` : ''}` };
     }
@@ -868,7 +893,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // A callback that would reconnect a call no longer live here: with a durable store, a transfer it
       // still owes (END_AFTER_PLAYBACK, its socket closed before the `end` went) is taken from the store,
       // wherever the call ran. With the memory store there is none to take.
-      const local = deps.store.get(callback.callId);
+      const local = deps.store.getAny(callback.callId);
       const held = callback.callId && deps.store.durable && loaded !== 'unavailable' && isBlank(callback.handoffData) && wantsReconnect(callback) && (!local || local.ended)
         ? await deps.store.takeHeld(callback.callId)
         : undefined;
@@ -887,7 +912,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const served = servedOf(deps, callback.callId, callback.to).s;
       // And, whatever its name, any field that holds the caller's number (maskCopiesOf), as a defence beside the
       // names: masked as the app's records write the caller's number, a withheld one as any other.
-      const holder = deps.store.get(callback.callId);
+      const holder = deps.store.getAny(callback.callId);
       const fields = recordedWebhookFields(served.app?.callData, callback.raw);
       const records = recordsOf(served.app);
       holder?.frames.write('http', redactDeep({ route: path, ...maskCopiesOf(fields, callback.from, records) }, records));

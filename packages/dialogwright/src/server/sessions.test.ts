@@ -274,6 +274,46 @@ describe('a SessionStore of either runtime', () => {
     ]);
   });
 
+  it('a converse call keeps the words of the turn running across a save and a restore, and a scripted call never has them', async () => {
+    const state = new MemoryCallStateStore();
+    const first = either(state, () => 0).s;
+    const e = first.createConverse('CA1', sock(), 'twilio', CONVERSE);
+    e.turnWords = 'yes, book it';
+    await first.persist('CA1');
+    expect(state.load('CA1')).toMatchObject({ turnWords: 'yes, book it' });
+    delete e.turnWords;
+    await first.persist('CA1');
+    expect(state.load('CA1')).not.toHaveProperty('turnWords');
+    e.turnWords = 'yes, book it';
+    await first.persist('CA1');
+    const { s } = either(state, () => 0);
+    expect(await s.restore('CA1', 'twilio')).toBe('restored');
+    expect(s.getConverse('CA1')!.turnWords).toBe('yes, book it');
+  });
+
+  it('a call whose app is of the other runtime here, or whose app\'s resources cannot be made, is unreadable, never a throw', async () => {
+    const state = new MemoryCallStateStore();
+    const first = either(state, () => 0).s;
+    first.createConverse('CA1', sock(), 'twilio', CONVERSE);
+    first.create('CA2', sock(), 'twilio');
+    await first.persist('CA1');
+    await first.persist('CA2');
+    const logs: string[] = [];
+    // A server that says CONVERSE is a converse app, and whose factory makes a scripted call for it (and throws for the other).
+    const odd = new SessionStore((callSid, appId) => {
+      if (appId !== CONVERSE) throw new Error(`no app "${appId}"`);
+      return { session: newSession(callSid, 0, VOICE_RELAY), opts: { client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now: () => 0 }, trace: { write() {} }, frames: { write() {} } };
+    }, 60_000, () => 0, 7_200_000, { state, log: (l) => logs.push(l), converseApps: new Set([CONVERSE]) });
+    expect(await odd.restore('CA1', 'twilio')).toBe('unreadable');
+    expect(await odd.restore('CA2', 'twilio')).toBe('unreadable');
+    expect(odd.getAny('CA1')).toBeUndefined();
+    expect(odd.getAny('CA2')).toBeUndefined();
+    expect(logs).toEqual([
+      `CA1: not resumed: saved as a converse call, and "${CONVERSE}" is not a converse app here`,
+      expect.stringMatching(/^CA2: not resumed: no app "/),
+    ]);
+  });
+
   it('a scripted call is saved exactly as before', async () => {
     const state = new MemoryCallStateStore();
     const { s } = either(state, () => 5_000);
