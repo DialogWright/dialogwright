@@ -70,8 +70,8 @@ export interface ConverseVoiceRuntime {
   playback(entry: ConverseCallEntry, event: PlaybackEvent, io: VoiceIo): void;
   /**
    * A carrier's event as the frame log keeps it: a report of a line played (tokensPlayed) says the line as it was
-   * sent, so its text is masked as the trace masked the line (the call's turns' maskings), or by its length where
-   * none has been given yet (the turn saying it still running).
+   * sent, so its text is masked as the trace masked the line (the call's turns' maskings), or by its length while
+   * a turn is running (the line may be that turn's, whose masking comes at its end) or none has been given yet.
    */
   loggedEvent(entry: ConverseCallEntry, message: unknown, event: PlaybackEvent | null): unknown;
   /** The call's socket closed: the turn running is stopped, to be asked again should the carrier reconnect. */
@@ -524,8 +524,11 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
 
     loggedEvent(entry, message, ev) {
       if (ev === null || ev.kind !== 'playback' || ev.state !== 'finished' || ev.text === undefined) return message;
-      const scrubs = lives.get(entry.callSid)?.scrubs ?? [];
-      const mask = (text: string): string => (scrubs.length === 0 ? `<${text.length} chars>` : scrubs.reduceRight((t, s) => s(t), text));
+      const l = lives.get(entry.callSid);
+      const scrubs = l?.scrubs ?? [];
+      // A turn still running has not yet given its masking, and the line reported may be its own: by its length.
+      const byLength = l === undefined || l.running !== null || scrubs.length === 0;
+      const mask = (text: string): string => (byLength ? `<${text.length} chars>` : scrubs.reduceRight((t, s) => s(t), text));
       const walk = (v: unknown): unknown => {
         if (typeof v === 'string') return v === ev.text ? mask(v) : v;
         if (Array.isArray(v)) return v.map(walk);

@@ -303,6 +303,37 @@ describe('a converse app\'s call on telnyx: the frame log', () => {
   }, 20_000);
 });
 
+describe('a converse app\'s call on telnyx: a line reported while its turn runs', () => {
+  it('a report of a line whose turn still runs keeps none of the turn\'s masked values', async () => {
+    const dir = folder();
+    const { app } = converseFixture();
+    // The lookup waits until the test lets it go: the line before it is reported played meanwhile.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const lookup = app.tools.availability!;
+    app.tools.availability = async (p, ctx) => (await held, lookup(p, ctx));
+    const line = `Let me look at ${DAY}.`;
+    const model = fakeModel([[text(`${line} `), { type: 'tool_call', id: 'c1', name: 'availability', args: { day: DAY } }, done('tool')], [text('We have the morning free.'), done()]]);
+    const { base } = await boot(app, model, settings(dir, 'telnyx'));
+    const callId = 'v3:converse-voice-telnyx-running';
+    const relay = await call(base, 'telnyx', callId);
+    await relay.waitFor(() => finals(relay).length >= 1);
+    relay.prompt('Is anything free on Tuesday?');
+    await relay.waitFor((m) => m.type === 'text' && (m.token as string).startsWith('Let me look at'));
+    played(relay, line);
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    await relay.waitFor(() => finals(relay).at(-1) === 'We have the morning free.');
+    await new Promise((r) => setTimeout(r, 50));
+    const frames = readFileSync(join(dir, 'traces', 'converse', `${callId.replace(/[^A-Za-z0-9_-]/g, '_')}.frames.jsonl`), 'utf8');
+    const reports = frames.trim().split('\n').filter((l) => l.includes('tokensPlayed'));
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).not.toContain(DAY);
+    // The line itself, written once its turn has ended, is masked as the trace masks it.
+    expect(frames.trim().split('\n').filter((l) => l.includes('"dir":"out"') && l.includes(DAY))).toEqual([]);
+  }, 20_000);
+});
+
 describe('a host of a scripted app and a converse app', () => {
   /** The callback fixture's settings, and the converse app's number. */
   const hostEnv = (dir: string): Env => settings(dir, 'twilio', {
