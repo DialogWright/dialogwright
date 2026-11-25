@@ -4,7 +4,7 @@ import { actMessage, instructionsOf } from './prompt';
 
 /** Moved to the leaf module endpoints.ts; kept here for the importers of this one. */
 export { apiError, safeErrorText };
-import { DEFAULT_RENDER_PREFACE, RENDER_PREFACES, type RenderPreface, DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
+import { DEFAULT_RENDER_PREFACE, RENDER_PREFACES, type RenderPreface, DEFAULT_RENDER_HOLD, DEFAULT_RENDER_HOLD_SILENCE_MS, RENDER_HOLDS, type RenderHoldMode, DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
 /**
  * Where generated lines are worded (generated wording, design section 5): a model reached through
@@ -413,6 +413,14 @@ function preface(env: Env): RenderPreface {
   return raw as RenderPreface;
 }
 
+/** RENDER_HOLD: `after-silence` or `fixed` (Renderer.hold); default DEFAULT_RENDER_HOLD. */
+function hold(env: Env): RenderHoldMode {
+  const raw = value(env, 'RENDER_HOLD');
+  if (raw === null) return DEFAULT_RENDER_HOLD;
+  if (!(RENDER_HOLDS as readonly string[]).includes(raw)) throw new Error(`RENDER_HOLD must be ${RENDER_HOLDS.join(' or ')}, got "${raw}"`);
+  return raw as RenderHoldMode;
+}
+
 function price(env: Env, name: string, fallback: number): number {
   const raw = value(env, name);
   if (raw === null) return fallback;
@@ -455,10 +463,11 @@ export function defaultRenderPrice(model: string | undefined): RenderPrice {
 }
 
 /**
- * RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, and the price, with their
+ * RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, when its lines
+ * before it and its hold line go (RENDER_PREFACE, RENDER_HOLD, RENDER_HOLD_SILENCE_MS), and the price, with their
  * defaults; the price's default is `model`'s where it is known (defaultRenderPrice), else the default model's.
  */
-export function renderSettings(env: Env = process.env, model?: string): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice; preface: RenderPreface } {
+export function renderSettings(env: Env = process.env, model?: string): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice; preface: RenderPreface; hold: RenderHoldMode; holdSilenceMs: { voice: number; chat: number } } {
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
     timeoutMs: perChannel(env, 'RENDER_TIMEOUT', DEFAULT_RENDER_TIMEOUT_MS),
@@ -466,8 +475,17 @@ export function renderSettings(env: Env = process.env, model?: string): { share:
     answerTimeoutMs: perChannel(env, 'RENDER_ANSWER_TIMEOUT', DEFAULT_RENDER_ANSWER_TIMEOUT_MS),
     documentsTimeoutMs: perChannel(env, 'RENDER_DOCUMENTS_TIMEOUT', DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS),
     preface: preface(env),
+    hold: hold(env),
+    holdSilenceMs: perChannel(env, 'RENDER_HOLD_SILENCE', DEFAULT_RENDER_HOLD_SILENCE_MS),
     price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', defaultRenderPrice(model).input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', defaultRenderPrice(model).output) },
   };
+}
+
+/** When a knowledge answer's hold line comes, for the server's start line and `pnpm diagnose`: RENDER_HOLD and its silence. */
+export function holdLabel(settings: { hold: RenderHoldMode; holdSilenceMs: { voice: number; chat: number } }): string {
+  return settings.hold === 'fixed'
+    ? "a knowledge answer's hold line at the line's budgets (RENDER_HOLD=fixed)"
+    : `a knowledge answer's hold line after ${settings.holdSilenceMs.voice} ms of silence on a call and ${settings.holdSilenceMs.chat} ms in a chat`;
 }
 
 /** The most tokens a generated line may take: a line, never a page. */

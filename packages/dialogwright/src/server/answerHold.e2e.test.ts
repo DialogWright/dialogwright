@@ -15,6 +15,7 @@ import { APP_EDITS, BASE, cleanScratch, codeFor, folder, TODAY } from '../kb/__f
 import { choice, noul } from '../testing/answers';
 import { fixedRetriever } from '../testing/retrievers';
 import type { Generation, RenderClient, RenderRequest, Renderer } from '../render/types';
+import { textEstimateMs } from '../channel/playbackEstimate';
 
 /**
  * A knowledge answer worded for the caller's question, whose wording runs past its line's budget: on the
@@ -91,7 +92,9 @@ afterEach(async () => {
 afterAll(cleanScratch);
 
 // RENDER_PREFACE=with-hold by default here: these tests hold the hold line's own path (the lines before it go with it).
-async function start(client: GatedRenderClient, app = APP, answerMs = 10_000, preface: 'early' | 'with-hold' = 'with-hold'): Promise<string> {
+// RENDER_HOLD=fixed by default here too: they hold how the hold lines reach each carrier and the chat, at the line's
+// budgets and the second past half the limit; when the hold line comes under after-silence is its own test below.
+async function start(client: GatedRenderClient, app = APP, answerMs = 10_000, preface: 'early' | 'with-hold' = 'with-hold', hold: Pick<Renderer, 'hold' | 'holdSilenceMs'> = { hold: 'fixed' }): Promise<string> {
   resetAppsForTest();
   registerApp(app);
   const traceDir = mkdtempSync(join(tmpdir(), 'answer-hold-'));
@@ -101,7 +104,7 @@ async function start(client: GatedRenderClient, app = APP, answerMs = 10_000, pr
     TODAY_OVERRIDE: TODAY, TRACE_DIR: traceDir, AUDIT_DIR: join(traceDir, 'audit'), AUDIO_DIR: traceDir, DASHBOARD: 'off', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com',
   });
   // The line's budgets small, the answer's own limit long: the hold line is due at once, the answer whenever the test lets it be.
-  const renderer: Renderer = { client, timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, preface, drift: new HeuristicStubClient({ todayIso: TODAY, app }) };
+  const renderer: Renderer = { client, timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, preface, ...hold, drift: new HeuristicStubClient({ todayIso: TODAY, app }) };
   running = await startServer(config, { host: '127.0.0.1', client: perception, log: () => {}, renderer });
   return `ws://127.0.0.1:${running.port}`;
 }
@@ -207,6 +210,55 @@ describe('the acknowledgement before an answer still being worded (RENDER_PREFAC
       socket.close();
     }
   });
+});
+
+describe('the hold line after silence (RENDER_HOLD=after-silence, the default)', () => {
+  it('twilio: the acknowledgement at once, the hold line only once it should have played and the silence passed, then the answer', async () => {
+    const render = new GatedRenderClient();
+    const ws = await start(render, APP, 10_000, 'early', { holdSilenceMs: { voice: 200, chat: 200 } });
+    const relay = await FakeRelay.connect(`${ws}/conversation?token=${running!.tokens.mint('CA-silence')}`);
+    try {
+      relay.setup('CA-silence');
+      await relay.waitForTexts(1);
+      relay.prompt(QUESTION);
+      await render.asked;
+      const ACK = 'Sure, I can help you answer a question.';
+      expect((await relay.waitForTexts(2)).slice(1).map((t) => t.trim())).toEqual([ACK]);
+      const ackAt = Date.now();
+      // The acknowledgement's play, by the server's own estimate (no clips here: its words), and the 200 ms of silence.
+      const due = textEstimateMs(ACK) + 200;
+      expect((await relay.waitForTexts(3, due + 4000)).slice(2).map((t) => t.trim())).toEqual([HOLD]);
+      expect(Date.now() - ackAt).toBeGreaterThanOrEqual(due - 100);
+      render.answer();
+      const texts = await relay.waitForTexts(5);
+      expect(texts.slice(3).map((t) => t.trim())).toEqual([`${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
+    } finally {
+      relay.close();
+    }
+  }, 15_000);
+
+  it('twilio, an app with a second hold line: after the acknowledgement and the silence, the second (still checking), then the answer, no other', async () => {
+    const render = new GatedRenderClient();
+    const ws = await start(render, APP_MORE, 10_000, 'early', { holdSilenceMs: { voice: 200, chat: 200 } });
+    const relay = await FakeRelay.connect(`${ws}/conversation?token=${running!.tokens.mint('CA-still')}`);
+    try {
+      relay.setup('CA-still');
+      await relay.waitForTexts(1);
+      relay.prompt(QUESTION);
+      await render.asked;
+      const ACK = 'Sure, I can help you answer a question.';
+      expect((await relay.waitForTexts(2)).slice(1).map((t) => t.trim())).toEqual([ACK]);
+      expect((await relay.waitForTexts(3, textEstimateMs(ACK) + 4200)).slice(2).map((t) => t.trim())).toEqual([MORE]);
+      // Past the second's play and the silence again: still no other hold line.
+      await new Promise((r) => setTimeout(r, textEstimateMs(MORE) + 400));
+      expect(relay.texts()).toHaveLength(3);
+      render.answer();
+      const texts = await relay.waitForTexts(5);
+      expect(texts.slice(1).map((t) => t.trim())).toEqual([ACK, MORE, `${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
+    } finally {
+      relay.close();
+    }
+  }, 20_000);
 });
 
 describe('a hold line\'s turn on Telnyx, its answer reported played too soon', () => {

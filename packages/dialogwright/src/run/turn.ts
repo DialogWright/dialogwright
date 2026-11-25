@@ -115,7 +115,9 @@ export interface RunOptions {
   /**
    * How long lines take to play, by the channel's estimate (the voice relay's, from its clips' lengths):
    * how a turn waiting on a tool paces its thinking sound (app.yaml `waiting.sound`, run/waiting.ts), one
-   * clip once the last should have played. Unset (a chat, the harness), no sound is played.
+   * clip once the last should have played, and when a knowledge answer's hold line is due under
+   * RENDER_HOLD=after-silence (render/turn.ts). Unset (a chat, the harness), no sound is played, and lines
+   * sent early are taken to take no time.
    */
   playMs?: (actions: readonly Action[]) => number;
   /**
@@ -816,7 +818,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     const decided = held?.result ?? resolved;
     // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
     // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
-    const rendered = opts.renderer ? await renderTurn({ before: session, result: decided, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}) }) : null;
+    const rendered = opts.renderer ? await renderTurn({ before: session, result: decided, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}), ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}) }) : null;
     // A turn whose answer line words its answer: its knowledge record says whether the passage or a wording of it was said.
     const kb = rendered?.kbSaid !== undefined && decided.kb !== null ? { ...decided.kb, said: rendered.kbSaid } : decided.kb;
     const worded = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;

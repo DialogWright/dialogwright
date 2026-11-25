@@ -216,10 +216,12 @@ describe('the checks and the judge: the passage word for word whenever one refus
 
 describe('room for a long passage: the hold line, then the answer, within its own limit', () => {
   // The line's budgets small (30 ms and 20 ms), the answer's limit 1000 ms: a wording that takes 150 ms runs past the first.
+  // The silence before the hold line (RENDER_HOLD=after-silence, the default) the line's two budgets together, with
+  // no play estimate: the hold line is due when they run out, as these tests hold the hold line's path, not its time.
   // RENDER_PREFACE=with-hold (as before 2026-11-18): the lines before the answer go only with the hold line.
   const slow = (delayMs: number, answerMs = 1000, channel: 'voice' | 'chat' = 'voice', preface: 'early' | 'with-hold' = 'with-hold', lineMs = 30) => renderer(
     { delayMs, eachSpan: () => 'A late book costs 25 cents a day, up to 5 dollars a book.' },
-    { timeoutMs: { voice: channel === 'voice' ? lineMs : 5000, chat: channel === 'chat' ? lineMs : 5000 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, preface },
+    { timeoutMs: { voice: channel === 'voice' ? lineMs : 5000, chat: channel === 'chat' ? lineMs : 5000 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, holdSilenceMs: { voice: lineMs + 20, chat: lineMs + 20 }, preface },
   );
 
   it('RENDER_PREFACE=early (the default): the lines before the answer go at once, the hold line alone when it is due, then the answer', async () => {
@@ -311,7 +313,7 @@ describe('the hold line in the call\'s language', () => {
     const result = resolve(c.last.session, event, { ...BASE, intent: choice({ ask_library: 0.95, none: 0.05 }), libraryTopicTopic: choice({ opening_hours: 0.92, none: 0.08 }) }, { ...c.t, knowledge: { nominated: nominated('opening_hours') } });
     return { before: c.last.session, event, result: { ...result, screen: { value: 0.02, fired: false, error: null } } };
   };
-  const slowly = () => renderer({ delayMs: 150, eachSpan: () => 'Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4.' }, { timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 1000, chat: 1000 } });
+  const slowly = () => renderer({ delayMs: 150, eachSpan: () => 'Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4.' }, { timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 1000, chat: 1000 }, holdSilenceMs: { voice: 50, chat: 50 } });
 
   it('a locale\'s own kb_hold is said in it', async () => {
     const out = await rendered(ES_HOLD, inSpanish(ES_HOLD), slowly());
@@ -345,11 +347,11 @@ describe('through runTurn: the trace\'s knowledge record and the lines a channel
   const client: JevClient = {
     ask: async (req) => ({ answers: Object.fromEntries(Object.keys(req.questions).filter((k) => Object.hasOwn(ANSWERS, k)).map((k) => [k, ANSWERS[k]!])), model: 'stub', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 0, source: 'stub:heuristic' }),
   };
-  const run = async (r: Renderer, early?: (actions: readonly Action[], result: TurnResult) => boolean) => {
+  const run = async (r: Renderer, early?: (actions: readonly Action[], result: TurnResult) => boolean, playMs?: (actions: readonly Action[]) => number) => {
     // The library's own systems, as a server gives them (call() does the same for a resolved turn).
     const tools = call(RUN).t.tools;
     const start = await runTurn(newSession('run-1', 0, WEB_CHAT, ANONYMOUS, RUN.id), startEvent({}), { client, thresholds: DEFAULT_THRESHOLDS, todayIso: TODAY, now: () => 0, tools });
-    return runTurn(start.result.session, textEvent(QUESTION), { client, thresholds: DEFAULT_THRESHOLDS, todayIso: TODAY, now: () => 0, tools, renderer: { ...r, drift: judge(RUN) }, ...(early !== undefined ? { early } : {}) });
+    return runTurn(start.result.session, textEvent(QUESTION), { client, thresholds: DEFAULT_THRESHOLDS, todayIso: TODAY, now: () => 0, tools, renderer: { ...r, drift: judge(RUN) }, ...(early !== undefined ? { early } : {}), ...(playMs !== undefined ? { playMs } : {}) });
   };
 
   it('a wording said: the trace\'s knowledge record says so, beside the render line with the wording and the passage', async () => {
@@ -362,9 +364,126 @@ describe('through runTurn: the trace\'s knowledge record and the lines a channel
   });
 
   it('a slow wording: the run says how many of its lines the channel said early, and the trace holds the hold line', async () => {
-    const t = await run(renderer({ delayMs: 150, eachSpan: () => 'A late book costs 25 cents a day, up to 5 dollars a book.' }, { timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 1000, chat: 1000 } }), () => true);
+    const t = await run(renderer({ delayMs: 150, eachSpan: () => 'A late book costs 25 cents a day, up to 5 dollars a book.' }, { timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 1000, chat: 1000 }, holdSilenceMs: { voice: 50, chat: 50 } }), () => true);
     expect(t.early).toBe(2);
     expect(t.record.render!.hold).toMatchObject({ index: 1, promptId: 'kb_hold', early: true });
     expect(sayText(t.result.actions.slice(t.early))).toBe(`A late book costs 25 cents a day, up to 5 dollars a book. ${ACCOUNT} Is there anything else I can help with?`);
+  });
+
+  it('the run\'s play estimate (RunOptions.playMs) reaches the hold line: the acknowledgement\'s play and the silence pass before it is due', async () => {
+    // The acknowledgement plays for 300 ms, the silence 100 ms: the hold line would be due at 400 ms, after the answer at 250 ms.
+    const r = renderer({ delayMs: 250, eachSpan: () => 'A late book costs 25 cents a day, up to 5 dollars a book.' }, { timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 3000, chat: 3000 }, holdSilenceMs: { voice: 100, chat: 100 }, preface: 'early' });
+    const t = await run(r, () => true, () => 300);
+    expect(t.record.render!.hold).toBeUndefined();
+    expect(t.early).toBe(1);
+    // With no estimate (a chat), only the silence: the hold line is due at 100 ms.
+    const none = await run(r, () => true);
+    expect(none.record.render!.hold).toMatchObject({ promptId: 'kb_hold', early: true });
+  });
+});
+
+describe('when the hold line comes (RENDER_HOLD)', () => {
+  // A second hold line of the app's own (kb_hold_more).
+  const MORE = 'Still looking, thanks for waiting.';
+  const MORE_APP = libraryKbApp('library-kb-hold-silence', { 'prompts.yaml': (t) => framed(t).replace(FRAMED_ANSWER, `${FRAMED_ANSWER}  kb_hold_more:\n    text: ${MORE}\n    interruptible: false\n`), 'kb/topics.yaml': lowFees });
+  // The line's budgets 50 and 50 ms (the old hold line's time, 100 ms), the answer's limit 3000 ms.
+  const timed = (delayMs: number, more: Omit<Partial<Renderer>, 'client'>) => renderer(
+    { delayMs, eachSpan: () => 'A late book costs 25 cents a day, up to 5 dollars a book.' },
+    { timeoutMs: { voice: 50, chat: 50 }, checkTimeoutMs: { voice: 50, chat: 50 }, answerTimeoutMs: { voice: 3000, chat: 3000 }, ...more },
+  );
+  // The acknowledgement plays for 300 ms, a hold line for 300 ms too.
+  const playMs = (actions: readonly Action[]): number => 300 * actions.length;
+  const render = async (app: App, r: Renderer & { client: FakeRenderClient }, handed: string[], estimate: ((actions: readonly Action[]) => number) | undefined = playMs): Promise<RenderedTurn> => {
+    const turn = asked(app, 'late_fees', 'how much for a late book');
+    const out = await renderTurn({
+      before: turn.before, result: turn.result, event: turn.event, renderer: { ...r, drift: judge(app) }, client: judge(app), thresholds: DEFAULT_THRESHOLDS,
+      early: (actions) => {
+        handed.push(sayText(actions));
+        return true;
+      },
+      ...(estimate !== undefined ? { playMs: estimate } : {}),
+    });
+    expect(out).not.toBeNull();
+    return out!;
+  };
+
+  it('after-silence (the default): an answer ready before the acknowledgement has played and the silence passed has no hold line; fixed says one at the budgets', async () => {
+    const handed: string[] = [];
+    const out = await render(FRAMED, timed(400, { preface: 'early', holdSilenceMs: { voice: 200, chat: 200 } }), handed);
+    expect(handed).toEqual(['Sure, I can help you answer a question.']);
+    expect(out.record.hold).toBeUndefined();
+    expect(sayText(out.actions.slice(out.early))).toBe(`A late book costs 25 cents a day, up to 5 dollars a book. ${ACCOUNT} Is there anything else I can help with?`);
+    // RENDER_HOLD=fixed: as before, the hold line at the line's budgets (100 ms), the acknowledgement still playing.
+    const before: string[] = [];
+    const fixed = await render(FRAMED, timed(400, { preface: 'early', hold: 'fixed', holdSilenceMs: { voice: 200, chat: 200 } }), before);
+    expect(before).toEqual(['Sure, I can help you answer a question.', 'Just a moment while I look that up.']);
+    expect(fixed.record.hold).toMatchObject({ promptId: 'kb_hold', early: true });
+    expect(fixed.record.hold!.atMs).toBeLessThan(300);
+  });
+
+  it('after-silence: an answer still being worded is held for once the acknowledgement has played and the silence passed, not at the budgets', async () => {
+    const handed: string[] = [];
+    const out = await render(FRAMED, timed(1500, { preface: 'early', holdSilenceMs: { voice: 200, chat: 200 } }), handed);
+    expect(handed).toEqual(['Sure, I can help you answer a question.', 'Just a moment while I look that up.']);
+    expect(out.record.hold).toMatchObject({ index: 1, promptId: 'kb_hold', early: true });
+    // The acknowledgement's 300 ms and the silence's 200 ms.
+    expect(out.record.hold!.atMs).toBeGreaterThanOrEqual(490);
+    expect(out.record.hold!.atMs).toBeLessThan(1500);
+    expect(answerLine(out)).toMatchObject({ mode: 'generated' });
+  });
+
+  it('after-silence, the acknowledgement said: the first line after the silence is the second hold line (kb_hold_more), and no other follows', async () => {
+    // A person who has said they will check next says they are still checking (the maintainer, 2026-11-25).
+    const handed: string[] = [];
+    const out = await render(MORE_APP, timed(1500, { preface: 'early', holdSilenceMs: { voice: 200, chat: 200 } }), handed);
+    expect(handed).toEqual(['Sure, I can help you answer a question.', MORE]);
+    expect(out.record.hold).toMatchObject({ index: 1, promptId: 'kb_hold_more', early: true });
+    expect(out.record.hold!.more).toBeUndefined();
+    expect(out.record.hold!.atMs).toBeGreaterThanOrEqual(490);
+    expect(sayText(out.actions)).toBe(`Sure, I can help you answer a question. ${MORE} A late book costs 25 cents a day, up to 5 dollars a book. ${ACCOUNT} Is there anything else I can help with?`);
+    expect(answerLine(out)).toMatchObject({ index: 2, mode: 'generated' });
+    // RENDER_HOLD=fixed: as before, kb_hold at the line's budgets, then kb_hold_more past half the limit.
+    const before: string[] = [];
+    const fixed = await render(MORE_APP, timed(1700, { preface: 'early', hold: 'fixed', answerTimeoutMs: { voice: 3000, chat: 3000 } }), before);
+    expect(before).toEqual(['Sure, I can help you answer a question.', 'Just a moment while I look that up.', MORE]);
+    expect(fixed.record.hold).toMatchObject({ promptId: 'kb_hold', more: { promptId: 'kb_hold_more' } });
+  });
+
+  it('after-silence, no lines sent before it: the hold line at the silence from the turn\'s start', async () => {
+    const handed: string[] = [];
+    // RENDER_PREFACE=with-hold: nothing goes before the hold line, so the silence counts from the start.
+    const out = await render(FRAMED, timed(1000, { preface: 'with-hold', holdSilenceMs: { voice: 400, chat: 400 } }), handed);
+    expect(handed).toEqual(['Sure, I can help you answer a question. Just a moment while I look that up.']);
+    expect(out.record.hold!.atMs).toBeGreaterThanOrEqual(390);
+    expect(out.record.hold!.atMs).toBeLessThan(1000);
+    // RENDER_HOLD=fixed: at the line's budgets, 100 ms.
+    const fixed = await render(FRAMED, timed(1000, { preface: 'with-hold', hold: 'fixed', holdSilenceMs: { voice: 400, chat: 400 } }), []);
+    expect(fixed.record.hold!.atMs).toBeLessThan(390);
+  });
+
+  it('after-silence, no lines sent before it: the second hold line once the first has played and the silence passed again, not at half the limit', async () => {
+    const handed: string[] = [];
+    // RENDER_PREFACE=with-hold: the acknowledgement goes with the hold line, at the 200 ms of silence from the start;
+    // the second once those two have played (300 ms each) and 200 ms more: about 1000 ms, before half the 3000 ms limit.
+    const out = await render(MORE_APP, timed(1300, { preface: 'with-hold', holdSilenceMs: { voice: 200, chat: 200 } }), handed);
+    expect(handed).toEqual(['Sure, I can help you answer a question. Just a moment while I look that up.', MORE]);
+    expect(out.record.hold).toMatchObject({ promptId: 'kb_hold', early: true });
+    expect(out.record.hold!.atMs).toBeGreaterThanOrEqual(190);
+    expect(out.record.hold!.more).toMatchObject({ promptId: 'kb_hold_more', early: true });
+    expect(out.record.hold!.more!.atMs).toBeGreaterThanOrEqual(out.record.hold!.atMs + 790);
+    expect(out.record.hold!.more!.atMs).toBeLessThan(1300);
+    // RENDER_HOLD=fixed: the second only past half the limit (1500 ms), so the answer at 1300 ms comes first.
+    const fixed = await render(MORE_APP, timed(1300, { preface: 'with-hold', hold: 'fixed', holdSilenceMs: { voice: 200, chat: 200 } }), []);
+    expect(fixed.record.hold).toMatchObject({ promptId: 'kb_hold' });
+    expect(fixed.record.hold!.more).toBeUndefined();
+  });
+
+  it('fixed: the second hold line past half the limit, as before', async () => {
+    const handed: string[] = [];
+    const out = await render(MORE_APP, timed(2000, { preface: 'early', hold: 'fixed' }), handed);
+    expect(handed).toEqual(['Sure, I can help you answer a question.', 'Just a moment while I look that up.', MORE]);
+    expect(out.record.hold!.atMs).toBeLessThan(300);
+    expect(out.record.hold!.more!.atMs).toBeGreaterThanOrEqual(1490);
+    expect(out.record.hold!.more!.atMs).toBeLessThan(2000);
   });
 });

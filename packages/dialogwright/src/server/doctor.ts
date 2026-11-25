@@ -25,7 +25,7 @@ import { buildSlot } from '../slots/defineSlot';
 import { agentKeyVar } from '../agent/provider';
 import { textSettings } from '../texts/settings';
 import { DEFAULT_AGENT_MODEL } from '../define/schema/style';
-import { appModelKeyMissing, appModelLabel, inceptionTemperatureNotes, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, holdLabel, inceptionTemperatureNotes, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
@@ -614,7 +614,7 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
     // Where the model came from: style.yaml, or the environment (over it, or alone).
     const source = renderModelSourceLabel(renderModelSource(env, model));
     const settings = providerSettingsLabel(p);
-    const message = `${said}, worded by ${p.model} from ${p.provider} (${source}; key in ${p.keyVar}${settings !== null ? `; ${settings}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms`;
+    const message = `${said}, worded by ${p.model} from ${p.provider} (${source}; key in ${p.keyVar}${settings !== null ? `; ${settings}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms, ${holdLabel(r)}`;
     // Inception resets a temperature outside its range silently, so one is held to it (render/providers.ts
     // clampInceptionTemperature); pnpm check refuses it in style.yaml for provider inception, so this is an
     // app the environment moved to Inception with another provider's temperature.

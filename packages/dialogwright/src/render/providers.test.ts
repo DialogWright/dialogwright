@@ -7,7 +7,7 @@ import { FakeRenderClient } from './fake';
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../jev/cassette';
 import { instructionsOf, RENDER_INSTRUCTIONS, RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT, renderKey, SPAN_INSTRUCTIONS, spanKey } from './prompt';
-import { appModelKeyMissing, defaultRenderPrice, ModelRenderClient, renderCassetteModel, renderEnvOf, renderLines, renderModelSource, renderSettings, resolveAppRenderProvider, resolveRenderProvider } from './providers';
+import { appModelKeyMissing, defaultRenderPrice, holdLabel, ModelRenderClient, renderCassetteModel, renderEnvOf, renderLines, renderModelSource, renderSettings, resolveAppRenderProvider, resolveRenderProvider } from './providers';
 import { RenderClientError, type RenderRequest, type SpanAct, type SpeechAct } from './types';
 
 /** A span's sentence, as a call sends one (SpanAct.sentence): the frame's own words, the span a gap. */
@@ -256,14 +256,21 @@ describe('the model an app names (style.yaml\'s model, live findings item 27)', 
 
 describe('renderSettings', () => {
   it('defaults: every call generated, 900 ms on a call and 1500 in a chat, the default model\'s price', () => {
-    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, documentsTimeoutMs: { voice: 6000, chat: 8000 }, preface: 'early', price: { input: 0.1, output: 0.5 } });
+    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, documentsTimeoutMs: { voice: 6000, chat: 8000 }, preface: 'early', hold: 'after-silence', holdSilenceMs: { voice: 3000, chat: 2500 }, price: { input: 0.1, output: 0.5 } });
   });
 
   it('RENDER_SHARE, RENDER_TIMEOUT_MS (both channels) and the price, each checked', () => {
-    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, documentsTimeoutMs: { voice: 6000, chat: 8000 }, preface: 'early', price: { input: 1, output: 5 } });
+    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, documentsTimeoutMs: { voice: 6000, chat: 8000 }, preface: 'early', hold: 'after-silence', holdSilenceMs: { voice: 3000, chat: 2500 }, price: { input: 1, output: 5 } });
     // RENDER_PREFACE: early (the default, the maintainer's decision of 2026-11-18) or with-hold, as before.
     expect(renderSettings({ RENDER_PREFACE: 'with-hold' }).preface).toBe('with-hold');
     expect(() => renderSettings({ RENDER_PREFACE: 'later' })).toThrow('RENDER_PREFACE must be early or with-hold, got "later"');
+    // RENDER_HOLD: after-silence (the default, the maintainer's decision of 2026-11-25) or fixed, as before.
+    expect(renderSettings({ RENDER_HOLD: 'fixed' }).hold).toBe('fixed');
+    expect(renderSettings({ RENDER_HOLD: 'after-silence' }).hold).toBe('after-silence');
+    expect(() => renderSettings({ RENDER_HOLD: 'never' })).toThrow('RENDER_HOLD must be after-silence or fixed, got "never"');
+    // As the server's start line and pnpm diagnose say it.
+    expect(holdLabel(renderSettings({}))).toBe("a knowledge answer's hold line after 3000 ms of silence on a call and 2500 ms in a chat");
+    expect(holdLabel(renderSettings({ RENDER_HOLD: 'fixed' }))).toBe("a knowledge answer's hold line at the line's budgets (RENDER_HOLD=fixed)");
     expect(() => renderSettings({ RENDER_SHARE: '150' })).toThrow('RENDER_SHARE must be a whole number from 0 to 100, got "150"');
     expect(() => renderSettings({ RENDER_TIMEOUT_MS: 'fast' })).toThrow('RENDER_TIMEOUT_MS');
     expect(() => renderSettings({ RENDER_PRICE_INPUT_PER_MTOK: '-1' })).toThrow('RENDER_PRICE_INPUT_PER_MTOK');
@@ -280,6 +287,12 @@ describe('renderSettings', () => {
     expect(renderSettings({ RENDER_CHECK_TIMEOUT_VOICE_MS: '700' }).checkTimeoutMs).toEqual({ voice: 700, chat: 1000 });
     expect(renderSettings({ RENDER_CHECK_TIMEOUT_MS: '300', RENDER_CHECK_TIMEOUT_CHAT_MS: '800' }).checkTimeoutMs).toEqual({ voice: 300, chat: 800 });
     expect(() => renderSettings({ RENDER_TIMEOUT_VOICE_MS: '10' })).toThrow('RENDER_TIMEOUT_VOICE_MS must be a whole number from 50 to 30000, got "10"');
+    // The silence before a hold line (RENDER_HOLD=after-silence), each channel on its own, both at once, and refused out of bounds.
+    expect(renderSettings({ RENDER_HOLD_SILENCE_VOICE_MS: '1500' }).holdSilenceMs).toEqual({ voice: 1500, chat: 2500 });
+    expect(renderSettings({ RENDER_HOLD_SILENCE_CHAT_MS: '3500' }).holdSilenceMs).toEqual({ voice: 3000, chat: 3500 });
+    expect(renderSettings({ RENDER_HOLD_SILENCE_MS: '1000', RENDER_HOLD_SILENCE_CHAT_MS: '1800' }).holdSilenceMs).toEqual({ voice: 1000, chat: 1800 });
+    expect(() => renderSettings({ RENDER_HOLD_SILENCE_MS: 'soon' })).toThrow('RENDER_HOLD_SILENCE_MS');
+    expect(() => renderSettings({ RENDER_HOLD_SILENCE_VOICE_MS: '10' })).toThrow('RENDER_HOLD_SILENCE_VOICE_MS must be a whole number from 50 to 30000, got "10"');
   });
 });
 

@@ -15,7 +15,7 @@ import { personaOfTurn, answerSpanOf, answerWordBudget, generatesLines, identifi
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
-import { DEFAULT_RENDER_PREFACE, DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
+import { DEFAULT_RENDER_PREFACE, DEFAULT_RENDER_HOLD, DEFAULT_RENDER_HOLD_SILENCE_MS, DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
 import { applyGlossary } from '../kb/glossary';
 import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_LINE_HEADINGS_VAR, KB_LINES_VAR, KB_SOURCE_VAR, openingFramed, sectionLinesSaid, type SectionLine } from '../kb/answer';
@@ -97,7 +97,7 @@ function holdLineOf(app: App, locale: string | undefined, clips: RenderContext |
 export const DEFAULT_HOLD_TEXT = 'One moment while I gather that information.';
 /** The line said before a knowledge answer whose wording runs past its line's budget, where the app has it. */
 export const KB_HOLD_PROMPT = 'kb_hold';
-/** The second hold line, said past half an answer's limit where the app has it. */
+/** The second hold line, said where the app has it when the answer is still not ready after the first (RENDER_HOLD). */
 export const KB_HOLD_MORE_PROMPT = 'kb_hold_more';
 
 /**
@@ -135,6 +135,12 @@ export interface RenderInput {
   clips?: RenderContext | null;
   /** A channel that can say lines before the turn has ended (RunOptions.early): the hold line goes to it as soon as it is due. */
   early?: EarlyLines;
+  /**
+   * How long lines take to play, by the channel's estimate (RunOptions.playMs): under RENDER_HOLD=after-silence a
+   * hold line is due only once the lines sent before it have played and the silence has passed. Absent (a chat,
+   * the harness), lines are taken to take no time, so the silence counts from when they were sent.
+   */
+  playMs?: (actions: readonly Action[]) => number;
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
@@ -425,10 +431,11 @@ function raceDeadline<T>(p: Promise<T>, deadline: Promise<'late'>): Promise<T | 
  *
  * A knowledge answer worded for the caller's question (a form's answer line framed `from: answer`, on a
  * topic marked `risk: low`) has longer: its wording and checks may take up to the renderer's answer limit
- * (RENDER_ANSWER_TIMEOUT_MS). When it is not done by the line's own budgets (the wording's and the
- * checks'), the hold line (`kb_hold`, else DEFAULT_HOLD_TEXT) is put before it, and handed with the lines
- * before it to the channel to say at once (`early`), where the channel can; the answer, or the passage
- * word for word if it is still not ready or a check fails, follows when it is.
+ * (RENDER_ANSWER_TIMEOUT_MS). When it is not done once the caller has had some silence after the lines
+ * already said (RENDER_HOLD=after-silence, the default), or by the line's own budgets (RENDER_HOLD=fixed),
+ * the hold line (`kb_hold`, else DEFAULT_HOLD_TEXT) is put before it, and handed with the lines before it to
+ * the channel to say at once (`early`), where the channel can; the answer, or the passage word for word if
+ * it is still not ready or a check fails, follows when it is.
  */
 export async function renderTurn(input: RenderInput): Promise<RenderedTurn | null> {
   const { result, renderer } = input;
@@ -828,7 +835,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     }
   });
 
-  // A knowledge answer not yet worded when the line's budgets have run out: the hold line goes before it,
+  // A knowledge answer not yet worded when the hold line is due (holdDue, below): the hold line goes before it,
   // and, with the lines before it, to the caller at once where the channel can say them before the turn ends.
   let hold: RenderHold | undefined;
   let early = 0;
@@ -841,33 +848,60 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   const firstPending = pending.length > 0 ? Math.min(...pending.map((a) => a.index)) : -1;
   const fixedUpTo = (at: number): boolean => [...lines, ...spanLines].every((l) => l.index >= at || l.mode === 'fixed') && actions.slice(0, at).every((a) => a.type === 'say');
   let prefaceSent = false;
+  // When the lines before the answer were sent, ms from the turn's start: the hold line's silence follows their play.
+  let prefaceAt = 0;
   if (firstPending > 0 && (renderer.preface ?? DEFAULT_RENDER_PREFACE) === 'early' && input.early !== undefined && fixedUpTo(firstPending)) {
     const before = actions.slice(0, firstPending);
+    prefaceAt = performance.now() - t0;
     prefaceSent = input.early(before, { ...result, actions: before });
     if (prefaceSent) early = firstPending;
   }
+  // When the hold line is due. RENDER_HOLD=fixed (as before): when the line's budgets run out. after-silence (the
+  // default, the maintainer's decision of 2026-11-25): only once the caller has had some silence, counted from when
+  // what was already said has played, so an acknowledgement and a hold line are never said back to back while the
+  // answer is nearly ready. With the lines before it sent early, the silence starts once they have played (by the
+  // channel's estimate); else at the turn's start. Past the answer's own limit the answer is settled, so a hold line
+  // due after it is never said.
+  const afterSilence = (renderer.hold ?? DEFAULT_RENDER_HOLD) === 'after-silence';
+  const silence = (renderer.holdSilenceMs ?? DEFAULT_RENDER_HOLD_SILENCE_MS)[channel];
+  const playMs = (said: readonly Action[]): number => input.playMs?.(said) ?? 0;
+  const holdDue = (): Promise<'late'> => {
+    if (!afterSilence) return deadline;
+    const played = prefaceSent ? prefaceAt + playMs(actions.slice(0, firstPending)) : 0;
+    return after(Math.max(0, played + silence - (performance.now() - t0)));
+  };
+  // The second hold line (kb_hold_more, in turn through its wordings): only the app's own line, in the call's language.
+  const moreId = firstWorded?.said.vars[KB_HOLD_MORE_VAR];
+  const locale = result.session.locale;
+  const inDefault = locale === undefined || app.locales === undefined || locale === app.locales.default;
+  const hasMore = moreId !== undefined && Object.hasOwn(app.prompts.manifest, KB_HOLD_MORE_PROMPT) && (inDefault || localePromptEntry(app, KB_HOLD_MORE_PROMPT, locale).localized);
   if (pending.length > 0 && holdLine !== null) {
-    const done = await Promise.race([Promise.all(answering).then(() => true as const), deadline.then(() => false as const)]);
+    const done = await Promise.race([Promise.all(answering).then(() => true as const), holdDue().then(() => false as const)]);
     if (!done) {
       const at = firstPending;
-      const { line, own } = holdLine;
+      // Under after-silence, where the lines before the answer went early (an acknowledgement), the line after the
+      // silence is the second hold line, where the app has it: a person who has said they will check next says they
+      // are still checking, not that they will look it up (the maintainer, 2026-11-25). It is then the turn's only
+      // hold line; elsewhere (fixed, no acknowledgement sent, or no kb_hold_more) the hold line as before.
+      const still = afterSilence && prefaceSent && hasMore;
+      const { line, own } = still ? { line: promptSay(app, moreId!, {}, false, input.clips ?? null, locale), own: true } : holdLine;
       const before = actions.slice(0, at);
       const fixedBefore = fixedUpTo(at);
       // The lines before it went already where the preface went early: the hold line alone now.
-      const sent = fixedBefore && input.early !== undefined ? (prefaceSent ? input.early([line], { ...result, actions: [...before, line] }) : input.early([...before, line], { ...result, actions: [...before, line] })) : false;
+      const batch = prefaceSent ? [line] : [...before, line];
+      const sent = fixedBefore && input.early !== undefined ? input.early(batch, { ...result, actions: [...before, line] }) : false;
       actions.splice(at, 0, line);
-      hold = { index: at, promptId: own ? KB_HOLD_PROMPT : null, atMs: performance.now() - t0, early: sent };
+      hold = { index: at, promptId: still ? KB_HOLD_MORE_PROMPT : own ? KB_HOLD_PROMPT : null, atMs: performance.now() - t0, early: sent };
       if (sent) early = at + 1;
-      // Still not worded past half the answer's limit: the second hold line (kb_hold_more, in turn through its
-      // wordings), right after the first, to the caller at once where the first went early, so a long wait is
-      // never silence. Only the app's own line, in the call's language.
-      const moreId = firstWorded?.said.vars[KB_HOLD_MORE_VAR];
-      const locale = result.session.locale;
-      const inDefault = locale === undefined || app.locales === undefined || locale === app.locales.default;
-      if (moreId !== undefined && Object.hasOwn(app.prompts.manifest, KB_HOLD_MORE_PROMPT) && (inDefault || localePromptEntry(app, KB_HOLD_MORE_PROMPT, locale).localized)) {
-        const stillDone = await Promise.race([Promise.all(answering).then(() => true as const), after(Math.max(0, answerLimit / 2 - (performance.now() - t0))).then(() => false as const)]);
+      // Still not worded later on: the second hold line, right after the first, to the caller at once where the
+      // first went early, so a long wait is never silence. Under RENDER_HOLD=fixed it is due past half the answer's
+      // limit; under after-silence once what went with the first hold line has played (by the channel's estimate)
+      // and the caller has had as much silence again.
+      if (hasMore && !still) {
+        const moreAt = afterSilence ? hold.atMs + playMs(sent ? batch : [line]) + silence : answerLimit / 2;
+        const stillDone = await Promise.race([Promise.all(answering).then(() => true as const), after(Math.max(0, moreAt - (performance.now() - t0))).then(() => false as const)]);
         if (!stillDone) {
-          const more = promptSay(app, moreId, {}, false, input.clips ?? null, locale);
+          const more = promptSay(app, moreId!, {}, false, input.clips ?? null, locale);
           const moreSent = sent && input.early !== undefined ? input.early([more], { ...result, actions: [...before, line, more] }) : false;
           actions.splice(at + 1, 0, more);
           hold.more = { promptId: KB_HOLD_MORE_PROMPT, atMs: performance.now() - t0, early: moreSent };

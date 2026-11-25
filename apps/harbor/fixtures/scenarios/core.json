@@ -630,7 +630,7 @@
   },
   {
     "id": "coverage-answer-hold-line",
-    "renderDelayMs": 2200,
+    "renderDelayMs": 3300,
     "steps": [
       {
         "say": "do you pay for prescriptions"

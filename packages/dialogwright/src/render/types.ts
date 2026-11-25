@@ -329,21 +329,25 @@ export interface RenderJudge {
 }
 
 /**
- * The hold line said on a turn whose knowledge answer was still being worded when the line's budget ran
- * out (RenderRecord.hold): said before the answer, in the turn's actions at `index`.
+ * The hold line said on a turn whose knowledge answer was still being worded when it was due (RENDER_HOLD;
+ * RenderRecord.hold): said before the answer, in the turn's actions at `index`.
  */
 export interface RenderHold {
   /** Its index in the turn's actions (the answer's lines after it moved one on). */
   index: number;
-  /** The prompt it was said from (`kb_hold`), or null for the engine's own words (the app has no `kb_hold`). */
+  /**
+   * The prompt it was said from (`kb_hold`; `kb_hold_more` where, under RENDER_HOLD=after-silence, the lines before
+   * the answer went early), or null for the engine's own words (the app has no `kb_hold`).
+   */
   promptId: string | null;
   /** When it was said, ms after the turn's rendering began. */
   atMs: number;
   /** Whether it went to the caller before the turn ended (RunOptions.early took it), or only with the turn's other lines. */
   early: boolean;
   /**
-   * The second hold line (kb_hold_more), said right after the first where the answer was still not worded
-   * past half its limit; absent where it was not said (the answer came first, or the app has no kb_hold_more).
+   * The second hold line (kb_hold_more), said right after the first where the answer was still not worded when
+   * it was due (RENDER_HOLD); absent where it was not said (the answer came first, the app has no kb_hold_more,
+   * or the first was kb_hold_more itself).
    */
   more?: { promptId: string; atMs: number; early: boolean };
 }
@@ -401,6 +405,25 @@ export interface Renderer {
    * hold line, where the answer runs past the line's budgets, else with the answer at the turn's end.
    */
   preface?: RenderPreface;
+  /**
+   * RENDER_HOLD: when the hold line before a knowledge answer still being worded is due. `after-silence` (the
+   * default, the maintainer's decision of 2026-11-25, after a live call where the acknowledgement and the hold
+   * line were said back to back and the answers were ready before they had played): only once the caller has
+   * had `holdSilenceMs` of silence, counted from when the lines already sent have played (RenderInput.playMs),
+   * and the second hold line once the first has played and as much silence again; `fixed` (as before): the
+   * hold line when the line's budgets run out, and the second past half the answer's limit. Under
+   * `after-silence`, where the lines before the answer went early (an acknowledgement), the line said after the
+   * silence is the second hold line (`kb_hold_more`, a "still checking" line) where the app has it in the call's
+   * language, and no other follows: a person who has said they will check next says they are still checking
+   * (the maintainer, 2026-11-25).
+   */
+  hold?: RenderHoldMode;
+  /**
+   * RENDER_HOLD_SILENCE_MS: the silence a caller has before a hold line under `hold: 'after-silence'`, per
+   * channel; default 2000 on voice, 2500 in a chat (a chat's line budgets together, so a chat with no lines
+   * before the answer has its hold line when it had it before).
+   */
+  holdSilenceMs?: { voice: number; chat: number };
   /** The model's price, for the cost in the trace and Insights; default the default model's. */
   price?: RenderPrice;
   /**
@@ -417,6 +440,14 @@ export type RenderPreface = (typeof RENDER_PREFACES)[number];
 /** RENDER_PREFACE's default: the maintainer's decision of 2026-11-18. */
 export const DEFAULT_RENDER_PREFACE: RenderPreface = 'early';
 
+/** RENDER_HOLD's values (Renderer.hold); RenderHold is the trace's record of a hold line said. */
+export const RENDER_HOLDS = ['after-silence', 'fixed'] as const;
+export type RenderHoldMode = (typeof RENDER_HOLDS)[number];
+/** RENDER_HOLD's default: the maintainer's decision of 2026-11-25. */
+export const DEFAULT_RENDER_HOLD: RenderHoldMode = 'after-silence';
+/** The default silence before a hold line under RENDER_HOLD=after-silence, ms, on each channel (RENDER_HOLD_SILENCE_MS). */
+export const DEFAULT_RENDER_HOLD_SILENCE_MS = { voice: 3000, chat: 2500 } as const;
+
 export const DEFAULT_RENDER_TIMEOUT_MS = { voice: 900, chat: 1500 } as const;
 
 /** The default budget of a line's checks by the decision model, ms, on each channel. */
@@ -424,10 +455,11 @@ export const DEFAULT_RENDER_CHECK_TIMEOUT_MS = { voice: 500, chat: 1000 } as con
 
 /**
  * The default limit of a knowledge answer's wording and its checks together, ms, on each channel
- * (RENDER_ANSWER_TIMEOUT_MS). On a call the hold line comes at 1.4 s (the wording's 900 ms and the checks'
- * 500 ms) and takes about two and a half seconds to say, so an answer ready by 4 s follows it with
- * little or no silence; in a chat the hold line comes at 2.5 s, and 6 s is about as long as a reader waits
- * for a reply after being told one is coming.
+ * (RENDER_ANSWER_TIMEOUT_MS). On a call the hold line comes after 3 s of silence (RENDER_HOLD_SILENCE_MS),
+ * counted from when the lines before it have played, so an answer worded within 4 s is most often said
+ * with no hold line at all, and one that is not is said after the hold line with little silence; in a chat
+ * the hold line comes after 2.5 s, and 6 s is about as long as a reader waits for a reply after being told
+ * one is coming. (Under RENDER_HOLD=fixed the hold line comes at the line's budgets, 1.4 s on a call.)
  */
 export const DEFAULT_RENDER_ANSWER_TIMEOUT_MS = { voice: 4000, chat: 6000 } as const;
 
