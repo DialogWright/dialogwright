@@ -10,10 +10,11 @@ import { verify, type KeyObject } from 'node:crypto';
  *   which lives `tokenLifetimeS` on the fake's clock.
  * - `GET /calendar/v3/calendars/<id>/events`: the events overlapping `timeMin` to `timeMax`, cancelled ones
  *   left out, in pages of `pageSize`.
+ * - `GET /calendar/v3/calendars/<id>/events/<event id>`: one event, a cancelled (deleted) one too.
  * - `POST /calendar/v3/calendars/<id>/events`: an event inserted with the id it brings (base32hex, 5 to 1024
  *   characters); an id already used is 409, as Google answers.
  *
- * A test can make the next requests fail with a status (`failNext`), or answer slowly (`delayMs`, and `writeDelayMs` for an insert alone): a slow
+ * A test can make the next requests fail with a status (`failNext`), or answer slowly (`delayMs`, and `writeDelayMs` for an insert alone), or send a body that stalls after its headers (`stallBodyMs`), or leave a standing event out of a listing (`unlisted`): a slow
  * answer is made first and sent late, as a server that wrote and replied after the caller gave up.
  */
 
@@ -69,6 +70,10 @@ export class FakeGoogleCalendar {
   delayMs = 0;
   /** An event inserted waits this long more before its answer is sent (written, and answered late). */
   writeDelayMs = 0;
+  /** Every response's headers are sent at once and its body this long after (a body that stalls). */
+  stallBodyMs = 0;
+  /** Events a listing leaves out though they stand (one not listed yet), by id. */
+  readonly unlisted = new Set<string>();
   /** How long an issued token lives, in seconds (Google's is 3600). */
   tokenLifetimeS = 3600;
   readonly tokenUri: string;
@@ -117,7 +122,22 @@ export class FakeGoogleCalendar {
         }, { once: true });
       });
     }
-    return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } });
+    const text = JSON.stringify(answer.body);
+    if (this.stallBodyMs <= 0) return new Response(text, { status: answer.status, headers: { 'content-type': 'application/json' } });
+    const stall = this.stallBodyMs;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        const t = setTimeout(() => {
+          c.enqueue(new TextEncoder().encode(text));
+          c.close();
+        }, stall);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(t);
+          c.error(signal.reason ?? new DOMException('aborted', 'AbortError'));
+        }, { once: true });
+      },
+    });
+    return new Response(body, { status: answer.status, headers: { 'content-type': 'application/json' } });
   };
 
   private handle(url: URL, method: string, init: RequestInit | undefined): { status: number; body: unknown } {
@@ -128,12 +148,17 @@ export class FakeGoogleCalendar {
     if (`${url.origin}${url.pathname}` === this.tokenUri) return method === 'POST' ? this.token(String(init?.body ?? '')) : { status: 405, body: {} };
     if (url.origin !== 'https://www.googleapis.com' || !url.pathname.startsWith(API_PREFIX)) return { status: 404, body: { error: { code: 404, message: 'Not Found' } } };
     const rest = url.pathname.slice(API_PREFIX.length).split('/');
-    if (rest.length !== 2 || rest[1] !== 'events') return { status: 404, body: { error: { code: 404, message: 'Not Found' } } };
+    if ((rest.length !== 2 && rest.length !== 3) || rest[1] !== 'events') return { status: 404, body: { error: { code: 404, message: 'Not Found' } } };
     const auth = new Headers(init?.headers).get('authorization') ?? '';
     const expires = this.tokens.get(auth.replace(/^Bearer /, ''));
     if (!auth.startsWith('Bearer ') || expires === undefined || expires <= this.now()) return { status: 401, body: { error: { code: 401, message: 'Invalid Credentials' } } };
     const calendar = this.events.get(decodeURIComponent(rest[0]!));
     if (calendar === undefined) return { status: 404, body: { error: { code: 404, message: 'Not Found' } } };
+    if (rest.length === 3) {
+      // One event by its id, a cancelled one too, as Google gives a deleted event.
+      const found = method === 'GET' ? calendar.find((e) => e.id === decodeURIComponent(rest[2]!)) : undefined;
+      return found === undefined ? { status: 404, body: { error: { code: 404, message: 'Not Found' } } } : { status: 200, body: found };
+    }
     if (method === 'GET') return this.list(calendar, url.searchParams);
     if (method === 'POST') return this.insert(calendar, String(init?.body ?? ''));
     return { status: 405, body: {} };
@@ -169,7 +194,7 @@ export class FakeGoogleCalendar {
     const to = Date.parse(q.get('timeMax') ?? '');
     if (Number.isNaN(from) || Number.isNaN(to)) return { status: 400, body: { error: { code: 400, message: 'Bad Request' } } };
     if (q.get('singleEvents') !== 'true') return { status: 400, body: { error: { code: 400, message: 'singleEvents expected' } } };
-    const found = calendar.filter((e) => e.status !== 'cancelled' && msOf(e.start) < to && msOf(e.end) > from);
+    const found = calendar.filter((e) => e.status !== 'cancelled' && !this.unlisted.has(e.id) && msOf(e.start) < to && msOf(e.end) > from);
     const size = this.o.pageSize ?? 250;
     const at = Number(q.get('pageToken') ?? '0');
     const items = found.slice(at, at + size);

@@ -18,10 +18,14 @@ import { CALENDAR_EVENTS_SCOPE, GoogleCalendarError, requestWithin, serviceAccou
  *   cancelled. A window's span runs from the latest `until` before its own (midnight for the first) to its own
  *   `until`; a window with no `until` spans the whole day.
  * - **A booking** is one event whose id is derived from the write's idempotency key (eventIdOf), so a write
- *   repeated after a restart, or after an answer that came too late, is the same event: found in the day's
- *   events, or refused by Google with 409 (the id is taken), and returned as a repeat, never written twice. A
- *   window with a `until` is booked as the half hour before it (from its span's start where that is later); one
- *   with none as an all-day event.
+ *   repeated after a restart, or after an answer that came too late, is the same event, never a second. The
+ *   day's events are read first: the key's own event there is the same booking (a repeat), found before the
+ *   window is checked, so a write retried after its window's time has passed still finds it. Otherwise the
+ *   window is checked and the event inserted; a 409 (the id is taken) is the same booking only where Google
+ *   shows the event still standing in this slot. One deleted since is reported as removed, never as booked, and
+ *   is not put back over the person who removed it; one under the same id in another slot is refused. A window
+ *   with a `until` is booked as the half hour before it (from its span's start where that is later); one with
+ *   none as an all-day event.
  * - **Failures.** A request Google answers with an error, or not within `timeoutMs`, fails the lookup or the
  *   booking with a GoogleCalendarError, whose message the model is told as the action's failure: no slot is
  *   ever invented, and a booking that failed is not reported as made. Nothing here logs, and no message names
@@ -147,7 +151,7 @@ export function googleCalendar(o: GoogleCalendarOptions): Calendar {
     const token = await tokens.token();
     const res = await requestWithin(fetcher, url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${token}` } }, timeoutMs);
     if (res.status === 409 && allowConflict) return { conflict: true };
-    if (res.ok) return { conflict: false, json: await res.json().catch(() => ({})) };
+    if (res.ok) return { conflict: false, json: res.json };
     if (res.status === 401) {
       tokens.forget();
       throw new GoogleCalendarError('sign-in', `the calendar refused the line's sign-in (${res.status}), so it cannot be read or booked now`);
@@ -211,7 +215,7 @@ export function googleCalendar(o: GoogleCalendarOptions): Calendar {
     };
   };
 
-  return {
+  const calendar: Calendar = {
     async free(dayIso) {
       if (!openDay(dayIso)) return [];
       const offered = windows.filter((w) => !over(dayIso, w));
@@ -224,15 +228,39 @@ export function googleCalendar(o: GoogleCalendarOptions): Calendar {
       if (at < 0) throw new UnknownSlot(slotId);
       const dayIso = slotId.slice(0, at);
       const w = windows.find((x) => x.name === slotId.slice(at + 1));
-      if (w === undefined || !openDay(dayIso) || over(dayIso, w)) throw new UnknownSlot(slotId);
+      if (w === undefined || parseDay(dayIso) === null) throw new UnknownSlot(slotId);
       const id = eventIdOf(key);
       const events = await eventsOn(dayIso);
-      // The same key's event is already in (a write repeated): the same booking, before the window's room is counted, which it takes.
-      if (events.some((e) => e.id === id && e.status !== 'cancelled')) return { id, repeat: true };
+      // The same key's event is already in (a write repeated, its first answer late perhaps): the same booking,
+      // found before the window is checked (its day may have closed or its time passed since) and before its
+      // room is counted, which it takes.
+      const own = events.find((e) => e.id === id && e.status !== 'cancelled');
+      if (own !== undefined) return { id, repeat: standsFor(own, slotId) };
+      if (!openDay(dayIso) || over(dayIso, w)) throw new UnknownSlot(slotId);
       if (taken(dayIso, w, events) >= w.capacity) throw new SlotFull(slotId);
       const made = await ask(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(eventFor(id, slotOf(dayIso, w), w, details)) }, true);
-      // 409: Google already has an event with this id (written by this key before, then deleted or not yet listed): the same booking.
-      return { id, repeat: made.conflict };
+      if (!made.conflict) return { id, repeat: false };
+      // 409: Google already has an event with this id, written by this key before. It is the same booking only
+      // where it still stands in this slot (not listed yet); one deleted since is not booked, and is not put back
+      // over the person who removed it.
+      let held: GoogleEvent;
+      try {
+        const r = await ask(`${base}/${encodeURIComponent(id)}`, { method: 'GET' });
+        held = (r.conflict ? {} : r.json) as GoogleEvent;
+      } catch (e) {
+        if (e instanceof GoogleCalendarError && e.failure === 'not-found') throw new GoogleCalendarError('refused', 'the calendar refused this booking\'s id as taken and cannot show it, so nothing was booked');
+        throw e;
+      }
+      if (held.status === 'cancelled') throw new GoogleCalendarError('refused', 'this booking was made earlier and then removed from the calendar, so it is not booked now, and it was not booked again');
+      return { id, repeat: standsFor(held, slotId) };
     },
   };
+
+  /** Whether the line's own event `e` stands for `slotId` (true); throws where it holds another slot under the same id. */
+  function standsFor(e: GoogleEvent, slotId: string): true {
+    const slot = e.extendedProperties?.private?.[SLOT_PROPERTY];
+    if (slot !== slotId) throw new GoogleCalendarError('refused', `the calendar holds this booking's id for another window${slot !== undefined ? ` (${slot})` : ''}, so nothing was booked`);
+    return true;
+  }
+  return calendar;
 }

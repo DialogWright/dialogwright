@@ -82,11 +82,20 @@ export function signedAssertion(key: ServiceAccountKey, scope: string, nowMs: nu
   return `${head}.${claims}.${signature}`;
 }
 
+/** Google's answer to a request: its status, and its body read as JSON (an empty object where it is not JSON). */
+export interface GoogleAnswer {
+  status: number;
+  ok: boolean;
+  json: unknown;
+}
+
 /**
- * A request to Google within `timeoutMs`: its answer, or a GoogleCalendarError (the time ran out, or Google
- * could not be reached). The request is aborted at the time; an answer that comes after is not waited for.
+ * A request to Google within `timeoutMs`, its body read too: its answer, or a GoogleCalendarError (the time
+ * ran out, or Google could not be reached). One timer bounds the whole of it, the headers and the body, so a
+ * body that stalls after its headers fails as a late answer does. The request is aborted at the time; an
+ * answer that comes after is not waited for.
  */
-export async function requestWithin(fetcher: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+export async function requestWithin(fetcher: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<GoogleAnswer> {
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_resolve, reject) => {
@@ -95,8 +104,21 @@ export async function requestWithin(fetcher: typeof fetch, url: string, init: Re
       reject(new GoogleCalendarError('timeout', `the calendar did not answer in time (${timeoutMs} ms), so nothing is known from it now`));
     }, timeoutMs);
   });
+  const answer = (async (): Promise<GoogleAnswer> => {
+    const res = await fetcher(url, { ...init, signal: abort.signal });
+    const text = await res.text();
+    let json: unknown = {};
+    try {
+      json = text === '' ? {} : JSON.parse(text);
+    } catch {
+      json = {};
+    }
+    return { status: res.status, ok: res.ok, json };
+  })();
+  // Once the time has run out, the abandoned request's own failure is not reported again.
+  answer.catch(() => {});
   try {
-    return await Promise.race([fetcher(url, { ...init, signal: abort.signal }), late]);
+    return await Promise.race([answer, late]);
   } catch (e) {
     if (e instanceof GoogleCalendarError) throw e;
     throw new GoogleCalendarError('unreachable', 'the calendar could not be reached, so nothing is known from it now');
@@ -122,7 +144,7 @@ export function serviceAccountTokens(o: { keyFile: string; scope: string; fetch:
     const body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: signedAssertion(key, o.scope, nowMs) }).toString();
     const res = await requestWithin(o.fetch, key.tokenUri, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }, o.timeoutMs);
     if (res.status >= 500 || res.status === 429) throw new GoogleCalendarError('unavailable', `the calendar is not answering (${res.status}), so nothing is known from it now`);
-    const json = (await res.json().catch(() => ({}))) as { access_token?: unknown; expires_in?: unknown };
+    const json = res.json as { access_token?: unknown; expires_in?: unknown };
     if (!res.ok || typeof json.access_token !== 'string') throw new GoogleCalendarError('sign-in', `the calendar refused the line's sign-in (${res.status}), so it cannot be read or booked now`);
     const lifetimeS = typeof json.expires_in === 'number' && json.expires_in > 0 ? json.expires_in : 3600;
     kept = { token: json.access_token, expiresMs: nowMs + lifetimeS * 1000 };

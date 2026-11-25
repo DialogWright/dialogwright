@@ -132,11 +132,53 @@ describe('googleCalendar', () => {
     expect(google.events.get(CALENDAR_ID)).toHaveLength(1);
   });
 
-  it('a key whose event Google already holds, though it is not listed (deleted), is the same booking, not a second', async () => {
+  it('a 409 for a key whose event stands in its slot (not yet listed) is the same booking', async () => {
     const { google, calendar } = setup();
-    google.add(CALENDAR_ID, { ...ownEvent(eventIdOf('key-1'), '07:30', '08:00'), status: 'cancelled' });
+    google.add(CALENDAR_ID, { ...ownEvent(eventIdOf('key-1'), '07:30', '08:00'), extendedProperties: { private: { slot: `${MONDAY}:morning` } } });
+    google.unlisted.add(eventIdOf('key-1'));
     expect(await calendar.book(`${MONDAY}:morning`, {}, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: true });
-    expect(google.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/events')).map((r) => r.status)).toEqual([409]);
+    expect(google.requests.filter((r) => r.method !== 'GET' || r.path.endsWith(eventIdOf('key-1'))).map((r) => `${r.method} ${r.status}`)).toEqual(['POST 200', 'POST 409', 'GET 200']);
+  });
+
+  it('a 409 for a key whose event was deleted is not reported as booked: the model is told it was removed', async () => {
+    const { google, calendar } = setup();
+    google.add(CALENDAR_ID, { ...ownEvent(eventIdOf('key-1'), '07:30', '08:00'), status: 'cancelled', extendedProperties: { private: { slot: `${MONDAY}:morning` } } });
+    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(/^this booking was made earlier and then removed from the calendar/);
+    expect(google.events.get(CALENDAR_ID)!.map((e) => e.status)).toEqual(['cancelled']);
+  });
+
+  it('a 409 for a key whose event stands in another slot is no booking of this one', async () => {
+    const { google, calendar } = setup();
+    google.add(CALENDAR_ID, { id: eventIdOf('key-1'), start: { dateTime: '2026-12-01T07:30:00-05:00' }, end: { dateTime: '2026-12-01T08:00:00-05:00' }, extendedProperties: { private: { slot: '2026-12-01:morning' } } });
+    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(/^the calendar holds this booking's id for another window/);
+  });
+
+  it('a booking repeated after its window has passed (its first answer late) finds its event before the window is checked', async () => {
+    const { google, calendar, clock } = setup({ timeoutMs: 50 });
+    clock.set(Date.parse(`${MONDAY}T12:59:00Z`)); // 07:59 in New York, the morning's last minute
+    await calendar.free(MONDAY);
+    google.writeDelayMs = 200;
+    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(/did not answer in time/);
+    google.writeDelayMs = 0;
+    clock.set(Date.parse(`${MONDAY}T13:01:00Z`)); // 08:01: the morning is over
+    expect(await calendar.book(`${MONDAY}:morning`, {}, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: true });
+    expect(google.events.get(CALENDAR_ID)).toHaveLength(1);
+    // A key with no event is still refused for the window that has passed.
+    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-2')).rejects.toBeInstanceOf(UnknownSlot);
+  });
+
+  it('a response whose body stalls after its headers fails within the timeout, at sign-in and at a lookup', async () => {
+    const { google, calendar } = setup({ timeoutMs: 50 });
+    google.stallBodyMs = 1000;
+    let started = Date.now();
+    await expect(calendar.free(MONDAY)).rejects.toThrow(/^the calendar did not answer in time/);
+    expect(Date.now() - started).toBeLessThan(500);
+    google.stallBodyMs = 0;
+    await calendar.free(MONDAY);
+    google.stallBodyMs = 1000;
+    started = Date.now();
+    await expect(calendar.free(MONDAY)).rejects.toThrow(/^the calendar did not answer in time/);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it('a window with no last time (until) is booked as an all-day event, and only events that name it take its places', async () => {
