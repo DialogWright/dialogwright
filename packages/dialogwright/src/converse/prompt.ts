@@ -134,9 +134,11 @@ const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of h
  * context that has the model write for the ear in the first place. And a reply that ends on a statement leaves a
  * caller waiting in silence for more (a live call, 2026-11-25: after a price's caveat, and after the request was in,
  * the caller sat until they said "Okay"), so a reply on a call hands the turn back; and a goodbye written without
- * end_call kept the line open after the caller said they were done, until they said goodbye a second time.
+ * end_call kept the line open after the caller said they were done ("That's all."), until they said goodbye: the
+ * model took ending the call as the answer to the caller's goodbye, so the words say it is the answer to their
+ * having nothing more, however they say it.
  */
-const ON_A_CALL = `On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175"). A caller cannot hear that your reply has ended, so end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need, unless you are saying goodbye. When the caller has nothing more, say goodbye and call ${END_CALL} in that same reply: a goodbye without it leaves the caller holding an open line.`;
+const ON_A_CALL = `On a call this matters most: the caller cannot see the questions. Write plain spoken sentences, as you would say them: never a list, bullets, headings, line breaks or symbols a voice would read badly, and a range in words ("$125 to $175"). A caller cannot hear that your reply has ended, so end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need, unless you are saying goodbye. When the caller tells you they need nothing more, in whatever words ("that's all", "no thanks", "I'm all set"), the call is over: call ${END_CALL} in that same reply, with your goodbye, without waiting for them to say goodbye. A reply that only says goodbye leaves the caller holding an open line.`;
 
 /**
  * What the model is told of the check after speaking's note, where the check corrects (agent.yaml
@@ -241,7 +243,7 @@ function toolOf(name: string, spec: ActionSpec): ModelTool {
 /** The runtime's own action, offered on every call: it ends the call, on the model's own goodbye or, where it wrote none, the business's closing line. */
 const END_CALL_TOOL: ModelTool = {
   name: END_CALL,
-  description: 'End the call (on the web chat, the chat), once the caller has nothing more they want or says goodbye. Write your goodbye in the same reply as this call: a goodbye alone does not end it, and leaves the caller in a conversation that is still open. If you write none, the line says the business\'s closing line.',
+  description: 'End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", or a goodbye): never wait for them to say goodbye. Write your goodbye in the same reply as this call: a goodbye alone does not end it, and leaves the caller in a conversation that is still open. If you write none, the line says the business\'s closing line.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 
