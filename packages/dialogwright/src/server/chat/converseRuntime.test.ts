@@ -157,7 +157,7 @@ function claimsJev(claims: { contradicted: number; notDone: number; gap: number 
 }
 
 /** A chat on the fixture app, opened (the greeting said), with the model's side `turns` and a decision model reading replies as `claims`. */
-async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0, extra: { onClaimsRead?: Parameters<typeof converseChatRuntime>[0]['onClaimsRead']; log?: (l: string) => void; appending?: (row: AuditDraft, rows: readonly AuditDraft[]) => void } = {}) {
+async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0, extra: { onClaimsRead?: Parameters<typeof converseChatRuntime>[0]['onClaimsRead']; log?: (l: string) => void; appending?: (row: AuditDraft, rows: readonly AuditDraft[]) => void; tracing?: (r: ConverseTraceRecord) => void } = {}) {
   const t = fakeIo('chat-9');
   const jev = claimsJev(claims, t.says, lateMs);
   const { app } = converseFixture(() => new Date('2030-01-14T15:00:00Z'));
@@ -170,7 +170,7 @@ async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDo
     app, model: fakeModel(turns), jev, jevTimeoutMs: 2000, onTurnEnd: (id) => void ends.push({ id, sent: [...t.sent] }), audit: { append: (callId, channel, row) => (extra.appending?.(row, rows), rows.push(row), { ...row, seq: 1, at: '2030-01-14T15:00:00.000Z', callId, channel, prevHash: '', hash: '' }) },
     texts: null, now: () => Date.parse('2030-01-14T15:00:00Z'), log: extra.log ?? (() => {}),
     ...(extra.onClaimsRead !== undefined ? { onClaimsRead: extra.onClaimsRead } : {}),
-    resources: () => ({ trace: { write: (r) => void traced.push(r) }, frames: t.io.frames }),
+    resources: () => ({ trace: { write: (r) => (extra.tracing?.(r as ConverseTraceRecord), void traced.push(r)) }, frames: t.io.frames }),
   });
   rt.prepare('chat-9');
   rt.create('chat-9', t.io);
@@ -229,6 +229,28 @@ describe('converseChatRuntime: a turn that throws, said and recorded', () => {
     expect(r.replies.at(-1)).toBe("That's done.");
     expect(JSON.stringify(r)).not.toContain('disk full');
     expect(JSON.stringify(r)).not.toContain('secret');
+  });
+
+  it('after a confirmed change and a reply heard, saves the chat as far as the turn reached, so a restart never reads the change back again', async () => {
+    const c = await chat([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Booked. Anything else?'), done()]], { contradicted: 0.1, notDone: 0.1, gap: 0.1 }, 0, {
+      tracing: (r) => {
+        if (r.said === 'yes') throw new Error('trace disk full');
+      },
+    });
+    let saves = 0;
+    c.io.save = () => void (saves += 1);
+    await c.rt.text('chat-9', `Is there a visit free on ${DAY}?`, c.io);
+    await c.rt.text('chat-9', 'The morning please, for Sam Example, on this number.', c.io);
+    const index = (c.rt.snapshot('chat-9').session as ConverseState).turnIndex;
+    saves = 0;
+    await c.rt.text('chat-9', 'yes', c.io);
+    // The reply was the turn's final piece, so no done line follows it; the state is saved all the same.
+    expect(c.says().at(-1)).toBe('Booked. Anything else?');
+    expect(saves).toBe(1);
+    const session = c.rt.snapshot('chat-9').session as ConverseState;
+    expect(session.done).toEqual([expect.objectContaining({ action: 'book' })]);
+    expect(session.pending).toBeNull();
+    expect(session.turnIndex).toBe(index + 1);
   });
 
   it('before anything ran sends the error as before, writes the record, and keeps the chat from before the turn', async () => {

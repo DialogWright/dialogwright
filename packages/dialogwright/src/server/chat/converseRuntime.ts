@@ -249,7 +249,9 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
           log(`chat ${id}: the failed turn's trace record could not be written: ${describeError(traceErr)}`);
         }
       }
-      if (line !== null) io.save();
+      // A state kept (a change ran) is saved whether or not the done line was said: a restart then never brings the
+      // change's read-back back to be answered again.
+      if (kept) io.save();
       return false;
     }
     // Pieces with no final piece after them (a correction that failed after saying part of itself) go as a last `say`.
