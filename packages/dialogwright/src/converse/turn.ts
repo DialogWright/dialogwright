@@ -1127,7 +1127,7 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
     t.confirmedRan = true;
     // The line's own record of what has been done, told to the model on every request from now on; kept as soon
     // as the change has run (its follow-ons' results joining it as they run), so a turn that throws keeps it.
-    (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
+    (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done, carried: carriedOf(spec, p.params) });
     t.out.confirmed?.();
     const j = t.st.journey;
     if (hasJourneys(b) && j !== undefined) {
@@ -1158,6 +1158,19 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
   }
   add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
   return parent.outcome === 'ran';
+}
+
+/**
+ * What a change carried, as the model is told it in the line's record of the call: each of its action's params in
+ * the order agent.yaml gives them, with its value; a phone number by its last four only (the model never sees the
+ * caller's whole number, and a number the caller gave needs no more to be told apart); an empty one as nothing.
+ */
+function carriedOf(spec: ActionSpec, params: Readonly<Record<string, string>>): string[] {
+  return Object.entries(spec.params).map(([name, ps]) => {
+    const value = (params[name] ?? '').trim();
+    if (value === '') return `${name}: nothing`;
+    return `${name}: ${ps.type === 'phone' ? `the number ending ${value.replace(/\D/g, '').slice(-4)}` : value}`;
+  });
 }
 
 /**

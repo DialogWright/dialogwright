@@ -367,9 +367,11 @@ describe('converseTurn: a booking', () => {
     expect(lastMessage(h)).toContain('The caller confirmed; done');
     expect(h.said.at(-1)).toEqual(['You are booked for Friday morning.', true]);
     // The line's own record of what was done: kept in the state, and told to the model from the next request on.
-    expect(s.done).toEqual([{ action: 'book', readBack: READ_BACK, results: [expect.stringMatching(/^book: /), expect.stringMatching(/^notify: /)] }]);
+    expect(s.done).toEqual([{ action: 'book', readBack: READ_BACK, results: [expect.stringMatching(/^book: /), expect.stringMatching(/^notify: /)], carried: [`slot: ${SLOT}`, 'item: lamp'] }]);
     expect(h.model.requests[1]!.system).toContain('- Nothing yet: no action that changes anything has run on this call.');
     expect(h.model.requests.at(-1)!.system).toContain(`- The caller said yes to "${READ_BACK}", and it ran: book: `);
+    // What the change carried, so a detail it did not carry is never said to be noted or passed on.
+    expect(h.model.requests.at(-1)!.system).toContain(`It carried these values and nothing else: slot: ${SLOT}; item: lamp.`);
     expect(h.model.requests.at(-1)!.system).not.toContain('Nothing yet');
 
     const kinds = h.rows.map((r) => (r.type === 'gate' ? `gate ${r.detail.tool} ${r.detail.verdict}` : `${r.type} ${String(r.detail.action ?? r.detail.tool ?? '')}`.trim()));
@@ -588,6 +590,10 @@ describe('converseTurn: the caller\'s number', () => {
     for (const req of h.model.requests) expect(JSON.stringify(req)).not.toContain('5555550142');
     expect(h.rows.find((r) => r.type === 'gate')!.detail.call).toBe('callback(phone=...0142)');
     expect(systemPrompt(h.deps.business, s, NOW)).toContain('"caller"');
+    // The line's record of what the change carried names the number by its last four only.
+    const after = systemPrompt(h.deps.business, s, NOW);
+    expect(after).toContain('It carried these values and nothing else: phone: the number ending 0142.');
+    expect(after).not.toContain('5555550142');
   });
 
   it('reads a number the caller gave back whole, and keeps it out of the trace and the audit', async () => {
@@ -1504,6 +1510,16 @@ describe('systemPrompt', () => {
     expect(text).toContain('- The caller said yes to "A visit Friday. Is that right?", and it ran: book: booked bk-1; notify: sent.');
     expect(text).toContain('Read back and waiting for the caller\'s yes, so not done: "A note. Is that right?"');
     expect(text).not.toContain('Nothing yet');
+  });
+
+  it('says what each change carried and nothing more, an empty value as nothing; a change recorded before that was kept says none', () => {
+    const state = { ...fresh(), done: [
+      { action: 'leave_note', readBack: 'A note. Is that right?', results: ['leave_note: left'], carried: ['note: nothing', 'name: Sam Example'] },
+      { action: 'book', readBack: 'A visit Friday. Is that right?', results: ['book: booked bk-1'] },
+    ] };
+    const text = systemPrompt(b, state, NOW);
+    expect(text).toContain('- The caller said yes to "A note. Is that right?", and it ran: leave_note: left. It carried these values and nothing else: note: nothing; name: Sam Example.');
+    expect(text).toMatch(/- The caller said yes to "A visit Friday\. Is that right\?", and it ran: book: booked bk-1\.$/);
   });
 
   it('says the caller token stands for the caller\'s number and for nothing else', () => {

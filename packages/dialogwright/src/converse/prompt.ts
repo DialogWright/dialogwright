@@ -93,13 +93,15 @@ function callerWords(s: ConverseState): string {
  * The line's own record of the call so far, told on every request: each change that ran, with its read-back as
  * the caller confirmed it and what it returned, and a read-back waiting for the caller's yes. It is what the
  * runtime knows was done, so the model need not work it out from the conversation (a model said a request was
- * "in and sent" that was only read back, and a window "held" before any request was sent).
+ * "in and sent" that was only read back, and a window "held" before any request was sent); and what each change
+ * carried, so a detail no change carried is never said to be noted (the voice eval, 2026-11-25: a name and a date
+ * said to be noted when the action that ran carried neither).
  */
 function callSoFar(s: ConverseState): string {
   const done = s.done ?? [];
   const lines = done.length === 0
     ? ['- Nothing yet: no action that changes anything has run on this call.']
-    : done.map((d) => `- The caller said yes to "${d.readBack}", and it ran: ${d.results.join('; ')}.`);
+    : done.map((d) => `- The caller said yes to "${d.readBack}", and it ran: ${d.results.join('; ')}.${d.carried !== undefined && d.carried.length > 0 ? ` It carried these values and nothing else: ${d.carried.join('; ')}.` : ''}`);
   if (s.pending !== null) lines.push(`Read back and waiting for the caller's yes, so not done: "${s.pending.text}"`);
   return ['What has been done on this call (the line\'s own record, kept as each change runs; nothing else has been done, whatever has been said):', ...lines].join('\n');
 }

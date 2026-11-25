@@ -54,6 +54,14 @@ describe('converseChatRuntime: a saved state', () => {
     expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-9', channel: 'chat' }), done: 'book' })!.done).toBeUndefined();
   });
 
+  it('keeps what a change carried where it is a list of text, and drops it where it is not', () => {
+    const base = newConverseState({ appId: 'visits', callId: 'chat-1', channel: 'chat' });
+    const kept = stateOf({ ...base, done: [{ action: 'book', readBack: 'r', results: ['book: ok'], carried: ['item: lamp'] }] })!;
+    expect(kept.done![0]!.carried).toEqual(['item: lamp']);
+    const dropped = stateOf({ ...base, done: [{ action: 'book', readBack: 'r', results: ['book: ok'], carried: 'item: lamp' }] })!;
+    expect(dropped.done).toEqual([{ action: 'book', readBack: 'r', results: ['book: ok'] }]);
+  });
+
   it('a saved state without journey loads as none', () => {
     const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-10', channel: 'chat' }))) as unknown;
     expect(stateOf(before)).not.toBeNull();

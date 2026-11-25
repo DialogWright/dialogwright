@@ -72,6 +72,12 @@ export interface DoneChange {
   action: string;
   readBack: string;
   results: string[];
+  /**
+   * What the change carried, as the model is told it: each of its action's params with its value (`<param>: <value>`),
+   * a phone number by its last four, an empty one as nothing; so a detail it did not carry is never said to be noted.
+   * Absent (a change recorded before it was kept): not told.
+   */
+  carried?: string[];
 }
 
 export function newConverseState(o: { appId: string; callId: string; channel: 'chat' | 'voice'; callerNumber?: string; account?: string | null }): ConverseState {

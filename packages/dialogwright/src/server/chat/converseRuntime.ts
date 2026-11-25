@@ -111,6 +111,8 @@ export function stateOf(session: unknown): ConverseState | null {
   if (typeof s !== 'object' || s === null || s.kind !== 'converse' || s.v !== 1 || typeof s.appId !== 'string' || !Array.isArray(s.messages)) return null;
   if (s.carriedNote !== undefined && typeof s.carriedNote !== 'string') delete s.carriedNote;
   if (s.done !== undefined && !(Array.isArray(s.done) && s.done.every((d) => typeof d === 'object' && d !== null && typeof d.action === 'string' && typeof d.readBack === 'string' && Array.isArray(d.results)))) delete s.done;
+  // What a change carried: one not a list of text is not told.
+  for (const d of s.done ?? []) if (Object.hasOwn(d, 'carried') && !(Array.isArray(d.carried) && d.carried.every((c) => typeof c === 'string'))) delete d.carried;
   // Where the call is among the journeys: one not in its shape loads as none (the turn starts it again, initialJourney).
   if (Object.hasOwn(s, 'journey') && !isJourneyState(s.journey)) delete s.journey;
   // The unclear turns in a row: a count that is not a whole number of turns is none.
