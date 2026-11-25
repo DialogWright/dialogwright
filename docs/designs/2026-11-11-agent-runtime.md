@@ -3,6 +3,8 @@
 Status: draft for the maintainer's approval, 2026-11-11. It replaces the agent mode of
 [2026-11-08-agent-mode.md](2026-11-08-agent-mode.md), which is kept as history.
 
+Plan 2, the converse runtime on the phone (Twilio and Telnyx), is built: [its plan and rulings](2026-11-24-agent-runtime-plan-2.md). A call's turn can be stopped from outside, the conversation keeps what the caller heard, a bridge is said after 1.2 s without text, and the simulated callers run over the voice path (`pnpm eval --channel voice`). Plan 3 (the calendar, caller records, removing the old agent mode) is not.
+
 ## Why
 
 DialogWright has one product that works: the **scripted mode**. Deterministic code steers the call, a
