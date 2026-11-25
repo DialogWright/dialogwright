@@ -82,9 +82,9 @@ export function readAgentBusiness(dir: string): AgentBusiness {
 }
 
 /**
- * The business with its `env.<NAME>` numbers read from `env` (the app's own settings): an account's number
- * whose variable is unset is left out (the account is recognised by its other numbers); a transfer number
- * whose variable is unset is an error (AgentBusinessError).
+ * The business with its `env.<NAME>` values read from `env` (the app's own settings): an account's number
+ * whose variable is unset is left out (the account is recognised by its other numbers); a transfer number or
+ * a google calendar's id whose variable is unset is an error (AgentBusinessError).
  */
 export function resolveAgentSettings(value: AgentBusiness, env: Record<string, string | undefined>): AgentBusiness {
   const accounts = value.sources.accounts?.map((a) => ({
@@ -102,7 +102,15 @@ export function resolveAgentSettings(value: AgentBusiness, env: Record<string, s
     }
     transfer = { number };
   }
-  return { ...value, sources: { ...value.sources, ...(accounts ? { accounts } : {}) }, ...(transfer ? { transfer } : {}) };
+  let calendar = value.sources.calendar;
+  if (calendar?.calendarId !== undefined) {
+    const id = resolved(calendar.calendarId, env);
+    if (id === undefined) {
+      throw new AgentBusinessError([{ file: AGENT_FILE, line: 1, column: 1, path: 'sources.calendar.calendarId', message: `${calendar.calendarId} names a setting that is not set`, fix: `set ${envVariableOf(calendar.calendarId)} to the calendar's id in the app's settings (.env)` }]);
+    }
+    calendar = { ...calendar, calendarId: id };
+  }
+  return { ...value, sources: { ...value.sources, ...(accounts ? { accounts } : {}), ...(calendar ? { calendar } : {}) }, ...(transfer ? { transfer } : {}) };
 }
 
 /** The business of the app folder `dir`, its `env.<NAME>` numbers read from `env` (readAgentBusiness, then resolveAgentSettings). */

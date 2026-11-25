@@ -1,6 +1,9 @@
 import { localDateIso, localMinutes, minutesOfTime } from '../../core/localDate';
 
-/** A fake calendar for the converse runtime: free places per day by window and capacity, booked with a key. */
+/**
+ * The converse runtime's calendar: free places per day by window and capacity, booked with a key. The fake one
+ * here serves tests, demos and simulated calls; googleCalendar.ts is Google Calendar through a service account.
+ */
 
 export interface Slot {
   /** Unique across days: "<day>:<window>". */
@@ -32,16 +35,17 @@ export class UnknownSlot extends Error {
   }
 }
 
-const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 /** The UTC date of a valid ISO day (YYYY-MM-DD), or null. */
-function parseDay(dayIso: string): Date | null {
+export function parseDay(dayIso: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dayIso)) return null;
   const d = new Date(`${dayIso}T00:00:00Z`);
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== dayIso ? null : d;
 }
 
-const dayWords = (d: Date): string => d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+/** A day as it reads aloud ("Friday, November 13"). */
+export const dayWords = (d: Date): string => d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
 
 export function fakeCalendar(o: {
   days: string[];

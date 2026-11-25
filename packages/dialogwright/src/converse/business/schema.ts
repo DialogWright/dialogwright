@@ -120,8 +120,9 @@ const price = z.strictObject({ from: z.number().nonnegative().describe('The low 
 
 const calendar = z
   .strictObject({
-    kind: z.enum(['fake', 'google']).describe('fake: the days and windows below, for a demo. google: reserved for a later release.'),
-    days: z.array(text()).default([]).describe('The days the business is open to book, as dates.'),
+    kind: z.enum(['fake', 'google']).describe('fake: the days and windows below, the bookings kept in memory, for a demo and tests. google: Google Calendar through a service account: the same days and windows, the bookings events in the calendar `calendarId` names, and any other event in it (one shown as busy) taking a place in each window it overlaps; the service account\'s key file is the app\'s setting GOOGLE_CALENDAR_KEY_FILE, never in this file.'),
+    calendarId: matching(new RegExp(`(?:${ENV_REFERENCE.source})|(?:^[^\\s]+$)`), 'must be the calendar\'s id (no spaces), or env.<NAME>', 'write the calendar\'s id from its settings in Google Calendar ("Integrate calendar", an address such as ...@group.calendar.google.com), or env.<NAME> and set the variable to it in the app\'s settings (.env)').optional().describe('google only: the calendar\'s id (its settings in Google Calendar, "Integrate calendar"), or env.<NAME> to read it from the app\'s settings.'),
+    days: z.array(text()).default([]).describe('The days of the week a visit may be booked on (monday to sunday), for either kind: a google calendar offers its windows on these days alone.'),
     windows: z.array(z.strictObject({ name: identifier().describe('The window\'s id.'), label: text().describe('How it is said to a caller (for example "9 to 12").'), capacity: z.number().int().positive().describe('How many visits it holds.'), until: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'a 24-hour time such as "08:00"').optional().describe('The last time a car may be dropped off in it, as 24-hour "HH:MM" in the business\'s time zone. Today\'s window is not offered or bookable after it; a later day\'s is unchanged. Absent, the window is offered all day.') })).default([]).describe('The windows of a day a visit may be booked into, each with its capacity.'),
   })
   .describe('Where availability comes from.');
@@ -189,7 +190,8 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
     }
   }
   const calendar = isMap(root.sources) && isMap(root.sources.calendar) ? root.sources.calendar : undefined;
-  if (calendar?.kind === 'google') issue(ctx, ['sources', 'calendar', 'kind'], 'the google calendar is not available yet', 'write "fake" and list the days and windows');
+  if (calendar?.kind === 'google' && calendar.calendarId === undefined) issue(ctx, ['sources', 'calendar'], 'a google calendar names no calendar', 'add calendarId: the calendar\'s id from its settings in Google Calendar ("Integrate calendar"), or env.<NAME> to read it from the app\'s settings');
+  if (calendar?.kind === 'fake' && calendar.calendarId !== undefined) issue(ctx, ['sources', 'calendar', 'calendarId'], 'a fake calendar has no calendarId', 'delete calendarId, or write kind: google');
   if (Array.isArray(root.services)) {
     root.services.forEach((s, i) => {
       const p = isMap(s) && isMap(s.price) ? s.price : undefined;

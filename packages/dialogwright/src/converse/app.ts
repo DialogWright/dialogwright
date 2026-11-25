@@ -11,7 +11,9 @@ import type { Texts } from '../texts/types';
 import { AGENT_FILE, AgentBusinessError, readAgentBusiness, resolveAgentSettings } from './business/load';
 import type { AgentBusiness } from './business/schema';
 import { policyOf } from './policy';
+import { envVariableOf } from '../core/app/envReference';
 import { fakeCalendar, type Calendar, type Slot } from './sources/calendar';
+import { GOOGLE_CALENDAR_KEY_FILE, googleCalendar } from './sources/googleCalendar';
 import { businessZone } from './state';
 import type { ToolImpl } from './turn';
 
@@ -177,10 +179,26 @@ export function isConverseApp(app: unknown): app is ConverseApp {
   return typeof app === 'object' && app !== null && (app as { mode?: unknown }).mode === 'converse';
 }
 
-/** The business's calendar (agent.yaml sources.calendar), its today in the business's zone (businessZone), or null where it has none. */
-export function businessCalendar(b: AgentBusiness, now: () => Date): (Calendar & { bookings: { slotId: string; details: Record<string, string>; key: string }[] }) | null {
+/**
+ * The business's calendar (agent.yaml sources.calendar), its today in the business's zone (businessZone), or
+ * null where it has none: the fake calendar for `kind: fake`; for `kind: google`, Google Calendar through a
+ * service account (sources/googleCalendar.ts), its key file's path the app's setting GOOGLE_CALENDAR_KEY_FILE
+ * and its calendar's id agent.yaml's `calendarId` (an `env.<NAME>` one read from the settings too), both from
+ * `o.env` (a tool's ctx.env, or the server's settings). An app keeps the one it makes (its sign-in is kept on
+ * it). Throws, saying which setting, where a google calendar's setting is not set; never names the path.
+ */
+export function businessCalendar(b: AgentBusiness, now: () => Date, o: { env?: (name: string) => string | undefined; fetch?: typeof fetch } = {}): Calendar | null {
   const c = b.sources.calendar;
   if (c === undefined) return null;
+  if (c.kind === 'google') {
+    const env = o.env ?? (() => undefined);
+    const keyFile = env(GOOGLE_CALENDAR_KEY_FILE)?.trim();
+    if (keyFile === undefined || keyFile === '') throw new Error(`agent.yaml's calendar is google, and ${GOOGLE_CALENDAR_KEY_FILE} is not set: set it in the app's settings (.env) to the path of the service account's key file`);
+    const variable = envVariableOf(c.calendarId);
+    const calendarId = variable === null ? c.calendarId : env(variable)?.trim();
+    if (calendarId === undefined || calendarId === '') throw new Error(`agent.yaml's google calendar is ${c.calendarId ?? 'not named'}, and ${variable ?? 'calendarId'} is not set: set it to the calendar's id`);
+    return googleCalendar({ calendarId, keyFile, business: b, now, ...(o.fetch !== undefined ? { fetch: o.fetch } : {}) });
+  }
   return fakeCalendar({ days: c.days, windows: c.windows, now, timeZone: businessZone(b) });
 }
 

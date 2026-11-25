@@ -706,11 +706,16 @@
                 "fake",
                 "google"
               ],
-              "description": "fake: the days and windows below, for a demo. google: reserved for a later release."
+              "description": "fake: the days and windows below, the bookings kept in memory, for a demo and tests. google: Google Calendar through a service account: the same days and windows, the bookings events in the calendar `calendarId` names, and any other event in it (one shown as busy) taking a place in each window it overlaps; the service account's key file is the app's setting GOOGLE_CALENDAR_KEY_FILE, never in this file."
+            },
+            "calendarId": {
+              "description": "google only: the calendar's id (its settings in Google Calendar, \"Integrate calendar\"), or env.<NAME> to read it from the app's settings.",
+              "type": "string",
+              "pattern": "(?:^env\\.([A-Z][A-Z0-9_]*)$)|(?:^[^\\s]+$)"
             },
             "days": {
               "default": [],
-              "description": "The days the business is open to book, as dates.",
+              "description": "The days of the week a visit may be booked on (monday to sunday), for either kind: a google calendar offers its windows on these days alone.",
               "type": "array",
               "items": {
                 "type": "string",

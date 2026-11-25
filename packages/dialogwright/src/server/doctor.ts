@@ -17,6 +17,9 @@ import { loadAppFolder } from '../define/load';
 import { AGENT_FILE, agentBusinessProblems } from '../converse/business/load';
 import { converseModelKeyVar } from '../converse/model/resolve';
 import { APP_FILE, converseAppYamlProblems } from '../converse/app';
+import { parseServiceAccountKey } from '../converse/sources/googleAuth';
+import { GOOGLE_CALENDAR_KEY_FILE } from '../converse/sources/googleCalendar';
+import { envVariableOf } from '../core/app/envReference';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
 import { agentKeyVar } from '../agent/provider';
@@ -466,6 +469,8 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
   if (keyVar === null) out.push({ id: 'converse', status: 'fail', message: `${said} names no provider the runtime takes: the server will not start`, fix: 'write the model as anthropic:<model>, inception:<model>, openrouter:<model> or meta:<model>' });
   else if (!env[keyVar]?.trim()) out.push({ id: 'converse', status: 'fail', message: `${said}, but ${keyVar} is unset: the server will not start`, fix: `set ${keyVar} in the settings file (the model's key)` });
   else out.push({ id: 'converse', status: 'ok', message: `${said}, key in ${keyVar}, within ${business.model.timeoutMs} ms a reply` });
+  const calendar = business.sources.calendar;
+  if (calendar?.kind === 'google') out.push(...googleCalendarChecks(calendar.calendarId, env));
   if (config !== null) {
     const p = config.jevProvider;
     if (config.jevClient !== 'jev' || p === null) {
@@ -495,6 +500,39 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
     }
   }
   out.push({ id: 'converse', status: chat ? 'warn' : 'ok', message: chat ? 'a chat may name the number it calls from in its context (app.yaml chat.callerNumberFromContext: true): a site could claim an account' : 'a chat calls from no number (app.yaml chat.callerNumberFromContext is off)', ...(chat ? { fix: 'turn it off (delete chat.callerNumberFromContext) outside tests and the simulated callers' } : {}) });
+  return out;
+}
+
+/**
+ * A converse app whose calendar is Google Calendar (agent.yaml sources.calendar.kind: google): the service
+ * account's key file the app's setting GOOGLE_CALENDAR_KEY_FILE names, read here to see that it is one (its
+ * path and what it holds never printed), and the calendar's id where agent.yaml reads it from a setting.
+ * Google is not asked: whether the calendar is shared with the service account shows on the first lookup.
+ */
+export function googleCalendarChecks(calendarId: string | undefined, env: Env): CheckResult[] {
+  const out: CheckResult[] = [];
+  const said = 'a converse app\'s calendar is Google Calendar (agent.yaml sources.calendar)';
+  const variable = envVariableOf(calendarId);
+  if (variable !== null && !env[variable]?.trim()) out.push({ id: 'converse', status: 'fail', message: `${said}, its id read from ${variable}, which is unset: the server will not start`, fix: `set ${variable} in the settings file to the calendar's id (its settings in Google Calendar, "Integrate calendar")` });
+  const keyFile = env[GOOGLE_CALENDAR_KEY_FILE]?.trim();
+  if (keyFile === undefined || keyFile === '') {
+    out.push({ id: 'converse', status: 'fail', message: `${said}, and ${GOOGLE_CALENDAR_KEY_FILE} is unset: no window is offered and nothing is booked`, fix: `set ${GOOGLE_CALENDAR_KEY_FILE} in the settings file to the path of the service account's key file, kept outside the repository` });
+    return out;
+  }
+  let text: string;
+  try {
+    text = readFileSync(keyFile, 'utf8');
+  } catch {
+    out.push({ id: 'converse', status: 'fail', message: `${said}, and the key file ${GOOGLE_CALENDAR_KEY_FILE} names cannot be read: no window is offered and nothing is booked`, fix: `check the path in ${GOOGLE_CALENDAR_KEY_FILE}, and that the server's user may read the file` });
+    return out;
+  }
+  try {
+    parseServiceAccountKey(text);
+  } catch {
+    out.push({ id: 'converse', status: 'fail', message: `${said}, and the file ${GOOGLE_CALENDAR_KEY_FILE} names is not a service account's key: no window is offered and nothing is booked`, fix: 'download a JSON key for the service account (Google Cloud console, IAM, Service accounts, Keys) and point the setting at it' });
+    return out;
+  }
+  out.push({ id: 'converse', status: 'ok', message: `${said}, signed in by the service account whose key file ${GOOGLE_CALENDAR_KEY_FILE} names (Google is not asked here: the calendar must be shared with the service account's address, with permission to make changes)` });
   return out;
 }
 

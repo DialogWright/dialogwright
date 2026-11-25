@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { agentChecks, converseChecks, formatResult, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { agentChecks, converseChecks, formatResult, googleCalendarChecks, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { BUSINESS_FIXTURE_DIR } from '../define/__fixtures__/business/app';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import { CALLBACK_DIR } from '../testing/callback/app';
@@ -995,6 +995,29 @@ describe('a converse app (pnpm diagnose)', () => {
     expect(JSON.stringify(found)).not.toMatch(/"x"|"y"/);
     // No carrier: no call, so no voice and no transfer number to check.
     expect(converseChecks(CONVERSE_FIXTURE_DIR, keys, server({ ...keys, JEV_CLIENT: 'jev' })).map((r) => r.status)).toEqual(['ok', 'ok', 'warn']);
+  });
+
+  it('a google calendar: the key file setting unset, a file that cannot be read or is no key, the calendar\'s setting unset; never the path', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dw-diag-gcal-'));
+    try {
+      const pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      const good = join(dir, 'secret-key.json');
+      writeFileSync(good, JSON.stringify({ client_email: 'line@example-project.iam.gserviceaccount.com', private_key: pem, token_uri: 'https://oauth2.googleapis.com/token' }));
+      const bad = join(dir, 'secret-bad.json');
+      writeFileSync(bad, '{"client_email": "x"}');
+      const statuses = (calendarId: string, env: Record<string, string>) => googleCalendarChecks(calendarId, env).map((r) => `${r.status}: ${r.message}`);
+      expect(statuses('visits@group.calendar.example.com', {})).toEqual([expect.stringMatching(/^fail: .*GOOGLE_CALENDAR_KEY_FILE is unset/)]);
+      expect(statuses('visits@group.calendar.example.com', { GOOGLE_CALENDAR_KEY_FILE: join(dir, 'secret-missing.json') })).toEqual([expect.stringMatching(/^fail: .*cannot be read/)]);
+      expect(statuses('visits@group.calendar.example.com', { GOOGLE_CALENDAR_KEY_FILE: bad })).toEqual([expect.stringMatching(/^fail: .*is not a service account's key/)]);
+      expect(statuses('env.VISIT_CALENDAR', { GOOGLE_CALENDAR_KEY_FILE: good })).toEqual([expect.stringMatching(/^fail: .*VISIT_CALENDAR, which is unset: the server will not start/), expect.stringMatching(/^ok: /)]);
+      expect(statuses('env.VISIT_CALENDAR', { GOOGLE_CALENDAR_KEY_FILE: good, VISIT_CALENDAR: 'visits@group.calendar.example.com' })).toEqual([expect.stringMatching(/^ok: .*shared with the service account's address/)]);
+      const all = JSON.stringify([good, bad, join(dir, 'secret-missing.json')].flatMap((f) => googleCalendarChecks('env.VISIT_CALENDAR', { GOOGLE_CALENDAR_KEY_FILE: f })));
+      expect(all).not.toContain(dir);
+      expect(all).not.toContain('secret');
+      expect(all).not.toContain('PRIVATE');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('diagnose warns of a converse app on a number with no voice for its carrier', () => {

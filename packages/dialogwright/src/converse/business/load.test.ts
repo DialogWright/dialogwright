@@ -194,9 +194,14 @@ describe('what is refused', () => {
     expect(problemsOf(changed('anthropic:claude-haiku-5-5', 'openrouter:vendor/model@'))[0]).toMatchObject({ path: 'model.default' });
   });
 
-  it('the google calendar, reserved for later', () => {
+  it('a google calendar that names no calendar, and a fake one that names one', () => {
     const [p] = problemsOf(changed('kind: fake', 'kind: google'));
-    expect(p).toMatchObject({ path: 'sources.calendar.kind' });
+    expect(p).toMatchObject({ path: 'sources.calendar', message: 'a google calendar names no calendar' });
+    expect(p!.fix).toMatch(/calendarId/);
+    expect(problemsOf(changed('kind: fake', 'kind: google\n    calendarId: env.VISIT_CALENDAR'))).toEqual([]);
+    expect(problemsOf(changed('kind: fake', 'kind: google\n    calendarId: visits@group.calendar.example.com'))).toEqual([]);
+    expect(problemsOf(changed('kind: fake', 'kind: google\n    calendarId: "two words"'))[0]).toMatchObject({ path: 'sources.calendar.calendarId' });
+    expect(problemsOf(changed('kind: fake', 'kind: fake\n    calendarId: env.VISIT_CALENDAR'))[0]).toMatchObject({ path: 'sources.calendar.calendarId' });
   });
 
   it('a rule that is no rule', () => {
