@@ -102,6 +102,19 @@ export interface ConverseTraceRecord {
   open?: boolean;
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
   outlivedHold?: true;
+  /**
+   * The turn was stopped from outside before it ended (turn.ts converseTurn's `signal`: the caller spoke on a
+   * call): what it had not said was dropped, and it counted no failure.
+   */
+  interrupted?: true;
+  /** The line said the business's bridge (lines.bridge) on a call while the model was slow to begin; never in `replies`. */
+  bridge?: true;
+  /**
+   * What the channel said the caller heard of the line's last reply, given with their words: whether they cut
+   * in, whether they spoke before it began, and how many characters of it they heard (null: unknown). Never
+   * the words themselves.
+   */
+  heard?: { cutIn: boolean; spokeBefore: boolean; chars: number | null };
 }
 
 /** An action as the shared recording reads it: no slots, and each param recorded as its `audit` says (mask by default). */

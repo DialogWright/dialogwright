@@ -195,3 +195,17 @@ describe('opening hours', () => {
     expect(problemsOf(withOpen('    weekly: { mon: ["08:00-17:00"] }\n').replace('lines:\n', `lines:\n${line}`))).toEqual([]);
   });
 });
+
+describe('lines.bridge', () => {
+  const base = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'testing', 'converse', 'agent.yaml'), 'utf8');
+  it('lines.bridge defaults to One sec.', () => {
+    const r = agentBusinessProblems(base);
+    expect(r.problems).toEqual([]);
+    expect(r.value!.lines.bridge).toEqual({ en: 'One sec.' });
+  });
+  it('a business\'s own bridge is kept', () => {
+    const r = agentBusinessProblems(base.replace('lines:\n', 'lines:\n  bridge: { en: "Just a moment." }\n'));
+    expect(r.problems).toEqual([]);
+    expect(r.value!.lines.bridge).toEqual({ en: 'Just a moment.' });
+  });
+});

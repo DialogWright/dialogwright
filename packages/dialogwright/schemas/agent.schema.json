@@ -506,6 +506,39 @@
           ],
           "additionalProperties": false,
           "description": "The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run), per language."
+        },
+        "bridge": {
+          "default": {
+            "en": "One sec."
+          },
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The short line said on a call when the model is slow to begin, in English."
+            },
+            "chat": {
+              "description": "The short line said on a call when the model is slow to begin in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The short line said on a call when the model is slow to begin in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The short line said on a call when the model is slow to begin, per language."
         }
       },
       "required": [

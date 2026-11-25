@@ -378,6 +378,7 @@ export const agentBusinessSchema = z
         unclear: said('The line said, and the call ended, on the third turn in a row the line could not follow (required when there are journeys)').optional(),
         greetingAfterHours: said('The greeting said instead of the greeting (and of a journey\'s) when a call starts while the business is closed by business.open (required to have business.open)').optional(),
         stuck: said('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
+        bridge: said('The short line said on a call when the model is slow to begin').default({ en: 'One sec.' }),
       })
       .describe('The lines said word for word.'),
     model: z

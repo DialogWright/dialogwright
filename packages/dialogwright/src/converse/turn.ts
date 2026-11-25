@@ -65,7 +65,12 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   business's reason for the line), offered the turn's lookups only, so no change is acted on: a change it calls
  *   anyway is refused as not offered. The first round, asked before the route was known, is asked again for it.
  *   On the third unclear turn in a row (UNCLEAR_ENDS_AT) the model is asked nothing more: the line says
- *   lines.unclear and ends the call, as end_call does with the closing line.
+ *   lines.unclear and ends the call, as end_call does with the closing line;
+ * - on a call, a turn may be stopped from outside (converseTurn's `signal`: the caller spoke): nothing more
+ *   is said or asked, and it is no failure. The channel tells the next turn what the caller heard of the last
+ *   reply (Input's `heard`), which the conversation is rewritten to; a yes over a read-back the caller did not
+ *   hear nearly to its end confirms nothing (readBackHeard). Where the model has said nothing by
+ *   BRIDGE_AFTER_MS, the line says the business's bridge (lines.bridge), once, kept out of the conversation.
  */
 
 /** Model rounds per turn of the caller: each round's tool results go back to the model for the next. */
@@ -117,15 +122,65 @@ export interface ConverseDeps {
  * `say_delta` as it comes; the phone (plan 2 of the runtime's design) is to say a correction once the reply
  * has played, unless the caller has begun to speak. `scrubbed`, where a channel keeps what it sent, is given
  * at the turn's end how the trace masks what the line said (each value the records mask), before the
- * turn's trace record is written.
+ * turn's trace record is written. `bridge`, on a call only, is given the business's bridge line (lines.bridge)
+ * when nothing of a caller turn's reply has been said by BRIDGE_AFTER_MS.
  */
 export interface Out {
   say(text: string, final: boolean): void;
   end(how: 'closing' | 'handoff'): void;
   scrubbed?(scrub: (text: string) => string): void;
+  /** A bridge line, on a call only: said whole, never interruptible, never part of the reply. */
+  bridge?(text: string): void;
 }
 
-export type Input = { kind: 'start' } | { kind: 'text'; text: string } | { kind: 'left' };
+/** What the caller heard of the line's last reply, as the channel knows it. */
+export interface Heard {
+  /** The caller spoke over the last reply before it finished playing. */
+  cutIn: boolean;
+  /** What they heard of it (the carrier's report, else the channel's estimate); null: unknown. */
+  text: string | null;
+  /** The caller began speaking before the last reply began to play. */
+  spokeBefore: boolean;
+}
+
+export type Input = { kind: 'start' } | { kind: 'text'; text: string; heard?: Heard } | { kind: 'left' };
+
+/** How long a caller turn on a call waits for the first words of its reply before the line says the bridge. */
+export const BRIDGE_AFTER_MS = 1200;
+
+/** The share of a read-back's characters the caller must have heard, where they cut in, for their yes to count. */
+export const READ_BACK_HEARD_AT = 0.85;
+
+/** Written after what the caller heard of a reply they cut in on, in the conversation the model is sent. */
+export const CUT_IN_NOTE = ' [The caller cut in here.]';
+
+/** Stands for a reply the caller heard none of (they spoke before it, or over it before a word of it played). */
+export const UNHEARD_NOTE = '[The caller spoke before hearing this.]';
+
+/**
+ * Whether the caller heard a read-back enough for their answer to confirm it: where the channel says nothing
+ * of it, or they neither cut in nor spoke before it, yes; where they began before it played, never; where they
+ * cut in, only when what they heard holds at least READ_BACK_HEARD_AT of its characters (the longest start of
+ * the read-back found in what they heard, both trimmed and in lower case, so words said before it in the same
+ * reply count for nothing).
+ */
+export function readBackHeard(readBack: string, heard: Heard | undefined): boolean {
+  if (heard === undefined) return true;
+  if (heard.spokeBefore) return false;
+  if (!heard.cutIn) return true;
+  const r = readBack.trim().toLowerCase();
+  const h = (heard.text ?? '').trim().toLowerCase();
+  if (r === '') return true;
+  // Binary search for the longest start of the read-back in what was heard: holding a start, it holds each shorter one.
+  let lo = 0;
+  let hi = r.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (h.includes(r.slice(0, mid))) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo >= READ_BACK_HEARD_AT * r.length;
+}
 
 /**
  * The confirmation hash a gate call carries: the read-back's, only when the read-back was of this very
@@ -177,6 +232,20 @@ interface Turn {
   ended?: ConverseTraceRecord['ended'];
   /** The journey the turn's confirmed action completed. */
   journeyEnded?: ConverseTraceRecord['journeyEnded'];
+  /** The signal that stops the turn from outside (the caller spoke on a call); absent, nothing does. */
+  signal?: AbortSignal;
+  /** The bridge's timer while it waits; cleared by the first words said, an abort and the turn's end. */
+  bridgeTimer?: ReturnType<typeof setTimeout>;
+  /** The bridge was said this turn. */
+  bridged: boolean;
+}
+
+/** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
+const cut = (t: Turn): boolean => t.signal?.aborted === true;
+
+function clearBridge(t: Turn): void {
+  if (t.bridgeTimer !== undefined) clearTimeout(t.bridgeTimer);
+  delete t.bridgeTimer;
 }
 
 /**
@@ -196,17 +265,23 @@ class Speaker {
 
   constructor(private readonly t: Turn) {}
 
+  /** A piece to the caller, unless the turn was stopped from outside; the first piece said ends the bridge's wait. */
+  private say(text: string, final: boolean): boolean {
+    if (cut(this.t)) return false;
+    clearBridge(this.t);
+    this.t.out.say(text, final);
+    return true;
+  }
+
   delta(d: string): void {
     if (this.kept !== null) {
       this.heldText = true;
       this.kept.push(...this.sentences.push(d));
       return;
     }
+    if (cut(this.t)) return;
     this.heard();
-    for (const s of this.sentences.push(d)) {
-      this.t.out.say(s, false);
-      this.said += s;
-    }
+    for (const s of this.sentences.push(d)) if (this.say(s, false)) this.said += s;
   }
 
   /** The first text the caller could hear, timed from the turn's start. */
@@ -224,12 +299,10 @@ class Speaker {
   release(): void {
     const kept = this.kept;
     if (kept === null) return;
+    if (cut(this.t)) return this.discard();
     this.kept = null;
     if (this.heldText) this.heard();
-    for (const s of kept) {
-      this.t.out.say(s, false);
-      this.said += s;
-    }
+    for (const s of kept) if (this.say(s, false)) this.said += s;
   }
 
   /** The kept sentences are dropped, with the one not yet finished (abandon's effect on the held part), and the hold ends. */
@@ -251,8 +324,8 @@ class Speaker {
    */
   endRound(final: boolean): string {
     const rest = this.sentences.rest();
-    if (rest.trim() !== '') this.t.out.say(rest, final);
-    const all = (this.said + rest).trim();
+    const saidRest = rest.trim() !== '' && this.say(rest, final);
+    const all = (this.said + (saidRest ? rest : '')).trim();
     this.said = '';
     if (all !== '') this.t.replies.push(all);
     return all;
@@ -273,8 +346,7 @@ class Speaker {
 
   /** A fixed line, said whole: the turn's final piece unless another line follows it. */
   line(text: string, final = true): void {
-    this.t.out.say(text, final);
-    this.t.replies.push(text);
+    if (this.say(text, final)) this.t.replies.push(text);
   }
 }
 
@@ -378,7 +450,8 @@ function offeredNow(t: Turn): string[] {
 /**
  * One round's calls, in order: each checked, put to the gate and run, or read back. Returns the results
  * the model is sent and the read-back said, if a change was read back. A call after a read-back in the
- * same round is refused: one confirmation at a time.
+ * same round is refused: one confirmation at a time. Once the turn is stopped from outside, a call not yet
+ * begun is not run (one already running finishes, and its result is kept).
  */
 async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' }>[]): Promise<{ results: ModelContent[]; readBack: string | null }> {
   const b = t.deps.business;
@@ -387,6 +460,12 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
   const error = (id: string, content: string): void => void results.push({ type: 'tool_result', id, content, isError: true });
   for (const c of calls) {
     const spec = Object.hasOwn(b.actions, c.name) ? b.actions[c.name] : undefined;
+    if (cut(t)) {
+      const why = 'Not run: the caller spoke before it ran.';
+      traceTool(t, spec, c.name, c.args, 'refused', why);
+      error(c.id, why);
+      continue;
+    }
     if (t.ending) {
       const why = 'Not run: the call is ending.';
       traceTool(t, spec, c.name, c.args, 'refused', why);
@@ -499,11 +578,16 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
  * written without the call's result, and is dropped), its calls collected. It fails on an error event, a
  * thrown stream, nothing at all (but where `emptyOk`: the first answer to the check after speaking's note, for
  * which nothing at all is a correction declined), a reply cut off at the token limit, no event within
- * `firstWaitMs` at first and the model's time after, or `stop` aborted (the route changed the journey: the
- * request is aborted at once).
+ * `firstWaitMs` at first and the model's time after, or `stop` aborted (the route changed the journey, or the
+ * turn was stopped from outside: the request is aborted at once). The request's own signal is aborted with the
+ * turn's (Turn.signal) the moment it is.
  */
 async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: number, deadline: number, emptyOk: boolean, waitedMs = 0, stop?: AbortSignal): Promise<Round> {
   const controller = new AbortController();
+  const outer = t.signal;
+  const abortWithTurn = (): void => controller.abort();
+  if (outer?.aborted === true) controller.abort();
+  else outer?.addEventListener('abort', abortWithTurn, { once: true });
   const stopped = stop === undefined ? null : stoppedBy(stop);
   const started = Date.now();
   const iter = t.deps.model.stream(req, controller.signal)[Symbol.asyncIterator]();
@@ -529,7 +613,7 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
       } catch (e) {
         return fail(`invalid: the stream threw (${e instanceof Error ? e.name : 'error'})`);
       }
-      if (next === STOPPED) return fail('aborted: the route changed the journey');
+      if (next === STOPPED) return fail(cut(t) ? 'interrupted: the turn was stopped from outside' : 'aborted: the route changed the journey');
       if (next === TIMED_OUT) return first ? fail(`timeout: no answer began within ${Math.round(wait)} ms`, true) : fail(`timeout: the answer was not done within the model's ${t.deps.business.model.timeoutMs} ms`);
       if (next.done) break;
       if (first) firstMs = Date.now() - started;
@@ -550,6 +634,7 @@ async function streamOnce(t: Turn, sp: Speaker, req: ModelRequest, firstWaitMs: 
       } else return fail(`${ev.kind}: ${ev.detail}`, false, ev.kind === 'rate_limited' ? (ev.retryAfterMs !== undefined ? { retryAfterMs: ev.retryAfterMs } : {}) : undefined);
     }
   } finally {
+    outer?.removeEventListener('abort', abortWithTurn);
     const ms = Date.now() - started;
     t.model.ms += ms;
     (t.model.requests ??= []).push({ firstMs, ms, ...(waitedMs > 0 ? { waitedMs } : {}), ...(failed !== undefined ? { error: failed } : {}), ...(t.correcting ? { correction: true as const } : {}) });
@@ -600,9 +685,11 @@ async function sleep(ms: number, stop?: AbortSignal): Promise<void> {
  * begun within half the model's time (it is stopped then) is asked again with the rest, as half is left then,
  * but not after a rate limit's wait, which has spent some of it. `emptyOk` is streamOnce's, for the round's
  * first request and its asks again alike. A round whose `stop` is aborted ends at once, asked no more, and
- * its failure is not the turn's (the round is asked again with the new journey: routedRound).
+ * its failure is not the turn's (the round is asked again with the new journey: routedRound); so too a round
+ * of a turn stopped from outside (Turn.signal), which is asked nothing more.
  */
-async function round(t: Turn, sp: Speaker, emptyOk = false, stop?: AbortSignal): Promise<Round> {
+async function round(t: Turn, sp: Speaker, emptyOk = false, routeStop?: AbortSignal): Promise<Round> {
+  const stop = routeStop !== undefined && t.signal !== undefined ? AbortSignal.any([routeStop, t.signal]) : routeStop ?? t.signal;
   const b = t.deps.business;
   const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
@@ -681,7 +768,7 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
     const count = routed.route.unclear;
     if (count !== undefined && t.said !== null) t.unclear = { count, said: t.said };
     if (t.unclear === undefined && routed.next.active === j.active && routed.next.phase === j.phase) {
-      if (settled.round !== undefined && !settled.round.ok) sp.discard();
+      if (cut(t) || (settled.round !== undefined && !settled.round.ok)) sp.discard();
       else sp.release();
       return await first;
     }
@@ -699,6 +786,8 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
   else t.model.error = before.error;
   if (before.retried === undefined) delete t.model.retried;
   else t.model.retried = before.retried;
+  // Stopped from outside while the route was read: nothing is asked again, and the call does not end.
+  if (cut(t)) return { ok: false, error: 'interrupted: the turn was stopped from outside', spoke: false, stalled: false };
   if (t.unclear !== undefined && t.unclear.count >= UNCLEAR_ENDS_AT) return UNCLEAR_END;
   t.route.restarted = true;
   return round(t, sp, emptyOk);
@@ -769,16 +858,19 @@ function dropNote(st: ConverseState, note: string): void {
  * the model taking the note's "say nothing of it" for the whole answer: the note is taken out of the
  * conversation and the model asked once more without it; that answer, empty or not, is taken as any is.
  * With `routing` (a routed caller turn), the first round is asked alongside it (routedRound); later rounds
- * are asked in the journey it decided.
+ * are asked in the journey it decided. A turn stopped from outside (Turn.signal) stops here (interrupted).
  */
 async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, routing?: Promise<Routed>): Promise<{ ok: true; declined?: true } | { ok: false; error: string }> {
   let first = true;
   let route = routing;
   for (let i = 0; i < MAX_ROUNDS; i++) {
+    if (cut(t)) return interrupted(t, sp);
     const emptyOk = first && (silent || carried !== undefined);
     const r = route !== undefined ? await routedRound(t, sp, emptyOk, route) : await round(t, sp, emptyOk);
     route = undefined;
     first = false;
+    // Stopped from outside while the model was asked: whatever the round came to (a client's abort reads as a timeout), it is no failure.
+    if (cut(t)) return interrupted(t, sp);
     if (r === UNCLEAR_END) {
       await endUnclear(t, sp);
       return { ok: true };
@@ -815,6 +907,11 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     if (final) return { ok: true };
     const { results, readBack } = await runCalls(t, r.calls);
     add(t.st, 'user', results);
+    if (cut(t)) {
+      // A read-back the caller never heard waits for no answer: nothing is done, and the model may call it again.
+      if (readBack !== null) unheardReadBack(t);
+      return interrupted(t, sp);
+    }
     if (readBack !== null) {
       sp.line(readBack);
       return { ok: true };
@@ -834,6 +931,29 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
   // Its rounds used up on calls: the caller asked nothing that needs saying again.
   if (!silent) failed(t, sp, 'stuck');
   return { ok: false, error: `stuck: still calling actions after ${MAX_ROUNDS} rounds` };
+}
+
+/**
+ * The turn was stopped from outside (the caller spoke on a call): what the round had not said is dropped, what
+ * it said is the line's in the conversation, and nothing more is said or asked: no recovery line, no failure
+ * counted, no end.
+ */
+function interrupted(t: Turn, sp: Speaker): { ok: false; error: string } {
+  const said = sp.abandon();
+  if (said !== '') {
+    add(t.st, 'assistant', [{ type: 'text', text: said }]);
+    t.own.push(said);
+  }
+  return { ok: false, error: 'interrupted: the turn was stopped from outside' };
+}
+
+/** A read-back set waiting in a round the turn was stopped in, before the line said it: it waits for no answer, and its call has its result. */
+function unheardReadBack(t: Turn): void {
+  const p = t.st.pending;
+  if (p === null) return;
+  t.st.pending = null;
+  delete t.readBack;
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: 'Not read back: the caller spoke before the line read it back, so nothing was done. Call it again to have it read back.', isError: true }]);
 }
 
 /**
@@ -931,28 +1051,35 @@ const ONLY_THE_READ_BACK = 'Nothing is done until the line reads the action back
 /**
  * The caller answered a read-back: a clear yes runs the action and its follow-ons; anything else goes back to
  * the model. Returns whether the action ran on the caller's yes. An action that completes the active journey
- * moves it to its after phase.
+ * moves it to its after phase. An answer over a read-back the caller did not hear (readBackHeard: they began
+ * before it, or cut in before it was nearly done) confirms nothing, and the decision model is not asked.
  */
-async function answered(t: Turn, said: string): Promise<boolean> {
+async function answered(t: Turn, said: string, heard: Heard | undefined): Promise<boolean> {
   const p = t.st.pending!;
   t.st.pending = null;
   const b = t.deps.business;
   const spec = b.actions[p.action];
+  const readLine = `The line read back: "${p.text}"`;
+  // The caller's words as the model is sent them: the note's mark rewritten wherever they wrote it.
+  const words = neutralised(said);
+  if (!readBackHeard(p.text, heard)) {
+    t.readBack = { text: p.text, confirmed: false };
+    traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke over the read-back');
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}` }]);
+    return false;
+  }
   const reading = await readYesNo(t.deps.jev, p.text, said, t.deps.jevTimeoutMs, dayInWords(t.todayIso));
   const yes = isConfirmed(reading);
   t.readBack = { text: p.text, ...(reading !== null ? { yes: reading.yes, no: reading.no } : {}), confirmed: yes };
-  const heard = `The line read back: "${p.text}"`;
-  // The caller's words as the model is sent them: the note's mark rewritten wherever they wrote it.
-  const words = neutralised(said);
   if (reading === null) {
     // The decision model timed out or failed: what the caller meant is not known, and nothing runs.
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return false;
   }
   if (!yes) {
     traceTool(t, spec, p.action, p.params, 'notConfirmed');
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return false;
   }
   await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });
@@ -990,7 +1117,7 @@ async function answered(t: Turn, said: string): Promise<boolean> {
   }
   // The line's own record of what has been done, told to the model on every request from now on.
   if (parent.outcome === 'ran') (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${heard} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
   return parent.outcome === 'ran';
 }
 
@@ -1050,7 +1177,35 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
   }
 }
 
-export async function converseTurn(s: ConverseState, input: Input, deps: ConverseDeps, out: Out): Promise<ConverseState> {
+/**
+ * What the caller heard of the line's last reply, written into the conversation before their words: the last
+ * text of the line's (its tool calls kept) becomes what they heard with CUT_IN_NOTE after it where they cut in
+ * and heard some of it, and UNHEARD_NOTE where they heard none of it (they spoke before it, or cut in before a
+ * word of it played); otherwise it stands. A read-back waiting for its answer is not in the conversation:
+ * whether it was heard is readBackHeard's, on the answer.
+ */
+function applyHeard(st: ConverseState, heard: Heard): void {
+  if (st.pending !== null || (!heard.cutIn && !heard.spokeBefore)) return;
+  for (let m = st.messages.length - 1; m >= 0; m--) {
+    const msg = st.messages[m]!;
+    if (msg.role !== 'assistant') continue;
+    let at = msg.content.length - 1;
+    while (at >= 0 && msg.content[at]!.type !== 'text') at--;
+    if (at < 0) continue;
+    const part = heard.text ?? '';
+    msg.content[at] = { type: 'text', text: heard.cutIn && part.trim() !== '' ? `${part}${CUT_IN_NOTE}` : UNHEARD_NOTE };
+    return;
+  }
+}
+
+/**
+ * One turn of the call. `signal`, where the channel gives one, stops the turn from outside (the caller spoke
+ * on a call): the model's request is aborted at once, what was not yet said is dropped, a call already
+ * running finishes and keeps its result, and no model round starts after it; the turn counts no failure,
+ * says no recovery line and does not end the call, and the state keeps what was said (the trace's
+ * `interrupted`). An abort after the turn has ended changes nothing.
+ */
+export async function converseTurn(s: ConverseState, input: Input, deps: ConverseDeps, out: Out, signal?: AbortSignal): Promise<ConverseState> {
   if (s.ended !== undefined) return s;
   const st = structuredClone(s);
   const now = deps.now();
@@ -1071,8 +1226,33 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     carriedNote: false,
     carriedNoteDropped: false,
     said: input.kind === 'text' ? input.text : null,
+    ...(signal !== undefined ? { signal } : {}),
+    bridged: false,
   };
   const sp = new Speaker(t);
+  // The bridge: on a call, where the channel can say one, once if nothing of a caller turn's reply is said by BRIDGE_AFTER_MS.
+  const bridge = out.bridge;
+  if (input.kind === 'text' && st.channel === 'voice' && bridge !== undefined && signal?.aborted !== true) {
+    t.bridgeTimer = setTimeout(() => {
+      delete t.bridgeTimer;
+      if (cut(t)) return;
+      t.bridged = true;
+      bridge.call(out, lineOn(deps.business.lines.bridge, st.channel));
+    }, BRIDGE_AFTER_MS);
+  }
+  const onAbort = (): void => clearBridge(t);
+  signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await turnBody(t, sp, input, now);
+  } finally {
+    clearBridge(t);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+/** The turn's work once its clock, speaker and bridge are set up: converseTurn's, which clears the bridge after it. */
+async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<ConverseState> {
+  const { st, deps, out } = t;
   if (input.kind === 'start') {
     if (hasJourneys(deps.business)) {
       st.journey = initialJourney(deps.business, st.caller);
@@ -1098,9 +1278,11 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     const routed = hasJourneys(deps.business);
     // A state saved before journeys starts where its call would have.
     if (routed) st.journey ??= initialJourney(deps.business, st.caller);
+    // What the caller heard of the last reply, before their words (and before routing reads that reply).
+    if (input.heard !== undefined) applyHeard(st, input.heard);
     const lastReply = routed ? lastReplyOf(st) : null;
     let ran = false;
-    if (st.pending !== null) ran = await answered(t, input.text);
+    if (st.pending !== null) ran = await answered(t, input.text, input.heard);
     else add(st, 'user', [{ type: 'text', text: neutralised(input.text) }]);
     // A yes that ran its action is not routed: the caller answered the read-back, and the journey moved on by it.
     // Any other answer to a read-back is routed on the same words, alongside the model's first round.
@@ -1114,8 +1296,11 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
       t.carriedNote = true;
     }
     await converse(t, sp, false, carried, routing);
-    await checkAfterSpeaking(t, sp);
+    // A reply the caller cut in on is not read: they did not hear it through, and the next turn answers them.
+    if (!cut(t)) await checkAfterSpeaking(t, sp);
   }
+  // Stopped from outside before it ended (an abort after the turn ended changes nothing).
+  const interruptedNow = cut(t);
   // What the line said, as the trace keeps it: every value of the turn's calls that is recorded masked, masked there too.
   const openNow = openAt(deps.business, now.getTime());
   const scrub = scrubberOfValues(t.masked);
@@ -1139,6 +1324,9 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
     ...(t.ended !== undefined ? { ended: t.ended } : {}),
     ...(openNow !== undefined ? { open: openNow } : {}),
+    ...(interruptedNow ? { interrupted: true as const } : {}),
+    ...(t.bridged ? { bridge: true as const } : {}),
+    ...(input.kind === 'text' && input.heard !== undefined ? { heard: { cutIn: input.heard.cutIn, spokeBefore: input.heard.spokeBefore, chars: input.heard.text === null ? null : input.heard.text.length } } : {}),
   });
   st.turnIndex += 1;
   return st;

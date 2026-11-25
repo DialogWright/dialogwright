@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuditSink } from '../audit/sink';
 import type { AuditDraft } from '../audit/types';
 import { confirmationHash } from '../gate/lines';
@@ -16,7 +16,7 @@ import { systemPrompt, toolsOf } from './prompt';
 import { fakeCalendar } from './sources/calendar';
 import { businessZone, newConverseState, type ConverseState } from './state';
 import type { ConverseTraceRecord } from './trace';
-import { confirmedHashFor, converseTurn, MAX_ROUNDS, type ConverseDeps, type Input, type Out } from './turn';
+import { BRIDGE_AFTER_MS, confirmedHashFor, converseTurn, CUT_IN_NOTE, MAX_ROUNDS, readBackHeard, UNHEARD_NOTE, type ConverseDeps, type Heard, type Input, type Out } from './turn';
 
 /**
  * The conversation loop: the model's replies streamed in sentences, its calls checked and put to the
@@ -1940,6 +1940,28 @@ describe('journeys', () => {
       expect(s.failures).toBe(0);
     });
 
+    it('a turn stopped from outside while its route is read says nothing it held and asks nothing again', async () => {
+      const route = gate();
+      const model = gatedModel([[text('We mend lamps. '), text('And clocks. '), () => gate().promise, text('Anything else?'), done()]]);
+      const h = harness([], { edit: withJourneys, model, jev: gatedJev([{ task: VISIT }], [route.promise]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      const ac = new AbortController();
+      const turn = converseTurn(s, { kind: 'text', text: 'I would like to bring my kettle in' }, h.deps, h.out, ac.signal);
+      await pause(20);
+      ac.abort();
+      // The route switches the journey, which would ask the round again: stopped, it is not.
+      route.open();
+      s = await turn;
+      expect(h.said).toHaveLength(1);
+      expect(model.requests).toHaveLength(1);
+      expect(s.failures).toBe(0);
+      expect(h.ended).toEqual([]);
+      expect(JSON.stringify(s.messages)).not.toContain('We mend lamps');
+      expect(s.messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'text', text: 'I would like to bring my kettle in' }] });
+      expect(h.traces.at(-1)!.interrupted).toBe(true);
+      expect(h.traces.at(-1)!.route!.restarted).toBeUndefined();
+    });
+
     it('the decision model hangs: at routing.timeoutMs the held sentences are said, the route timed out, and nothing waits longer', async () => {
       const MODEL_MS = 20;
       const model = gatedModel([[text('We mend lamps. '), () => pause(MODEL_MS), text('And clocks.'), done()]]);
@@ -2209,6 +2231,261 @@ describe('journeys', () => {
     expect(h.traces.every((r) => r.route === undefined && r.journeyEnded === undefined)).toBe(true);
     expect(s.journey).toBeUndefined();
     expect(toolNames(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'end_call']);
+  });
+});
+
+describe('converseTurn: stopped from outside', () => {
+  const OFF = 'checks:\n  claims: { mode: off }\n';
+  /** A model that answers each request with the next scripted round, each given the request's signal; it keeps the signals. */
+  function signalledModel(rounds: ((signal: AbortSignal) => AsyncIterable<ModelEvent>)[]): ConverseModel & { requests: { system: string; messages: unknown[] }[]; signals: AbortSignal[] } {
+    const requests: { system: string; messages: unknown[] }[] = [];
+    const signals: AbortSignal[] = [];
+    return {
+      id: 'signalled',
+      requests,
+      signals,
+      stream(req, signal) {
+        requests.push(structuredClone(req));
+        signals.push(signal);
+        const r = rounds[requests.length - 1];
+        if (r === undefined) throw new Error('no more scripted rounds');
+        return r(signal);
+      },
+    };
+  }
+
+  it('an abort mid-stream stops the turn without a failure', async () => {
+    const ac = new AbortController();
+    const model = signalledModel([
+      async function* (signal) {
+        yield text('Sure, we can help. ');
+        yield text('Let me');
+        // Waits until stopped, then ends as a real client does when its signal is aborted: a timeout.
+        await new Promise((resolve) => signal.addEventListener('abort', resolve));
+        yield timeout;
+      },
+    ]);
+    const h = harness([], { model, edit: (t) => `${t}${OFF}` });
+    const out: Out = { ...h.out, say: (t, f) => (h.out.say(t, f), ac.abort()) };
+    const s = await converseTurn(fresh(), { kind: 'text', text: 'Can you help with a lamp?' }, h.deps, out, ac.signal);
+    expect(s.failures).toBe(0);
+    expect(h.said).toEqual([['Sure, we can help. ', false]]);
+    expect(h.ended).toEqual([]);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Sure, we can help.' }] });
+    expect(h.traces[0]!.interrupted).toBe(true);
+    expect(model.signals[0]!.aborted).toBe(true);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it('an abort while a lookup runs keeps its result', async () => {
+    const ac = new AbortController();
+    let resolve!: () => void;
+    const h = harness([[call('c1', 'check_availability', { day: FRIDAY }), done('tool')], [text('Friday morning is free.'), done()]], {
+      edit: (t) => `${t}${OFF}`,
+      tools: {
+        check_availability: async () => {
+          ac.abort();
+          await new Promise<void>((r) => (resolve = r));
+          return [{ id: SLOT, label: 'by noon' }];
+        },
+      },
+    });
+    const turn = converseTurn(fresh(), { kind: 'text', text: 'Anything Friday?' }, h.deps, h.out, ac.signal);
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve();
+    const s = await turn;
+    const calls = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_call' ? [c.id] : [])));
+    const results = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : [])));
+    expect(calls).toEqual(['c1']);
+    expect(results).toEqual(['c1']);
+    expect(h.model.requests).toHaveLength(1);
+    expect(s.failures).toBe(0);
+    expect(h.said).toEqual([]);
+    expect(h.traces[0]!.interrupted).toBe(true);
+  });
+
+  it('an abort after the yes leaves the change run and recorded', async () => {
+    const ac = new AbortController();
+    const booked: string[] = [];
+    const h = harness([...lookupThenBook, [text('You are booked.'), done()]], {
+      edit: (t) => `${t}${OFF}`,
+      tools: {
+        book: async (p, ctx) => {
+          booked.push(p.slot!);
+          ac.abort();
+          return h.calendar.book(p.slot!, { item: p.item! }, ctx.key);
+        },
+      },
+    });
+    let s = await upToReadBack(h);
+    const asked = h.model.requests.length;
+    const before = h.said.length;
+    s = await converseTurn(s, { kind: 'text', text: 'yes' }, h.deps, h.out, ac.signal);
+    expect(booked).toEqual([SLOT]);
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(s.done).toEqual([expect.objectContaining({ action: 'book', readBack: READ_BACK })]);
+    expect(h.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail.action)).toEqual(['book', 'notify']);
+    expect(h.model.requests).toHaveLength(asked);
+    expect(h.said.slice(before)).toEqual([]);
+    expect(s.failures).toBe(0);
+    expect(s.pending).toBeNull();
+    const results = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : [])));
+    expect(results).toContain('c2');
+    expect(h.traces.at(-1)!.interrupted).toBe(true);
+  });
+
+  it('an abort that comes after the turn ended changes nothing', async () => {
+    const ac = new AbortController();
+    const h = harness([[text('Hello there.'), done()]], { edit: (t) => `${t}${OFF}` });
+    const s = await converseTurn(fresh(), { kind: 'text', text: 'hi' }, h.deps, h.out, ac.signal);
+    const kept = structuredClone(s);
+    ac.abort();
+    expect(s).toEqual(kept);
+    expect(h.traces[0]!.interrupted).toBeUndefined();
+    expect(h.said).toEqual([['Hello there.', true]]);
+  });
+});
+
+describe('converseTurn: what the caller heard', () => {
+  const OFF = 'checks:\n  claims: { mode: off }\n';
+  const REPLY = 'Sure, we have the morning free.';
+
+  async function overReply(heard: Heard): Promise<ConverseState> {
+    const h = harness([[text(REPLY), done()], [text('Go on.'), done()]], { edit: (t) => `${t}${OFF}` });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'Anything Friday?' });
+    s = await h.run(s, { kind: 'text', text: 'wait', heard });
+    expect(h.traces.at(-1)!.heard).toEqual({ cutIn: heard.cutIn, spokeBefore: heard.spokeBefore, chars: heard.text === null ? null : heard.text.length });
+    return s;
+  }
+
+  it('what was heard replaces the last reply', async () => {
+    expect((await overReply({ cutIn: true, text: 'Sure, we have', spokeBefore: false })).messages[2]).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Sure, we have [The caller cut in here.]' }] });
+    expect(`Sure, we have${CUT_IN_NOTE}`).toBe('Sure, we have [The caller cut in here.]');
+    expect((await overReply({ cutIn: true, text: '', spokeBefore: false })).messages[2]).toEqual({ role: 'assistant', content: [{ type: 'text', text: UNHEARD_NOTE }] });
+    expect((await overReply({ cutIn: false, text: null, spokeBefore: true })).messages[2]).toEqual({ role: 'assistant', content: [{ type: 'text', text: '[The caller spoke before hearing this.]' }] });
+    // Neither: the reply stands as it was.
+    expect((await overReply({ cutIn: false, text: REPLY, spokeBefore: false })).messages[2]).toEqual({ role: 'assistant', content: [{ type: 'text', text: REPLY }] });
+  });
+
+  it('keeps the tool calls of the message whose text it replaces', async () => {
+    const ac = new AbortController();
+    const h = harness([[text('Let me look. '), call('c1', 'check_availability', { day: FRIDAY }), done('tool')], [text('Go on.'), done()]], {
+      edit: (t) => `${t}${OFF}`,
+      tools: { check_availability: async () => (ac.abort(), []) },
+    });
+    // The caller cut in while the lookup ran: the turn stopped with its words and the call in one message.
+    let s = await converseTurn(fresh(), { kind: 'text', text: 'Anything Friday?' }, h.deps, h.out, ac.signal);
+    s = await h.run(s, { kind: 'text', text: 'actually, Monday', heard: { cutIn: true, text: 'Let me', spokeBefore: false } });
+    expect(s.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'text', text: `Let me${CUT_IN_NOTE}` }, { type: 'tool_call', id: 'c1', name: 'check_availability', args: { day: FRIDAY } }] });
+  });
+
+  it('a yes over a read-back heard in part confirms nothing', async () => {
+    const h = harness([...lookupThenBook, [text('Shall I read it again?'), done()]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: { cutIn: true, text: READ_BACK.slice(0, Math.floor(READ_BACK.length * 0.6)), spokeBefore: false } });
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(confirmAsks(h)).toHaveLength(0);
+    expect(s.pending).toBeNull();
+    expect(lastMessage(h)).toContain('The caller spoke over the read-back before it finished, so it is not confirmed. They said: \\"yes\\"');
+    expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
+    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'book', outcome: 'notConfirmed' })]);
+  });
+
+  it('a yes over the read-back\'s last words confirms', async () => {
+    const h = harness([...lookupThenBook, [text('You are booked.'), done()]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: { cutIn: true, text: READ_BACK.slice(0, Math.ceil(READ_BACK.length * 0.9)), spokeBefore: false } });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(s.done).toHaveLength(1);
+  });
+
+  it('a yes begun before the read-back confirms nothing', async () => {
+    const h = harness([...lookupThenBook, [text('Shall I read it again?'), done()]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: { cutIn: false, text: READ_BACK, spokeBefore: true } });
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(confirmAsks(h)).toHaveLength(0);
+  });
+
+  it('readBackHeard: unknown or uncut is heard, a start before it never is, and a cut-in by how much of it was heard', () => {
+    expect(readBackHeard(READ_BACK, undefined)).toBe(true);
+    expect(readBackHeard(READ_BACK, { cutIn: false, text: null, spokeBefore: false })).toBe(true);
+    expect(readBackHeard(READ_BACK, { cutIn: false, text: READ_BACK, spokeBefore: true })).toBe(false);
+    expect(readBackHeard(READ_BACK, { cutIn: true, text: null, spokeBefore: false })).toBe(false);
+    // Compared trimmed and in lower case; the words before the read-back in what was heard do not count toward it.
+    expect(readBackHeard(READ_BACK, { cutIn: true, text: `  Friday morning is free. ${READ_BACK.slice(0, Math.ceil(READ_BACK.length * 0.9)).toUpperCase()}`, spokeBefore: false })).toBe(true);
+    expect(readBackHeard(READ_BACK, { cutIn: true, text: `Friday morning is free. ${READ_BACK.slice(0, Math.floor(READ_BACK.length * 0.6))}`, spokeBefore: false })).toBe(false);
+  });
+});
+
+describe('converseTurn: the bridge on a call', () => {
+  const OFF = 'checks:\n  claims: { mode: off }\n';
+  afterEach(() => void vi.useRealTimers());
+
+  /** A model whose first text comes `ms` after it is asked, with `first` said at once where given. */
+  const slowModel = (ms: number, first?: string): ConverseModel => ({
+    id: 'slow',
+    async *stream() {
+      if (first !== undefined) yield text(first);
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      yield text(first === undefined ? 'We have mornings free.' : ' moment, we have mornings free.');
+      yield done();
+    },
+  });
+
+  async function slowTurn(o: { channel?: 'chat' | 'voice'; first?: string; bridge?: boolean }): Promise<{ log: string[]; s: ConverseState; h: Harness }> {
+    vi.useFakeTimers();
+    const h = harness([], { model: slowModel(2000, o.first), edit: (t) => `${t}${OFF}` });
+    const log: string[] = [];
+    const out: Out = {
+      say: (t, f) => {
+        log.push(`say@${Date.now() - start}: ${t}`);
+        h.out.say(t, f);
+      },
+      end: h.out.end,
+      ...(o.bridge === false ? {} : { bridge: (t: string) => void log.push(`bridge@${Date.now() - start}: ${t}`) }),
+    };
+    const start = Date.now();
+    const state = newConverseState({ appId: 'menders', callId: 'call-1', channel: o.channel ?? 'voice', callerNumber: CALLER_NUMBER, account: null });
+    const turn = converseTurn(state, { kind: 'text', text: 'Anything Friday?' }, h.deps, out);
+    await vi.advanceTimersByTimeAsync(BRIDGE_AFTER_MS - 1);
+    log.push('...');
+    await vi.advanceTimersByTimeAsync(5000);
+    return { log, s: await turn, h };
+  }
+
+  it('the bridge is said once when the model is slow', async () => {
+    const { log, s, h } = await slowTurn({});
+    expect(log).toEqual(['...', `bridge@${BRIDGE_AFTER_MS}: One sec.`, 'say@2000: We have mornings free.']);
+    expect(JSON.stringify(s.messages)).not.toContain('One sec.');
+    expect(h.traces[0]!.replies).toEqual(['We have mornings free.']);
+    expect(h.traces[0]!.bridge).toBe(true);
+  });
+
+  it('no bridge on chat, after text, or without out.bridge', async () => {
+    const chat = await slowTurn({ channel: 'chat' });
+    expect(chat.log.filter((l) => l.startsWith('bridge'))).toEqual([]);
+    expect(chat.h.traces[0]!.bridge).toBeUndefined();
+    vi.useRealTimers();
+    const spoke = await slowTurn({ first: 'Let me see. One' });
+    expect(spoke.log[0]).toBe('say@0: Let me see. ');
+    expect(spoke.log.filter((l) => l.startsWith('bridge'))).toEqual([]);
+    expect(spoke.h.traces[0]!.bridge).toBeUndefined();
+    vi.useRealTimers();
+    const without = await slowTurn({ bridge: false });
+    expect(without.log).toEqual(['...', 'say@2000: We have mornings free.']);
+    expect(without.h.traces[0]!.bridge).toBeUndefined();
+  });
+
+  it('the bridge comes from the business\'s own line', async () => {
+    vi.useFakeTimers();
+    const h = harness([], { model: slowModel(2000), edit: (t) => `${t.replace('lines:\n', 'lines:\n  bridge: { en: "Just a moment." }\n')}${OFF}` });
+    const bridged: string[] = [];
+    const turn = converseTurn(fresh(), { kind: 'text', text: 'Anything Friday?' }, h.deps, { ...h.out, bridge: (t) => void bridged.push(t) });
+    await vi.advanceTimersByTimeAsync(5000);
+    await turn;
+    expect(bridged).toEqual(['Just a moment.']);
   });
 });
 
