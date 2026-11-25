@@ -1,9 +1,9 @@
 import type { OutboundFrame } from './frames';
-import { textEstimateMs, UNKNOWN_CLIP_MS } from '../../prompts/playback';
+import { textEstimateMs, UNKNOWN_CLIP_MS } from '../playbackEstimate';
 
 /**
  * How long the frames take to play, for the no-input timer; approximate by design. The clip
- * and text estimates it sums are the prompts' own (prompts/playback.ts); only the frames are Twilio's.
+ * and text estimates it sums are channel/playbackEstimate.ts's, which the prompts re-export (prompts/playback.ts).
  * An mp3 clip (no header we parse) falls back to the fixed
  * unknown-clip estimate rather than the recording text's word count, because the
  * adapter does not have the recording text at send time, only the file name.

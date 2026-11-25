@@ -1,10 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const WORDS_PER_SECOND = 2.5;
-const MIN_TEXT_MS = 500;
-/** A clip we could not measure (mp3, missing) is assumed to be this long. */
-export const UNKNOWN_CLIP_MS = 1500;
+// The pure estimators live in channel/playbackEstimate.ts, which the relay's playback reads for either
+// runtime without the prompts; re-exported here for the prompts' own users.
+export { textEstimateMs, UNKNOWN_CLIP_MS } from '../channel/playbackEstimate';
 
 /**
  * Duration of a PCM WAV from its header, or null when the buffer is not a parseable WAV.
@@ -28,12 +27,6 @@ export function wavDurationMs(b: Buffer): number | null {
   }
   if (!byteRate || dataSize === null) return null;
   return Math.round((dataSize / byteRate) * 1000);
-}
-
-/** Estimated speaking time at 2.5 words per second, at least 500ms. */
-export function textEstimateMs(text: string): number {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(MIN_TEXT_MS, Math.round((words / WORDS_PER_SECOND) * 1000));
 }
 
 /** filename → ms for every wav directly under dir; mp3s are skipped (estimated at playback). */
