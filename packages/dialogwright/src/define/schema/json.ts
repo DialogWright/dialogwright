@@ -7,7 +7,6 @@ import { KB_KINDS } from '../../kb/schema';
 import { CODE_SLOT_TYPE } from './slots';
 import { FILE_KINDS, SCHEMAS, type FileKind } from './index';
 import { hostSchema } from './host';
-import { businessSchema } from './business';
 import { agentBusinessSchema } from '../../converse/business/schema';
 import { localeIntentsSchema } from './intents';
 import { localeFormsSchema } from './forms';
@@ -93,11 +92,6 @@ export function kbJsonSchemas(): Record<string, JsonSchema> {
 /** host.yaml's JSON Schema (several apps on one server): schemas/host.schema.json. */
 export function hostJsonSchema(): JsonSchema {
   return { ...(z.toJSONSchema(hostSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright host.yaml' };
-}
-
-/** business.yaml's JSON Schema (an app in agent mode): schemas/business.schema.json. */
-export function businessJsonSchema(): JsonSchema {
-  return { ...(z.toJSONSchema(businessSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright business.yaml' };
 }
 
 /** A persona file's JSON Schema (app.yaml's personas.files): schemas/persona.schema.json. */

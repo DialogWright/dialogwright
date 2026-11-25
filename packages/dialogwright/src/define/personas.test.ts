@@ -149,11 +149,6 @@ describe('app.yaml\'s personas and a persona file, as the loader reads them', ()
       expect.stringContaining('spans.no_such_line  the line "no_such_line" is not in prompts.yaml'),
     ]);
   });
-
-  it('refuses personas in an app in agent mode', () => {
-    const problems = loadLines(folder(LIBRARY_DIR, { 'app.yaml': (t) => `${t}mode: agent\npersonas:\n  from: persona\n  files: { calm: personas/calm.yaml }\n` }));
-    expect(problems.some((l) => l.startsWith('app.yaml:') && l.includes('personas  personas reword a scripted app\'s lines'))).toBe(true);
-  });
 });
 
 describe('a persona\'s lines, as check holds them', () => {

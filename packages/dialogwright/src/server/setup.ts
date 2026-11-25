@@ -14,7 +14,6 @@ import { resolveJevProvider } from '../jev/provider';
 import { loadAppFolder } from '../define/load';
 import { AGENT_FILE, agentBusinessProblems } from '../converse/business/load';
 import { converseModelKeyVar } from '../converse/model/resolve';
-import { agentKeyVar, DEFAULT_AGENT_MODEL } from '../define/schema/style';
 import { commandHints, findApp, runCommand, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
 
 /**
@@ -418,25 +417,6 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   };
 
   /**
-   * An app in agent mode (app.yaml's mode: agent): the agent model's key, the variable style.yaml's `agent`
-   * names (INCEPTION_API_KEY for Mercury 3 on Inception, the default), read as every key is, from the
-   * environment or with the echo off, the one being replaced kept. Enter for none: the server starts, warns,
-   * and each call runs as a scripted app. Nothing for any other app.
-   */
-  const askAgentKey = async (): Promise<Section[]> => {
-    const loaded = loadAppFolder(app.dir).config;
-    if (loaded === null || loaded.app.mode !== 'agent') return [];
-    const chosen = loaded.style?.agent;
-    const model = { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL.model };
-    const variable = agentKeyVar(model);
-    const key = await secret(variable, `The agent model's key, ${variable} (${model.model} on ${model.provider}, style.yaml's agent; Enter for none, and each call runs as a scripted app; not shown as you type):`, () => null, true, true);
-    return [{
-      comment: [`The agent model of this app in agent mode (${model.model} on ${model.provider}, style.yaml's agent).${key ? '' : ' Unset: the server warns, and each call runs as a scripted app.'}`],
-      lines: [key ? { name: variable, value: key, secret: true } : { name: variable, value: '', commented: true }],
-    }];
-  };
-
-  /**
    * A converse app (app.yaml's mode: converse): the key of the model its conversations run on, the variable
    * agent.yaml's model.default names (ANTHROPIC_API_KEY for anthropic:<model>, say), read as every key is,
    * from the environment or with the echo off, the one being replaced kept. Enter for none: the server will
@@ -546,8 +526,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   if (mode === 'try' || mode === 'model') {
     // With a model (to record the app against it): its key, and the model understands the chat and the console too.
     const modelLines: Section['lines'] = mode === 'model' ? await askModel(false) : [{ name: 'JEV_CLIENT', value: 'heuristic' }];
-    // Recording an app in agent mode records its agent model too: its key with the decision model's.
-    const agentSections = [...(mode === 'model' ? await askAgentKey() : []), ...(await askConverseKey())];
+    const agentSections = await askConverseKey();
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', `The number a call goes to for a person (E.164; Enter for ${TRY_HANDOFF}, which goes nowhere):`, checkHandoff, TRY_HANDOFF);
     const numberSections = await askNumbers(true);
     // This repository's widget build, or, in a project of its own, the installed package's.
@@ -596,7 +575,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     const c = CARRIER_SECRET[carrier];
     const carrierSecret = await secret(c.variable, c.question, c.check);
     const modelLines = await askModel(true);
-    const agentSections = [...(await askAgentKey()), ...(await askConverseKey())];
+    const agentSections = await askConverseKey();
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', 'The number a call goes to when the caller wants a person (E.164, like +15551234567):', checkHandoff);
     const numberSections = await askNumbers(false);
     sections.push(

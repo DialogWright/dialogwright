@@ -103,13 +103,6 @@ export function validateApp(app: App): void {
   };
   for (const [formId, form] of Object.entries(app.forms)) {
     for (const slot of form.slots) if (!Object.hasOwn(app.slots, slot)) fail(`form "${formId}" has unknown slot "${slot}"`);
-    // A form only a verified caller may open: its line is a line, the form offered instead a form, and the app verifies someone.
-    const only = form.recognizedOnly;
-    if (only !== undefined) {
-      if (!Object.hasOwn(app.prompts.manifest, only.say)) fail(`form "${formId}" is for verified callers only, and its line "${only.say}" is not a prompt`);
-      if (only.instead !== undefined && !Object.hasOwn(app.forms, only.instead)) fail(`form "${formId}" offers "${only.instead}" instead, which is not a form`);
-      if (app.identity === undefined) fail(`form "${formId}" is for verified callers only, but the app verifies no one`);
-    }
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);

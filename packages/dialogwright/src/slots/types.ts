@@ -52,7 +52,7 @@ export type SlotValueCheck = (value: string, words: string, said: string, ctx: S
 export type BuiltSlotSpec = SlotSpec & {
   questionIds: readonly string[];
   prompts: readonly SlotPrompt[];
-  /** Checks a value the slot did not fill (agent mode). Absent on a slot written in code. */
+  /** Checks a value the slot did not fill itself. Absent on a slot written in code. */
   check?: SlotValueCheck;
 };
 

@@ -121,7 +121,7 @@ export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
     persona: (typeof style?.persona === 'string' ? style.persona : style?.persona?.[0]) ?? DEFAULT_PERSONA,
     // Several, said in turn (personaOfTurn): only where style.yaml gives a list, so every other app's style is as it was.
     ...(Array.isArray(style?.persona) ? { personas: [...style.persona] } : {}),
-    words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat, ...(style?.words?.answer !== undefined ? { answer: style.words.answer } : {}) },
+    words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat },
     avoid: [...(style?.avoid ?? [])],
     ...(style?.figures !== undefined ? { figures: FIGURES[style.figures] } : {}),
     // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DRIFT_FIRE).

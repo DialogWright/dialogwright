@@ -33,7 +33,7 @@ On the slot `bookingCode`, `bookingCodeGiven` (yes or no: does the caller state 
 
 ## Checked values
 
-A `reference` slot takes no value from outside its fill: its check answers `unsupported`, and an app in agent mode may not use it.
+A `reference` slot takes no value from outside its fill: its check answers `unsupported`.
 
 ## Notes
 

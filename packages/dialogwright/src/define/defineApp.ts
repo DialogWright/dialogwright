@@ -24,8 +24,6 @@ import { applySlotWording, isLibrarySlot, localeSlotsFile } from '../slots/wordi
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
-import { BUSINESS_FILE } from './business';
-import { asAgentApp, businessCode, businessCodeProblems } from './businessApp';
 import { ruleDefinitionProblems } from '../gate/defineRule';
 import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotChoicesOf, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
@@ -82,7 +80,7 @@ import { personaApp } from '../core/app/personas';
 export type FormHooks = Omit<Pick<FormDef, FormHook>, 'complete'> & Partial<Pick<FormDef, 'complete'>>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'recognizedOnly' | 'summaryPromptId' | 'calls' | 'writes' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'writes' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -197,17 +195,9 @@ export function defineApp(dir: string, code: AppCode, options: DefineAppOptions 
   const loaded = loadAppFolder(dir);
   if (loaded.converse === true && loaded.problems.length === 0) throw new Error(`${dir}: app.yaml says mode: converse, so the app is built with defineConverseApp (its agent.yaml and its actions' code), not defineApp`);
   if (!loaded.config) throw new AppDefinitionError(dir, loaded.problems);
-  // An app in agent mode: the code holds its tools, and the engine writes the rest from business.yaml (./businessApp.ts).
-  const business = loaded.config.business;
-  if (business !== undefined) {
-    const found = businessCodeProblems(business, code, codeFile, (path) => loaded.locate(BUSINESS_FILE, path));
-    if (found.length > 0) throw new AppDefinitionError(dir, found, undefined, code);
-  }
-  const effective = business !== undefined ? businessCode(business, code) : code;
-  const problems = crossLink(loaded.config, effective, loaded.locate, codeFile, loaded.locateKey, loaded.document);
+  const problems = crossLink(loaded.config, code, loaded.locate, codeFile, loaded.locateKey, loaded.document);
   if (problems.length > 0) throw new AppDefinitionError(dir, problems, undefined, code);
-  const app = buildApp(loaded.config, effective, linkSlots(loaded.config, effective, loaded.document, codeFile).slots);
-  if (business !== undefined) asAgentApp(app, business, loaded.config.style);
+  const app = buildApp(loaded.config, code, linkSlots(loaded.config, code, loaded.document, codeFile).slots);
   // The chat page's logo, read from the app folder wherever the server runs.
   if (app.brand?.logo !== undefined) app.brand = { ...app.brand, logo: resolve(dir, app.brand.logo) };
   try {
@@ -853,9 +843,7 @@ export function crossLink(
   // A slot that may be left empty (a callerNumber offer with onNo or ifNone: skip, or onMaxAttempts
   // skip; SlotState.declined) is never named in its form's summary line: the line would read an empty
   // value. A form's summary hook (onSummaryRead) may read another line that names it when it is filled.
-  // In agent mode business.yaml says what such a field reads when empty (`says.unset`, through the form's
-  // summary hook), and its own check holds that (define/business.ts): not this rule's.
-  for (const [id, spec] of Object.entries(config.app.mode === 'agent' ? {} : linked.slots)) {
+  for (const [id, spec] of Object.entries(linked.slots)) {
     const offer = spec?.callerNumber;
     const why = offer?.onNo === 'skip' ? 'its callerNumber says onNo: skip' : offer?.ifNone === 'skip' ? 'its callerNumber says ifNone: skip' : spec !== undefined && slotOutcomeOf(spec).then === 'skip' ? 'its onMaxAttempts skips it' : null;
     if (why === null) continue;
@@ -909,10 +897,7 @@ export function crossLink(
       if (!all.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is not one of level 1's factors (${all.join(', ')}), so the caller-ID match has nothing of it to stand in for`, `${renameHint(slot, all)}name a factor of level 1, such as the account number`);
       else if (way !== undefined && !way.factors.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is a factor of another way than "${callerId.identifies[0]}", and the caller-ID match stands in for factors of one way`, `name factors of one way only (${way.factors.join(', ')})`);
     });
-    // In agent mode the engine builds this identity from business.yaml's accounts, and the match recognizes
-    // an account on its own by design (the agent-mode design's call 14, the business's accepted risk, which
-    // the policy card states): never reached by accident, so never refused there.
-    if (way !== undefined && config.business === undefined && way.factors.every((slot) => callerId.identifies.includes(slot))) {
+    if (way !== undefined && way.factors.every((slot) => callerId.identifies.includes(slot))) {
       yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies'], `callerId identifies every factor of ${one.ways ? `the way checked by ${way.verify}` : 'level 1'}, so the caller-ID match alone would verify the caller, and a caller ID can be forged`, 'leave at least one factor to be asked (such as the date of birth); an app that means to take the match alone writes a verify tool that ignores a factor');
     }
     if (lookup === undefined) {

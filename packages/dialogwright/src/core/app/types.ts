@@ -165,13 +165,6 @@ export type AckRepeat = 'say' | 'skip';
 export interface FormDef {
   /** Business slots, in prompt priority order. */
   slots: readonly SlotId[];
-  /**
-   * A form only a caller already verified may open (agent mode: a booking, for an account the number
-   * calling recognized). Asked for by a caller still anonymous, `say` is said in its place, and `instead`
-   * (another form) is entered, or with none the open question follows: never a step-up question.
-   * Absent: any caller may open it, and a step-up asks what its calls need, as always.
-   */
-  recognizedOnly?: { readonly say: string; readonly instead?: FormId };
   /** The manifest prompt confirming the filled form, or null. */
   summaryPromptId: string | null;
   /**
@@ -1930,11 +1923,8 @@ export interface RenderStyle {
    * all open alike; the judge is told the one that turn used. Absent: `persona` alone.
    */
   readonly personas?: readonly string[];
-  /**
-   * The word budget per channel; `answer`, where style.yaml sets it, the budget of an agent reply that
-   * answers from the facts (AgentAnswer.fromFacts) on either channel (absent: the channel's and half again).
-   */
-  readonly words: { readonly voice: number; readonly chat: number; readonly answer?: number };
+  /** The word budget per channel. */
+  readonly words: { readonly voice: number; readonly chat: number };
   readonly avoid: readonly string[];
   /** How a generated line writes figures (style.yaml's `figures`), as the model is told it; absent: as the model words them. */
   readonly figures?: string;

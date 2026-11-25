@@ -83,7 +83,7 @@ with the app's facts giving `forSlots: (f) => ({ sources: { orders: ordersOf(f) 
 
 ## Checked values
 
-A `record` slot takes no value from outside its fill: its check answers `unsupported`, and an app in agent mode may not use it. What it holds is an entry of the app's own data, chosen among those the code offered.
+A `record` slot takes no value from outside its fill: its check answers `unsupported`. What it holds is an entry of the app's own data, chosen among those the code offered.
 
 ## Notes
 

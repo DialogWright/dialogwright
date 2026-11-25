@@ -12,9 +12,6 @@ import { declaredFacts, ROUTE_HANDOFF_REASON, routeFormEdges, writtenOutcome } f
 import type { RoutePoint } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
-import { BUSINESS_FILE } from './business';
-import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
-import { businessCode, businessCodeProblems } from './businessApp';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
@@ -236,10 +233,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (identity.code) needs.push(...CODE_PROMPTS);
     needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
     const callerId = config.identity?.levels[1].callerId;
-    if (callerId !== undefined && matchAlone(config)) {
-      // The match proves the level alone (agent mode): nothing is asked for it, and a caller with no match is refused.
-      needs.push({ id: NOT_RECOGNIZED_PROMPT, why: 'an action needs the level the caller-ID match alone proves, on a call with no match' });
-    } else if (callerId !== undefined) {
+    if (callerId !== undefined) {
       needs.push(...CALLER_ID_PROMPTS);
       // Asked at the greeting, it is said after the greeting's line before a proposal, and the open
       // question follows once it is settled, as for a proposal at the greeting.
@@ -264,17 +258,8 @@ function isLibrary(config: LoadedConfig, slot: string): boolean {
 /** The slots a form or identity asks for, whose lines the engine says: each form's, then the identity factors. */
 function askedSlots(config: LoadedConfig): Set<string> {
   const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
-  // A factor only a caller-ID match that proves the level alone fills (agent mode) is never asked.
-  const fromMatch = matchAlone(config) ? config.identity!.levels[1].callerId!.identifies : [];
-  for (const slot of identityParts(config)?.factors ?? []) if (!fromMatch.includes(slot)) slots.add(slot);
+  for (const slot of identityParts(config)?.factors ?? []) slots.add(slot);
   return slots;
-}
-
-/** Whether identity.yaml's caller-ID match identifies every factor of level 1, so it proves the level alone (agent mode only: the engine's identity for its accounts). */
-function matchAlone(config: LoadedConfig): boolean {
-  const one = config.identity?.levels[1];
-  const identifies = one?.callerId?.identifies;
-  return config.business !== undefined && one !== undefined && identifies !== undefined && one.ways === undefined && one.factors.every((f) => identifies.includes(f));
 }
 
 /** The files an app's module may be, in the order they are looked for. */
@@ -338,13 +323,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     // own problems are among the ones above.
     if (found.code) code = codeWithLinkedSlots(config, found.code, loaded.document, codeFile);
   } else if (found.code) {
-    // An app in agent mode: its code holds its tools, and the engine writes the rest from business.yaml
-    // (./businessApp.ts); every check below reads the code as the app runs it.
-    const business = config.business;
-    const businessProblems = business !== undefined ? businessCodeProblems(business, found.code, codeFile, (path) => locate(BUSINESS_FILE, path)) : [];
-    problems.push(...businessProblems);
-    if (business !== undefined && businessProblems.length === 0) found.code = businessCode(business, found.code);
-    if (businessProblems.length === 0) problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
+    problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
     checkWarnings({
       config,
       report: (file, path, message, fix, atKey = false) => {
@@ -446,9 +425,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
   problems.push(...checkLocaleLabels(config, loaded.locateKey ?? locate));
-  // An app in agent mode has no corpus: the model reads the caller, and no intent is asked of the decision model.
-  if (config.business === undefined) problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
-  else warnings.push(...agentCorpusWarnings(config, dir, options.fixturesRoot));
+  problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   problems.push(...checkScenarioGaps(config, dir, options.fixturesRoot));
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
@@ -1698,40 +1675,6 @@ export const MAX_CORPUS_BYTES = 16 * 1024 * 1024;
 function isInside(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
-/**
- * The warnings for an app in agent mode's corpus, where it has one (the review of Task 8): a line that
- * labels a field's values. A corpus line is the decision model's alone and runs without the agent
- * model (harness-text/runner.ts runCorpusEntry: with an agent that understands nothing, so no field
- * fills), so a field's label there is read by no run of the corpus, only by a call run as a scripted app
- * (no key); a scripted call's step names the agent's answer instead. Never a refusal: the labels may be
- * meant for a call run with no key.
- */
-function agentCorpusWarnings(config: LoadedConfig, dir: string, fixturesRoot?: string): Problem[] {
-  const fixtures = config.app.fixtures;
-  if (!fixtures) return [];
-  const absolute = resolve(fixturesRoot ?? packageRootOf(dir), `${fixtures.dir.replace(/\/+$/, '')}/corpus.jsonl`);
-  if (!existsSync(absolute) || !statSync(absolute).isFile() || statSync(absolute).size > MAX_CORPUS_BYTES) return [];
-  const file = relative(resolve(dir), absolute).split('\\').join('/');
-  const out: Problem[] = [];
-  readFileSync(absolute, 'utf8').split('\n').forEach((text, i) => {
-    if (text.trim() === '') return;
-    let entry: { id?: unknown; labels?: unknown } | null;
-    try {
-      entry = JSON.parse(text) as { id?: unknown; labels?: unknown } | null;
-    } catch {
-      return;
-    }
-    const labels = entry?.labels;
-    if (typeof labels !== 'object' || labels === null || Array.isArray(labels) || Object.keys(labels).length === 0) return;
-    out.push({
-      file, line: i + 1, column: 1, path: WHOLE_FILE,
-      message: `line ${i + 1}${typeof entry?.id === 'string' ? ` (${entry.id})` : ''} labels the fields ${Object.keys(labels).join(', ')}, but in agent mode a corpus line runs without the agent: the model understands the values, and these labels are read only by a call run as a scripted app (no key)`,
-      fix: 'keep an agent-mode corpus to the decision model\'s turn-level readings (intent, confirm), and name the values in a scripted call\'s step (its `agent` answer)',
-    });
-  });
-  return out;
 }
 
 /** Every intent has a labelled example in the corpus, for an app whose app.yaml names a fixtures directory. */

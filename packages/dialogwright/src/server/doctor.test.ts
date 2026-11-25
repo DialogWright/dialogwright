@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { agentChecks, converseChecks, formatResult, googleCalendarChecks, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
-import { BUSINESS_FIXTURE_DIR } from '../define/__fixtures__/business/app';
+import { converseChecks, formatResult, googleCalendarChecks, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { main as cliMain } from '../define/cli';
+import { loadAppFolder, OLD_AGENT_MODE_FIX } from '../define/load';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import { CALLBACK_DIR } from '../testing/callback/app';
 import { loadConfig } from './config';
@@ -810,6 +811,27 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     expect(out.find((l) => l.startsWith('warn  app two: its own CHAT_JWKS_URL with the server'))).toBeDefined();
   });
 
+  it('a host file naming an app with a business.yaml fails check and diagnose with a fix', async () => {
+    const dir = hosted();
+    // An app of the old agent mode, as its folders were: app.yaml says mode: agent, beside a business.yaml.
+    mkdirSync(join(dir, 'apps', 'old'), { recursive: true });
+    writeFileSync(join(dir, 'apps', 'old', 'app.yaml'), 'id: old\nmode: agent\n');
+    writeFileSync(join(dir, 'apps', 'old', 'business.yaml'), 'business:\n  name: Example Business\n');
+    writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/old]\n');
+    // Never read half-built: the folder does not load, and defineApp refuses it, so the server does not start.
+    const loaded = loadAppFolder(join(dir, 'apps', 'old'));
+    expect(loaded.config).toBeNull();
+    expect(loaded.problems).toEqual([expect.objectContaining({ file: 'business.yaml', fix: OLD_AGENT_MODE_FIX })]);
+    // pnpm check host.yaml: the app's problem, with the fix.
+    const checked: string[] = [];
+    expect(await cliMain(['check', 'host.yaml'], { out: (l) => checked.push(l), err: (l) => checked.push(l), cwd: dir })).toBe(1);
+    expect(checked.find((l) => l.includes('business.yaml') && l.includes('the old agent mode'))).toContain(`->  ${OLD_AGENT_MODE_FIX}`);
+    // pnpm diagnose: the app fails, with the same fix.
+    const out: string[] = [];
+    expect(await main(['--host', 'host.yaml', '--offline'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps())).toBe(1);
+    expect(out).toContain(`fail  app old: business.yaml is the old agent mode's file, and that mode is no longer read or run: the server will not start  ->  ${OLD_AGENT_MODE_FIX}`);
+  });
+
   it('takes --app for one app as before, and says a host file\'s problems', async () => {
     const dir = hosted();
     writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/nowhere]\n');
@@ -953,21 +975,6 @@ describe('pnpm diagnose: the languages a carrier is sent (live findings, 2026-10
       { id: 'languages', status: 'ok', message: 'languages: en-US as en-US; es as es-US, each with its region, and none heard by a recognizer that hears English only' },
     ]);
     expect(languageChecks(fileURLToPath(new URL('../testing/callback', import.meta.url)), server(['twilio']))).toEqual([]);
-  });
-});
-
-describe('agent mode (pnpm diagnose)', () => {
-  it('fails for an app in agent mode without its agent model\'s key, with the fix', () => {
-    expect(agentChecks(BUSINESS_FIXTURE_DIR, {})).toEqual([{ id: 'agent', status: 'fail', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), but INCEPTION_API_KEY is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding", fix: "set INCEPTION_API_KEY in the settings file (the agent model's key)" }]);
-  });
-
-  it('is ok with the key, and says the budgets; a budget out of range fails', () => {
-    expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x' })).toEqual([{ id: 'agent', status: 'ok', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), key in INCEPTION_API_KEY, within 1800 ms on a call and 4000 ms in a chat" }]);
-    expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x', AGENT_TIMEOUT_VOICE_MS: '100' })[0]).toMatchObject({ id: 'agent', status: 'fail' });
-  });
-
-  it('says nothing for a scripted app', () => {
-    expect(agentChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {})).toEqual([]);
   });
 });
 

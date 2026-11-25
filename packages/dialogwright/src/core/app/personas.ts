@@ -88,7 +88,6 @@ function generatedWith(g: GeneratedWording, overlay: PersonaOverlay): GeneratedW
             words: {
               voice: words.voice ?? g.style.words.voice,
               chat: words.chat ?? g.style.words.chat,
-              ...(g.style.words.answer !== undefined ? { answer: g.style.words.answer } : {}),
             },
           }
         : {}),

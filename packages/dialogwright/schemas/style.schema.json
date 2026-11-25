@@ -35,12 +35,6 @@
           "type": "integer",
           "minimum": 3,
           "maximum": 400
-        },
-        "answer": {
-          "description": "An app in agent mode: the most words a reply of the agent model may use where it answers the caller from the facts (its fromFacts), on either channel, so an explanation from the services fits. Read only in agent mode. Default: the channel's budget and half again (45 on a call at the default 30).",
-          "type": "integer",
-          "minimum": 3,
-          "maximum": 400
         }
       },
       "additionalProperties": false
@@ -196,42 +190,9 @@
         "provider"
       ],
       "additionalProperties": false
-    },
-    "agent": {
-      "description": "The model that leads the conversation of an app in agent mode (app.yaml's `mode: agent`): it understands the caller and words the replies, and the engine checks every value and every reply. The key is read from the environment only, never from here. Read only in agent mode. Default: Muse Ember on Meta at instant (since 2026-11-18; Mercury 3 on Inception before, which Inception ends on 2026-12-28).",
-      "type": "object",
-      "properties": {
-        "provider": {
-          "default": "meta",
-          "description": "Where the agent model is reached: inception (Inception's own API, INCEPTION_API_KEY; the way to Mercury Voice), openrouter (any model OpenRouter serves, OPENROUTER_API_KEY) or meta (Meta's own API, META_API_KEY: its Muse models, in Standard mode, which does not train on what it is sent). Default meta.",
-          "type": "string",
-          "enum": [
-            "inception",
-            "openrouter",
-            "meta"
-          ]
-        },
-        "model": {
-          "description": "The model id, as the provider names it (\"muse-ember-1.0\" on Meta, \"mercury-3\" on Inception, any OpenRouter serves on openrouter). Default the provider's own: muse-ember-1.0 on meta, mercury-3 on inception; on openrouter, required.",
-          "type": "string",
-          "minLength": 1
-        },
-        "effort": {
-          "default": "instant",
-          "description": "How hard the model reasons before it answers (reasoning_effort on Inception): instant, low, medium or high. Measured on 2026-11-09 (pnpm agent:bakeoff): Mercury 3 at instant met the bar for a call (p50 under 1.0 s and p95 under 1.8 s with the judge), at low it did not. On openrouter, instant asks for no reasoning; on meta, instant is a Muse model's least, minimal (it always reasons). Default instant.",
-          "type": "string",
-          "enum": [
-            "instant",
-            "low",
-            "medium",
-            "high"
-          ]
-        }
-      },
-      "additionalProperties": false
     }
   },
   "additionalProperties": false,
-  "description": "style.yaml: how a generated line sounds, and in agent mode the model that leads the conversation. Only read when the app generates a line, or is in agent mode.",
+  "description": "style.yaml: how a generated line sounds. Only read when the app generates a line.",
   "title": "DialogWright style.yaml"
 }

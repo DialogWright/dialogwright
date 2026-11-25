@@ -267,7 +267,7 @@ customerBirth:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood: a real ISO day, in `minYear` or later and before today (the session's day in the app's time zone), and the words cited must be in this turn's words. It is shown as the display says it ("June 14th, 1975").
+The slot's check holds a value it did not fill itself: a real ISO day, in `minYear` or later and before today (the session's day in the app's time zone), and the words cited must be in this turn's words. It is shown as the display says it ("June 14th, 1975").
 
 ## Notes
 

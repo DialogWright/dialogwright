@@ -2007,14 +2007,6 @@ function summaryMove(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): 
  * yes that confirmed it, which the form hears after the opener's (they are newer) but never fills from.
  */
 function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContext, io: TurnIO, queue?: FormId, yes?: AnswerMap, aside?: { readonly acks: Ack[] }): { decision: Decision; events: FillEvent[] } {
-  // A form only a verified caller may open (FormDef.recognizedOnly), asked for by one still anonymous:
-  // its line, then the form it offers instead, or the open question. Never a step-up question.
-  const only = formOf(io.app, form).recognizedOnly;
-  if (only !== undefined && isAnonymous(s.principal)) {
-    const said: Ack[] = [...(aside?.acks ?? []), { promptId: only.say, vars: {} }];
-    if (only.instead === undefined || only.instead === form) return { decision: prompt('ask_intent', 'intent', {}, said), events: [] };
-    return enterForm(s, only.instead, answers, ctx, io, queue, yes, { acks: said });
-  }
   if (aside === undefined && s.parked !== undefined) {
     // In an aside, the task set aside asked for again ("let's get back to the reschedule"): it resumes
     // where it stood, and what else the words said for it fills, as an informational answer's breath does.

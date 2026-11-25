@@ -46,19 +46,12 @@ export interface ChatPageApp {
   readonly chat?: { readonly page?: ChatPageConfig };
   readonly locales?: { readonly default?: string };
   readonly intents?: App['intents'];
-  readonly forms?: App['forms'];
 }
 
-/**
- * The app's ways to start by default: the labels of its forms and of its informational intents that say
- * something, at most six. Not a form only a caller recognized by the number calling may open
- * (FormDef.recognizedOnly): a chat carries no number, so such a form never opens there.
- */
+/** The app's ways to start by default: the labels of its forms and of its informational intents that say something, at most six. */
 export function defaultStarters(app: ChatPageApp): string[] {
-  const forms = app.forms ?? {};
-  return Object.entries(app.intents ?? {})
-    .filter(([id, i]) => (i.kind === 'form' && forms[id]?.recognizedOnly === undefined) || (i.kind === 'informational' && (i.promptId !== undefined || i.passage !== undefined)))
-    .map(([, i]) => i)
+  return Object.values(app.intents ?? {})
+    .filter((i) => i.kind === 'form' || (i.kind === 'informational' && (i.promptId !== undefined || i.passage !== undefined)))
     .map((i) => capitalized(i.label.trim()))
     .filter((w) => w !== '' && w.length <= 60)
     .slice(0, DEFAULT_STARTERS_MAX);

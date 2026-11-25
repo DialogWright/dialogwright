@@ -134,10 +134,10 @@ export interface EvalOutcome {
   text: string;
 }
 
-/** The business the judge holds the line to: an agent-mode app's business.yaml, or a converse app's agent.yaml. */
+/** The business the judge holds the line to: a converse app's agent.yaml. */
 export function businessTextOf(appDir: string): string {
-  const file = [join(appDir, 'business.yaml'), join(appDir, 'agent.yaml')].find((f) => existsSync(f));
-  return file !== undefined ? readFileSync(file, 'utf8') : '(this app has no business.yaml or agent.yaml: judge by what its own answers say)';
+  const file = join(appDir, 'agent.yaml');
+  return existsSync(file) ? readFileSync(file, 'utf8') : '(this app has no agent.yaml: judge by what its own answers say)';
 }
 
 /** The line's own model of a run: the one it names, or a converse app's agent.yaml's; null for a scripted app. */

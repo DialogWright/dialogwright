@@ -30,7 +30,7 @@ describe('text check', () => {
     expect(note('x'.repeat(21), 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
     expect(note('   ', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
   });
-  it('by default (figures: free) takes a value whose figures its words do not have: the read-back is the guard (calls 57 to 59)', () => {
+  it('takes a value whose figures its words do not have: the read-back is the guard (calls 57 to 59)', () => {
     const item = defineSlot('item', { type: 'text', what: 'the item', say: null, redact: 'none', maxLength: 80 }).check!;
     expect(item('Model G80', "It's a, um, model two eighty.", "It's a, um, model two eighty.", ctx)).toMatchObject({ ok: true, value: 'Model G80' });
     expect(item('The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor', 'a hold on The Quiet Harbor please', ctx)).toMatchObject({ ok: true });
@@ -39,33 +39,6 @@ describe('text check', () => {
     // And the words must have been said.
     expect(item('Vega 911', 'Vega nine eleven', 'the Vega', ctx)).toEqual({ ok: false, reason: 'words' });
   });
-  it('refuses, with figures: cited, a figure or a web address the words cited do not have: a short version carries nothing of its own (call 40)', () => {
-    const title = defineSlot('title', { type: 'text', what: 'a title', say: null, redact: 'none', maxLength: 80, figures: 'cited' }).check!;
-    const said = 'a hold on The Quiet Harbor please';
-    expect(title('The Quiet Harbor, waived fee of $40 agreed', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
-    expect(title('The Quiet Harbor, see example.org/fees', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
-    expect(title('The Quiet Harbor, two copies', 'The Quiet Harbor', said, ctx)).toEqual({ ok: false, reason: 'words' });
-    // A whole value so far keeps what the slot held, its figures among them.
-    expect(title('The Quiet Harbor 2, and its sequel', 'and its sequel', 'and its sequel', { ...ctx, held: 'The Quiet Harbor 2' })).toMatchObject({ ok: true });
-    // Its own figures, in the words it is cited from, stay.
-    expect(title('The Quiet Harbor 2', 'The Quiet Harbor 2', 'a hold on The Quiet Harbor 2', ctx)).toMatchObject({ ok: true });
-  });
-
-  it('compares figures as numbers on both sides, with figures: cited: a year said in pairs, a count in words (a live call, call 47)', () => {
-    const vehicle = defineSlot('vehicle', { type: 'text', what: 'the car', say: null, redact: 'none', maxLength: 80, figures: 'cited' }).check!;
-    const said = "It's a twenty twenty three Kia Sorento.";
-    const cited = 'twenty twenty three Kia Sorento';
-    expect(vehicle('2023 Kia Sorento', cited, said, ctx)).toMatchObject({ ok: true, value: '2023 Kia Sorento' });
-    expect(vehicle('2024 Kia Sorento', cited, said, ctx)).toEqual({ ok: false, reason: 'words' });
-    // A count in words is the figure in digits, either way round.
-    expect(vehicle('2 wheels', 'two wheels', 'two wheels', ctx)).toMatchObject({ ok: true });
-    expect(vehicle('two wheels', '2 wheels', 'the 2 wheels', ctx)).toMatchObject({ ok: true });
-    expect(vehicle('3 wheels', 'two wheels', 'two wheels', ctx)).toEqual({ ok: false, reason: 'words' });
-    // A year of the last century, and one with a nought said "oh".
-    expect(vehicle('1999 Civic', 'nineteen ninety nine Civic', 'a nineteen ninety nine Civic', ctx)).toMatchObject({ ok: true });
-    expect(vehicle('1905 roadster', 'nineteen oh five roadster', 'a nineteen oh five roadster', ctx)).toMatchObject({ ok: true });
-  });
-
   it('refuses words the caller never said', () => {
     expect(note('leave it by the gate', 'leave it by the gate', 'ring the bell', ctx)).toEqual({ ok: false, reason: 'words' });
   });

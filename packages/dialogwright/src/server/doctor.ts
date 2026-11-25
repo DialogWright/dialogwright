@@ -7,13 +7,13 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { agentSettings, gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, voiceFor, type Env, type ServerConfig } from './config';
+import { gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, voiceFor, type Env, type ServerConfig } from './config';
 import { describeNoiseSuppression } from './voice/noiseSuppression';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
-import { loadAppFolder } from '../define/load';
+import { isOldAgentModeFolder, loadAppFolder, OLD_AGENT_MODE_FIX } from '../define/load';
 import { AGENT_FILE, agentBusinessProblems } from '../converse/business/load';
 import { converseModelKeyVar } from '../converse/model/resolve';
 import { APP_FILE, converseAppYamlProblems } from '../converse/app';
@@ -23,7 +23,6 @@ import { envVariableOf } from '../core/app/envReference';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
 import { textSettings } from '../texts/settings';
-import { agentKeyVar, DEFAULT_AGENT_MODEL } from '../define/schema/style';
 import { appModelKeyMissing, appModelLabel, holdLabel, inceptionTemperatureNotes, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
@@ -325,8 +324,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
   // Generated wording, for an app that generates a line: who words it, from the settings alone (no model is asked).
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
-  // Agent mode: the agent model's key and budgets, from the settings alone.
-  if (o.appDir !== undefined) results.push(...agentChecks(o.appDir, o.env));
+  // A folder of the old agent mode (a business.yaml): refused, with the fix.
+  if (o.appDir !== undefined) results.push(...agentChecks(o.appDir));
   // A converse app: its files, its model's key, the read-back's decision model, its chat; from the settings alone.
   if (o.appDir !== undefined) results.push(...converseChecks(o.appDir, o.env, config));
   // Texts: the number they are sent from and the Twilio account, from the settings alone (nothing is sent).
@@ -553,29 +552,13 @@ export function textChecks(env: Env): CheckResult[] {
 }
 
 /**
- * Agent mode (app.yaml's mode: agent): the agent model style.yaml's `agent` names, with its key's variable
- * (never the key) and its budgets (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS). With the key unset it
- * fails: the server starts, and the app runs as a scripted app (its fixed questions, the decision model
- * understanding), where a business wants its agent.
- * Nothing for any other app, or a folder that cannot be read. No model is asked.
+ * An app folder of the old agent mode (a business.yaml, and no agent.yaml), which was removed: it fails, with
+ * the fix, as pnpm check does; the server refuses to start on it (defineApp refuses the folder). Nothing for
+ * any other app.
  */
-export function agentChecks(appDir: string, env: Env): CheckResult[] {
-  const loaded = loadAppFolder(appDir).config;
-  if (loaded === null || loaded.app.mode !== 'agent') return [];
-  const chosen = loaded.style?.agent;
-  const model = { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL.model, effort: chosen?.effort ?? DEFAULT_AGENT_MODEL.effort };
-  const keyVar = agentKeyVar(model);
-  const said = `agent mode: ${model.model} on ${model.provider} at ${model.effort} (style.yaml's agent)`;
-  let settings: ReturnType<typeof agentSettings>;
-  try {
-    settings = agentSettings(env);
-  } catch (e) {
-    return [{ id: 'agent', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
-  }
-  if (!env[keyVar]?.trim()) {
-    return [{ id: 'agent', status: 'fail', message: `${said}, but ${keyVar} is unset: the app runs as a scripted app, on its fixed questions with the decision model understanding`, fix: `set ${keyVar} in the settings file (the agent model's key)` }];
-  }
-  return [{ id: 'agent', status: 'ok', message: `${said}, key in ${keyVar}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat${settings.retry ? '' : ', an answer not in its shape not asked again (AGENT_RETRY=off)'}` }];
+export function agentChecks(appDir: string): CheckResult[] {
+  if (!isOldAgentModeFolder(appDir)) return [];
+  return [{ id: 'agent', status: 'fail', message: 'business.yaml is the old agent mode\'s file, and that mode is no longer read or run: the server will not start', fix: OLD_AGENT_MODE_FIX }];
 }
 
 /**
@@ -731,13 +714,6 @@ function referenceChecks(refs: readonly EnvReference[], env: Env): CheckResult[]
   return refs.map(({ path, variable, file, kind }) => {
     const value = env[variable];
     const where = `${file ?? 'app.yaml'}'s ${path} reads ${variable}`;
-    // An account's number (business.yaml): unset, it is left out (the account is recognized by its other numbers); set, an E.164 number.
-    if (kind === 'account') {
-      if (value === undefined || value.trim() === '') return { id: 'variables', status: 'ok', message: `${where}, which is not set: left out, the account recognized by its other numbers` };
-      return E164.test(value.trim())
-        ? { id: 'variables', status: 'ok', message: `${where}: set, a phone number (a call from it is recognized as the account)` }
-        : { id: 'variables', status: 'fail', message: `${where}: set, but it is not an E.164 number: the server will not start`, fix: `set ${variable} to the number the account calls from, like +15551234567, or leave it unset` };
-    }
     if (value === undefined || value.trim() === '') return { id: 'variables', status: 'fail', message: `${where}, which is not set: the server will not start`, fix: `set ${variable} in the settings file` };
     // A called condition (a route's or a transfer target's): the E.164 number callers dial, as the server holds it (server/transfer.ts calledVariablesFrom).
     if (kind === 'called') {
@@ -1066,7 +1042,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     const read = appEnvironment(env, own, ownVariablesOf(app));
     out.push(...variableChecks(app.dir, read.env).map(tag));
     out.push(...wordingChecks(app.dir, read.env).map(tag));
-    out.push(...agentChecks(app.dir, read.env).map(tag));
+    out.push(...agentChecks(app.dir).map(tag));
     out.push(...textChecks(read.env).map(tag));
     const server = serverConfigOf(env);
     // A converse app's calls (its voices, its transfer number): only where a call reaches it, the default or a number listed for it.

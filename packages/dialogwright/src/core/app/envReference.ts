@@ -19,11 +19,9 @@ export interface EnvReference {
   readonly file?: string;
   /**
    * `called`: the reference is a number callers dial, a `called` condition's or a key of app.yaml's
-   * voice.numbers, found by where it is in the file's structure, never by its key's name. `account`: a
-   * number an account of an agent-mode app calls from (business.yaml's `accounts[].numbers`), which may be
-   * unset (the account is recognized by its other numbers) but, set, is an E.164 number.
+   * voice.numbers, found by where it is in the file's structure, never by its key's name.
    */
-  readonly kind?: 'called' | 'account';
+  readonly kind?: 'called';
 }
 
 /**

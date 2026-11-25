@@ -145,12 +145,9 @@ courierNote:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood: not empty and at most `maxLength` characters as given, before the slot writes it (`numbers`, `case`). The value need not be a part of the words cited (a short version is allowed), but the words cited must have been said, and it carries no web address the words cited do not have. It is stored as the slot writes its words, and shown as the display says it (the stand-in, or the words with `say: null`).
+The slot's check holds a value it did not fill itself: not empty and at most `maxLength` characters as given, before the slot writes it (`numbers`, `case`). The value need not be a part of the words cited (a short version is allowed), but the words cited must have been said, and it carries no web address the words cited do not have. It is stored as the slot writes its words, and shown as the display says it (the stand-in, or the words with `say: null`).
 
-`figures` says whether its figures are held to the words too. It is read by this check alone, in agent mode; a scripted fill takes the words as said and never reads it.
-
-- `figures: free` (the default; the maintainer's decision, 2026-11-10): the value's figures are not compared with its words. A model writes a model number or a name down a little differently from how it was said ("Model G80" for "model two eighty"), and refusing it refused near-right answers the caller then confirmed or corrected at the read-back anyway. The read-back, which says the value, is the guard.
-- `figures: cited`: each figure in the value (a number, an amount, a date word) must be in the words cited or the value held before, compared as numbers, so "2023 Kia Sorento" from "twenty twenty three Kia Sorento", "2 wheels" from "two wheels" and "Vega 911" from "Vega nine eleven" (a number said in groups is the groups written together too) pass, and "2024 Kia Sorento" from the same words is refused, as is a note "waived fee of $40 agreed" cited from words that name no fee (the agent-mode design, call 40). Use it where a figure in the value would be acted on without the caller hearing it read back.
+Its figures are not compared with the words cited: a value written down a little differently from how it was said ("Model G80" for "model two eighty") is taken, and the read-back, which says the value, is the guard.
 
 ## Notes
 

@@ -143,7 +143,7 @@ code:
 
 ## Checked values
 
-A `reference` slot takes no value from outside its fill: its check answers `unsupported`, and an app in agent mode may not use it.
+A `reference` slot takes no value from outside its fill: its check answers `unsupported`.
 
 ## Notes
 

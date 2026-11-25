@@ -48,7 +48,7 @@ caller:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood as the fill accepts one: the words cited must be in this turn's words, and the value (its whitespace collapsed, in lower case) must be among the spans offered as a name in them, so digits, markup, more words than a name may have and the slot's `exclude` words are refused. At most 60 characters. It is stored as the fill stores a name and shown title-cased in the call's locale.
+The slot's check holds a value it did not fill itself as the fill accepts one: the words cited must be in this turn's words, and the value (its whitespace collapsed, in lower case) must be among the spans offered as a name in them, so digits, markup, more words than a name may have and the slot's `exclude` words are refused. At most 60 characters. It is stored as the fill stores a name and shown title-cased in the call's locale.
 
 ## Notes
 

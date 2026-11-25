@@ -217,7 +217,7 @@ Built with the knowledge topics:
 
 ## Checked values
 
-A `topic` slot takes no value from outside its fill: its check answers `unsupported`, and an app in agent mode may not use it.
+A `topic` slot takes no value from outside its fill: its check answers `unsupported`.
 
 ## Notes
 

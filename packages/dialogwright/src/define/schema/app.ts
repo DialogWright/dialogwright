@@ -12,7 +12,7 @@ import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
 import { PERSONA_FILE, PERSONA_VALUE } from './persona';
 
-/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, agent (business.yaml), or converse (agent.yaml, the converse runtime). */
+/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, or converse (agent.yaml, the converse runtime); agent, the old agent mode's, is refused by the loader with its fix. */
 export const APP_MODES = ['scripted', 'agent', 'converse'] as const;
 export type AppMode = (typeof APP_MODES)[number];
 
@@ -592,7 +592,7 @@ export const appSchema = z
     mode: z
       .enum(APP_MODES)
       .optional()
-      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": a model leads the conversation from the business\'s facts (business.yaml, from which the engine builds the intents, forms, slots, prompts, policy and identity), every value it understands is checked by its slot type and confirmed by the caller at the read-back, and every action still goes through the gate. An agent-mode folder holds app.yaml, business.yaml, style.yaml and its code, and none of intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, routes.yaml or slots.yaml. "converse": the converse runtime, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.'),
+      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": the old agent mode (business.yaml), which was removed: pnpm check refuses it, with the fix to rebuild the app on the converse runtime. "converse": the converse runtime, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.'),
     locale: localeTag()
       .optional()
       .describe('The default locale of prompts.yaml, as a language tag ("en-US"). Other locales\' prompts go in locale/<tag>/prompts.yaml. Default "en-US".'),

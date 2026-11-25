@@ -613,12 +613,6 @@ function signInImpossible(s: Session): boolean {
   return s.caps.signIn && !typedHere(s) && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
-/**
- * Said where an action needs the level a caller-ID match alone proves (agent mode) on a call with no
- * match: nothing can be asked for it, so the action is refused with this line.
- */
-export const NOT_RECOGNIZED_PROMPT = 'identity_not_recognized';
-
 /** The caller-ID question (identity.yaml's `callerId`), said in place of the first factor it leaves to ask. */
 export const CALLER_MATCH_PROMPT = 'identity_caller_match';
 

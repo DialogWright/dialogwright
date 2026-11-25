@@ -16,8 +16,6 @@ import { envLine, linePrompt, runSetup, type Prompt, type SetupIo } from './setu
 
 const TELNYX_KEY = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).subarray(12).toString('base64');
 const MODEL_KEY = 'or-test-key-made-up-for-this-test';
-/** The engine's own agent-mode fixture (an invented library): an app folder in agent mode. */
-const BUSINESS_FIXTURE = fileURLToPath(new URL('../define/__fixtures__/business', import.meta.url));
 /** The engine's converse fixture: app.yaml (mode: converse) and agent.yaml, its model anthropic:claude-haiku-5-5. */
 const CONVERSE_FIXTURE = fileURLToPath(new URL('../testing/converse', import.meta.url));
 const TWILIO_TOKEN = 'abcdef0123456789abcdef0123456789';
@@ -192,30 +190,6 @@ describe('pnpm configure, a decision model and no phone line (to record the app)
     expect(said).toContain('pnpm --filter @example/alpha regress --client record --threshold JEV_TIMEOUT_MS=15000');
     expect(said).toContain('pnpm --filter @example/alpha regress --client recorded');
     expect(said).not.toContain('--client heuristic');
-  });
-
-  it('asks an app in agent mode for its agent model\'s key with the echo off (INCEPTION_API_KEY), takes it from its variable, and allows none', async () => {
-    const w = workspace();
-    for (const f of ['app.yaml', 'business.yaml', 'style.yaml']) copyFileSync(join(BUSINESS_FIXTURE, f), join(w.dir('alpha'), f));
-    const AGENT_KEY = 'in-test-key-made-up-for-this-test';
-    // a model, no phone line; TypeSafe and its key; the agent model's key; the handoff number's default
-    const prompt = scripted(['3', '1', MODEL_KEY, AGENT_KEY, '']);
-    const o = io(w.root, prompt);
-    expect(await runSetup([], o)).toBe(0);
-    expect(settings(join(w.dir('alpha'), '.env'))).toMatchObject({ TYPESAFE_API_KEY: MODEL_KEY, INCEPTION_API_KEY: AGENT_KEY });
-    expect(prompt.asked.filter((a) => a.secret).map((a) => a.question)).toEqual([expect.stringContaining('TypeSafe key'), expect.stringContaining('INCEPTION_API_KEY')]);
-    expect(o.lines.join('\n')).not.toContain(AGENT_KEY);
-    // From its variable, with no question; and left unset where none is given.
-    const flags = ['--app', 'alpha', '--mode', 'model', '--model', 'typesafe', '--non-interactive', '--force'];
-    expect(await runSetup(flags, io(w.root, null, { TYPESAFE_API_KEY: MODEL_KEY, INCEPTION_API_KEY: AGENT_KEY }))).toBe(0);
-    expect(settings(join(w.dir('alpha'), '.env')).INCEPTION_API_KEY).toBe(AGENT_KEY);
-    // Kept from the file it replaces, as the decision model's key is; in a fresh one with none given, left unset.
-    expect(await runSetup(flags, io(w.root, null, { TYPESAFE_API_KEY: MODEL_KEY }))).toBe(0);
-    expect(settings(join(w.dir('alpha'), '.env')).INCEPTION_API_KEY).toBe(AGENT_KEY);
-    const fresh = workspace();
-    for (const f of ['app.yaml', 'business.yaml', 'style.yaml']) copyFileSync(join(BUSINESS_FIXTURE, f), join(fresh.dir('alpha'), f));
-    expect(await runSetup(flags, io(fresh.root, null, { TYPESAFE_API_KEY: MODEL_KEY }))).toBe(0);
-    expect(settings(join(fresh.dir('alpha'), '.env')).INCEPTION_API_KEY).toBeUndefined();
   });
 
   it('asks a converse app for its conversation model\'s key (ANTHROPIC_API_KEY) with the echo off, takes it from its variable, and allows none', async () => {

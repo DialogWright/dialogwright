@@ -15,15 +15,11 @@ import { localeSlotsSchema, SLOTS_FILE, slotsSchema } from './slots';
 import { routesSchema } from './routes';
 import { styleSchema } from './style';
 
-/** The file an app in agent mode is built from. */
-const BUSINESS_FILE_NAME = 'business.yaml';
-
 /** The converse runtime's business file (src/converse/business/schema.ts), for an app that has one. */
 const AGENT_FILE_NAME = 'agent.yaml';
 
 export { appSchema, formsSchema, identitySchema, intentsSchema, localeFormsSchema, localeIntentsSchema, localeSlotsSchema, policySchema, promptsSchema, routesSchema, slotsSchema, styleSchema };
 export type { StyleYaml } from './style';
-export { businessSchema, type BusinessYaml, type BusinessFieldYaml, type BusinessFormYaml } from './business';
 export { DEFAULT_WORDS } from './style';
 export { RENDER_SITUATIONS, RENDER_CHANNELS, type RenderSituation, type RenderChannel } from './prompts';
 export type { RoutesYaml, RouteRuleYaml } from './routes';
@@ -58,8 +54,5 @@ export const FILE_NAMES: Readonly<Record<FileKind, string>> = Object.fromEntries
 /** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one), and so are routes.yaml (an app without it routes nothing) and style.yaml (read only by an app that generates a line). */
 export const REQUIRED_KINDS: readonly FileKind[] = ['app', 'intents', 'forms', 'prompts', 'policy'];
 
-/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the kinds, then the optional slots.yaml, then an agent-mode app's business.yaml. */
-export const FOLDER_FILES: readonly string[] = [...Object.values(FILE_NAMES), SLOTS_FILE, BUSINESS_FILE_NAME, AGENT_FILE_NAME];
-
-/** business.yaml, the facts an app in agent mode is built from (./business.ts). */
-export { BUSINESS_FILE_NAME };
+/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the kinds, then the optional slots.yaml, then a converse app's agent.yaml. */
+export const FOLDER_FILES: readonly string[] = [...Object.values(FILE_NAMES), SLOTS_FILE, AGENT_FILE_NAME];
