@@ -1,4 +1,5 @@
 import type { ConverseApp } from '../../converse/app';
+import { lineOn } from '../../converse/business/schema';
 import { accountOf } from '../../converse/sources/accounts';
 import { businessZone, type ConverseState } from '../../converse/state';
 import { converseTurn, type ConverseDeps, type Heard, type Input, type Out } from '../../converse/turn';
@@ -33,8 +34,10 @@ import type { ConverseCallEntry } from '../sessions';
  *   reply, what of it they heard (Twilio's `utteranceUntilInterrupt`, the `tokensPlayed` text Telnyx reported
  *   since it began, else the sentences whose estimated playback ended before they began to speak), and
  *   whether they began to speak before it began. Twilio's `interrupt` is a cut-in; on Telnyx only the caller
- *   heard speaking (`clientSpeaking: on`) while the line plays is, never an `interrupt` alone (Telnyx sends
- *   them with no caller speaking).
+ *   heard speaking (`clientSpeaking: on`) while the line plays, or before the reply's last line is reported
+ *   played, is, never an `interrupt` alone (Telnyx sends them with no caller speaking). Where the carrier
+ *   reports its playback, the caller began before the reply unless it reported the reply begun first: its
+ *   events' order is not trusted to fail open (clientSpeaking has come before agentSpeaking on).
  * - Keys are logged and otherwise ignored (plan ruling 5); a partial prompt only marks when the caller began.
  * - A correction from the check after speaking is said once the reply has played, and dropped where the
  *   caller began to speak first (the next turn is then told they heard none of it).
@@ -118,6 +121,12 @@ interface Reply {
   cutIn: boolean;
   /** A correction after it was dropped, the caller having begun to speak: they heard none of it. */
   unheard: boolean;
+  /**
+   * The carrier reported it begun before the caller began to speak: a playback start after its first line was
+   * sent, or a report of its own words played. Where the carrier reports its playback, a caller with no such
+   * report spoke before it (fail closed on the events' order: Telnyx has sent clientSpeaking before agentSpeaking on).
+   */
+  began: boolean;
 }
 
 /** The turn running on a call. */
@@ -151,8 +160,13 @@ interface Live {
   speechAt: number | null;
   /** The carrier is playing the line's words (Telnyx's agentSpeaking). */
   agentSpeaking: boolean;
-  /** The carrier has reported its playback on this call. */
+  /** The carrier reports its playback on this call: one of its playback events (a line played, the caller heard speaking) came. */
   reports: boolean;
+  /**
+   * A turn ended without giving its masking (it threw) after saying lines: a carrier's report of what played is
+   * kept by its length from then on, as the line may be that turn's.
+   */
+  unmasked: boolean;
   correction: Correction | null;
   /** The caller's final words counted so far: a turn queued for earlier words than the latest runs already stopped (superseded). */
   generation: number;
@@ -172,7 +186,7 @@ const folded = (text: string): string => text.replace(/\s+/g, ' ').trim();
 /** Text pieces joined with a space between them. */
 const joined = (a: string, b: string): string => (a === '' ? b : `${a}${/\s$/.test(a) ? '' : ' '}${b}`);
 
-const newReply = (): Reply => ({ frames: [], bridge: null, played: '', interrupted: null, cutIn: false, unheard: false });
+const newReply = (): Reply => ({ frames: [], bridge: null, played: '', interrupted: null, cutIn: false, unheard: false, began: false });
 
 /** When the reply's lines are estimated to have played, from when each was sent; null: none was. */
 function estimatedEnd(r: Reply): number | null {
@@ -234,7 +248,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   const liveOf = (e: ConverseCallEntry): Live => {
     let l = lives.get(e.callSid);
     if (l === undefined) {
-      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, correction: null, generation: 0, scrubs: [] };
+      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [] };
       lives.set(e.callSid, l);
     }
     return l;
@@ -304,7 +318,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     if (r === null) return undefined;
     if (r.unheard) return { cutIn: false, text: null, spokeBefore: true };
     const first = r.frames[0]?.at;
-    const spokeBefore = first === undefined || (l.speechAt !== null && l.speechAt < first);
+    // Where the carrier reports its playback, the caller spoke before the reply unless it reported the reply begun first.
+    const spokeBefore = first === undefined || (l.reports ? !r.began : l.speechAt !== null && l.speechAt < first);
     const text = r.interrupted ?? (l.reports ? r.played : estimatedHeard(r, l.speechAt ?? atMs));
     return { cutIn: r.cutIn, text, spokeBefore };
   };
@@ -351,6 +366,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const last = r.frames.at(-1);
     return last !== undefined && folded(r.played).endsWith(folded(last.text));
   };
+
+  /** Whether the line has sent a reply whose last line the carrier has not reported played: it may be playing. */
+  const unplayed = (r: Reply | null): boolean => r !== null && r.frames.length > 0 && !playedOut(r);
 
   /** A correction armed: said once the reply has played (the carrier's report, else its estimate; with reports, the estimate twice and two seconds as a ceiling). */
   const armCorrection = (l: Live, c: Correction): void => {
@@ -435,13 +453,24 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       } catch (err) {
         log(`${e.callSid}: converse turn failed: ${describe(err)}`);
         io.record('log', { turnFailed: describe(err) });
+        // The caller is not left in silence: the business's recovery line, unless the turn was stopped (the caller spoke, or left).
+        if (!running.ac.signal.aborted) {
+          const line = lineOn(app.business.lines.recovery, 'voice');
+          reply.frames.push({ text: line, at: now() });
+          finalSent = true;
+          send({ ...textFrame(line, true), last: true });
+        }
       } finally {
+        // The turn's masking kept before it lets go of the call: a carrier's report of its line from here on is
+        // masked by it (while it runs, such a report is kept by its length).
+        const given = scrub as ((text: string) => string) | null;
+        if (given !== null) l.scrubs = [...l.scrubs, given].slice(-SCRUBS_KEPT);
+        else if (reply.frames.length > 0) l.unmasked = true;
         l.running = null;
       }
       await chain;
       // The frame log keeps each line as the trace keeps it: each value the records mask, masked.
       const masked = scrub as ((text: string) => string) | null;
-      if (masked !== null) l.scrubs = [...l.scrubs, masked].slice(-SCRUBS_KEPT);
       for (const s of sent) if (await s.delivered) io.record('out', loggedText(s.frame, masked));
       // Stopped as its socket closed, with no change the caller confirmed having run: the call goes on from
       // before it, and its words are asked again when the carrier reconnects.
@@ -550,19 +579,27 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     playback(entry, ev, io) {
       const l = liveOf(entry);
       l.io = io;
+      l.reports = true;
+      const r = l.reply;
       if (ev.kind === 'caller') {
         if (!ev.speaking) return;
         l.speechAt ??= now();
-        if (l.agentSpeaking) cutIn(l);
+        // Fail closed on the events' order: speech while a reply's last line is not reported played is a cut-in,
+        // whether or not agentSpeaking on came first (Telnyx has sent clientSpeaking 24 ms after a reply, before it).
+        if (l.agentSpeaking || unplayed(r)) cutIn(l);
         else dropCorrection(l);
         return;
       }
-      l.reports = true;
-      if (ev.state === 'started') l.agentSpeaking = true;
-      else if (ev.text === undefined) l.agentSpeaking = false;
+      if (ev.state === 'started') {
+        l.agentSpeaking = true;
+        if (r !== null && r.frames.length > 0 && l.speechAt === null) r.began = true;
+      } else if (ev.text === undefined) l.agentSpeaking = false;
       // What played is what the carrier reported before the caller began to speak: Telnyx reports the text it
       // handed to its voice, a whole line at once even when the audio stopped on the caller's barge-in.
-      else if (l.reply !== null && l.speechAt === null && !l.reply.cutIn && folded(ev.text) !== l.reply.bridge) l.reply.played = joined(l.reply.played, ev.text);
+      else if (r !== null && l.speechAt === null && !r.cutIn && folded(ev.text) !== r.bridge) {
+        r.played = joined(r.played, ev.text);
+        if (r.frames.length > 0) r.began = true;
+      }
       const c = l.correction;
       if (c !== null && playedOut(c.after)) sayCorrection(l, c);
     },
@@ -572,7 +609,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       const l = lives.get(entry.callSid);
       const scrubs = l?.scrubs ?? [];
       // A turn still running has not yet given its masking, and the line reported may be its own: by its length.
-      const byLength = l === undefined || l.running !== null || scrubs.length === 0;
+      const byLength = l === undefined || l.running !== null || l.unmasked || scrubs.length === 0;
       const mask = (text: string): string => (byLength ? `<${text.length} chars>` : scrubs.reduceRight((t, s) => s(t), text));
       const walk = (v: unknown): unknown => {
         if (typeof v === 'string') return v === ev.text ? mask(v) : v;
