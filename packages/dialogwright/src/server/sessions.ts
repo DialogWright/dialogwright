@@ -1,6 +1,8 @@
 import { SESSION_SCHEMA, type Session } from '../core/session';
 import { appOf } from '../core/app/registry';
-import type { CallLeases, CallStateStore, HeldFrame, LeaseClaim, PendingEffect, ReleaseKind, StoredCall } from './stores/types';
+import { DEFAULT_LOCALE, localeOf } from '../core/locale';
+import { newConverseState, type ConverseState } from '../converse/state';
+import type { AnyStoredCall, CallLeases, CallStateStore, HeldFrame, LeaseClaim, PendingEffect, ReleaseKind, StoredCall } from './stores/types';
 import type { RunOptions } from '../run/turn';
 import type { TraceSink } from '../trace/writer';
 import type { FrameSink } from './frameLog';
@@ -12,6 +14,7 @@ export interface SocketLike {
   close(code?: number, reason?: string): void;
 }
 
+/** A scripted call's resources: its Session, its run options, its trace and frame log (the call factory's scripted form). */
 export interface CallResources {
   session: Session;
   opts: RunOptions;
@@ -19,7 +22,64 @@ export interface CallResources {
   frames: FrameSink;
 }
 
-export interface CallEntry extends CallResources {
+/** A converse call's resources: its ConverseState (src/converse/state.ts) and its sinks; it has no run options (converseCallResources). */
+export interface ConverseCallResources {
+  session: ConverseState;
+  trace: TraceSink;
+  frames: FrameSink;
+}
+
+/** The schema a converse call is saved under (StoredCall.schema), as a converse chat is (StoredChat.schema). */
+export const CONVERSE_CALL_SCHEMA = 'converse-1';
+
+/** Whether a call's session is a converse call's state, not a scripted Session. */
+export function isConverseCall(s: Session | ConverseState): s is ConverseState {
+  return (s as { kind?: unknown }).kind === 'converse';
+}
+
+/** Whether a call entry is a converse call's. */
+export function isConverseEntry(e: AnyCallEntry): e is ConverseCallEntry {
+  return isConverseCall(e.session);
+}
+
+/** Whether a factory's resources are a converse call's. */
+function isConverseResources(r: CallResources | ConverseCallResources): r is ConverseCallResources {
+  return isConverseCall(r.session);
+}
+
+/** A call of either runtime as the stores' methods take it: they keep its JSON whole, whatever its session (StoredCall). */
+const asStored = (c: AnyStoredCall): StoredCall => c as StoredCall;
+
+/** The language a converse call speaks (agent.yaml's lines are English for now), as a converse chat does. */
+const CONVERSE_LOCALE = 'en';
+
+/** The app id, whether the call ended, and its locale, read from either kind of session. */
+export function callFacts(s: Session | ConverseState): { appId: string; ended: boolean; locale: string; channel: string } {
+  if (isConverseCall(s)) return { appId: s.appId, ended: s.ended !== undefined, locale: CONVERSE_LOCALE, channel: s.channel };
+  return { appId: s.appId, ended: s.ended, locale: scriptedLocale(s), channel: s.channel };
+}
+
+/** A scripted session's locale (localeOf), or the engine's default for one saved for an app this process does not run. */
+function scriptedLocale(s: Session): string {
+  try {
+    return localeOf(s);
+  } catch {
+    return s.locale ?? DEFAULT_LOCALE;
+  }
+}
+
+/**
+ * A new converse call's resources (the call factory's converse form): a ConverseState on the voice channel
+ * in `appId`, and the sinks given. The caller's number and account are filled at setup.
+ */
+export function converseCallResources(callSid: string, appId: string, sinks: { trace: TraceSink; frames: FrameSink }): ConverseCallResources {
+  return { session: newConverseState({ appId, callId: callSid, channel: 'voice' }), trace: sinks.trace, frames: sinks.frames };
+}
+
+/** What the server keeps about a call of either runtime: its transport, its counters and its sinks. */
+export interface CallEntryBase {
+  trace: TraceSink;
+  frames: FrameSink;
   callSid: string;
   socket: SocketLike | null;
   reconnects: number;
@@ -38,12 +98,6 @@ export interface CallEntry extends CallResources {
   auditEntries: AuditEntry[];
   /** The carrier the call came in on (server/voice/registry.ts), when the adapter named it: what a saved call is resumed for. */
   provider?: string;
-  /**
-   * The service request the call is waiting on, with its idempotency key, from just before it is sent
-   * until its answer's turn has run (server/adapter.ts queueService): saved with the call, so a server
-   * that loads the call after a restart sends it again with the same key.
-   */
-  pending?: PendingEffect | null;
   /**
    * The handoff data of the call's `end` while the adapter holds it for the lines before it to play
    * (END_AFTER_PLAYBACK, server/adapter.ts), until it is sent. The call has ended by then; should its
@@ -64,12 +118,33 @@ export interface CallEntry extends CallResources {
   undelivered?: readonly HeldFrame[];
 }
 
+/** A scripted call held here: the transport, with its Session and run options. */
+export interface CallEntry extends CallEntryBase {
+  session: Session;
+  opts: RunOptions;
+  /**
+   * The service request the call is waiting on, with its idempotency key, from just before it is sent
+   * until its answer's turn has run (server/adapter.ts queueService): saved with the call, so a server
+   * that loads the call after a restart sends it again with the same key.
+   */
+  pending?: PendingEffect | null;
+}
+
+/** A converse call held here: the transport, with its ConverseState; its turns are the converse runtime's. */
+export interface ConverseCallEntry extends CallEntryBase {
+  session: ConverseState;
+}
+
+/** A call of either runtime, as the store-wide work (saves, restores, sweeps, eviction, leases) holds it. */
+export type AnyCallEntry = CallEntry | ConverseCallEntry;
+
 /**
  * A call's resources (its session, run options, trace and frame log), by its id and, on a server of
  * several apps (server/host.ts), the app it is in: the one its number reached, or the one it was saved
- * in. Absent, the default app, as on a server of one.
+ * in. Absent, the default app, as on a server of one. Where `appId` names a converse app, a converse
+ * call's (converseCallResources).
  */
-export type CallFactory = (callSid: string, appId?: string) => CallResources;
+export type CallFactory = (callSid: string, appId?: string) => CallResources | ConverseCallResources;
 
 /**
  * How long an ended call is kept after it ends. Long enough for a late `/cr-action` callback or a
@@ -118,6 +193,8 @@ export interface SessionStoreOptions {
   state?: CallStateStore | null;
   /** The leases of a store many servers share (SESSION_STORE=postgres); absent or null, none is taken. */
   lease?: SessionLease | null;
+  /** The ids of the converse apps this server runs: a converse call saved for one of them may be resumed here. Absent, none. */
+  converseApps?: ReadonlySet<string>;
   log?: (line: string) => void;
 }
 
@@ -166,9 +243,10 @@ function tookSaid(took: string): string {
  * dropped once answered), counting the reconnect in the store at once (countReconnect).
  */
 export class SessionStore {
-  private readonly calls = new Map<string, CallEntry>();
+  private readonly calls = new Map<string, AnyCallEntry>();
   private readonly state: CallStateStore | null;
   private readonly lease: SessionLease | null;
+  private readonly converseApps: ReadonlySet<string>;
   private readonly log: (line: string) => void;
   /** Each call's saves and removals, in order, so a slow store never writes an older save over a newer one. */
   private readonly writes = new Map<string, Promise<void>>();
@@ -187,7 +265,7 @@ export class SessionStore {
   /** With a shared store: calls whose lease a setup is taking now, which a renewal must not take for leaked. */
   private readonly claiming = new Set<string>();
   /** Each call's work queued and not yet done (turns waiting or running), counted as it is queued. */
-  private readonly queued = new WeakMap<CallEntry, number>();
+  private readonly queued = new WeakMap<AnyCallEntry, number>();
   /** Calls resumed after their holder let them go cleanly (a stop, a drain): RESUMED_AFTER_MS decides their apology. */
   private readonly clean = new Set<string>();
   /** Calls ended with a transfer saved as still owed (endHolding): not forgotten until it is sent (heldSent). */
@@ -204,6 +282,7 @@ export class SessionStore {
   ) {
     this.state = options.state ?? null;
     this.lease = options.state ? (options.lease ?? null) : null;
+    this.converseApps = options.converseApps ?? new Set();
     this.log = options.log ?? ((line) => console.log(`[server] ${line}`));
   }
 
@@ -232,7 +311,20 @@ export class SessionStore {
     this.stopping = true;
   }
 
+  /** The scripted call held here by this id: a converse call is reached by getConverse (or getAny). */
   get(callSid: string): CallEntry | undefined {
+    const e = this.calls.get(callSid);
+    return e === undefined || isConverseEntry(e) ? undefined : e;
+  }
+
+  /** The converse call held here by this id. */
+  getConverse(callSid: string): ConverseCallEntry | undefined {
+    const e = this.calls.get(callSid);
+    return e !== undefined && isConverseEntry(e) ? e : undefined;
+  }
+
+  /** The call held here by this id, of either runtime. */
+  getAny(callSid: string): AnyCallEntry | undefined {
     return this.calls.get(callSid);
   }
 
@@ -258,11 +350,39 @@ export class SessionStore {
     return sids;
   }
 
-  /** A new call, on `provider`'s socket (default Twilio's, as the legacy path is), in `appId` (default: the default app). */
+  /**
+   * A new scripted call, on `provider`'s socket (default Twilio's, as the legacy path is), in `appId` (default:
+   * the default app). A converse app's call is createConverse's.
+   */
   create(callSid: string, socket: SocketLike, provider?: string, appId?: string): CallEntry {
     if (this.calls.has(callSid)) throw new Error(`session for ${callSid} already exists`);
+    const resources = appId === undefined ? this.factory(callSid) : this.factory(callSid, appId);
+    if (isConverseResources(resources)) throw new Error(`${callSid}: "${resources.session.appId}" is a converse app: its calls are made with createConverse`);
     const entry: CallEntry = {
-      ...(appId === undefined ? this.factory(callSid) : this.factory(callSid, appId)),
+      ...resources,
+      callSid,
+      socket,
+      reconnects: 0,
+      createdAtMs: this.now(),
+      lastActivityMs: this.now(),
+      ended: false,
+      endedAtMs: null,
+      tail: Promise.resolve(),
+      inFlight: 0,
+      auditEntries: [],
+      ...(provider !== undefined ? { provider } : {}),
+    };
+    this.calls.set(callSid, entry);
+    return entry;
+  }
+
+  /** A new converse call, on `provider`'s socket (default Twilio's), in the converse app `appId`. */
+  createConverse(callSid: string, socket: SocketLike, provider: string | undefined, appId: string): ConverseCallEntry {
+    if (this.calls.has(callSid)) throw new Error(`session for ${callSid} already exists`);
+    const resources = this.factory(callSid, appId);
+    if (!isConverseResources(resources)) throw new Error(`${callSid}: "${appId}" is not a converse app: its calls are made with create`);
+    const entry: ConverseCallEntry = {
+      ...resources,
       callSid,
       socket,
       reconnects: 0,
@@ -318,31 +438,31 @@ export class SessionStore {
     if (e.ended) return this.forget(callSid);
     // A session over whose call has not ended yet: `end` (or `endHolding`, for a transfer whose line is
     // still to play) forgets or keeps it, and nothing is saved meanwhile.
-    if (e.session.ended) return Promise.resolve();
+    if (callFacts(e.session).ended) return Promise.resolve();
     if (this.lease !== null && this.borrowed.has(callSid)) return Promise.resolve();
     const call = this.storedOf(e);
     const lease = this.lease;
     if (lease !== null) {
       return this.queueWrite(callSid, 'save the session', async () => {
-        if (await lease.leases.saveAs(call, lease.owner, lease.ttlMs)) return;
+        if (await lease.leases.saveAs(asStored(call), lease.owner, lease.ttlMs)) return;
         if (this.calls.get(callSid) === e) this.lose(callSid, 'its save was refused: another server has the call now');
       });
     }
-    return this.queueWrite(callSid, 'save the session', (state) => state.save(call));
+    return this.queueWrite(callSid, 'save the session', (state) => state.save(asStored(call)));
   }
 
   /** The call as it is saved. */
-  private storedOf(e: CallEntry, extra: Partial<StoredCall> = {}): StoredCall {
+  private storedOf(e: AnyCallEntry, extra: Partial<AnyStoredCall> = {}): AnyStoredCall {
     return {
       callId: e.callSid,
       provider: e.provider ?? 'twilio',
-      schema: SESSION_SCHEMA,
+      schema: isConverseCall(e.session) ? CONVERSE_CALL_SCHEMA : SESSION_SCHEMA,
       session: e.session,
       reconnects: e.reconnects,
       createdAtMs: e.createdAtMs,
       lastActivityMs: e.lastActivityMs,
       auditTail: [...e.auditEntries],
-      ...(e.pending ? { pending: e.pending } : {}),
+      ...(!isConverseEntry(e) && e.pending ? { pending: e.pending } : {}),
       // One machine's: a store many servers share keeps the time with its reconnect count.
       ...(e.droppedAtMs !== undefined && this.lease === null ? { droppedAtMs: e.droppedAtMs } : {}),
       ...extra,
@@ -369,10 +489,10 @@ export class SessionStore {
     const call = this.storedOf(e, { heldHandoffData: handoffData });
     const lease = this.lease;
     if (lease !== null) {
-      void this.queueWrite(callSid, 'save the held transfer', () => lease.leases.saveAs(call, lease.owner, lease.ttlMs));
+      void this.queueWrite(callSid, 'save the held transfer', () => lease.leases.saveAs(asStored(call), lease.owner, lease.ttlMs));
       return;
     }
-    void this.queueWrite(callSid, 'save the held transfer', (state) => state.save(call));
+    void this.queueWrite(callSid, 'save the held transfer', (state) => state.save(asStored(call)));
   }
 
   /**
@@ -398,13 +518,13 @@ export class SessionStore {
     const lease = this.lease;
     if (lease !== null) {
       void this.queueWrite(callSid, 'save the undelivered end', async () => {
-        if (!(await lease.leases.saveAs(call, lease.owner, lease.ttlMs))) return;
+        if (!(await lease.leases.saveAs(asStored(call), lease.owner, lease.ttlMs))) return;
         // Given up as by its socket, so whichever server the carrier reaches next takes it at once.
         await lease.leases.release(callSid, lease.owner, 'socket');
       });
       return;
     }
-    void this.queueWrite(callSid, 'save the undelivered end', (state) => state.save(call));
+    void this.queueWrite(callSid, 'save the undelivered end', (state) => state.save(asStored(call)));
   }
 
   /** A held transfer's `end` has gone: the call is forgotten, as `end` forgets one. */
@@ -432,7 +552,7 @@ export class SessionStore {
   }
 
   /** A call saved with a held end, taken from the store in one step (CallStateStore.takeHeld), or null. */
-  private takeHeldCall(callId: string): Promise<StoredCall | null> {
+  private takeHeldCall(callId: string): Promise<AnyStoredCall | null> {
     const state = this.state;
     if (state === null) return Promise.resolve(null);
     return this.inOrder(callId, async () => {
@@ -492,27 +612,27 @@ export class SessionStore {
   }
 
   /** Whether a saved call is within its idle time and its cap at `now` (read from the stored counters, whatever its schema). */
-  private inTime(c: StoredCall, now: number): boolean {
+  private inTime(c: AnyStoredCall, now: number): boolean {
     return now - c.lastActivityMs < this.ttlMs && now - c.createdAtMs < this.maxAgeMs;
   }
 
   /** Whether a saved call may still go on at `now`: in time, and not over. */
-  private resumable(c: StoredCall, now: number): boolean {
-    return this.inTime(c, now) && !c.session.ended;
+  private resumable(c: AnyStoredCall, now: number): boolean {
+    return this.inTime(c, now) && !callFacts(c.session).ended;
   }
 
   /**
    * Load a call this server does not hold from the store, for its carrier's callback (`provider`, the
    * callback's path): 'restored' when it can go on, with no socket until the carrier reconnects;
    * 'held' when this server already has it; 'none' when there is nothing to resume (never saved, ended,
-   * past its time, or saved for another carrier); 'unreadable' when it was saved under another
-   * SESSION_SCHEMA (or for an app this server does not run), which is then forgotten: its caller is
+   * past its time, or saved for another carrier); 'unreadable' when it was saved under a schema this
+   * server does not read (or for an app this server does not run), which is then forgotten: its caller is
    * put through to a person (http.ts).
    */
   async restore(callId: string, provider: string): Promise<RestoreResult> {
     if (this.calls.has(callId)) return 'held';
     if (this.state === null) return 'none';
-    let c: StoredCall | null;
+    let c: AnyStoredCall | null;
     try {
       c = await this.state.load(callId);
     } catch (err) {
@@ -533,22 +653,18 @@ export class SessionStore {
 
   /**
    * Whether a saved call may go on here, on `provider`'s callback or socket: 'ok'; 'unreadable' when it
-   * was saved under another SESSION_SCHEMA or for an app this server does not run (then forgotten);
+   * was saved under a schema this server does not read, or for an app this server does not run (then
+   * forgotten): a scripted call under SESSION_SCHEMA for a scripted app (appOf), a converse call under
+   * CONVERSE_CALL_SCHEMA for a converse app of its id (SessionStoreOptions.converseApps);
    * 'none' when it is another carrier's, or past its time or over (then forgotten), or it ended with a
    * transfer still owed (kept for the callback that takes it). `owned`: this server holds its lease.
    */
-  private async fits(c: StoredCall, provider: string, owned: boolean): Promise<'ok' | 'none' | 'unreadable'> {
+  private async fits(c: AnyStoredCall, provider: string, owned: boolean): Promise<'ok' | 'none' | 'unreadable'> {
     const callId = c.callId;
     if (c.heldHandoffData !== undefined) return 'none';
-    if (c.schema !== SESSION_SCHEMA) {
-      this.log(`${callId}: not resumed: saved under session schema ${c.schema}, and this server reads ${SESSION_SCHEMA}`);
-      await this.forget(callId, owned);
-      return 'unreadable';
-    }
-    try {
-      appOf(c.session);
-    } catch {
-      this.log(`${callId}: not resumed: saved for the app "${String(c.session.appId)}", which this server does not run`);
+    const why = this.unreadable(c);
+    if (why !== null) {
+      this.log(`${callId}: not resumed: ${why}`);
       await this.forget(callId, owned);
       return 'unreadable';
     }
@@ -561,6 +677,25 @@ export class SessionStore {
       return 'none';
     }
     return 'ok';
+  }
+
+  /** Why a saved call cannot be read here, as the log says it, or null when it can (fits). */
+  private unreadable(c: AnyStoredCall): string | null {
+    const session = c.session;
+    if (c.schema === CONVERSE_CALL_SCHEMA) {
+      return isConverseCall(session) && this.converseApps.has(session.appId) ? null : `saved for the converse app "${String(session.appId)}", which this server does not run`;
+    }
+    // A runtime's own schema (a string) is said against the converse runtime's; a number, against the scripted engine's.
+    if (c.schema !== SESSION_SCHEMA) return `saved under session schema ${c.schema}, and this server reads ${typeof c.schema === 'string' ? CONVERSE_CALL_SCHEMA : SESSION_SCHEMA}`;
+    if (!isConverseCall(session)) {
+      try {
+        appOf(session);
+        return null;
+      } catch {
+        // Its app is not one this server runs: said below.
+      }
+    }
+    return `saved for the app "${String(session.appId)}", which this server does not run`;
   }
 
   /**
@@ -583,12 +718,11 @@ export class SessionStore {
   }
 
   /** A saved call held here, with no socket until its carrier connects. */
-  private hold(c: StoredCall, silentMs?: number | null): CallEntry {
+  private hold(c: AnyStoredCall, silentMs?: number | null): AnyCallEntry {
     const callId = c.callId;
-    const entry: CallEntry = {
-      // In the app it was saved in: its trace and run options are that app's.
-      ...this.factory(callId, c.session.appId),
-      session: c.session,
+    // In the app it was saved in: its trace and run options are that app's.
+    const resources = this.factory(callId, callFacts(c.session).appId);
+    const transport = {
       callSid: callId,
       socket: null,
       reconnects: c.reconnects,
@@ -600,9 +734,21 @@ export class SessionStore {
       inFlight: 0,
       auditEntries: [...c.auditTail],
       provider: c.provider,
-      // Only a request the session still waits on: one answered before the save is not sent again.
-      pending: c.pending && c.session.pendingService === c.pending.effect.service ? c.pending : null,
     };
+    let entry: AnyCallEntry;
+    if (isConverseCall(c.session)) {
+      entry = { trace: resources.trace, frames: resources.frames, session: c.session, ...transport };
+    } else {
+      if (isConverseResources(resources)) throw new Error(`${callId}: saved as a scripted call, and "${c.session.appId}" is a converse app here`);
+      const session: Session = c.session;
+      entry = {
+        ...resources,
+        session,
+        ...transport,
+        // Only a request the session still waits on: one answered before the save is not sent again.
+        pending: c.pending && session.pendingService === c.pending.effect.service ? c.pending : null,
+      };
+    }
     // On this server's clock: the store's silence, or the time one machine saved.
     const dropped = silentMs !== undefined && silentMs !== null ? this.now() - silentMs : c.droppedAtMs;
     if (dropped !== undefined) entry.droppedAtMs = dropped;
@@ -612,7 +758,7 @@ export class SessionStore {
     // cleared in the store at once, so a crash of this server before its next save is not taken for a stop.
     if (c.stopped === true && this.lease === null) {
       this.clean.add(callId);
-      void this.queueWrite(callId, 'save the session', (state) => state.save(this.storedOf(entry)));
+      void this.queueWrite(callId, 'save the session', (state) => state.save(asStored(this.storedOf(entry))));
     }
     return entry;
   }
@@ -846,8 +992,8 @@ export class SessionStore {
       // One machine's durable store: each live call saved as let go by a stop, so the server that resumes
       // it knows a planned restart from a crash (RESUMED_AFTER_MS applies to the first only).
       if (this.state === null) return;
-      await Promise.all([...this.calls].filter(([callSid, e]) => !e.ended && !this.holding.has(callSid) && !e.session.ended)
-        .map(([callSid, e]) => this.queueWrite(callSid, 'save the session', (state) => state.save(this.storedOf(e, { stopped: true })))));
+      await Promise.all([...this.calls].filter(([callSid, e]) => !e.ended && !this.holding.has(callSid) && !callFacts(e.session).ended)
+        .map(([callSid, e]) => this.queueWrite(callSid, 'save the session', (state) => state.save(asStored(this.storedOf(e, { stopped: true }))))));
       return;
     }
     const held = [...this.calls.keys()].filter((callId) => !this.calls.get(callId)!.ended && !this.borrowed.has(callId));
@@ -868,9 +1014,9 @@ export class SessionStore {
    * called back) once they are past their time, and return them, so the caller can record their end.
    * Without a call store, none.
    */
-  async sweepStored(): Promise<StoredCall[]> {
+  async sweepStored(): Promise<AnyStoredCall[]> {
     if (this.state === null) return [];
-    const gone: StoredCall[] = [];
+    const gone: AnyStoredCall[] = [];
     let ids: readonly string[];
     try {
       ids = await this.state.list();
@@ -881,7 +1027,7 @@ export class SessionStore {
     const now = this.now();
     for (const id of ids) {
       if (this.calls.has(id)) continue;
-      let c: StoredCall | null;
+      let c: AnyStoredCall | null;
       try {
         c = await this.state.load(id);
       } catch {
@@ -891,7 +1037,7 @@ export class SessionStore {
       // person; so is one that ended with a transfer still owed, for the callback that takes it.
       const keep = c !== null && (c.heldHandoffData !== undefined
         ? now - c.lastActivityMs < HELD_TRANSFER_MAX_MS
-        : c.schema === SESSION_SCHEMA ? this.resumable(c, now) : this.inTime(c, now));
+        : c.schema === SESSION_SCHEMA || c.schema === CONVERSE_CALL_SCHEMA ? this.resumable(c, now) : this.inTime(c, now));
       if (c === null || this.calls.has(id) || keep) continue;
       const lease = this.lease;
       if (lease !== null) {
@@ -911,8 +1057,9 @@ export class SessionStore {
     return gone;
   }
 
+  /** The scripted call's socket is back (a converse call's is Task 4's to attach). */
   attach(callSid: string, socket: SocketLike): CallEntry | undefined {
-    const e = this.calls.get(callSid);
+    const e = this.get(callSid);
     if (!e) return undefined;
     e.socket = socket;
     e.lastActivityMs = this.now();
@@ -938,7 +1085,7 @@ export class SessionStore {
     const waitMs = Math.max(0, (lease.waitMs ?? lease.ttlMs * 1.5) - lease.ttlMs / 4);
     // A turn still running: the lease is marked closing, so the carrier's reconnect, counted in the store,
     // does not let another server take the call before this one gives it up with that turn saved.
-    const turning = (this.queued.get(e) ?? 0) > 0 && !e.pending;
+    const turning = (this.queued.get(e) ?? 0) > 0 && !(isConverseEntry(e) ? null : e.pending);
     if (turning) {
       void this.inOrder(callSid, () => lease.leases.markClosing(callSid, lease.owner))
         .catch((err: unknown) => this.log(`${callSid}: could not mark the call's lease closing: ${err instanceof Error ? err.message : String(err)}`));
@@ -970,8 +1117,13 @@ export class SessionStore {
    * cause every later enqueue to silently skip its fn forever.
    */
   enqueue(callSid: string, fn: (entry: CallEntry) => Promise<void>): Promise<void> {
-    const e = this.calls.get(callSid);
+    const e = this.get(callSid);
     if (!e) return Promise.resolve();
+    return this.queueOn(callSid, e, fn);
+  }
+
+  /** `fn` queued on the call's turn queue, of either runtime: enqueue's work. */
+  private queueOn<E extends AnyCallEntry>(callSid: string, e: E, fn: (entry: E) => Promise<void>): Promise<void> {
     const run = e.tail
       .then(async () => {
         if (e.ended) return;

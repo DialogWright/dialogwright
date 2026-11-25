@@ -18,7 +18,7 @@ import { createRequestHandler, MESSAGES_PATH, telnyxUnvoicedLocales, type HttpAp
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
 import { randomBytes } from 'node:crypto';
-import { SessionStore } from './sessions';
+import { callFacts, converseCallResources, SessionStore } from './sessions';
 import { CallTokens } from './tokens';
 import { openFileStores } from './stores/file';
 import { openPostgresStores } from './stores/postgres';
@@ -811,11 +811,31 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const calledOf = (id: string): Readonly<Record<string, string>> => calledByApp.get(id)!;
   /** RESTART_PAUSE_S with a durable store: how long a planned restart's handover asks each carrier to wait; 0 with none. */
   const restartPauseS = config.sessionStore?.restartPauseS ?? 0;
+  /** The ids of the converse apps this server runs: a call in one of them is a converse call (the factory's converse form). */
+  const converseIds: ReadonlySet<string> = new Set(conversesRun.map((a) => a.id));
   const store: SessionStore = new SessionStore(
     (callSid, appId) => {
+      const file = safeFileStem(callSid);
+      if (appId !== undefined && converseIds.has(appId)) {
+        // A converse call: its state, and its trace and frame log in its app's; its turns are the converse runtime's.
+        let mine: TraceSink | null = null;
+        let seen = false;
+        let last: Omit<CallMeta, 'held'> = { turn: 0, gen: 0, startedAtMs: now() };
+        const meta = (): CallMeta => {
+          const e = store.getConverse(callSid);
+          const isMine = e !== undefined && mine !== null && e.trace === mine;
+          if (isMine) {
+            seen = true;
+            last = { turn: e.session.turnIndex, gen: e.reconnects, startedAtMs: e.createdAtMs };
+          }
+          return { ...last, held: !store.shared || isMine || !seen };
+        };
+        const sinks = sinksOf(file, meta, appId);
+        mine = sinks.trace;
+        return converseCallResources(callSid, appId, sinks);
+      }
       // On a host, the call's app (the one its number reached, or the one it was saved in); else the one app.
       const a = appRun(appId);
-      const file = safeFileStem(callSid);
       // What the trace store names this call's segments by. Held while the entry the store has for the call
       // is this one: once it was and is no longer (let go, taken over), what it still writes is marked late.
       let mine: TraceSink | null = null;
@@ -843,7 +863,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     config.sessionTtlMs,
     now,
     config.sessionMaxAgeMs,
-    { state: durable?.calls ?? null, lease: shared && setting?.kind === 'postgres' ? { leases: shared.calls, owner, ttlMs: leaseMs, timeoutMs: setting.timeoutMs } : null, log },
+    { state: durable?.calls ?? null, lease: shared && setting?.kind === 'postgres' ? { leases: shared.calls, owner, ttlMs: leaseMs, timeoutMs: setting.timeoutMs } : null, converseApps: converseIds, log },
   );
   const tokens: ServerTokenStore = durable?.tokens ?? new CallTokens(TOKEN_TTL_MS, now);
   /**
@@ -855,7 +875,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     void store.sweepStored().then((gone) => {
       for (const c of gone) {
         log(`${c.callId}: saved before a restart and never called back; forgotten`);
-        whenChained(auditOf(c.session.appId).append(c.callId, c.session.channel, { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
+        const facts = callFacts(c.session);
+        whenChained(auditOf(facts.appId).append(c.callId, facts.channel, { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
           (err: unknown) => log(`${c.callId}: the evicted call's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
       }
     });
@@ -1322,7 +1343,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // this sweep is its only producer of a `call_ended` audit entry.
     const liveBefore = new Set(store.liveCallSids());
     // Each call's app, read before the eviction forgets it: its end goes to that app's audit.
-    const appIds = new Map([...liveBefore].map((sid) => [sid, store.get(sid)?.session.appId]));
+    const appIds = new Map([...liveBefore].map((sid) => {
+      const e = store.getAny(sid);
+      return [sid, e === undefined ? undefined : callFacts(e.session).appId];
+    }));
     const evicted = store.evictIdle();
     for (const sid of evicted) {
       // An evicted call with a socket gets here again through the socket's own close, but one

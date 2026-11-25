@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Session } from '../../core/session';
+import type { ConverseState } from '../../converse/state';
 import type { AuditEntry } from '../../audit/types';
 import type { Effect } from '../../core/lifecycle';
 import type { ScrubPart } from '../../core/recording';
@@ -41,14 +42,24 @@ export interface PendingEffect {
   readonly scrub?: readonly ScrubPart[];
 }
 
-/** A call's server-side state, as stored: the session and the counters the server keeps beside it. */
-export interface StoredCall {
+/**
+ * A call's server-side state, as stored: the session and the counters the server keeps beside it. A store
+ * keeps it as plain JSON, whole, whatever runtime's session it holds; its methods are typed by the scripted
+ * call (`StoredCall`, the default), and the session store (server/sessions.ts) reads and writes a call of
+ * either runtime through them as `AnyStoredCall`, telling the two apart by `schema`.
+ */
+export interface StoredCall<S extends Session | ConverseState = Session> {
   readonly callId: string;
   /** The carrier the call came in on (server/voice/registry.ts): only that carrier's callback resumes it. */
   readonly provider: string;
-  /** SESSION_SCHEMA (core/session.ts) when it was saved: a call saved under another is not resumed. */
-  readonly schema: number;
-  readonly session: Session;
+  /**
+   * What reads the session: the scripted engine's SESSION_SCHEMA (core/session.ts, a number) or the converse
+   * runtime's 'converse-1' (server/sessions.ts CONVERSE_CALL_SCHEMA). A call saved under one this server does
+   * not read is not resumed.
+   */
+  readonly schema: number | string;
+  /** The call's session: a scripted Session, or (`AnyStoredCall`) a converse call's ConverseState (src/converse/state.ts). */
+  readonly session: S;
   readonly reconnects: number;
   readonly createdAtMs: number;
   readonly lastActivityMs: number;
@@ -83,6 +94,9 @@ export interface StoredCall {
    */
   readonly stopped?: true;
 }
+
+/** A saved call of either runtime: a scripted Session under SESSION_SCHEMA, or a converse call's ConverseState under 'converse-1'. */
+export type AnyStoredCall = StoredCall<Session | ConverseState>;
 
 /** A web chat's server-side state, as stored (server/chat/socket.ts). */
 export interface StoredChat {

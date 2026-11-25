@@ -120,7 +120,7 @@ export function storedCallProblem(v: unknown): string | null {
   if (!isRecord(v)) return 'not an object';
   if (typeof v.callId !== 'string' || v.callId === '') return 'no callId';
   if (typeof v.provider !== 'string') return 'no provider';
-  if (!isNumber(v.schema)) return 'no schema';
+  if (!isNumber(v.schema) && (typeof v.schema !== 'string' || v.schema === '')) return 'no schema';
   if (!isRecord(v.session)) return 'no session';
   if (!isNumber(v.reconnects) || !isNumber(v.createdAtMs) || !isNumber(v.lastActivityMs)) return 'a counter is missing';
   if (!Array.isArray(v.auditTail)) return 'no auditTail';
