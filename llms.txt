@@ -24,7 +24,6 @@ Pre-release; APIs will change, and nothing is published to npm yet. In this repo
 - [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
 - [apps/utility](apps/utility/README.md): the second example app, a fictional electric utility's line built by an AI coding assistant from one paragraph: identity, a one-time code, delegates, confirmed writes, range rules, a policy card and a knowledge base (no keys needed; its recorded cassette replays offline).
 - [apps/secretary](apps/secretary/README.md): the third example app, a fictional design studio's message line built by an AI coding assistant from one paragraph: a framed read-back (only the summary of the caller's message generated, inside a fixed line), a callback number offered from the number calling, urgent calls to a transfer target (no keys needed).
-- [apps/wheelshop](apps/wheelshop/DESIGN.md): the agent-mode example, a fictional one-man wheel repair shop's line: one business.yaml of facts and the tools in code; a model leads the conversation, the engine checks each value, holds each reply to the facts, says the read-backs in fixed words and gates every action; dealership accounts recognized by caller ID book, anyone else sends a request ([guide chapter 18](docs/guide/18-agent-mode.md)).
 
 ## Slot types
 

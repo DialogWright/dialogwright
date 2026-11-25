@@ -4,7 +4,7 @@ import { SHOP_TEXTS } from './shopTexts';
 
 /**
  * The shop's systems, stand-ins until the owner says what the shop uses (copied from the agent-mode wheel shop,
- * apps/wheelshop, which plan 3 removes): the shop's fake calendar (the drop-off windows of agent.yaml's
+ * apps/wheelshop, since removed): the shop's fake calendar (the drop-off windows of agent.yaml's
  * calendar, each with its capacity, less the cars booked, the requests waiting for a quote and the quotes
  * holding a window), the requests, bookings and callback notes kept, the texts sent and received, the quotes
  * the shop sends from its page, and each write's key, so a write repeated is done once. In memory, and in the
