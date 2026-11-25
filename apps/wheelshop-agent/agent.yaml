@@ -181,8 +181,9 @@ persona:
   # assumption: the owner corrects these (the voice on each carrier the shop's number is on. On Twilio the voice
   # names its provider, which wins over the deployment's TTS_PROVIDER; a name alone is spoken with TTS_PROVIDER,
   # else Twilio's default provider. On Telnyx a name carries its engine.)
+  # No Twilio voice: Twilio's default, the one the other apps speak in there (Google's en-US-Neural2-F, named here
+  # until 2026-11-25, sounded poor on the first live call).
   voices:
-    twilio: { voice: en-US-Neural2-F, provider: Google }
     telnyx: Telnyx.NaturalHD.astra
 lines:
   # assumption: the owner corrects these (a receptionist's opening: what the shop does, then what the line can do; "messaging" in the web chat)
