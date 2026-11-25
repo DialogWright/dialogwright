@@ -1127,7 +1127,7 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
     t.confirmedRan = true;
     // The line's own record of what has been done, told to the model on every request from now on; kept as soon
     // as the change has run (its follow-ons' results joining it as they run), so a turn that throws keeps it.
-    (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done, carried: carriedOf(spec, p.params) });
+    (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done, ...(spec !== undefined ? { carried: carriedOf(spec, p.params) } : {}) });
     t.out.confirmed?.();
     const j = t.st.journey;
     if (hasJourneys(b) && j !== undefined) {
