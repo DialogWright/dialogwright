@@ -952,6 +952,25 @@ describe('speech the carrier cut the lines for is never over a line the caller c
     await sameOnReplay(call);
   });
 
+  it('Twilio: the interrupt comes just before the run\'s first partial (its order on a live call): the turn runs and its miss is said', async () => {
+    heldAck();
+    const call = liveCall('twilio', 'speech');
+    await toHeldReply(call);
+    await vi.advanceTimersByTimeAsync(3_000);
+    // A live Twilio call (2026-11-25): the interrupt, then the first partial in the same millisecond or just after.
+    await call.send(INTERRUPT);
+    await vi.advanceTimersByTimeAsync(5);
+    await call.partial('can you');
+    await vi.advanceTimersByTimeAsync(600);
+    await call.partial('can you pass me');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say(ASIDE);
+    expect(notes(call)).toHaveLength(0);
+    expect(call.lines().at(-1)).toBe(REASK);
+    expect(call.session().slots.place?.attempts).toBe(1);
+    await sameOnReplay(call);
+  });
+
   it('Twilio with no interrupt: set aside as before, from the first partial', async () => {
     heldAck();
     const call = liveCall('twilio', 'speech');
