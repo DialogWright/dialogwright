@@ -263,7 +263,9 @@ actions:
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
       notes: { type: text, optional: true, about: "Anything else the caller wants the shop to know, in short (for example: can't send a photo, call instead; or best reached after 3). Leave it out when there is nothing." }
     readBack:
-      en: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}.[ A note for the shop: {notes}.] Is that right?"
+      # Said as a person would on the phone, every value in it: as a form's labels ("damage: ..., finish: ...") it read
+      # stilted on a live call (2026-11-25), though it looked fine in the chat.
+      en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You're dropping it off {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
     then: [send_photo_request, notify_shop_request]
     audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep, notes: keep }
   send_photo_request:

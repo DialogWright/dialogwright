@@ -91,7 +91,7 @@ Rules, in the order they run:
 
 Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a dealership account. Ask whether we may text them at their number before calling it. Call it as soon as you have every detail: the line then reads the request back to the customer and sends it on their yes, so it is not in until this is called and confirmed.
 
-Read back before it runs, in these words: "Here's your request: {name}, your {vehicle}, damage: {damage}, on {wheels} of its wheels, finish: {finish}, dropping off {slot}. We'll reach you on {callbackNumber}, and texts there are OK: {textOk}.[ A note for the shop: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
+Read back before it runs, in these words: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You're dropping it off {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?" (a part in square brackets is said only when its value is given)
 
 Rules, in the order they run:
 

@@ -89,7 +89,7 @@ describe('send_request', () => {
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
-      'Here\'s your request: Dana Example, your 2019 Honda Civic, damage: curb rash, on one of its wheels, finish: painted, dropping off Tuesday, November 17, morning, by 8. We\'ll reach you on 555 555 0111, and texts there are OK: yes. Is that right?',
+      'So that\'s a request for Dana Example: your 2019 Honda Civic, with curb rash on one of its wheels, and for the finish, painted. You\'re dropping it off Tuesday, November 17, morning, by 8, we\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
     ]);
     expect(sys.requests).toEqual([]);
     expect(provider.sent).toEqual([]);
@@ -119,7 +119,7 @@ describe('send_request', () => {
     const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
     await c.start();
     const [readBack] = await c.say('Tuesday morning please, but I cannot send a photo');
-    expect(readBack).toContain('texts there are OK: no. A note for the shop: can\'t send a photo, call instead. Is that right?');
+    expect(readBack).toContain('you said no to texts there. We\'ll also pass on: can\'t send a photo, call instead. Did I get that right?');
     await c.say('yes');
     expect(sys.requests).toMatchObject([{ ref: 'R101', notes: "can't send a photo, call instead" }]);
     expect(provider.sent.map((t) => [t.to, t.body])).toEqual([

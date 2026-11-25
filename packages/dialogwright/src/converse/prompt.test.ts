@@ -303,4 +303,10 @@ describe('writing for the ear, and one thing at a time', () => {
     const chat = systemPrompt(plain, fresh(), NOW);
     expect(chat).not.toMatch(/plain spoken sentences|matters most/);
   });
+  it('a call is told to end every reply by handing the turn back, unless it says goodbye; a chat is not', () => {
+    const call = systemPrompt(plain, voice(), NOW);
+    expect(call).toContain('A caller cannot hear that your reply has ended');
+    expect(call).toMatch(/end every reply by handing the turn back: a question, or what happens next and whether there is anything else they need/);
+    expect(systemPrompt(plain, fresh(), NOW)).not.toContain('handing the turn back');
+  });
 });
