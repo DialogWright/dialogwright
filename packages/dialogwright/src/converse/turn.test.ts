@@ -2380,6 +2380,34 @@ describe('converseTurn: what the caller heard', () => {
     expect(s.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'text', text: `Let me${CUT_IN_NOTE}` }, { type: 'tool_call', id: 'c1', name: 'check_availability', args: { day: FRIDAY } }] });
   });
 
+  it('never rewrites a reply from before the caller\'s last words: a turn stopped before it said anything leaves the earlier reply as heard', async () => {
+    const ac = new AbortController();
+    const h = harness([[text('Hello there.'), done()], [call('c1', 'check_availability', { day: FRIDAY }), done('tool')], [text('Go on.'), done()]], {
+      edit: (t) => `${t}${OFF}`,
+      tools: { check_availability: async () => (ac.abort(), []) },
+    });
+    let s = await h.run(fresh(), { kind: 'text', text: 'hi' });
+    // Stopped during the lookup, before a word of it was said: its messages hold a call and a result, no text.
+    s = await converseTurn(s, { kind: 'text', text: 'Anything Friday?' }, h.deps, h.out, ac.signal);
+    s = await h.run(s, { kind: 'text', text: 'hello?', heard: { cutIn: false, text: null, spokeBefore: true } });
+    expect(s.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Hello there.' }] });
+    expect(JSON.stringify(s.messages)).not.toContain(UNHEARD_NOTE);
+  });
+
+  it('never rewrites the words before a read-back the caller answered, where the turn of their answer said nothing', async () => {
+    const ac = new AbortController();
+    const h = harness([...lookupThenBook, [text('Go on.'), done()]], {
+      edit: (t) => `${t}${OFF}`,
+      tools: { book: async (p, ctx) => (ac.abort(), h.calendar.book(p.slot!, { item: p.item! }, ctx.key)) },
+    });
+    let s = await upToReadBack(h);
+    // The yes ran the booking, and the turn was stopped before the model said anything after it.
+    s = await converseTurn(s, { kind: 'text', text: 'yes' }, h.deps, h.out, ac.signal);
+    s = await h.run(s, { kind: 'text', text: 'thanks', heard: { cutIn: false, text: null, spokeBefore: true } });
+    expect(JSON.stringify(s.messages)).toContain('"text":"Friday morning is free."');
+    expect(JSON.stringify(s.messages)).not.toContain(UNHEARD_NOTE);
+  });
+
   it('a yes over a read-back heard in part confirms nothing', async () => {
     const h = harness([...lookupThenBook, [text('Shall I read it again?'), done()]], { edit: (t) => `${t}${OFF}` });
     let s = await upToReadBack(h);

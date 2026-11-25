@@ -9,7 +9,7 @@ import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, lineOn, type ActionSpec, type AgentBusiness } from './business/schema';
-import { checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
+import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { askWithinWhy, dayInWords, isConfirmed, readBackText, readYesNo, shownParams, type PendingReadBack } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
@@ -116,8 +116,9 @@ export interface ConverseDeps {
  * ends the turn's reply (`final` true: the rest of the model's text, or a fixed line). A turn that says
  * anything has one final piece, or two where the check after speaking corrects the reply: the correction's
  * pieces follow the reply's final one, its own last piece final again. A correction that fails after saying
- * part of itself leaves its pieces with no final one after them: the turn's end closes them. A turn that
- * says nothing (the caller left) calls neither. The chat runtime sends a `say` at each final piece (the
+ * part of itself leaves its pieces with no final one after them: the turn's end closes them. So does a turn
+ * stopped from outside (converseTurn's `signal`): it ends with the pieces it said before it was stopped, none
+ * of them final, or with none. A turn that says nothing (the caller left) calls neither. The chat runtime sends a `say` at each final piece (the
  * reply's at once, before the check reads it, and a correction's as a second `say`), and each piece as a
  * `say_delta` as it comes; the phone (plan 2 of the runtime's design) is to say a correction once the reply
  * has played, unless the caller has begun to speak. `scrubbed`, where a channel keeps what it sent, is given
@@ -1042,6 +1043,9 @@ async function runConfirmed(t: Turn, name: string, params: Record<string, string
   return ran.ok ? { outcome: 'ran', text: resultText(ran.result) } : { outcome: 'failed', text: `Failed: ${ran.error}`, why: ran.error };
 }
 
+/** How the result of a read-back's call opens once the caller has answered it: the caller's words are in it (applyHeard's turn boundary). */
+const READ_BACK_ANSWER = 'The line read back: "';
+
 /**
  * What a read-back the caller did not confirm leaves the model to know: the goal (a yes to the read-back) and
  * what a yes elsewhere is worth, never words for it to say.
@@ -1059,7 +1063,7 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
   t.st.pending = null;
   const b = t.deps.business;
   const spec = b.actions[p.action];
-  const readLine = `The line read back: "${p.text}"`;
+  const readLine = `${READ_BACK_ANSWER}${p.text}"`;
   // The caller's words as the model is sent them: the note's mark rewritten wherever they wrote it.
   const words = neutralised(said);
   if (!readBackHeard(p.text, heard)) {
@@ -1178,16 +1182,25 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
 }
 
 /**
+ * Whether a part of a message on the caller's side holds the caller's own words: their text (never the check
+ * after speaking's note), or the result of a read-back they answered, which carries what they said.
+ */
+const callersOwn = (c: ModelContent): boolean =>
+  (c.type === 'text' && !c.text.startsWith(CHECK_NOTE_MARK)) || (c.type === 'tool_result' && c.content.startsWith(READ_BACK_ANSWER));
+
+/**
  * What the caller heard of the line's last reply, written into the conversation before their words: the last
- * text of the line's (its tool calls kept) becomes what they heard with CUT_IN_NOTE after it where they cut in
+ * text of the line's since the caller's last words (its tool calls kept; none there, nothing changes) becomes what they heard with CUT_IN_NOTE after it where they cut in
  * and heard some of it, and UNHEARD_NOTE where they heard none of it (they spoke before it, or cut in before a
  * word of it played); otherwise it stands. A read-back waiting for its answer is not in the conversation:
  * whether it was heard is readBackHeard's, on the answer.
  */
 function applyHeard(st: ConverseState, heard: Heard): void {
   if (st.pending !== null || (!heard.cutIn && !heard.spokeBefore)) return;
+  // Only the last turn's replies, after the caller's last words: a turn that said nothing leaves an earlier reply as it was heard.
   for (let m = st.messages.length - 1; m >= 0; m--) {
     const msg = st.messages[m]!;
+    if (msg.role === 'user' && msg.content.some(callersOwn)) return;
     if (msg.role !== 'assistant') continue;
     let at = msg.content.length - 1;
     while (at >= 0 && msg.content[at]!.type !== 'text') at--;
