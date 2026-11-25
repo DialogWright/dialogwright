@@ -184,7 +184,8 @@ persona:
   # No Twilio voice: Twilio's default, the one the other apps speak in there (Google's en-US-Neural2-F, named here
   # until 2026-11-25, sounded poor on the first live call).
   voices:
-    telnyx: Telnyx.NaturalHD.astra
+    # Telnyx's Ultra voice the maintainer chose (2026-11-25), in place of Telnyx.NaturalHD.astra.
+    telnyx: Telnyx.Ultra.23112795-d54e-4560-9568-791a87c30201
 lines:
   # assumption: the owner corrects these (a receptionist's opening: what the shop does, then what the line can do; "messaging" in the web chat)
   greeting:
