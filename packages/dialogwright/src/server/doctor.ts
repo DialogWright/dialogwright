@@ -507,7 +507,9 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
  * A converse app whose calendar is Google Calendar (agent.yaml sources.calendar.kind: google): the service
  * account's key file the app's setting GOOGLE_CALENDAR_KEY_FILE names, read here to see that it is one (its
  * path and what it holds never printed), and the calendar's id where agent.yaml reads it from a setting.
- * Google is not asked: whether the calendar is shared with the service account shows on the first lookup.
+ * Google is not asked: whether the calendar is shared with the service account shows on the first lookup. Nor
+ * is the app's code read: the ok line says that the setting takes effect only where the code makes its calendar
+ * with businessCalendar(...).
  */
 export function googleCalendarChecks(calendarId: string | undefined, env: Env): CheckResult[] {
   const out: CheckResult[] = [];
@@ -532,7 +534,7 @@ export function googleCalendarChecks(calendarId: string | undefined, env: Env): 
     out.push({ id: 'converse', status: 'fail', message: `${said}, and the file ${GOOGLE_CALENDAR_KEY_FILE} names is not a service account's key: no window is offered and nothing is booked`, fix: 'download a JSON key for the service account (Google Cloud console, IAM, Service accounts, Keys) and point the setting at it' });
     return out;
   }
-  out.push({ id: 'converse', status: 'ok', message: `${said}, signed in by the service account whose key file ${GOOGLE_CALENDAR_KEY_FILE} names (Google is not asked here: the calendar must be shared with the service account's address, with permission to make changes)` });
+  out.push({ id: 'converse', status: 'ok', message: `${said}, signed in by the service account whose key file ${GOOGLE_CALENDAR_KEY_FILE} names (Google is not asked here: the calendar must be shared with the service account's address, with permission to make changes). It takes effect only where the app's code makes its calendar with businessCalendar(...): a calendar the app's code keeps itself is not Google's, whatever agent.yaml says` });
   return out;
 }
 

@@ -65,7 +65,7 @@ function setup(o: { timeoutMs?: number; keyFile?: string } = {}) {
   let now = T0;
   const clock = { set: (ms: number) => { now = ms; }, now: () => now };
   const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => now });
-  const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile: o.keyFile ?? keyFile, business: business(), fetch: google.fetch, now: () => new Date(now), ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}) });
+  const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile: o.keyFile ?? keyFile, business: business(), fetch: google.fetch, now: () => new Date(now), wallClock: () => now, ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}) });
   return { google, calendar, clock };
 }
 
@@ -121,15 +121,51 @@ describe('googleCalendar', () => {
     await expect(calendar.book('2026-11-25:morning', {}, 'key-3')).rejects.toBeInstanceOf(UnknownSlot);
   });
 
-  it('a booking whose answer came too late is written once: the same key after it finds its event', async () => {
+  it('a booking whose answer came too late is asked for by its id once: Google holds it, so it is booked, and the same key after it writes no second', async () => {
     const { google, calendar } = setup({ timeoutMs: 50 });
     await calendar.free(MONDAY); // the token, in time
     google.writeDelayMs = 200; // Google writes the event and answers after the line has given up
-    await expect(calendar.book(`${MONDAY}:morning`, { name: 'Avery Example' }, 'key-1')).rejects.toThrow(/did not answer in time/);
+    expect(await calendar.book(`${MONDAY}:morning`, { name: 'Avery Example' }, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: false });
+    expect(google.requests.filter((r) => r.path.endsWith(`/events/${eventIdOf('key-1')}`)).map((r) => `${r.method} ${r.status}`)).toEqual(['GET 200']);
     expect(google.events.get(CALENDAR_ID)).toHaveLength(1);
     google.writeDelayMs = 0;
     expect(await calendar.book(`${MONDAY}:morning`, { name: 'Avery Example' }, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: true });
     expect(google.events.get(CALENDAR_ID)).toHaveLength(1);
+  });
+
+  it('a booking whose insert went unanswered and whose event cannot be read either is never told to the model as not booked', async () => {
+    const UNKNOWN = /^the calendar did not confirm this booking, so it is not known whether it was made; booking it again with the same details on this call is safe and never books it twice/;
+    const byId = (m: string, path: string): boolean => m === 'GET' && path.endsWith(`/events/${eventIdOf('key-1')}`);
+    // The insert late (written), and the read of its event refused by an outage.
+    const { google, calendar } = setup({ timeoutMs: 50 });
+    await calendar.free(MONDAY);
+    google.writeDelayMs = 200;
+    google.failNext(1, 503, byId);
+    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(UNKNOWN);
+    expect(google.events.get(CALENDAR_ID)).toHaveLength(1);
+    google.writeDelayMs = 0;
+    expect(await calendar.book(`${MONDAY}:morning`, {}, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: true });
+    expect(google.events.get(CALENDAR_ID)).toHaveLength(1);
+    // The insert answered 503 (nothing written here, though Google may still write it), and its event not found:
+    // still not known, never "not booked".
+    const second = setup();
+    await second.calendar.free(MONDAY);
+    second.google.failNext(1, 503, (m) => m === 'POST');
+    await expect(second.calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(UNKNOWN);
+    expect(second.google.requests.filter((r) => byId(r.method, r.path)).map((r) => r.status)).toEqual([404]);
+    // The insert answered 429 and its event stands: booked.
+    const third = setup();
+    await third.calendar.free(MONDAY);
+    third.google.failNext(1, 429, (m) => m === 'POST');
+    third.google.add(CALENDAR_ID, { ...ownEvent(eventIdOf('key-1'), '07:30', '08:00'), extendedProperties: { private: { slot: `${MONDAY}:morning` } } });
+    third.google.unlisted.add(eventIdOf('key-1'));
+    expect(await third.calendar.book(`${MONDAY}:morning`, {}, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: false });
+    // A refusal of the insert (a 400 or a 403) is no outage: no read of the event, the refusal said.
+    const fourth = setup();
+    await fourth.calendar.free(MONDAY);
+    fourth.google.failNext(1, 403, (m) => m === 'POST');
+    await expect(fourth.calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(/^the calendar refused the request \(403\)/);
+    expect(fourth.google.requests.filter((r) => byId(r.method, r.path))).toEqual([]);
   });
 
   it('a 409 for a key whose event stands in its slot (not yet listed) is the same booking', async () => {
@@ -158,7 +194,8 @@ describe('googleCalendar', () => {
     clock.set(Date.parse(`${MONDAY}T12:59:00Z`)); // 07:59 in New York, the morning's last minute
     await calendar.free(MONDAY);
     google.writeDelayMs = 200;
-    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(/did not answer in time/);
+    google.failNext(1, 503, (m, path) => m === 'GET' && path.endsWith(`/events/${eventIdOf('key-1')}`)); // its event cannot be read either
+    await expect(calendar.book(`${MONDAY}:morning`, {}, 'key-1')).rejects.toThrow(/^the calendar did not confirm this booking/);
     google.writeDelayMs = 0;
     clock.set(Date.parse(`${MONDAY}T13:01:00Z`)); // 08:01: the morning is over
     expect(await calendar.book(`${MONDAY}:morning`, {}, 'key-1')).toEqual({ id: eventIdOf('key-1'), repeat: true });
@@ -185,7 +222,7 @@ describe('googleCalendar', () => {
     const b = business();
     const cal = b.sources.calendar!;
     const open: AgentBusiness = { ...b, sources: { ...b.sources, calendar: { ...cal, windows: [{ name: 'morning', label: '9 to 12', capacity: 1 }, { name: 'afternoon', label: '1 to 5', capacity: 1 }] } } };
-    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => T0 });
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID] });
     const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile, business: open, fetch: google.fetch, now: () => new Date(T0) });
     await calendar.book(`${MONDAY}:morning`, {}, 'key-1');
     expect(google.events.get(CALENDAR_ID)![0]).toMatchObject({ start: { date: MONDAY }, end: { date: '2026-12-01' } });
@@ -193,7 +230,7 @@ describe('googleCalendar', () => {
   });
 
   it('reads every page of a busy day', async () => {
-    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => T0, pageSize: 1 });
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], pageSize: 1 });
     const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile, business: business(), fetch: google.fetch, now: () => new Date(T0) });
     google.add(CALENDAR_ID, ownEvent('own00001', '07:00', '07:30'));
     google.add(CALENDAR_ID, ownEvent('own00002', '07:00', '07:30'));
@@ -217,7 +254,7 @@ describe('googleCalendar', () => {
   });
 
   it('a lookup that fails mid-call is said to the model as the failure it is, and no window is offered', async () => {
-    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => Date.parse('2030-01-14T15:00:00Z') });
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID] }); // the real time: the sign-in is by it, the business's day 2030's
     const b = readAgentBusiness(CONVERSE_FIXTURE_DIR);
     const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile, business: b, fetch: google.fetch, now: () => new Date('2030-01-14T15:00:00Z'), timeoutMs: 50 });
     const app = defineConverseApp(CONVERSE_FIXTURE_DIR, {
@@ -239,7 +276,7 @@ describe('googleCalendar', () => {
 
   it('a booking confirmed on a chat lands as one event', async () => {
     const NOW = new Date('2030-01-14T15:00:00Z');
-    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => NOW.getTime() });
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID] });
     const b = readAgentBusiness(CONVERSE_FIXTURE_DIR);
     const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile, business: b, fetch: google.fetch, now: () => NOW });
     const app = defineConverseApp(CONVERSE_FIXTURE_DIR, {
@@ -271,6 +308,22 @@ describe('googleCalendar', () => {
     expect(google.tokensIssued).toBe(2);
   });
 
+  it('signs in by the real time, whatever the business\'s clock says (an eval or a demo on a day of its own)', async () => {
+    let wall = T0;
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => wall });
+    let businessNow = Date.parse('2031-03-03T15:00:00Z'); // a Monday five years on
+    const calendar = googleCalendar({ calendarId: CALENDAR_ID, keyFile, business: business(), fetch: google.fetch, now: () => new Date(businessNow), wallClock: () => wall });
+    expect((await calendar.free('2031-03-03')).map((s) => s.window)).toEqual(['afternoon']);
+    expect(google.tokensIssued).toBe(1);
+    // The business's clock moving on is no reason for a new token; the real time nearing its expiry is.
+    businessNow += 2 * 3600_000;
+    await calendar.free('2031-03-04');
+    expect(google.tokensIssued).toBe(1);
+    wall = T0 + (3600 - 59) * 1000;
+    await calendar.free('2031-03-04');
+    expect(google.tokensIssued).toBe(2);
+  });
+
   it('asks for two lookups at once with one token', async () => {
     const { google, calendar } = setup();
     await Promise.all([calendar.free(MONDAY), calendar.free('2026-12-01')]);
@@ -287,7 +340,7 @@ describe('googleCalendar', () => {
   });
 
   it('a calendar Google does not know, or one not shared with the service account, is said so', async () => {
-    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => T0 });
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID] });
     const calendar = googleCalendar({ calendarId: 'other@group.calendar.example.com', keyFile, business: business(), fetch: google.fetch, now: () => new Date(T0) });
     await expect(calendar.free(MONDAY)).rejects.toThrow(/^the calendar was not found/);
   });
@@ -323,7 +376,7 @@ describe('googleCalendar', () => {
 
 describe('businessCalendar with agent.yaml\'s google calendar', () => {
   it('reads the key file\'s path from GOOGLE_CALENDAR_KEY_FILE and the calendar\'s id from its env.<NAME>', async () => {
-    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID], now: () => T0 });
+    const google = new FakeGoogleCalendar({ publicKey, clientEmail: CLIENT_EMAIL, calendars: [CALENDAR_ID] });
     const b = business();
     const byEnv: AgentBusiness = { ...b, sources: { ...b.sources, calendar: { ...b.sources.calendar!, calendarId: 'env.VISIT_CALENDAR' } } };
     const env = (name: string): string | undefined => ({ [GOOGLE_CALENDAR_KEY_FILE]: keyFile, VISIT_CALENDAR: CALENDAR_ID } as Record<string, string>)[name];

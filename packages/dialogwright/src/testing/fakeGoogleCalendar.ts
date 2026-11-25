@@ -14,7 +14,7 @@ import { verify, type KeyObject } from 'node:crypto';
  * - `POST /calendar/v3/calendars/<id>/events`: an event inserted with the id it brings (base32hex, 5 to 1024
  *   characters); an id already used is 409, as Google answers.
  *
- * A test can make the next requests fail with a status (`failNext`), or answer slowly (`delayMs`, and `writeDelayMs` for an insert alone), or send a body that stalls after its headers (`stallBodyMs`), or leave a standing event out of a listing (`unlisted`): a slow
+ * A test can make the next requests fail with a status (`failNext`, all of them or those it names), or answer slowly (`delayMs`, and `writeDelayMs` for an insert alone), or send a body that stalls after its headers (`stallBodyMs`), or leave a standing event out of a listing (`unlisted`): a slow
  * answer is made first and sent late, as a server that wrote and replied after the caller gave up.
  */
 
@@ -81,6 +81,7 @@ export class FakeGoogleCalendar {
   private readonly tokens = new Map<string, number>();
   private failing = 0;
   private failStatus = 503;
+  private failOnly: ((method: string, path: string) => boolean) | undefined;
 
   constructor(private readonly o: FakeGoogleCalendarOptions) {
     this.tokenUri = o.tokenUri ?? FAKE_TOKEN_URI;
@@ -88,10 +89,14 @@ export class FakeGoogleCalendar {
     for (const id of o.calendars) this.events.set(id, []);
   }
 
-  /** The next `n` requests are answered with `status` (a 5xx by default), nothing done. */
-  failNext(n: number, status = 503): void {
+  /**
+   * The next `n` requests are answered with `status` (a 5xx by default), nothing done; with `only`, the next `n`
+   * requests it matches (by method and path), the others answered as usual.
+   */
+  failNext(n: number, status = 503, only?: (method: string, path: string) => boolean): void {
     this.failing = n;
     this.failStatus = status;
+    this.failOnly = only;
   }
 
   /** Every token issued so far stops working, as one revoked would. */
@@ -141,7 +146,7 @@ export class FakeGoogleCalendar {
   };
 
   private handle(url: URL, method: string, init: RequestInit | undefined): { status: number; body: unknown } {
-    if (this.failing > 0) {
+    if (this.failing > 0 && (this.failOnly === undefined || this.failOnly(method, url.pathname))) {
       this.failing -= 1;
       return { status: this.failStatus, body: { error: { code: this.failStatus, message: 'Backend Error' } } };
     }

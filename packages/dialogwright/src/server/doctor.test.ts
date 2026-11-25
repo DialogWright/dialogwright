@@ -1011,6 +1011,9 @@ describe('a converse app (pnpm diagnose)', () => {
       expect(statuses('visits@group.calendar.example.com', { GOOGLE_CALENDAR_KEY_FILE: bad })).toEqual([expect.stringMatching(/^fail: .*is not a service account's key/)]);
       expect(statuses('env.VISIT_CALENDAR', { GOOGLE_CALENDAR_KEY_FILE: good })).toEqual([expect.stringMatching(/^fail: .*VISIT_CALENDAR, which is unset: the server will not start/), expect.stringMatching(/^ok: /)]);
       expect(statuses('env.VISIT_CALENDAR', { GOOGLE_CALENDAR_KEY_FILE: good, VISIT_CALENDAR: 'visits@group.calendar.example.com' })).toEqual([expect.stringMatching(/^ok: .*shared with the service account's address/)]);
+      // The settings are right, and the line still reaches Google only where the app's code makes its calendar
+      // with businessCalendar(...): said plainly, since a calendar of the app's own never asks Google.
+      expect(statuses('visits@group.calendar.example.com', { GOOGLE_CALENDAR_KEY_FILE: good })).toEqual([expect.stringMatching(/^ok: .*only where the app's code makes its calendar with businessCalendar\(\.\.\.\).*a calendar the app's code keeps itself is not Google's/)]);
       const all = JSON.stringify([good, bad, join(dir, 'secret-missing.json')].flatMap((f) => googleCalendarChecks('env.VISIT_CALENDAR', { GOOGLE_CALENDAR_KEY_FILE: f })));
       expect(all).not.toContain(dir);
       expect(all).not.toContain('secret');

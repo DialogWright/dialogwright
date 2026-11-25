@@ -20,7 +20,7 @@ export const TOKEN_MARGIN_MS = 60_000;
 const ASSERTION_S = 3600;
 
 /** Why a request to Google failed, as the runtime records it; the message is what the model is told. */
-export type GoogleFailure = 'key-file' | 'sign-in' | 'timeout' | 'unreachable' | 'unavailable' | 'not-found' | 'refused';
+export type GoogleFailure = 'key-file' | 'sign-in' | 'timeout' | 'unreachable' | 'unavailable' | 'not-found' | 'refused' | 'unconfirmed';
 
 /** A calendar request that failed: its message is said to the model as the action's failure, and names no path, key or token. */
 export class GoogleCalendarError extends Error {
@@ -134,13 +134,18 @@ export interface ServiceAccountTokens {
   forget(): void;
 }
 
-/** A service account's access tokens, from the key file at `keyFile` (read at the first sign-in, and again after a failed one). */
-export function serviceAccountTokens(o: { keyFile: string; scope: string; fetch: typeof fetch; now: () => Date; timeoutMs: number }): ServiceAccountTokens {
+/**
+ * A service account's access tokens, from the key file at `keyFile` (read at the first sign-in, and again after a
+ * failed one). The assertion's times and the token's expiry are by `wallClock`, the real time in ms (never the
+ * business's clock, which an eval or a demo may set to a day of its own: Google refuses an assertion off its own
+ * time).
+ */
+export function serviceAccountTokens(o: { keyFile: string; scope: string; fetch: typeof fetch; wallClock: () => number; timeoutMs: number }): ServiceAccountTokens {
   let kept: { token: string; expiresMs: number } | null = null;
   let pending: Promise<string> | null = null;
   const signIn = async (): Promise<string> => {
     const key = await readServiceAccountKey(o.keyFile);
-    const nowMs = o.now().getTime();
+    const nowMs = o.wallClock();
     const body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: signedAssertion(key, o.scope, nowMs) }).toString();
     const res = await requestWithin(o.fetch, key.tokenUri, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }, o.timeoutMs);
     if (res.status >= 500 || res.status === 429) throw new GoogleCalendarError('unavailable', `the calendar is not answering (${res.status}), so nothing is known from it now`);
@@ -152,7 +157,7 @@ export function serviceAccountTokens(o: { keyFile: string; scope: string; fetch:
   };
   return {
     async token() {
-      if (kept !== null && o.now().getTime() < kept.expiresMs - TOKEN_MARGIN_MS) return kept.token;
+      if (kept !== null && o.wallClock() < kept.expiresMs - TOKEN_MARGIN_MS) return kept.token;
       pending ??= signIn().finally(() => {
         pending = null;
       });

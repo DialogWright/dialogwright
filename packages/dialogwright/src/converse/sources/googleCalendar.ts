@@ -3,7 +3,7 @@ import { localDateIso, localMinutes, minutesOfTime } from '../../core/localDate'
 import type { AgentBusiness } from '../business/schema';
 import { businessZone } from '../state';
 import { dayWords, parseDay, SlotFull, UnknownSlot, WEEKDAYS, type Calendar, type Slot } from './calendar';
-import { CALENDAR_EVENTS_SCOPE, GoogleCalendarError, requestWithin, serviceAccountTokens } from './googleAuth';
+import { CALENDAR_EVENTS_SCOPE, GoogleCalendarError, requestWithin, serviceAccountTokens, type GoogleFailure } from './googleAuth';
 
 /**
  * Google Calendar through a service account, behind the converse runtime's Calendar (calendar.ts), for a
@@ -28,7 +28,12 @@ import { CALENDAR_EVENTS_SCOPE, GoogleCalendarError, requestWithin, serviceAccou
  *   none as an all-day event.
  * - **Failures.** A request Google answers with an error, or not within `timeoutMs`, fails the lookup or the
  *   booking with a GoogleCalendarError, whose message the model is told as the action's failure: no slot is
- *   ever invented, and a booking that failed is not reported as made. Nothing here logs, and no message names
+ *   ever invented, and a booking that failed is not reported as made. An insert that went unanswered (late,
+ *   unreachable, a 5xx or a 429) may have been written all the same: its event is asked for by its id once (a
+ *   request with its own `timeoutMs`), and booked where it stands in this slot; where it cannot be read, the
+ *   model is told it is not known whether it was made and that booking it again is safe (`unconfirmed`), never
+ *   that it was not booked. `timeoutMs` bounds each request, so one booking may take a sign-in, a listing, an
+ *   insert and a read, each up to it. Nothing here logs, and no message names
  *   the key file's path or what it holds.
  *
  * Two lines booking the last place in a window at the same moment can both succeed (Google holds no
@@ -47,6 +52,10 @@ const SLOT_PROPERTY = 'slot';
 const EVENT_MINUTES = 30;
 /** The most pages of a day's events read (250 events each). */
 const MAX_PAGES = 20;
+/** The failures of an insert after which Google may hold the event all the same: no answer in time, none at all, a 5xx or a 429. */
+const UNANSWERED: ReadonlySet<GoogleFailure> = new Set<GoogleFailure>(['timeout', 'unreachable', 'unavailable']);
+/** What the model is told of a booking whose insert went unanswered and whose event could not be read: not known, never "not booked". */
+const notConfirmed = (): GoogleCalendarError => new GoogleCalendarError('unconfirmed', 'the calendar did not confirm this booking, so it is not known whether it was made; booking it again with the same details on this call is safe and never books it twice');
 
 /**
  * The event id a booking's idempotency key is written as: the key's SHA-256 in hex, 64 characters of the
@@ -65,7 +74,10 @@ export interface GoogleCalendarOptions {
   business: AgentBusiness;
   /** How requests are sent; default the global fetch. Tests give the fake Google API's. */
   fetch?: typeof fetch;
+  /** The business's clock: its day, and which windows have passed. */
   now: () => Date;
+  /** The real time, in ms, for the sign-in (its assertion's times and the token's expiry); default Date.now. Tests give the fake Google API's clock. */
+  wallClock?: () => number;
   /** How long one request to Google may take; default GOOGLE_TIMEOUT_MS. */
   timeoutMs?: number;
 }
@@ -131,7 +143,7 @@ export function googleCalendar(o: GoogleCalendarOptions): Calendar {
   const zone = businessZone(o.business);
   const fetcher = o.fetch ?? fetch;
   const timeoutMs = o.timeoutMs ?? GOOGLE_TIMEOUT_MS;
-  const tokens = serviceAccountTokens({ keyFile: o.keyFile, scope: CALENDAR_EVENTS_SCOPE, fetch: fetcher, now: o.now, timeoutMs });
+  const tokens = serviceAccountTokens({ keyFile: o.keyFile, scope: CALENDAR_EVENTS_SCOPE, fetch: fetcher, wallClock: o.wallClock ?? Date.now, timeoutMs });
   const base = `${API}${encodeURIComponent(o.calendarId)}/events`;
 
   const openDay = (dayIso: string): boolean => {
@@ -238,14 +250,33 @@ export function googleCalendar(o: GoogleCalendarOptions): Calendar {
       if (own !== undefined) return { id, repeat: standsFor(own, slotId) };
       if (!openDay(dayIso) || over(dayIso, w)) throw new UnknownSlot(slotId);
       if (taken(dayIso, w, events) >= w.capacity) throw new SlotFull(slotId);
-      const made = await ask(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(eventFor(id, slotOf(dayIso, w), w, details)) }, true);
+      const byId = `${base}/${encodeURIComponent(id)}`;
+      let made: Awaited<ReturnType<typeof ask>>;
+      try {
+        made = await ask(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(eventFor(id, slotOf(dayIso, w), w, details)) }, true);
+      } catch (e) {
+        if (!(e instanceof GoogleCalendarError) || !UNANSWERED.has(e.failure)) throw e;
+        // The insert went unanswered (late, unreachable, a 5xx or a 429): Google may hold the event all the same.
+        // Its event is asked for by its id once, with a time of its own: standing in this slot, it is booked;
+        // anything else leaves it not known, never "not booked" (a repeat with the same key is the same event).
+        let held: GoogleEvent;
+        try {
+          const r = await ask(byId, { method: 'GET' });
+          held = (r.conflict ? {} : r.json) as GoogleEvent;
+        } catch {
+          throw notConfirmed();
+        }
+        if (held.status === 'cancelled') throw notConfirmed();
+        standsFor(held, slotId);
+        return { id, repeat: false };
+      }
       if (!made.conflict) return { id, repeat: false };
       // 409: Google already has an event with this id, written by this key before. It is the same booking only
       // where it still stands in this slot (not listed yet); one deleted since is not booked, and is not put back
       // over the person who removed it.
       let held: GoogleEvent;
       try {
-        const r = await ask(`${base}/${encodeURIComponent(id)}`, { method: 'GET' });
+        const r = await ask(byId, { method: 'GET' });
         held = (r.conflict ? {} : r.json) as GoogleEvent;
       } catch (e) {
         if (e instanceof GoogleCalendarError && e.failure === 'not-found') throw new GoogleCalendarError('refused', 'the calendar refused this booking\'s id as taken and cannot show it, so nothing was booked');
