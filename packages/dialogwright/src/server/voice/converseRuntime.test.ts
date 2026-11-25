@@ -741,4 +741,36 @@ describe('the converse voice runtime: final fix wave', () => {
     expect(h.fio.records).toContainEqual({ dir: 'log', msg: { turnFailed: 'Error: disk full' } });
     expect(h.said().slice(before).map((f) => [f.token, f.last])).toEqual([["That's done.", true]]);
   });
+
+  it('a thrown turn after a confirmed change keeps the change: done holds it, nothing waits, and the next yes runs nothing', async () => {
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'availability', { day: DAY }), done('tool')], [text('Anything else?'), done()]]);
+    const h = harness({
+      model,
+      appending: (d, rows) => {
+        if (d.type === 'gate' && d.detail.tool === 'availability' && rows.some((r) => r.type === 'confirmed')) throw new Error('disk full');
+      },
+    });
+    await readBackOf(h);
+    await h.prompt('yes');
+    expect(h.entry.session.done).toEqual([expect.objectContaining({ action: 'book' })]);
+    expect(h.entry.session.pending).toBeNull();
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+    expect(h.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail.action)).toEqual(['book']);
+    expect(lastUser(model.requests.at(-1)!)).not.toContain('Not done');
+    expect(h.said().at(-1)!.token).toBe('Anything else?');
+  });
+
+  it('a thrown turn before anything ran keeps the session from before it', async () => {
+    const h = harness({
+      model: gatedModel([[call('c1', 'availability', { day: DAY }), done('tool')]]),
+      appending: (d) => {
+        if (d.type === 'gate') throw new Error('disk full');
+      },
+    });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    const before = structuredClone(h.entry.session);
+    await h.prompt('hello');
+    expect(h.entry.session).toEqual(before);
+  });
 });

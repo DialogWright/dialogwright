@@ -2,7 +2,7 @@ import type { ConverseApp } from '../../converse/app';
 import { lineOn } from '../../converse/business/schema';
 import { accountOf } from '../../converse/sources/accounts';
 import { businessZone, type ConverseState } from '../../converse/state';
-import { converseTurn, type ConverseDeps, type Heard, type Input, type Out } from '../../converse/turn';
+import { ConverseTurnError, converseTurn, lineSaid, type ConverseDeps, type Heard, type Input, type Out } from '../../converse/turn';
 import { E164 } from '../../core/numberLocales';
 import { localDateIso } from '../../core/localDate';
 import { endFrame, textFrame, type EndFrame, type InboundFrame, type OutboundFrame, type TextFrame } from '../../channel/relay/frames';
@@ -456,14 +456,19 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       let state: ConverseState = before;
       try {
         state = await converseTurn(before, input, turnDeps(app, e), out, running.ac.signal);
-      } catch (err) {
+      } catch (thrown) {
+        const err = thrown instanceof ConverseTurnError ? thrown.cause : thrown;
         log(`${e.callSid}: converse turn failed: ${describe(err)}`);
         io.record('log', { turnFailed: describe(err) });
+        // Where a change the caller confirmed ran, the call goes on from as far as the turn reached, so the change
+        // is never read back or answered again; else from before the turn.
+        if (thrown instanceof ConverseTurnError && (thrown.state.done?.length ?? 0) > (before.done?.length ?? 0)) state = thrown.state;
         // The caller is not left in silence, unless the turn was stopped (the caller spoke, or left) or had already
         // sent its final reply: the done line where a change the caller confirmed has just run (as the turn's own
         // failure says it), else the business's recovery line.
         if (!running.ac.signal.aborted && !finalSent) {
           const line = lineOn(changeRan ? app.business.lines.done : app.business.lines.recovery, 'voice');
+          if (state !== before) lineSaid(state, line);
           reply.frames.push({ text: line, at: now() });
           finalSent = true;
           send({ ...textFrame(line, true), last: true });

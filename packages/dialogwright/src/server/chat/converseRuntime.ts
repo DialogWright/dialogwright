@@ -6,7 +6,7 @@ import { policyOf } from '../../converse/policy';
 import { accountOf } from '../../converse/sources/accounts';
 import { converseTexts } from '../../converse/sources/texts';
 import { newConverseState, type ConverseState, type JourneyState } from '../../converse/state';
-import { converseTurn, type ConverseDeps, type Input, type Out } from '../../converse/turn';
+import { ConverseTurnError, converseTurn, type ConverseDeps, type Input, type Out } from '../../converse/turn';
 import { E164 } from '../../core/numberLocales';
 import type { JevClient } from '../../jev/types';
 import { textAuditRow } from '../../texts/record';
@@ -208,8 +208,12 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
     io.lastActivityMs = deps.now();
     try {
       c.state = await converseTurn(c.state, input, turnDeps(id, c), out);
-    } catch (err) {
+    } catch (thrown) {
+      const err = thrown instanceof ConverseTurnError ? thrown.cause : thrown;
       log(`chat ${id}: turn failed: ${describeError(err)}`);
+      // Where a change the caller confirmed ran, the chat goes on from as far as the turn reached, so the change
+      // is never read back or answered again; else from before the turn.
+      if (thrown instanceof ConverseTurnError && (thrown.state.done?.length ?? 0) > (c.state.done?.length ?? 0)) c.state = thrown.state;
       // What was sent before the failure is kept in the frame log by its length alone, never whole.
       for (const s of sent) s.log(() => `<${s.text.length} chars>`);
       io.send({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });

@@ -246,6 +246,8 @@ interface Turn {
   bridgeTimer?: ReturnType<typeof setTimeout>;
   /** The bridge was said this turn. */
   bridged: boolean;
+  /** The read-back set this turn has been said: a turn that throws keeps it waiting only then. */
+  readBackSaid?: true;
 }
 
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
@@ -926,6 +928,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     }
     if (readBack !== null) {
       sp.line(readBack);
+      t.readBackSaid = true;
       return { ok: true };
     }
     if (t.ending) {
@@ -1110,8 +1113,12 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
   await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });
   const parent = await runConfirmed(t, p.action, p.params, p.hash);
   traceTool(t, spec, p.action, p.params, parent.outcome === 'ran' ? 'confirmed' : parent.outcome, parent.why);
+  const done = [`${p.action}: ${parent.text}`];
   if (parent.outcome === 'ran') {
     t.confirmedRan = true;
+    // The line's own record of what has been done, told to the model on every request from now on; kept as soon
+    // as the change has run (its follow-ons' results joining it as they run), so a turn that throws keeps it.
+    (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
     t.out.confirmed?.();
     const j = t.st.journey;
     if (hasJourneys(b) && j !== undefined) {
@@ -1122,7 +1129,6 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
       }
     }
   }
-  const done = [`${p.action}: ${parent.text}`];
   // Follow-ons run only after their parent ran, each with the parent's confirmed values by name (agent.yaml's
   // check makes every param a follow-on takes one its parent has), its own hash, and a row naming the yes.
   for (const name of parent.outcome === 'ran' ? spec?.then ?? [] : []) {
@@ -1141,8 +1147,6 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
     traceTool(t, follow, name, checked.params, ran.outcome, ran.why);
     done.push(`${name}: ${ran.text}`);
   }
-  // The line's own record of what has been done, told to the model on every request from now on.
-  if (parent.outcome === 'ran') (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
   add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
   return parent.outcome === 'ran';
 }
@@ -1156,7 +1160,12 @@ function wentOn(t: Turn, p: PendingReadBack, words: string, reading?: { yes: num
   const spec = Object.hasOwn(t.deps.business.actions, p.action) ? t.deps.business.actions[p.action] : undefined;
   t.readBack = { text: p.text, ...(reading != null ? { yes: reading.yes, no: reading.no } : {}), confirmed: false };
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller went on speaking');
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) }]);
+  const content = `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`;
+  // A yes lost to the words that followed it (or an answer stopped before it was read) counts as a read-back not
+  // heard; an answer read as anything but a yes (a no, a correction, or one that could not be read) is the
+  // caller's answer, as answered() takes it, and counts nothing.
+  const counts = reading === undefined || isConfirmed(reading);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: counts ? refused(t, p.action, content) : content }]);
   return false;
 }
 
@@ -1292,10 +1301,49 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
     return await turnBody(t, sp, input, now);
+  } catch (e) {
+    throw new ConverseTurnError(reached(t), e);
   } finally {
     clearBridge(t);
     signal?.removeEventListener('abort', onAbort);
   }
+}
+
+/**
+ * A turn that threw: `cause` is what it threw, and `state` the call's state as far as the turn reached (reached).
+ * A channel keeps that state where a change the caller confirmed ran in the turn (its `done` grew), so the change
+ * is never read back or answered again; else it keeps the state from before the turn.
+ */
+export class ConverseTurnError extends Error {
+  constructor(
+    readonly state: ConverseState,
+    readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'ConverseTurnError';
+  }
+}
+
+/**
+ * The turn's state as far as it reached when it threw, made whole for the next request: a read-back set this turn
+ * and never said waits for no answer, and every call of the line's with no result has one saying the line failed
+ * before it was kept (a read-back said and waiting is the one call that may wait for its answer).
+ */
+function reached(t: Turn): ConverseState {
+  const st = structuredClone(t.st);
+  if (st.pending !== null && t.readBackSaid !== true) {
+    add(st, 'user', [{ type: 'tool_result', id: st.pending.id, content: 'Not read back: the line failed before it read it back, so nothing was done. Call it again to have it read back.', isError: true }]);
+    st.pending = null;
+  }
+  const answered = new Set(st.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : []))));
+  const open = st.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_call' && !answered.has(c.id) && c.id !== st.pending?.id ? [c.id] : [])));
+  add(st, 'user', open.map((id) => ({ type: 'tool_result' as const, id, content: 'The line failed before this call\'s result was kept: what has been done on this call is in the line\'s own record of it.', isError: true })));
+  return st;
+}
+
+/** A line the channel said itself after a turn threw, kept in the conversation as the line's. */
+export function lineSaid(st: ConverseState, text: string): void {
+  add(st, 'assistant', [{ type: 'text', text }]);
 }
 
 /** The turn's work once its clock, speaker and bridge are set up: converseTurn's, which clears the bridge after it. */

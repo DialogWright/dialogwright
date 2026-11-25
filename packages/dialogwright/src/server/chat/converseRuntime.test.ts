@@ -7,7 +7,7 @@ import type { ModelEvent } from '../../converse/model/types';
 import { newConverseState, type ConverseState } from '../../converse/state';
 import type { AnswerMap, JevClient } from '../../jev/types';
 import { converseFixture } from '../../testing/converse/app';
-import { BOOKING, CALLER, DAY, done, text } from '../../testing/converse/chat';
+import { BOOKING, call, CALLER, DAY, done, text } from '../../testing/converse/chat';
 import type { StoredChat } from '../stores/types';
 import { CONVERSE_SCHEMA, converseChatRuntime, stateOf } from './converseRuntime';
 import type { ChatIo } from './runtime';
@@ -156,15 +156,17 @@ function claimsJev(claims: { contradicted: number; notDone: number; gap: number 
 }
 
 /** A chat on the fixture app, opened (the greeting said), with the model's side `turns` and a decision model reading replies as `claims`. */
-async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0, extra: { onClaimsRead?: Parameters<typeof converseChatRuntime>[0]['onClaimsRead']; log?: (l: string) => void } = {}) {
+async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDone: number; gap: number }, lateMs = 0, extra: { onClaimsRead?: Parameters<typeof converseChatRuntime>[0]['onClaimsRead']; log?: (l: string) => void; appending?: (row: AuditDraft, rows: readonly AuditDraft[]) => void } = {}) {
   const t = fakeIo('chat-9');
   const jev = claimsJev(claims, t.says, lateMs);
   const { app } = converseFixture(() => new Date('2030-01-14T15:00:00Z'));
   const traced: unknown[] = [];
+  /** The audit's rows, in order. */
+  const rows: AuditDraft[] = [];
   /** Each turn's end (onTurnEnd): the chat's id and the messages sent by then. */
   const ends: { id: string; sent: ServerMessage[] }[] = [];
   const rt = converseChatRuntime({
-    app, model: fakeModel(turns), jev, jevTimeoutMs: 2000, onTurnEnd: (id) => void ends.push({ id, sent: [...t.sent] }), audit: { append: (callId, channel, row) => ({ ...row, seq: 1, at: '2030-01-14T15:00:00.000Z', callId, channel, prevHash: '', hash: '' }) },
+    app, model: fakeModel(turns), jev, jevTimeoutMs: 2000, onTurnEnd: (id) => void ends.push({ id, sent: [...t.sent] }), audit: { append: (callId, channel, row) => (extra.appending?.(row, rows), rows.push(row), { ...row, seq: 1, at: '2030-01-14T15:00:00.000Z', callId, channel, prevHash: '', hash: '' }) },
     texts: null, now: () => Date.parse('2030-01-14T15:00:00Z'), log: extra.log ?? (() => {}),
     ...(extra.onClaimsRead !== undefined ? { onClaimsRead: extra.onClaimsRead } : {}),
     resources: () => ({ trace: { write: (r) => void traced.push(r) }, frames: t.io.frames }),
@@ -172,8 +174,30 @@ async function chat(turns: ModelEvent[][], claims: { contradicted: number; notDo
   rt.prepare('chat-9');
   rt.create('chat-9', t.io);
   await rt.open('chat-9', { context: { callerNumber: CALLER }, stream: false }, t.io);
-  return { ...t, rt, jev, ends };
+  return { ...t, rt, jev, ends, rows };
 }
+
+describe('converseChatRuntime: a turn that throws', () => {
+  it('after a confirmed change keeps the change: done holds it, nothing waits, and the next yes runs nothing', async () => {
+    const logged: string[] = [];
+    const c = await chat([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'availability', { day: DAY }), done('tool')], [text('Anything else?'), done()]], { contradicted: 0.1, notDone: 0.1, gap: 0.1 }, 0, {
+      log: (l) => void logged.push(l),
+      appending: (row, rows) => {
+        if (row.type === 'gate' && row.detail.tool === 'availability' && rows.some((r) => r.type === 'confirmed')) throw new Error('disk full');
+      },
+    });
+    await c.rt.text('chat-9', `Is there a visit free on ${DAY}?`, c.io);
+    await c.rt.text('chat-9', 'The morning please, for Sam Example, on this number.', c.io);
+    await c.rt.text('chat-9', 'yes', c.io);
+    expect(logged).toContainEqual(expect.stringContaining('turn failed: Error: disk full'));
+    const session = c.rt.snapshot('chat-9').session as ConverseState;
+    expect(session.done).toEqual([expect.objectContaining({ action: 'book' })]);
+    expect(session.pending).toBeNull();
+    await c.rt.text('chat-9', 'yes', c.io);
+    expect(c.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail.action)).toEqual(['book']);
+    expect(c.says().at(-1)).toBe('Anything else?');
+  });
+});
 
 describe('converseChatRuntime: a reply on the wire', () => {
   const WRONG = { contradicted: 0.9, notDone: 0.1, gap: 0.1 };

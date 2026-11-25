@@ -16,7 +16,7 @@ import { systemPrompt, toolsOf } from './prompt';
 import { fakeCalendar } from './sources/calendar';
 import { businessZone, newConverseState, type ConverseState } from './state';
 import type { ConverseTraceRecord } from './trace';
-import { BRIDGE_AFTER_MS, confirmedHashFor, converseTurn, CUT_IN_NOTE, MAX_ROUNDS, readBackHeard, UNHEARD_NOTE, type ConverseDeps, type Heard, type Input, type Out } from './turn';
+import { BRIDGE_AFTER_MS, confirmedHashFor, ConverseTurnError, converseTurn, CUT_IN_NOTE, MAX_ROUNDS, readBackHeard, UNHEARD_NOTE, type ConverseDeps, type Heard, type Input, type Out } from './turn';
 
 /**
  * The conversation loop: the model's replies streamed in sentences, its calls checked and put to the
@@ -2387,6 +2387,25 @@ describe('converseTurn: stopped from outside', () => {
     expect(s.refusals).toEqual({ book: 1 });
   });
 
+  it('a turn that throws hands back the state it reached, made whole: the change kept, every call with a result, a read-back never said waiting for nothing', async () => {
+    const h = harness([...lookupThenBook, [call('c3', 'leave_note', { note: 'thanks' }), done('tool')]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    // The note's read-back fails to be said: the turn throws with the note's read-back set and never heard.
+    const out = h.out;
+    const failing: Out = { ...out, say: (text, final) => (text.startsWith('A note saying') ? (() => { throw new Error('line down'); })() : out.say(text, final)) };
+    const thrown = await converseTurn(s, { kind: 'text', text: 'yes' }, h.deps, failing).then(() => null, (e: unknown) => e);
+    expect(thrown).toBeInstanceOf(ConverseTurnError);
+    const err = thrown as ConverseTurnError;
+    expect((err.cause as Error).message).toBe('line down');
+    s = err.state;
+    expect(s.done).toEqual([expect.objectContaining({ action: 'book', readBack: READ_BACK })]);
+    expect(s.pending).toBeNull();
+    const calls = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_call' ? [c.id] : [])));
+    const results = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : [])));
+    expect(results.sort()).toEqual(calls.sort());
+    expect(JSON.stringify(s.messages.at(-1))).toContain('Not read back: the line failed before it read it back');
+  });
+
   it('an abort that comes after the turn ended changes nothing', async () => {
     const ac = new AbortController();
     const h = harness([[text('Hello there.'), done()]], { edit: (t) => `${t}${OFF}` });
@@ -2519,6 +2538,17 @@ describe('converseTurn: what the caller heard', () => {
       'the caller spoke over the read-back',
       'the caller went on speaking',
     ]);
+  });
+
+  it('a clear no read, then the caller going on speaking, counts no refusal', async () => {
+    const ac = new AbortController();
+    const reads = fakeJev({ yes: 0.05, no: 0.9 });
+    const jev: Harness['jev'] = { asked: reads.asked, ask: async (req) => (ac.abort(), reads.ask(req)) };
+    const h = harness([...lookupThenBook], { edit: (t) => `${t}${OFF}`, jev });
+    let s = await upToReadBack(h);
+    s = await converseTurn(s, { kind: 'text', text: 'no' }, h.deps, h.out, ac.signal);
+    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'book', outcome: 'notConfirmed', reason: 'the caller went on speaking' })]);
+    expect(s.refusals).toEqual({});
   });
 
   it('a plain no to a read-back counts no refusal', async () => {
