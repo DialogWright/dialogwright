@@ -122,6 +122,13 @@ const OPENER_ACKNOWLEDGE = 'Begin each reply with a brief, natural acknowledgeme
 const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most where they naturally go together (such as a day and a time of day): several questions at once are a lot to take in. Take everything the caller gives you, in whatever order it comes, and never ask again for what they have already said.';
 
 /**
+ * How the model speaks of what it does, on either channel: a live call (2026-11-25) heard "the line will read it back
+ * for your yes", the runtime's own words for its read-back, and an answer acknowledged twice ("Painted all over,
+ * thanks", then on the next turn "Painted black, noted").
+ */
+const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have.';
+
+/**
  * What a call adds: the caller cannot see the questions, and a voice reads a screen's marks badly (a range
  * "$125–$175" said "125 175", a list read out). The words sent are made speakable too (speakable.ts); this is the
  * context that has the model write for the ear in the first place. And a reply that ends on a statement leaves a
@@ -182,7 +189,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
   return [
     `You are the automated assistant answering ${where}. You speak for the business, in this style: ${b.persona.style} The style shapes how you sound, never what you claim.`,
     ...(b.persona.opener === 'acknowledge' ? [OPENER_ACKNOWLEDGE] : []),
-    s.channel === 'voice' ? `${ONE_AT_A_TIME} ${ON_A_CALL}` : ONE_AT_A_TIME,
+    s.channel === 'voice' ? `${ONE_AT_A_TIME} ${AS_THE_BUSINESS} ${ON_A_CALL}` : `${ONE_AT_A_TIME} ${AS_THE_BUSINESS}`,
     '',
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),
