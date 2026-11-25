@@ -242,10 +242,6 @@ opening:
 
 </details>
 
-## Checked values
-
-A `record` slot takes no value from outside its fill: its check answers `unsupported`. What it holds is an entry of the app's own data, chosen among those the code offered.
-
 ## Notes
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot, whenever there is something to offer.

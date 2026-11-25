@@ -75,10 +75,6 @@ booking:
 
 <!-- slot-docs:examples -->
 
-## Checked values
-
-The slot's check holds a value it did not fill itself: a real ISO day ("2026-02-30" is refused) in the slot's `range` against today (the session's day in the app's time zone). Ahead, it is the day the fill gives for that month and day said outright: this year's, or next year's once it is more than a month gone, so on 2026-09-18 "October 2nd" is 2026-10-02 and 2027-10-02 is refused. Back, today or a day gone, up to two years back. The words cited must be in this turn's words, but the value is not tied to them ("Thursday" names a day the words do not spell): the read-back is its confirmation. It is shown as the display says it, in the call's locale.
-
 ## Notes
 
 - Every slot listens on every turn, so the questions are asked even while the form is on another slot, and "I'd like a table next Tuesday" can fill the day on the opening turn.

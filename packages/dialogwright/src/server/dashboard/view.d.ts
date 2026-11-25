@@ -57,35 +57,7 @@ export interface Line {
   unsaid?: boolean;
   /** Generated wording: each line of the turn the app generates, its mode, its fixed line, and why one was said fixed. */
   wording?: WordingLine[];
-  /** An agent turn (an app in agent mode): what the agent understood, proposed and replied (agentOf). */
-  agent?: AgentView;
 }
-
-/** An agent turn as the console shows it (agentOf): every value as the trace keeps it, masked where the records mask it. */
-export interface AgentView {
-  /** `used`, `dropped` (the turn was decided without it) or `failed` (no answer came). */
-  use: string;
-  /** Why the turn did not read the answer, in words: what decided it, or why no answer came. */
-  why?: string;
-  /** The agent model asked again once after an answer not in its shape (AGENT_RETRY), in words: why the first was not, and what the second came to. */
-  retried?: string;
-  /** The line said while the model was slow on a call (business.yaml's waiting), in words: its prompt, when, and whether it was said. */
-  filler?: string;
-  /** Each value it understood, with the caller's words it cited, and what its check came to, in words. */
-  values: { field: string; value: string; words: string; outcome: string; accepted: boolean; shown?: string }[];
-  /** The action it proposed (`none` for none), and whether the turn took it. */
-  action: string;
-  actionOutcome?: string;
-  /** Its reply: said, or not and why (replaced by its fixed line, the price line said whole), with the drift judge's reading where it was asked. */
-  reply?: { text: string; said: boolean; why?: string; judge?: string };
-  /** The price line and the decision model's reading of a price asked, in words, where it bore on the turn (said, or named by the agent and not said). */
-  price?: string;
-  /** How long the answer took, ms. */
-  ms?: number;
-}
-
-/** An agent turn (TraceRecord.agent), for the console; null for none. */
-export function agentOf(agent: unknown): AgentView | null;
 
 /** One line an app generates, as the console shows it (wordingOf). */
 export interface WordingLine {
@@ -390,8 +362,6 @@ export interface ScriptLine {
   codeMasked?: boolean;
   /** An agent line's generated wording (Line.wording), when the turn had any. */
   wording?: WordingLine[];
-  /** An agent turn's answer (Line.agent), when the app is in agent mode. */
-  agent?: AgentView;
 }
 export const CODE_MASK: string;
 /** What an identifier of four digits or fewer is shown as (gate/principal.ts SHORT_MASK). */

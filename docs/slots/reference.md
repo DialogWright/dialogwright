@@ -141,10 +141,6 @@ code:
 
 </details>
 
-## Checked values
-
-A `reference` slot takes no value from outside its fill: its check answers `unsupported`.
-
 ## Notes
 
 - Masked by its length by default (`redact: length`): a short reference's last four characters would show most of it.

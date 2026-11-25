@@ -230,13 +230,6 @@ describe('the run artifacts', () => {
     expect(model.requests[0]!.system).toMatch(/ALLOW means the gate allowed the action to run, not that it succeeded/);
   });
 
-  it('sums the agent cost of a call from the traces', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'traces-'));
-    writeFileSync(join(dir, 'a.jsonl'), [JSON.stringify({ sessionId: 'c1', agent: { costUsd: 0.01 } }), JSON.stringify({ sessionId: 'c1', agent: { costUsd: 0.02 } }), JSON.stringify({ sessionId: 'c2', agent: { costUsd: 5 } })].join('\n'));
-    expect(agentCostOfCall(dir, 'c1')).toBeCloseTo(0.03);
-    expect(agentCostOfCall(dir, 'c3')).toBeNull();
-  });
-
   it('reads a host\'s audit, a folder per app beside the server\'s own, and a converse call\'s model cost', () => {
     const dir = mkdtempSync(join(tmpdir(), 'audit-host-'));
     const row = (callId: string, detail: object) => JSON.stringify({ type: 'gate', detail, seq: 1, at: 't', callId, channel: 'chat', prevHash: '0', hash: 'h' });

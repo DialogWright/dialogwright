@@ -13,8 +13,6 @@ import { recordType } from '../record/index';
 import { textType } from '../text/index';
 import { topicType } from '../topic/index';
 import { kitContext } from './turns';
-import { buildSlot } from '../defineSlot';
-import { BUILT_IN_SLOT_TYPES } from '../registry';
 import type { BuiltSlotSpec, SlotExample, SlotType } from '../types';
 import { CHECK_IDS, ConformanceError, slotConformanceChecks, type CheckId, type SlotConformanceOptions } from './checks';
 import { runSlotConformance } from './run';
@@ -97,20 +95,6 @@ function failures(type: SlotType<any, any>, opts: SlotConformanceOptions = {}): 
 
 const failing = (type: SlotType<any, any>, opts?: SlotConformanceOptions): CheckId[] => [...failures(type, opts).keys()].sort();
 
-const raw = (f: Map<CheckId, string>): string => f.get('value-check') ?? '';
-
-describe('every built-in type has a check', () => {
-  it('on every example\'s slot', () => {
-    for (const type of Object.values(BUILT_IN_SLOT_TYPES)) {
-      for (const example of type.examples) {
-        const built = buildSlot(example.slot, { type: type.type, ...example.config }, { wording: example.wording, ...(example.topics ? { catalog: { topics: example.topics } } : {}) });
-        if (!built.ok) throw new Error(`${type.type} "${example.name}" does not build`);
-        expect(typeof built.spec.check, `${type.type} "${example.name}"`).toBe('function');
-      }
-    }
-  });
-});
-
 describe('the correct toy, and the built-in types', () => {
   it('pass every check', () => {
     expect(failing(toy('toy'), { locales: ['en-US', 'es'] })).toEqual([]);
@@ -135,26 +119,6 @@ describe('the correct toy, and the built-in types', () => {
 });
 
 describe('each broken toy fails the check meant to catch it', () => {
-  it('a check that shows a value other than the display says, or takes words never said: value-check', () => {
-    const accepts = (shown: (v: string) => string, saidOnly = true) => (v: string, words: string, said: string) =>
-      saidOnly && !said.includes(words) ? ({ ok: false, reason: 'words' } as const) : ({ ok: true, value: v, shown: shown(v) } as const);
-    expect(failing(toy('toy-check', () => ({ check: accepts((v) => v) })))).toEqual([]);
-    const shownWrong = failures(toy('toy-check-shown', () => ({ check: accepts((v) => v.toUpperCase()) })));
-    expect([...shownWrong.keys()]).toEqual(['value-check']);
-    expect(shownWrong.get('value-check')).toContain('reuse the display');
-    const wordsAny = failures(toy('toy-check-words', () => ({ check: accepts((v) => v, false) })));
-    expect(wordsAny.get('value-check')).toContain('the words cited must be in what the caller said');
-    const refuses = failures(toy('toy-check-refuses', () => ({ check: () => ({ ok: false, reason: 'shape' }) })));
-    expect(refuses.get('value-check')).toContain('check refused the value "hello"');
-    const changes = failures(toy('toy-check-changes', () => ({ check: (v: string) => ({ ok: true, value: `${v}!`, shown: v }) })));
-    expect(changes.get('value-check')).toContain('stored as it is');
-    const throws = failures(toy('toy-check-throws', () => ({ check: () => { throw new Error('boom'); } })));
-    expect(throws.get('value-check')).toContain('threw: boom');
-    const acceptsRaw = failures(toy('toy-check-raw', () => ({ check: (v: string) => ({ ok: true, value: v, shown: v }) }), { examples: [{ ...EXAMPLES[0]!, utterances: [...EXAMPLES[0]!.utterances, { text: 'ok', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'invalid', reason: 'short', raw: 'ok', retryPromptId: 'ask_word_short' } }] }] }));
-    expect(raw(acceptsRaw)).toContain('the raw value its fill refused');
-    expect(failing(toy('toy-check-unsupported', () => ({ check: () => ({ ok: false, reason: 'unsupported' }) })))).toEqual([]);
-  });
-
   it('a display that disagrees with the fill: display', () => {
     const broken = toy('toy-display', (spec) => ({ display: (v: string) => `"${v}"`, dtmf: spec.dtmf }));
     const f = failures(broken);

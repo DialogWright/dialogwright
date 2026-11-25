@@ -6,7 +6,6 @@ import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { meetsThreshold } from '../parts/thresholds';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
-import { referenceCheck } from './check';
 import { REFERENCE_PARTS, REFERENCE_QUESTIONS, referenceOptions, type ReferenceOptions } from './options';
 import { readReference, referenceFits, referenceSpans, tokensOf } from './read';
 
@@ -88,7 +87,6 @@ export const referenceType: SlotType<ReferenceOptions> = defineSlotType<Referenc
       questions: referenceQuestions(id, o),
       fill: referenceFill(o, id),
       display: (value: string) => referenceDisplay(value),
-      check: referenceCheck,
     };
   },
   get examples() {

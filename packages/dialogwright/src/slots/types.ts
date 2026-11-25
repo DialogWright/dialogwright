@@ -12,48 +12,10 @@ import type { CatalogTopic, Nomination, SectionNomination, TopicCatalog } from '
 /** What a slot's value is: the string a fill carries (a key, digits, an ISO date, words). */
 export type SlotValue = string;
 
-/**
- * What a check of a value is given beside it: the call's locale (absent: none) and today's date
- * (ISO): the session's `todayIso`, the day in the app's time zone, never a UTC date.
- */
-export interface SlotCheckContext {
-  readonly locale?: string;
-  readonly today: string;
-  /**
-   * The value the slot holds before this one, where it holds one: a value that adds to it (a text value is
-   * the whole value so far) may keep what it held, its figures among them. Absent where the slot is empty.
-   */
-  readonly held?: string;
-}
-
-/**
- * A value checked: accepted, with the value as the slot stores it and `shown`, the text the type's
- * display says for it (the same text the read-back says), or refused for one reason. `shape`: not
- * the form the type holds; `range`: the form, but outside what the slot takes; `words`: the words
- * cited for it were not said (or, for a type that can tie the value to its words, do not hold it);
- * `unsupported`: the type cannot take a value from outside its fill.
- *
- * `shown` is unmasked: it is what the read-back says, whatever the slot's `redact`. Whoever records
- * it (the trace, the console, the audit) masks it as the records' redaction says.
- */
-export type ValueCheck =
-  | { ok: true; value: SlotValue; shown: string }
-  | { ok: false; reason: 'shape' | 'range' | 'words' | 'unsupported' };
-
-/**
- * Checks a value the slot did not fill: `words` are the caller's words the value is cited from, and
- * `said` is this turn's words, what the caller said on the turn the value is given (not the call so
- * far). `words` must be in `said`. A type ties the value to `words` only where that is
- * deterministic (digits, a name); a choice or a date is confirmed by the read-back. See ./parts/check.ts.
- */
-export type SlotValueCheck = (value: string, words: string, said: string, ctx: SlotCheckContext) => ValueCheck;
-
 /** What a type builds: a SlotSpec that declares every question id it may ask and every line it may lead to. */
 export type BuiltSlotSpec = SlotSpec & {
   questionIds: readonly string[];
   prompts: readonly SlotPrompt[];
-  /** Checks a value the slot did not fill itself. Absent on a slot written in code. */
-  check?: SlotValueCheck;
 };
 
 /**
@@ -128,8 +90,6 @@ export type LibrarySlotSpec<O = unknown> = SlotSpec & {
   readonly config: Readonly<O>;
   /** Its wording by locale, when a locale's slots.yaml gives any (SlotType.wording). */
   readonly wording?: SlotWording;
-  /** Its type's check of a value the slot did not fill (BuiltSlotSpec.check), when the type has one. */
-  readonly check?: SlotValueCheck;
 };
 
 /** One example configuration of a type, with what a caller might say to a slot built from it. */

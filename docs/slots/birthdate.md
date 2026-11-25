@@ -265,10 +265,6 @@ customerBirth:
 
 </details>
 
-## Checked values
-
-The slot's check holds a value it did not fill itself: a real ISO day, in `minYear` or later and before today (the session's day in the app's time zone), and the words cited must be in this turn's words. It is shown as the display says it ("June 14th, 1975").
-
 ## Notes
 
 - Every slot listens on every turn, so the four questions are asked even while the form is on another slot, and "this is about my account, my birthday is June fourteenth seventy five" can fill the birth date on the opening turn.

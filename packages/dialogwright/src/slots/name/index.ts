@@ -2,7 +2,6 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
-import { nameCheck } from './check';
 import { nameDisplay } from './display';
 import { nameFill } from './fill';
 import { BARE_ANSWER_GIVEN, BARE_ANSWER_SPAN, BARE_ANSWER_WORDS, nameOptions, type NameOptions } from './options';
@@ -43,7 +42,6 @@ export const nameType: SlotType<NameOptions> = defineSlotType<NameOptions>({
       questions: nameQuestions(id, o),
       fill: nameFill(ids, excludedWordsOf(o), display, bare),
       display,
-      check: nameCheck(display, excludedWordsOf(o)),
     };
   },
   get examples() {

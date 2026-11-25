@@ -526,47 +526,7 @@ function scrubVars(d: TraceRecord['decision'], scrub: Scrub | null): TraceRecord
   if ('acks' in d && Array.isArray(d.acks)) out.acks = d.acks.map((a) => (isObject(a) ? { ...a, vars: vars(a.vars) } : a));
   // A repeat's words (a replay decision's text, the line said again) are our line too.
   if ('text' in d && typeof d.text === 'string') out.text = scrub(d.text);
-  // An agent line's reply (PromptDecision.agent) is our line too.
-  if ('agent' in d && isObject(d.agent) && typeof d.agent.reply === 'string') out.agent = { ...d.agent, reply: scrub(d.agent.reply) };
   return out as TraceRecord['decision'];
-}
-
-/**
- * What an agent turn records (TraceRecord.agent), masked where it carries a redacted slot's value: each
- * accepted value's `shown` as its slot masks it, and what it was sent (its fields' values masked when sent
- * already) scrubbed of the turn's redacted values (`scrub`): the conversation, the caller's latest words
- * among it, which held a value the turn then understood; and its reply as held to the facts (`line`), as said lines are.
- */
-function redactAgent(app: Slots, agent: TraceRecord['agent'], scrub: Scrub | null, mode: StatementMode): TraceRecord['agent'] {
-  if (!isObject(agent)) return agent;
-  // Each value's proposed value, its cited words and its shown, masked as its slot's records mask it.
-  const masked = (slot: unknown, v: unknown): unknown => (typeof slot === 'string' && typeof v === 'string' ? maskValue(app, slot, v, mode) ?? v : v);
-  const values = Array.isArray(agent.values)
-    ? agent.values.map((v) => (isObject(v) ? { ...v, value: masked(v.slot, v.value), words: masked(v.slot, v.words), ...(v.shown !== undefined ? { shown: masked(v.slot, v.shown) } : {}) } : v))
-    : agent.values;
-  // The reply, said or not, is our line: scrubbed as one.
-  const reply = typeof agent.reply === 'string' && scrub !== null ? scrub(agent.reply) : agent.reply;
-  // The results of the tools it sees, each text in them scrubbed as the conversation is (a value a result repeats).
-  const sent = isObject(agent.sent) && scrub !== null && Array.isArray(agent.sent.conversation)
-    ? {
-        ...agent.sent,
-        conversation: agent.sent.conversation.map((u) => (isObject(u) && typeof u.text === 'string' ? { ...u, text: scrub(u.text) } : u)),
-        ...(Array.isArray(agent.sent.seen) ? { seen: agent.sent.seen.map((x) => (isObject(x) ? { ...x, result: scrubLeaves(x.result, scrub) } : x)) } : {}),
-      }
-    : agent.sent;
-  // The reply held to the facts (render/agentLine.ts): its fixed line, the reply said or refused, our lines too.
-  const line = isObject(agent.line) && scrub !== null
-    ? { ...agent.line, fixed: scrub(agent.line.fixed), ...(agent.line.said !== undefined ? { said: scrub(agent.line.said) } : {}), ...(agent.line.refused !== undefined ? { refused: scrub(agent.line.refused) } : {}) }
-    : agent.line;
-  return { ...agent, values, ...(reply !== undefined ? { reply } : {}), ...(sent !== undefined ? { sent } : {}), ...(line !== undefined ? { line } : {}) } as TraceRecord['agent'];
-}
-
-/** Every string in `v` (a tool's result), scrubbed. */
-function scrubLeaves(v: unknown, scrub: Scrub): unknown {
-  if (typeof v === 'string') return scrub(v);
-  if (Array.isArray(v)) return v.map((x) => scrubLeaves(x, scrub));
-  if (isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubLeaves(x, scrub)]));
-  return v;
 }
 
 /** A say action's text parts, scrubbed. */
@@ -675,7 +635,6 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };
   out.decision = scrubVars(redactDecision(app, record.decision, mode), scrub);
-  if (record.agent !== undefined) out.agent = redactAgent(app, record.agent, scrub, mode);
   if (record.effects !== undefined) out.effects = redactEffects(app, record.effects, mode);
   // A transfer hands over what the call collected, identity slots included.
   if (Array.isArray(record.actions)) {

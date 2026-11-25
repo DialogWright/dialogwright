@@ -257,10 +257,6 @@ reference:
 
 </details>
 
-## Checked values
-
-The slot's check holds a value it did not fill itself: only digits that fit the slot's `length` and `mask` exactly as a spoken number does, the words cited must be in this turn's words, and they must read to a number that holds the value, read as the fill reads a span ("five five five" and "555-555-0142" both hold the digits; in the call's language). A number of nine digits for a `length` of ten is refused. It is shown as the display says it, grouped by `group`.
-
 ## Notes
 
 - Every slot listens on every turn, so the three questions are asked even while the form is on another slot, and "what do I have out on card 5552 0417" can fill the card on the opening turn.

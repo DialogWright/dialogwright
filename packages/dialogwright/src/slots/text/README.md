@@ -143,12 +143,6 @@ courierNote:
 
 <!-- slot-docs:examples -->
 
-## Checked values
-
-The slot's check holds a value it did not fill itself: not empty and at most `maxLength` characters as given, before the slot writes it (`numbers`, `case`). The value need not be a part of the words cited (a short version is allowed), but the words cited must have been said, and it carries no web address the words cited do not have. It is stored as the slot writes its words, and shown as the display says it (the stand-in, or the words with `say: null`).
-
-Its figures are not compared with the words cited: a value written down a little differently from how it was said ("Model G80" for "model two eighty") is taken, and the read-back, which says the value, is the guard.
-
 ## Notes
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note. A yes to the summary keeps the words too, however the `given` question reads the yes: the caller accepted them. A correction at the summary (a no, an unanswered turn, the slot named as the detail to change) replaces them either way.

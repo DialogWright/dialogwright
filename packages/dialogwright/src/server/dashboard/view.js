@@ -88,7 +88,7 @@ const WORDING_WHY = {
   person: 'spoke as the agent or to the listener', omitted: 'left out a "no" or a condition',
   frame: "copied the line's own words",
   exact: 'asked for word for word', share: 'this call is in the fixed group', when: 'not generated in this situation', locale: 'no goal in this language', screen: 'the words were flagged or unread', identifier: 'names an identifier', knowledge: 'a knowledge base answer, word for word',
-  'no-content': 'nothing to summarize', shape: "a piece of the answer's shape in it",
+  'no-content': 'nothing to summarize',
   regulated: 'the topic is regulated: the approved passage, word for word', 'no-question': "no question of the caller's to word it for",
 };
 
@@ -116,85 +116,6 @@ export function wordingOf(render) {
     // An answer from documents not worded, onFail: lines: the lines the decision model chose, said in place of the opening.
     ...(l.lines !== undefined ? { lines: `said lines ${l.lines.chosen.join(', ')} of ${l.lines.of}, chosen for the question: ${l.lines.said}` } : {}),
   }));
-}
-
-/** What a value the agent understood came to (core/agentTurn.ts AgentValueOutcome), in a few words. */
-const AGENT_OUTCOME = {
-  accepted: 'accepted', words: 'refused: the caller never said its words', shape: "refused: not in the field's form", range: "refused: out of the field's range",
-  unsupported: 'refused: the field takes no value from the agent', field: 'set aside: no field of the form',
-  judged: "refused: the judge read it as not the caller's words", full: "set aside: the caller's words ask for an option that is full",
-};
-
-/** What decided a turn without the agent's answer (AgentTurnRecord.dropped), in a few words. */
-const AGENT_DROPPED = {
-  ignore: 'side speech', hold: 'the caller was not done', nomatch: 'words not made out', handoff: 'a person, or frustration', replay: 'a repeat asked for', inform: 'the caller was done',
-  screen: 'the injection screen', 'decision-model-failed': 'the decision model failed', 'speech-over-line': 'speech over a line, understood nothing',
-};
-
-/**
- * An agent turn (TraceRecord.agent, an app in agent mode), as the console shows it under the line said:
- * each value the agent understood with its check's outcome, the action it proposed and what became of it,
- * its reply (said, or replaced and why, with the drift judge's reading), and, where the turn did not read
- * the answer, why. Null for a record with none. Every value as the trace keeps it (masked where the records mask it).
- */
-export function agentOf(a) {
-  if (a === null || typeof a !== 'object') return null;
-  const values = (Array.isArray(a.values) ? a.values : []).filter((v) => v && typeof v === 'object').map((v) => ({
-    field: String(v.field),
-    value: String(v.value),
-    words: String(v.words),
-    // A value cited from the caller's earlier words, and a refusal that counted no attempt (calls 57 to 59), said beside the outcome.
-    outcome: `${AGENT_OUTCOME[v.outcome] ?? String(v.outcome)}${v.earlier === true ? ', its words from an earlier turn' : ''}${v.counted === false ? '; no attempt counted' : ''}`,
-    accepted: v.outcome === 'accepted',
-    ...(typeof v.shown === 'string' && v.shown !== v.value ? { shown: v.shown } : {}),
-  }));
-  const line = a.line && typeof a.line === 'object' ? a.line : null;
-  let reply;
-  if (typeof a.reply === 'string' && a.reply.trim() !== '') {
-    const text = a.reply;
-    if (typeof a.fixedLine === 'string') reply = { text, said: false, why: `the ${a.fixedLine} line was said whole in its place` };
-    else if (a.closes === true) reply = { text, said: false, why: 'it takes leave of the caller, and the call went on' };
-    else if (line !== null && line.mode === 'generated') reply = { text, said: true, ...judgeText(line) };
-    else if (line !== null) reply = { text, said: false, why: `replaced by its fixed line: ${WORDING_WHY[line.fallback ?? line.skipped] ?? line.fallback ?? line.skipped ?? 'a check failed'}`, ...judgeText(line) };
-    else if (a.replySaid === true) reply = { text, said: true };
-    else reply = { text, said: false, why: a.use === 'dropped' ? 'the turn was decided without it' : 'the turn said its fixed line' };
-  }
-  // The decision model's reading of a price asked (an app with a price line; the agent-mode design, call 43): shown
-  // where it bore on the turn, the line named by the agent or read as asked.
-  const p = a.priceAsked;
-  let price;
-  if (p !== null && typeof p === 'object' && typeof p.score === 'number' && typeof p.at === 'number') {
-    const reading = `the decision model read a price asked at ${judgeNumber(p.score)} (bar ${judgeNumber(p.at)})`;
-    if (typeof a.fixedLine === 'string') price = `the price line said${p.named === true ? ', named by the agent' : ', not named by the agent'}: ${reading}`;
-    else if (p.named === true) price = `the price line named by the agent, not said: ${reading}`;
-  }
-  const why = a.use === 'dropped'
-    ? `answer set aside: ${AGENT_DROPPED[a.dropped] ?? String(a.dropped ?? '')}`
-    : a.use === 'failed' ? `no answer: ${String(a.fallback ?? 'none')}${typeof a.detail === 'string' && a.detail !== '' ? ` (${a.detail})` : ''}, the fixed line said` : null;
-  // Asked again once after an answer not in its shape (AGENT_RETRY, call 60), or one the provider's content filter
-  // refused (call 61): why the first could not be used, and what the second came to.
-  const r = a.retried;
-  const first = r !== null && typeof r === 'object' ? (typeof r.invalid === 'string' ? { why: 'not in its shape', detail: r.invalid } : typeof r.filtered === 'string' ? { why: "refused by the provider's content filter", detail: r.filtered } : null) : null;
-  const retried = first !== null
-    ? `asked again once, the first answer ${first.why}${first.detail !== '' ? ` (${first.detail})` : ''}: ${typeof r.fallback === 'string' ? `the second failed too: ${r.fallback}${typeof r.detail === 'string' && r.detail !== '' ? ` (${r.detail})` : ''}` : 'the second used'}${typeof r.ms === 'number' && Number.isFinite(r.ms) ? `, in ${Math.round(r.ms)} ms` : ''}`
-    : null;
-  // A line said while the model was slow on a call (business.yaml's waiting, call 60).
-  const f = a.filler;
-  const filler = f !== null && typeof f === 'object' && typeof f.promptId === 'string' && typeof f.atMs === 'number'
-    ? `${f.promptId} ${f.said === true ? 'said' : 'due, not said'} ${Math.round(f.atMs)} ms in, the model's answer not in`
-    : null;
-  return {
-    use: String(a.use),
-    ...(why !== null ? { why } : {}),
-    ...(retried !== null ? { retried } : {}),
-    ...(filler !== null ? { filler } : {}),
-    values,
-    action: String(a.action ?? 'none'),
-    ...(typeof a.actionOutcome === 'string' ? { actionOutcome: a.actionOutcome } : {}),
-    ...(reply !== undefined ? { reply } : {}),
-    ...(price !== undefined ? { price } : {}),
-    ...(typeof a.ms === 'number' && Number.isFinite(a.ms) ? { ms: Math.round(a.ms) } : {}),
-  };
 }
 
 /** A judge's score or cutoff, as the console shows it: two places at most (0.38, 0.5). */
@@ -1035,11 +956,7 @@ export function reduce(events, opts) {
         // fell back to, or the panel is 32 blank bars with no explanation.
         if (consulted && r.error) v.lines.push({ kind: 'marker', text: `model error · ${r.error.name}`, turn: r.turnIndex });
         // Generated wording: each line the app generates, said generated or fixed (and why), with its fixed line beside.
-        // An agent turn (an app in agent mode): what the agent understood, proposed and replied, and what became of each.
-        // The line said while the model was slow (TraceRecord.filler) is shown with what the agent did, or alone.
-        const agent = r.agent ? agentOf(r.filler ? { ...r.agent, filler: r.filler } : r.agent) : r.filler ? agentOf({ use: 'none', values: [], action: 'none', filler: r.filler }) : null;
-        if (e.spoken) v.lines.push({ kind: 'system', text: e.spoken, promptId: r.decision.promptId ?? r.decision.kind, turn: r.turnIndex, ...(r.render && r.render.lines.length ? { wording: wordingOf(r.render) } : {}), ...(agent ? { agent } : {}) });
-        else if (agent) v.lines.push({ kind: 'marker', text: agent.why ?? 'the agent\'s answer: nothing said', turn: r.turnIndex, agent });
+        if (e.spoken) v.lines.push({ kind: 'system', text: e.spoken, promptId: r.decision.promptId ?? r.decision.kind, turn: r.turnIndex, ...(r.render && r.render.lines.length ? { wording: wordingOf(r.render) } : {}) });
         if (!consulted && !acted) break;
         if (ended && v.callSid !== null) v.lines.push({ kind: 'marker', text: 'a late turn: finished after the call ended', turn: r.turnIndex });
         // The console's per-turn stage row and the level badge. A verification this turn
@@ -1095,8 +1012,8 @@ export function reduce(events, opts) {
         // A turn's second request on the same words (TraceRecord.followUp) is time the caller waited on the model too.
         v.totals.askMs += (r.timing?.askMs ?? 0) + (r.timing?.followUpMs ?? 0);
         v.totals.tokens += tokensOf(r.usage);
-        // Every model's cost: the decision model's, a generated line's (generated wording) and the agent model's (agent mode).
-        v.totals.usd += (r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0) + (r.agent?.costUsd ?? 0);
+        // Every model's cost: the decision model's and a generated line's (generated wording).
+        v.totals.usd += (r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0);
         const decision = decisionLine(r, changed);
         if (consulted) {
           // Both the tick the intent row draws and the groups belong to the batch, so they read
@@ -1110,7 +1027,7 @@ export function reduce(events, opts) {
             `${Object.keys(r.questions).length} questions`,
             `${Math.round(r.timing?.askMs ?? 0)} ms`,
             `${tokensOf(r.usage).toLocaleString('en-US')} tokens`,
-            money((r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0) + (r.agent?.costUsd ?? 0)),
+            money((r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0)),
           ].join(' · ') + (r.error ? ` · error: ${r.error.name}` : '') + followUpNote(r);
           // A record with a `turnState` answers this outright, including with a null: falling back
           // to the post-turn state when it says "nothing was pending" would put the group back on
@@ -1528,7 +1445,7 @@ export function scriptOf(lines, turnsView) {
   for (const l of lines ?? []) {
     const notes = { ...(l.notes?.length ? { notes: l.notes } : {}), ...(l.unsaid ? { unsaid: true } : {}) };
     if (l.kind === 'caller') out.push({ who: 'caller', text: l.text, screened: screened.has(l.turn), codeMasked: l.text.includes(CODE_MASK), ...notes });
-    else if (l.kind === 'system') out.push({ who: 'agent', text: l.text, ...notes, ...(l.wording ? { wording: l.wording } : {}), ...(l.agent ? { agent: l.agent } : {}) });
+    else if (l.kind === 'system') out.push({ who: 'agent', text: l.text, ...notes, ...(l.wording ? { wording: l.wording } : {}) });
     else if (l.kind === 'handoff') out.push({ who: 'handoff', text: l.text });
     else if (/^keypad /.test(l.text)) out.push({ who: 'keypad', text: l.text.slice('keypad '.length) });
     else if (/^silence\b/.test(l.text) || l.text === 'interrupted') out.push({ who: 'note', text: l.text });

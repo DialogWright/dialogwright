@@ -1227,8 +1227,7 @@ interface LineSpan {
 }
 
 /**
- * A turn's lines said before it ended (a line while the agent model is slow, a tool's hold line, a knowledge
- * answer's hold line: RunOptions.early), from when the first went out (`fromMs`) to when the turn's own lines did
+ * A turn's lines said before it ended (a tool's hold line, a knowledge answer's hold line: RunOptions.early), from when the first went out (`fromMs`) to when the turn's own lines did
  * (`toMs`, null while the turn runs). A final prompt whose speech began in it is not an answer to the turn's own
  * line, which the caller had not heard yet (an "okay" to "One sec." would be the yes to the read-back after it,
  * the agent-mode design's call 60 review): no turn runs for it, nothing is counted, nothing is joined, and the

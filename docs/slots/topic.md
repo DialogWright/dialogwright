@@ -215,10 +215,6 @@ Built with the knowledge topics:
 
 </details>
 
-## Checked values
-
-A `topic` slot takes no value from outside its fill: its check answers `unsupported`.
-
 ## Notes
 
 - Retrieval floors, caps and the retriever change what the question offers, and so the model's request: sweep them offline on paraphrase sets, never by re-recording a cassette.

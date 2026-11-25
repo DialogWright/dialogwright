@@ -5,7 +5,6 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
-import { choiceCheck } from './check';
 import { choiceDisplay } from './display';
 import { choiceFill } from './fill';
 import { choiceOptions, choiceWording, type ChoiceOptions, type ChoiceWording } from './options';
@@ -78,7 +77,6 @@ export const choiceType: SlotType<ChoiceOptions, ChoiceWording> = defineSlotType
           }
         : {}),
       display,
-      check: choiceCheck(o, display),
       // Its buttons on a chat: each option's own button, or how it is said with a capital, in a locale
       // that says the options its own way that locale's words.
       replies: (ctx) => keys.map((key) => {

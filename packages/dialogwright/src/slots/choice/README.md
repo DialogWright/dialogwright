@@ -107,10 +107,6 @@ speed:
 
 <!-- slot-docs:examples -->
 
-## Checked values
-
-The slot's check holds a value it did not fill itself: an option's key or its `say` text (or how the call's locale says it), matched without regard to case and punctuation, and the words cited must be in this turn's words. A value that matches more than one option is refused. The value stored is the key, shown as the display says it. The value is not tied to the words cited (they may be a synonym for the option): the read-back is its confirmation. Anything else is refused as the wrong shape.
-
 ## Notes
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot, and "express, please" said at the start can fill the slot before the form asks for it.

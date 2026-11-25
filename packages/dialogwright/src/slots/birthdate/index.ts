@@ -3,7 +3,6 @@ import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
-import { birthdateCheck } from './check';
 import { birthdateDisplay } from './display';
 import { birthdateFill, birthdateKeys } from './fill';
 import { birthdateOptions, type BirthdateOptions } from './options';
@@ -61,7 +60,6 @@ export const birthdateType: SlotType<BirthdateOptions> = defineSlotType<Birthdat
       fill: birthdateFill(o, ids, display, examplePromptOf(id)),
       ...(o.keypad ? { dtmf: { length: 8, parse: birthdateKeys(o, display) } } : {}),
       display,
-      check: birthdateCheck(o, display),
     };
   },
   get examples() {
