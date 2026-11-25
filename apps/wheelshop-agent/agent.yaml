@@ -30,8 +30,8 @@ services: # assumption: the owner corrects these
     price: { from: 125, to: 175, per: wheel }
   - name: diamond cut wheel refinishing
     about: >-
-      For wheels whose face is bright bare metal with fine machined lines, often two-tone. Cut on a
-      lathe in the shop, with the tyre left on.
+      For wheels whose face is bright metal, all over or with painted parts. Cut on a lathe in the
+      shop, with the tyre left on.
     price: { from: 175, to: 250, per: wheel }
   - name: powder coat
     about: A new painted finish on the whole wheel, in a colour the customer picks.
@@ -55,7 +55,8 @@ facts:
   - Most curb rash and scratches can be fixed.
   - We see this kind of damage every day.
   - Diamond cut wheels are what our lathe is for.
-  - A diamond cut face is bright bare machined metal with fine lines; a two-tone face, machined metal with painted sections between, is diamond cut too; a face painted all over is not.
+  # The finish asked plainly: "fine machined lines" confused a caller on a live call (2026-11-25).
+  - A wheel's face that is bright metal coloured, or a combination of bright metal and paint, is diamond cut; a face painted all over (such as grey or black) is not.
   - Curb rash on a diamond cut wheel is usually a same-day fix. # assumption: the owner corrects these
   - How long any other job takes depends on the damage; the shop says once it has seen it. # assumption: the owner corrects these
   - "Cars are dropped off in a window: the morning window, drop off by 8, ready by about noon; or the afternoon window, drop off by noon, ready by about 5." # assumption: the owner corrects these
@@ -260,7 +261,7 @@ actions:
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
       damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
-      finish: { type: choice, options: [diamond cut, painted, not sure], about: "The wheel's face as the customer describes it: diamond cut (bright bare machined metal with fine lines, two-tone included), painted (all over, or painted with no bare machined metal), or not sure." }
+      finish: { type: choice, options: [diamond cut, painted, not sure], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Bright metal, or a combination, is diamond cut; painted all over is painted; not sure where they cannot say." }
       slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
