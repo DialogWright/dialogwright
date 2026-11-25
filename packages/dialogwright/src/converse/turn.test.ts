@@ -2334,6 +2334,49 @@ describe('converseTurn: stopped from outside', () => {
     expect(h.traces.at(-1)!.interrupted).toBe(true);
   });
 
+  it('an abort while the decision model reads the yes runs nothing: not confirmed, the caller went on speaking, and the model is told', async () => {
+    const ac = new AbortController();
+    const reads = fakeJev({ yes: 0.95, no: 0.05 });
+    // The caller's next words arrive while their "yes" is read: the turn is stopped before anything runs.
+    const jev: Harness['jev'] = { asked: reads.asked, ask: async (req) => (ac.abort(), reads.ask(req)) };
+    const h = harness([...lookupThenBook, [text('Monday then.'), done()]], { edit: (t) => `${t}${OFF}`, jev });
+    let s = await upToReadBack(h);
+    const asked = h.model.requests.length;
+    s = await converseTurn(s, { kind: 'text', text: 'yes' }, h.deps, h.out, ac.signal);
+    expect(confirmAsks(h)).toHaveLength(1);
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
+    expect(h.model.requests).toHaveLength(asked);
+    expect(s.pending).toBeNull();
+    expect(s.done ?? []).toEqual([]);
+    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'book', outcome: 'notConfirmed', reason: 'the caller went on speaking' })]);
+    expect(h.traces.at(-1)!.readBack).toMatchObject({ confirmed: false });
+    expect(h.traces.at(-1)!.interrupted).toBe(true);
+    // The next turn carries both: the model is told the yes confirmed nothing, with the words that followed it.
+    s = await h.run(s, { kind: 'text', text: 'and make it Monday' });
+    const last = lastMessage(h);
+    expect(last).toContain('The caller went on speaking after their answer, so it is not confirmed. They said: \\"yes\\"');
+    expect(last).toContain('and make it Monday');
+    expect(h.calendar.bookings).toHaveLength(0);
+  });
+
+  it('a read-back stopped before the line said it is in the trace as not confirmed', async () => {
+    const ac = new AbortController();
+    const h = harness([...lookupThenBook], { edit: (t) => `${t}${OFF}` });
+    let s = await h.run(fresh(), { kind: 'start' });
+    // The caller speaks as the booking is put to the gate: the read-back is never said.
+    const audit = h.deps.audit;
+    h.deps.audit = { append: (callId, channel, d) => (d.type === 'gate' && (d.detail as { tool?: unknown }).tool === 'book' && ac.abort(), audit.append(callId, channel, d)) };
+    s = await converseTurn(s, { kind: 'text', text: 'Can I bring my lamp in Friday morning?' }, h.deps, h.out, ac.signal);
+    expect(s.pending).toBeNull();
+    expect(h.said.map(([t]) => t).join(' ')).not.toContain('Is that right?');
+    expect(h.traces.at(-1)!.tools).toEqual([
+      expect.objectContaining({ name: 'check_availability', outcome: 'ran' }),
+      expect.objectContaining({ name: 'book', outcome: 'readBack' }),
+      expect.objectContaining({ name: 'book', outcome: 'notConfirmed', reason: 'the caller spoke before the line read it back' }),
+    ]);
+  });
+
   it('an abort that comes after the turn ended changes nothing', async () => {
     const ac = new AbortController();
     const h = harness([[text('Hello there.'), done()]], { edit: (t) => `${t}${OFF}` });

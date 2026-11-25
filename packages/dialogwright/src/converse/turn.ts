@@ -954,6 +954,9 @@ function unheardReadBack(t: Turn): void {
   if (p === null) return;
   t.st.pending = null;
   delete t.readBack;
+  const spec = Object.hasOwn(t.deps.business.actions, p.action) ? t.deps.business.actions[p.action] : undefined;
+  // In the trace beside the call's read-back, so the console shows why it waits for no answer.
+  traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke before the line read it back');
   add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: 'Not read back: the caller spoke before the line read it back, so nothing was done. Call it again to have it read back.', isError: true }]);
 }
 
@@ -1056,7 +1059,9 @@ const ONLY_THE_READ_BACK = 'Nothing is done until the line reads the action back
  * The caller answered a read-back: a clear yes runs the action and its follow-ons; anything else goes back to
  * the model. Returns whether the action ran on the caller's yes. An action that completes the active journey
  * moves it to its after phase. An answer over a read-back the caller did not hear (readBackHeard: they began
- * before it, or cut in before it was nearly done) confirms nothing, and the decision model is not asked.
+ * before it, or cut in before it was nearly done) confirms nothing, and the decision model is not asked. A
+ * turn stopped from outside before the action runs (the caller went on speaking) confirms nothing either
+ * (wentOn); one stopped once it runs finishes it, with its follow-ons.
  */
 async function answered(t: Turn, said: string, heard: Heard | undefined): Promise<boolean> {
   const p = t.st.pending!;
@@ -1072,7 +1077,12 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}` }]);
     return false;
   }
+  // Stopped before the decision model is asked: the caller went on speaking, and nothing runs.
+  if (cut(t)) return wentOn(t, p, words);
   const reading = await readYesNo(t.deps.jev, p.text, said, t.deps.jevTimeoutMs, dayInWords(t.todayIso));
+  // Stopped while it read the answer (the caller went on speaking): a yes before more words confirms nothing,
+  // and the next turn has both (the read-back's result carries this answer).
+  if (cut(t)) return wentOn(t, p, words, reading);
   const yes = isConfirmed(reading);
   t.readBack = { text: p.text, ...(reading !== null ? { yes: reading.yes, no: reading.no } : {}), confirmed: yes };
   if (reading === null) {
@@ -1123,6 +1133,19 @@ async function answered(t: Turn, said: string, heard: Heard | undefined): Promis
   if (parent.outcome === 'ran') (t.st.done ??= []).push({ action: p.action, readBack: p.text, results: done });
   add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
   return parent.outcome === 'ran';
+}
+
+/**
+ * The caller's answer to a read-back, its turn stopped from outside before anything ran (they went on speaking,
+ * plan 2's ruling R-h): nothing runs, whatever the answer was, and the model is told so, as on any answer not
+ * confirmed; the words that followed come with the next turn.
+ */
+function wentOn(t: Turn, p: PendingReadBack, words: string, reading?: { yes: number; no: number } | null): false {
+  const spec = Object.hasOwn(t.deps.business.actions, p.action) ? t.deps.business.actions[p.action] : undefined;
+  t.readBack = { text: p.text, ...(reading != null ? { yes: reading.yes, no: reading.no } : {}), confirmed: false };
+  traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller went on speaking');
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}` }]);
+  return false;
 }
 
 /** The text of the line's last words before the caller's turn: a read-back waiting for its answer, else the last message of the line's with text. */
