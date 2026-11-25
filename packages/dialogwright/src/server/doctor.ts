@@ -480,7 +480,9 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
       const deployed = voiceFor(config as ServerConfig, carrier).voice;
       const setting = carrier === 'twilio' ? 'TTS_VOICE' : 'TELNYX_VOICE';
       const named = `agent.yaml persona.voices.${carrier}`;
-      if (own !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in ${own} (${named})` });
+      if (typeof own === 'object') out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in ${own.voice} by ${own.provider} (${named})` });
+      else if (own !== undefined && carrier === 'twilio' && config.ttsProvider === null) out.push({ id: 'converse', status: 'warn', message: `a converse app's calls on twilio are spoken in ${own} (${named}), a name with no TTS provider: TTS_PROVIDER is unset, so Twilio's default provider speaks it`, fix: `write the voice with its provider in ${named}: { voice: ${own}, provider: Google }` });
+      else if (own !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in ${own} (${named})` });
       else if (deployed !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in the deployment's voice, ${deployed} (${setting}): agent.yaml names none (persona.voices.${carrier})` });
       else out.push({ id: 'converse', status: 'warn', message: `a converse app's calls on ${carrier} have no voice of the business's own (${named}) nor the deployment's (${carrier === 'twilio' ? 'TTS_PROVIDER and TTS_VOICE' : 'TELNYX_VOICE'}): they are spoken in the carrier's default voice`, fix: `name the voice in ${named}` });
     }

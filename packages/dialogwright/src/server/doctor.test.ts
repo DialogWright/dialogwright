@@ -1019,6 +1019,24 @@ describe('a converse app (pnpm diagnose)', () => {
     }
   });
 
+  it('diagnose warns of a Twilio voice name with no provider where TTS_PROVIDER is unset, and not of one that names its provider', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'converse-tts-'));
+    try {
+      writeFileSync(join(dir, 'app.yaml'), readFileSync(join(CONVERSE_FIXTURE_DIR, 'app.yaml'), 'utf8'));
+      const write = (twilio: string) => writeFileSync(join(dir, 'agent.yaml'), readFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8')
+        .replace('persona:\n  style: Plain, warm and brief.\n', `persona:\n  style: Plain, warm and brief.\n  voices: { twilio: ${twilio} }\n`));
+      const on = server({ JEV_CLIENT: 'stub', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199' });
+      const twilio = (r: CheckResult[]) => r.find((x) => x.message.includes('on twilio'))!;
+      write('en-US-Neural2-F');
+      expect(twilio(converseChecks(dir, {}, on))).toMatchObject({ id: 'converse', status: 'warn', message: expect.stringContaining('no TTS provider') });
+      expect(twilio(converseChecks(dir, {}, server({ JEV_CLIENT: 'stub', VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199', TTS_PROVIDER: 'Google', TTS_VOICE: 'x' }))).status).toBe('ok');
+      write('{ voice: en-US-Neural2-F, provider: Google }');
+      expect(twilio(converseChecks(dir, {}, on))).toMatchObject({ status: 'ok', message: expect.stringContaining('Google') });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('runs with the app\'s other checks when diagnose is given a converse app\'s folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'converse-run-'));
     try {

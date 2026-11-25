@@ -4,6 +4,7 @@ import { hoursProblems } from '../../core/hours';
 import { E164 } from '../../core/numberLocales';
 import { checkAlways, identifier, matching, text } from '../../define/schema/common';
 import { policyRuleEntry } from '../../define/schema/policy';
+import { TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
 import { MODEL_EFFORTS } from '../model/types';
 
 /**
@@ -364,7 +365,7 @@ export const agentBusinessSchema = z
           .enum(OPENERS)
           .optional()
           .describe('acknowledge: each reply begins with a brief, natural acknowledgement that commits the business to nothing ("Got it."), varied, and left out where it would sound odd, so the caller hears a whole first sentence almost at once. Absent: no opener is asked for.'),
-        voices: z.strictObject({ twilio: text().optional().describe('The voice on Twilio.'), telnyx: text().optional().describe('The voice on Telnyx.') }).optional().describe('The voice to use per carrier.'),
+        voices: z.strictObject({ twilio: z.union([text(), z.strictObject({ voice: text().describe('The voice, as Twilio names it for that provider (Google: en-US-Neural2-F; Amazon: Joanna-Neural).'), provider: z.enum(TWILIO_TTS_PROVIDERS).describe('Twilio\'s TTS provider for the voice (its ttsProvider): Google, Amazon or ElevenLabs.') })]).optional().describe('The voice on Twilio: a name alone (spoken with the deployment\'s TTS_PROVIDER, or Twilio\'s default provider when that is unset), or { voice, provider } to name the provider, which wins over the deployment\'s.'), telnyx: text().optional().describe('The voice on Telnyx.') }).optional().describe('The voice to use per carrier.'),
       })
       .describe('How the agent sounds.'),
     lines: z

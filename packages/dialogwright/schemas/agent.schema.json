@@ -209,9 +209,37 @@
           "type": "object",
           "properties": {
             "twilio": {
-              "description": "The voice on Twilio.",
-              "type": "string",
-              "minLength": 1
+              "description": "The voice on Twilio: a name alone (spoken with the deployment's TTS_PROVIDER, or Twilio's default provider when that is unset), or { voice, provider } to name the provider, which wins over the deployment's.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "voice": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "The voice, as Twilio names it for that provider (Google: en-US-Neural2-F; Amazon: Joanna-Neural)."
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "Google",
+                        "Amazon",
+                        "ElevenLabs"
+                      ],
+                      "description": "Twilio's TTS provider for the voice (its ttsProvider): Google, Amazon or ElevenLabs."
+                    }
+                  },
+                  "required": [
+                    "voice",
+                    "provider"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             },
             "telnyx": {
               "description": "The voice on Telnyx.",

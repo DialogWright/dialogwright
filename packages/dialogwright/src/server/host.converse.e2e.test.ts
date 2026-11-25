@@ -58,9 +58,9 @@ function hostEnv(dir: string, extra: Record<string, string> = {}): Env {
 }
 
 /** The converse fixture with the business's voices and, unless `transfer` is false, a transfer number. */
-function converseWith(transfer = true): ConverseApp {
+function converseWith(transfer = true, twilio: string | { voice: string; provider: 'Google' | 'Amazon' | 'ElevenLabs' } = VOICES.twilio): ConverseApp {
   const { app } = converseFixture();
-  return { ...app, business: { ...app.business, persona: { ...app.business.persona, voices: VOICES }, ...(transfer ? { transfer: { number: TRANSFER } } : {}) } };
+  return { ...app, business: { ...app.business, persona: { ...app.business.persona, voices: { ...VOICES, twilio } }, ...(transfer ? { transfer: { number: TRANSFER } } : {}) } };
 }
 
 /** A host of the callback app (the default) and, with `converse`, a converse app on VISIT_LINE. */
@@ -162,6 +162,26 @@ describe('a host of a scripted app and a converse app', () => {
     expect(again).toContain('interruptible="speech"');
     expect(again).toContain('events="speaker-events tokens-played"');
     expect(again).toContain(`voice="${VOICES.telnyx}"`);
+  }, 20_000);
+
+  it('a Twilio voice with its provider is written with that provider, whatever TTS_PROVIDER says', async () => {
+    const { base } = await hostOf(converseWith(true, { voice: 'Lupe-Neural', provider: 'Amazon' }), { TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' });
+    const doc = await answer(base, 'twilio', 'CAhostconversedoc000000000000002', VISIT_LINE);
+    expect(doc).toContain('ttsProvider="Amazon"');
+    expect(doc).toContain('voice="Lupe-Neural"');
+    expect(doc).not.toContain('ttsProvider="Google"');
+    expect(doc).not.toContain('en-US-Neural2-F');
+  }, 20_000);
+
+  it('a voice name alone keeps today\'s behaviour: the deployment\'s provider, else none', async () => {
+    const withProvider = await hostOf(converseWith(), { TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' });
+    const doc = await answer(withProvider.base, 'twilio', 'CAhostconversedoc000000000000003', VISIT_LINE);
+    expect(doc).toContain(`voice="${VOICES.twilio}"`);
+    expect(doc).toContain('ttsProvider="Google"');
+    const bare = await hostOf(converseWith());
+    const none = await answer(bare.base, 'twilio', 'CAhostconversedoc000000000000004', VISIT_LINE);
+    expect(none).toContain(`voice="${VOICES.twilio}"`);
+    expect(none).not.toContain('ttsProvider=');
   }, 20_000);
 
   it('a converse call handed to a person is put through to agent.yaml\'s transfer number, else HANDOFF_NUMBER', async () => {

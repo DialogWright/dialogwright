@@ -62,7 +62,7 @@ export interface HttpApp {
 
 /** A converse app's voices on the phone (agent.yaml persona.voices), each in its carrier's own names. */
 export interface ConverseVoiceSettings {
-  readonly voices: Readonly<Partial<Record<VoiceProviderId, string>>>;
+  readonly voices: Readonly<Partial<Record<VoiceProviderId, string | { readonly voice: string; readonly provider: string }>>>;
 }
 
 /**
@@ -507,12 +507,14 @@ function converseOptions(deps: HttpDeps, provider: VoiceProvider, token: string,
   const deployment = voiceFor(deps.config, provider.id);
   const recognition = recognitionFor(deps.config, provider.id);
   const own = Object.hasOwn(c.voices, provider.id) ? c.voices[provider.id as VoiceProviderId] : undefined;
-  const voice = own ?? deployment.voice;
+  const named = typeof own === 'object' ? own : undefined;
+  const voice = named ? named.voice : typeof own === 'string' ? own : deployment.voice;
+  const ttsProvider = named ? named.provider : deployment.ttsProvider;
   const extra = (deps.config.telnyxEvents ?? '').split(/\s+/).filter((e) => e !== '' && !CONVERSE_TELNYX_EVENTS.includes(e));
   const language: RelayLanguage = {
     tts: CONVERSE_LANGUAGE,
     transcription: CONVERSE_LANGUAGE,
-    ...(voice !== undefined ? { voice, ...(deployment.ttsProvider !== undefined ? { ttsProvider: deployment.ttsProvider } : {}) } : {}),
+    ...(voice !== undefined ? { voice, ...(ttsProvider !== undefined ? { ttsProvider } : {}) } : {}),
     ...(recognition.provider !== undefined || recognition.model !== undefined ? { recognition } : {}),
   };
   return {
