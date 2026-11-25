@@ -7,11 +7,11 @@ import { businessCalendar, defineConverseApp, isConverseApp } from './app';
 import { AgentBusinessError } from './business/load';
 import type { ToolImpl } from './turn';
 
-/** A converse app: its folder's agent.yaml joined with the code of each action it names. */
+/** An agent app: its folder's agent.yaml joined with the code of each action it names. */
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'business', 'fixture', 'agent.yaml');
 const noop: ToolImpl = async () => 'ok';
-const APP_YAML = '# yaml-language-server: $schema=../schemas/app.schema.json\nid: example\nmode: converse\n';
+const APP_YAML = '# yaml-language-server: $schema=../schemas/app.schema.json\nid: example\nmode: agent\n';
 
 let dir: string;
 beforeEach(() => {
@@ -55,19 +55,21 @@ describe('defineConverseApp', () => {
   });
 });
 
-describe('a converse app\'s app.yaml', () => {
+describe('an agent app\'s app.yaml', () => {
   const tools = { availability: noop, book: noop, notify: noop };
 
-  it('is required, says mode: converse, and is read by app.yaml\'s own schema', () => {
+  it('is required, says mode: agent, and is read by app.yaml\'s own schema', () => {
     rmSync(join(dir, 'app.yaml'));
     expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml cannot be read/);
     writeFileSync(join(dir, 'app.yaml'), 'id: example\n');
-    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:1  mode  a converse app's app\.yaml says "mode: converse", and this one names no mode/);
-    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: agent\n');
-    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:2:7  mode  a converse app's app\.yaml says "mode: converse", and this one says "agent"/);
-    writeFileSync(join(dir, 'app.yaml'), 'id: Example App\nmode: converse\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:1  mode  an agent app's app\.yaml says "mode: agent", and this one names no mode/);
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: scripted\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:2:7  mode  an agent app's app\.yaml says "mode: agent", and this one says "scripted"/);
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: converse\n');
+    expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:2:7  mode  app\.yaml says "mode: converse".*write mode: agent/);
+    writeFileSync(join(dir, 'app.yaml'), 'id: Example App\nmode: agent\n');
     expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:1:5  id  /);
-    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: converse\nchats: {}\n');
+    writeFileSync(join(dir, 'app.yaml'), 'id: example\nmode: agent\nchats: {}\n');
     expect(() => defineConverseApp(dir, { tools })).toThrow(/app\.yaml:3:1  chats/);
   });
 

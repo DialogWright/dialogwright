@@ -17,7 +17,7 @@ import type { FrameSink } from '../frameLog';
 import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
 
 /**
- * The web chat of a converse app (src/converse, docs/designs/2026-11-11-agent-runtime.md): each chat a
+ * The web chat of an agent app (src/converse, docs/designs/2026-11-11-agent-runtime.md): each chat a
  * ConverseState, each turn converseTurn, its words sent on the chat wire, its trace records the converse
  * runtime's (kind 'converse'), its audit the app's chain. The transport (chat/socket.ts) holds the socket,
  * the resume token and the saves; this holds each chat's state.
@@ -46,7 +46,7 @@ import { CHAT_TURN_ERROR, type ChatIo, type ChatRuntime } from './runtime';
 export const CONVERSE_SCHEMA = 'converse-1';
 /** The language a converse chat speaks (agent.yaml's lines are English for now). */
 const LANG = 'en';
-/** What a chat that names a token is told: a converse app takes no sign-in. */
+/** What a chat that names a token is told: an agent app takes no sign-in. */
 const NO_SIGN_IN: ServerMessage = { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' };
 
 export interface ConverseChatDeps {
@@ -368,7 +368,7 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
 
     locale: () => LANG,
 
-    // A converse app names no call data keys: every key of a start's context is redacted in the frame log.
+    // An agent app names no call data keys: every key of a start's context is redacted in the frame log.
     callData: () => undefined,
 
     // The caller's words are kept as the trace keeps them (ConverseTraceRecord.said).

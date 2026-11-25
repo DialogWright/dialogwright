@@ -8,7 +8,7 @@ import { agentBusinessProblems, AgentBusinessError } from './business/load';
 import type { AgentBusiness } from './business/schema';
 import { CALLER, confirmedFields, NO_LOOKUPS, policyOf } from './policy';
 
-/** The gate of a converse app: agent.yaml's actions, each with its rules, and every change confirmed over all its params. */
+/** The gate of an agent app: agent.yaml's actions, each with its rules, and every change confirmed over all its params. */
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'business', 'fixture', 'agent.yaml');
 
@@ -135,7 +135,7 @@ describe('what policyOf refuses', () => {
     expect(message).toMatch(/confirmed/);
   });
 
-  it('a custom rule, which no code defines in a converse app', () => {
+  it('a custom rule, which no code defines in an agent app', () => {
     const message = refusal(business((t) => t.replace('      - oneOf: { field: consent,', '      - custom: vip\n      - oneOf: { field: consent,')));
     expect(message).toContain('actions.send_text.rules[0]');
     expect(message).toContain('custom');

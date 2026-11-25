@@ -356,7 +356,7 @@ function traceRecordsOfCall(traceDir: string, callId: string): Record<string, an
   return out;
 }
 
-/** What the line's agent model cost on a call (a converse app's), from the traces in `traceDir` and its folders (summed over the call's turns); null where no turn records one. */
+/** What the line's agent model cost on a call (an agent app's), from the traces in `traceDir` and its folders (summed over the call's turns); null where no turn records one. */
 export function agentCostOfCall(traceDir: string, callId: string): number | null {
   let total = 0;
   let found = false;

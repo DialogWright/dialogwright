@@ -46,7 +46,7 @@ describe('dialogwright eval:compare', () => {
     // No judge is priced or resolved: the command goes on to its next check.
     const t = io({ ANTHROPIC_API_KEY: 'not-a-key' });
     expect(await compareCommand([LIBRARY_DIR, '--personas', file, '--candidates', 'inception:mercury-3', '--judge', 'none'], t.io)).toBe(2);
-    expect(t.err.join('\n')).toMatch(/for a converse app/);
+    expect(t.err.join('\n')).toMatch(/for an agent app/);
   });
 
   it('refuses a channel it does not know', async () => {
@@ -56,11 +56,11 @@ describe('dialogwright eval:compare', () => {
     expect(COMPARE_USAGE).toContain('--channel voice');
   });
 
-  it('is for a converse app', async () => {
+  it('is for an agent app', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'compare-cli-')), 'p.yaml');
     writeFileSync(file, 'personas:\n  - id: a\n    goal: g\n    truth: { n: m }\n    manner: plain\n    expects: none\n');
     const t = io({ ANTHROPIC_API_KEY: 'not-a-key' });
     expect(await compareCommand([LIBRARY_DIR, '--personas', file, '--candidates', 'inception:mercury-3'], t.io)).toBe(2);
-    expect(t.err.join('\n')).toMatch(/for a converse app/);
+    expect(t.err.join('\n')).toMatch(/for an agent app/);
   });
 });

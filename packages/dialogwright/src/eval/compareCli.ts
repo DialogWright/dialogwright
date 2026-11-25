@@ -15,7 +15,7 @@ import { EVAL_CHANNELS, type EvalChannel } from './server';
 
 export const COMPARE_USAGE = [
   'usage: dialogwright eval:compare <app dir> --personas <file> --candidates <model>[#<effort>],... [--expensive <model>[#<effort>],...] [--runs N] [--budget <usd>] [--reference] [--reference-runs N] [--caller anthropic:<model>] [--judge anthropic:<model> | none] [--parallel N] [--out <dir>] [--stub-decision] [--channel chat|voice] [--publish]',
-  '  a converse app\'s models compared on its simulated callers (pnpm eval for each), cheapest first: --candidates in the order given, then --expensive only if none cleared the bars',
+  '  an agent app\'s models compared on its simulated callers (pnpm eval for each), cheapest first: --candidates in the order given, then --expensive only if none cleared the bars',
   `  the bars: first sentence median <= ${DEFAULT_BARS.firstWordMsMedian} ms, p95 <= ${DEFAULT_BARS.firstWordMsP95} ms; timeouts <= ${DEFAULT_BARS.timeoutRate * 100}% of turns; cooperative calls done correctly >= ${DEFAULT_BARS.correctRate * 100}%; contradicted material claims (a price, a time, a policy that commits the business, a thing said to be done, that the business information or the call\'s own actions and results say otherwise of) <= ${DEFAULT_BARS.unsupportedClaims}; gaps in the business information are listed beside them, not counted`,
   '  once one clears every bar the rest are not run; --reference runs the expensive group at --reference-runs (default 1) per persona if the budget left exceeds its estimate',
   '  #<effort> after a model: minimal, low, medium, high, or none (none sent); without it, agent.yaml\'s. An OpenRouter model may pin its hosts: openrouter:<vendor>/<model>@<host>',
@@ -116,7 +116,7 @@ export async function compareCommand(argv: readonly string[], io: EvalIo): Promi
     return 1;
   }
   if (!isConverseApp(app)) {
-    io.err('dialogwright eval:compare: the comparison is for a converse app (app.yaml mode: converse), whose agent.yaml names its model');
+    io.err('dialogwright eval:compare: the comparison is for an agent app (app.yaml mode: agent), whose agent.yaml names its model');
     return 2;
   }
   // Every candidate's key, before anything is spent: a missing one stops the comparison here, never halfway.

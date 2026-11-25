@@ -193,7 +193,7 @@ export interface DefineAppOptions {
 export function defineApp(dir: string, code: AppCode, options: DefineAppOptions = {}): App {
   const codeFile = options.codeFile ?? CODE_FILE;
   const loaded = loadAppFolder(dir);
-  if (loaded.converse === true && loaded.problems.length === 0) throw new Error(`${dir}: app.yaml says mode: converse, so the app is built with defineConverseApp (its agent.yaml and its actions' code), not defineApp`);
+  if (loaded.converse === true && loaded.problems.length === 0) throw new Error(`${dir}: app.yaml says mode: agent, so the app is built with defineConverseApp (its agent.yaml and its actions' code), not defineApp`);
   if (!loaded.config) throw new AppDefinitionError(dir, loaded.problems);
   const problems = crossLink(loaded.config, code, loaded.locate, codeFile, loaded.locateKey, loaded.document);
   if (problems.length > 0) throw new AppDefinitionError(dir, problems, undefined, code);

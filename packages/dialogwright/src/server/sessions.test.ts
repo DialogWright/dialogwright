@@ -179,7 +179,7 @@ describe('SessionStore', () => {
 
 /**
  * A call of either runtime held, saved and restored (plan 2, Task 2): a scripted call as it always was, a
- * converse call (a ConverseState under 'converse-1') beside it, for a converse app of that id only.
+ * converse call (a ConverseState under 'converse-1') beside it, for an agent app of that id only.
  */
 describe('a SessionStore of either runtime', () => {
   const CONVERSE = 'converse-app';
@@ -255,7 +255,7 @@ describe('a SessionStore of either runtime', () => {
     expect(logs).toEqual([`CA1: not resumed: saved under session schema converse-0, and this server reads ${CONVERSE_CALL_SCHEMA}`]);
   });
 
-  it('a converse call is unreadable on a server that runs no converse app of its id, and a scripted session under the converse schema too', async () => {
+  it('a converse call is unreadable on a server that runs no agent app of its id, and a scripted session under the converse schema too', async () => {
     const state = new MemoryCallStateStore();
     const first = either(state, () => 0).s;
     first.createConverse('CA1', sock(), 'twilio', CONVERSE);
@@ -269,8 +269,8 @@ describe('a SessionStore of either runtime', () => {
     expect(await s.restore('CA2', 'twilio')).toBe('unreadable');
     expect(state.list()).toEqual([]);
     expect(logs).toEqual([
-      `CA1: not resumed: saved for the converse app "${CONVERSE}", which this server does not run`,
-      `CA2: not resumed: saved for the converse app "${scriptedApp}", which this server does not run`,
+      `CA1: not resumed: saved for the agent app "${CONVERSE}", which this server does not run`,
+      `CA2: not resumed: saved for the agent app "${scriptedApp}", which this server does not run`,
     ]);
   });
 
@@ -299,7 +299,7 @@ describe('a SessionStore of either runtime', () => {
     await first.persist('CA1');
     await first.persist('CA2');
     const logs: string[] = [];
-    // A server that says CONVERSE is a converse app, and whose factory makes a scripted call for it (and throws for the other).
+    // A server that says CONVERSE is an agent app, and whose factory makes a scripted call for it (and throws for the other).
     const odd = new SessionStore((callSid, appId) => {
       if (appId !== CONVERSE) throw new Error(`no app "${appId}"`);
       return { session: newSession(callSid, 0, VOICE_RELAY), opts: { client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now: () => 0 }, trace: { write() {} }, frames: { write() {} } };
@@ -309,7 +309,7 @@ describe('a SessionStore of either runtime', () => {
     expect(odd.getAny('CA1')).toBeUndefined();
     expect(odd.getAny('CA2')).toBeUndefined();
     expect(logs).toEqual([
-      `CA1: not resumed: saved as a converse call, and "${CONVERSE}" is not a converse app here`,
+      `CA1: not resumed: saved as a converse call, and "${CONVERSE}" is not an agent app here`,
       expect.stringMatching(/^CA2: not resumed: no app "/),
     ]);
   });
@@ -320,8 +320,8 @@ describe('a SessionStore of either runtime', () => {
     const e = s.create('CA1', sock(), 'twilio');
     e.session = { ...e.session, turnIndex: 2 };
     expect(e.opts).not.toBeNull();
-    expect(() => s.create('CA2', sock(), 'twilio', CONVERSE)).toThrow(/converse app: its calls are made with createConverse/);
-    expect(() => s.createConverse('CA3', sock(), 'twilio', 'testkit')).toThrow(/not a converse app/);
+    expect(() => s.create('CA2', sock(), 'twilio', CONVERSE)).toThrow(/agent app: its calls are made with createConverse/);
+    expect(() => s.createConverse('CA3', sock(), 'twilio', 'testkit')).toThrow(/not an agent app/);
     expect(isConverseCall(e.session)).toBe(false);
     await s.persist('CA1');
     const saved = state.load('CA1')!;

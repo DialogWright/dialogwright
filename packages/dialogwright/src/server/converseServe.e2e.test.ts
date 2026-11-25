@@ -19,7 +19,7 @@ import { auditRowsIn, BOOKING, CHAT_ORIGIN, Chat, DAY, says, yesJev } from '../t
 import type { ServerMessage } from '../channel/chat/protocol';
 
 /**
- * The start paths that serve a converse app: a launcher that registers it (registerConverseApp, as an app
+ * The start paths that serve an agent app: a launcher that registers it (registerConverseApp, as an app
  * package's serve.ts does before serverMain, and as the eval CLI does), host.yaml (loadHost), and the
  * texts that come in for it, on a host of it alone and beside a scripted app.
  */
@@ -74,7 +74,7 @@ const textIn = (base: string, id: string, to: string): Promise<Response> => fetc
   body: new URLSearchParams({ MessageSid: id, From: '+15555550177', To: to, Body: 'hello' }).toString(),
 });
 
-describe('a launcher that registers a converse app', () => {
+describe('a launcher that registers an agent app', () => {
   it('is served by a server started with no host, as a host of it alone; the eval reads its audit where it is written', async () => {
     const app = await registerFolderApp(CONVERSE_FIXTURE_DIR);
     expect(isConverseApp(app)).toBe(true);
@@ -97,7 +97,7 @@ describe('a launcher that registers a converse app', () => {
     const logs: string[] = [];
     const server = await startServer(loadConfig(env), { host: '127.0.0.1', log: (l) => logs.push(l), env, converseModel: () => fakeModel(BOOKING) });
     servers.push(server);
-    expect(logs.some((l) => l.startsWith('WARNING: app converse: JEV_CLIENT=stub: a converse app\'s read-backs are read by the decision model'))).toBe(true);
+    expect(logs.some((l) => l.startsWith('WARNING: app converse: JEV_CLIENT=stub: an agent app\'s read-backs are read by the decision model'))).toBe(true);
     const { chat } = await greeted(`http://127.0.0.1:${server.port}`);
     expect(says(chat.received)).toEqual(['Example Visits, how can I help?']);
   });
@@ -106,7 +106,7 @@ describe('a launcher that registers a converse app', () => {
     registerApp(callbackApp);
     await registerFolderApp(CONVERSE_FIXTURE_DIR);
     await expect(startServer(loadConfig(settings(folder())), { host: '127.0.0.1', client: yesJev(), log: () => {}, converseModel: () => fakeModel([]) }))
-      .rejects.toThrow('this process registered the scripted app "callback" and the converse app "converse": serve them together as a host (host.yaml: pnpm start --host), or register one kind');
+      .rejects.toThrow('this process registered the scripted app "callback" and the agent app "converse": serve them together as a host (host.yaml: pnpm start --host), or register one kind');
   });
 });
 
@@ -126,8 +126,8 @@ function hostFile(dir: string): string {
   return file;
 }
 
-describe('host.yaml with a converse app', () => {
-  it('loads it from its folder (app.yaml mode: converse, its module\'s ConverseApp) and serves its chat beside a scripted app\'s', async () => {
+describe('host.yaml with an agent app', () => {
+  it('loads it from its folder (app.yaml mode: agent, its module\'s ConverseApp) and serves its chat beside a scripted app\'s', async () => {
     const dir = folder();
     const env = settings(dir, { VISIT_LINE, CALLBACK_LINE });
     const host = await loadHost(hostFile(dir), env);
@@ -139,8 +139,8 @@ describe('host.yaml with a converse app', () => {
   });
 });
 
-describe('a text that comes in for a converse app', () => {
-  it('beside a scripted app, reaches the converse app\'s own hook when host.yaml lists the number for it, and is recorded in its audit', async () => {
+describe('a text that comes in for an agent app', () => {
+  it('beside a scripted app, reaches the agent app\'s own hook when host.yaml lists the number for it, and is recorded in its audit', async () => {
     const dir = folder();
     const env = settings(dir, { VISIT_LINE, CALLBACK_LINE });
     const loaded = await loadHost(hostFile(dir), env);
@@ -155,7 +155,7 @@ describe('a text that comes in for a converse app', () => {
     expect(auditRowsIn(join(dir, 'audit', 'converse')).filter((r) => r.type === 'text_received').map((r) => r.callId)).toEqual(['SM1']);
   });
 
-  it('on a host of converse apps alone, with no hook, is recorded in its audit and handed to no app; another number\'s under the server\'s own', async () => {
+  it('on a host of agent apps alone, with no hook, is recorded in its audit and handed to no app; another number\'s under the server\'s own', async () => {
     const dir = folder();
     const env = settings(dir, { TEXT_FROM: VISIT_TEXTS, TWILIO_ACCOUNT_SID: `AC${'4'.repeat(32)}`, TWILIO_AUTH_TOKEN: 't' });
     const { app } = converseFixture();

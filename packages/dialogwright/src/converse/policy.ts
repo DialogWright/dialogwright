@@ -8,7 +8,7 @@ import { AGENT_FILE, AgentBusinessError } from './business/load';
 import type { ActionSpec, AgentBusiness } from './business/schema';
 
 /**
- * The gate of a converse app, from agent.yaml's actions (docs/designs/2026-11-11-agent-runtime.md,
+ * The gate of an agent app, from agent.yaml's actions (docs/designs/2026-11-11-agent-runtime.md,
  * "Tools, the gate and confirmation"): each action with its own rules, in the order written, read as
  * policy.yaml's are, and every change with a `confirmed` rule over all its params run last, so a change
  * runs only once the caller has said yes to a read-back of exactly its values. A lookup needs no
@@ -64,7 +64,7 @@ function problemsOf(b: AgentBusiness): Problem[] {
         return;
       }
       if (rule.rule === 'custom') {
-        add(at, `the custom rule "${rule.id}" has no code to run in a converse app`, 'delete it, or write the rule with the built-in rules (oneOf, noneOf, dateInRange, limit, callerNumber, fields)');
+        add(at, `the custom rule "${rule.id}" has no code to run in an agent app`, 'delete it, or write the rule with the built-in rules (oneOf, noneOf, dateInRange, limit, callerNumber, fields)');
         return;
       }
       for (const { param, at: where } of namedParams(rule)) {

@@ -12,7 +12,7 @@ import { BOOKING, CHAT_ORIGIN, yesJev } from '../testing/converse/chat';
 import { callFacts, CONVERSE_CALL_SCHEMA, type SocketLike } from './sessions';
 
 /**
- * The server's call factory in its converse form (plan 2, Task 2): a call in a converse app is a converse
+ * The server's call factory in its converse form (plan 2, Task 2): a call in an agent app is a converse
  * entry (its ConverseState on the voice channel, no run options, its app's trace), saved under 'converse-1'
  * and taken back by a server that runs that app. Converse calls are still refused a carrier at start, so the
  * store is driven directly.
@@ -42,7 +42,7 @@ async function boot(dir: string): Promise<RunningServer> {
   return server;
 }
 
-describe("the server's call factory for a converse app", () => {
+describe("the server's call factory for an agent app", () => {
   it('makes a converse entry, saved under its schema and restored by a server that runs the app', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'converse-call-'));
     dirs.push(dir);
@@ -52,7 +52,7 @@ describe("the server's call factory for a converse app", () => {
     expect(e.session).toMatchObject({ kind: 'converse', appId, callId: 'CA1', channel: 'voice', messages: [], turnIndex: 0 });
     expect(e).not.toHaveProperty('opts');
     expect(first.store.get('CA1')).toBeUndefined();
-    expect(() => first.store.create('CA2', sock(), 'twilio', appId)).toThrow(/converse app/);
+    expect(() => first.store.create('CA2', sock(), 'twilio', appId)).toThrow(/agent app/);
     e.session.turnIndex = 2;
     await first.store.persist('CA1');
     await first.store.settled();

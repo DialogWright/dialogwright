@@ -29,17 +29,17 @@ import { MODEL_EFFORTS, type ModelEffort } from '../converse/model/types';
 import { OPENERS, type Opener } from '../converse/business/schema';
 
 /**
- * The app of a folder, registered for the server this process starts: a converse app (app.yaml's mode:
+ * The app of a folder, registered for the server this process starts: an agent app (app.yaml's mode:
  * converse), the ConverseApp its module exports for app.yaml's id, served as a host of one (its audit and
  * traces in folders of its own, which the readers below walk); else the App its module exports, as a
  * server of one serves it.
  */
 export async function registerFolderApp(dir: string): Promise<HostedApp> {
   const yaml = parse(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { id?: unknown; mode?: unknown } | null;
-  if (yaml?.mode === 'converse') {
+  if (yaml?.mode === 'agent') {
     if (typeof yaml.id !== 'string') throw new Error(`${dir}/app.yaml names no id`);
     const app = await importApp(dir, yaml.id);
-    if (!isConverseApp(app)) throw new Error(`${dir}: app.yaml says mode: converse, but its module exports the scripted app "${app.id}"`);
+    if (!isConverseApp(app)) throw new Error(`${dir}: app.yaml says mode: agent, but its module exports the scripted app "${app.id}"`);
     if (!registeredConverseApps().some((a) => a.id === app.id)) registerConverseApp(app);
     return app;
   }
@@ -59,10 +59,10 @@ export const EVAL_USAGE = [
   '  writes run.json beside them too (the business text and the personas the calls were judged against), so the calls can be judged again with no call made (dialogwright eval:rejudge)',
   '  --judge none: no judge model is asked or paid for; each call is stored waiting for its verdict, with its judge input (exactly what the judge model would be given) in judge-inputs/<persona>-<run>.md, for judging by hand; dialogwright eval:rejudge <out> --verdicts <file> then gives the verdicts',
   '  defaults: --runs 5, --caller anthropic:claude-haiku-5-5, --judge anthropic:claude-sonnet-5-5 (a cheaper one with --judge), --budget 5 (US dollars, the caller, the judge and the line\'s own model; the run stops, keeping what it has, once it is spent; it is checked before each call, so the spend may pass it by up to --parallel calls already in flight)',
-  '  a converse app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
+  '  an agent app: --model asks that model in place of agent.yaml\'s, at --effort (default agent.yaml\'s; none sends none), and --opener asks for that opener in place of agent.yaml\'s persona.opener; each model request runs to its end (up to 30 s) so its true time is recorded, and the timeouts are worked out from it',
   '  a caller, judge or line model whose price is not known is refused, since the budget would under-count it, unless --allow-unpriced',
   '  the decision model (TYPESAFE_API_KEY) is required, as on a real line; --stub-decision runs with the heuristic stub instead, and the summary says so',
-  '  --channel voice (a converse app): each call over the voice path, the harness playing Twilio\'s carrier over the relay wire in text: each reply played at speaking pace, a persona\'s voice.interrupts cutting in on long replies and its voice.fragments sending its longer turns in two parts, as a recognizer that ended a turn early; the summary adds the cut-ins, the turns in two parts and the first sentence by channel (default chat)',
+  '  --channel voice (an agent app): each call over the voice path, the harness playing Twilio\'s carrier over the relay wire in text: each reply played at speaking pace, a persona\'s voice.interrupts cutting in on long replies and its voice.fragments sending its longer turns in two parts, as a recognizer that ended a turn early; the summary adds the cut-ins, the turns in two parts and the first sentence by channel (default chat)',
   '  --claims-cases: also writes claims-cases.jsonl into --out, what the check after speaking was sent for each reply it read and what it read (the business text, then one line per reply: the day, the call\'s actions, the reply, the reading), to measure other questions on the same replies (dialogwright converse:claims-eval); it holds what was said, so it is refused with --publish',
   '  --publish writes summary.md as a page to commit: no per-call notes, each material claim by its sentence alone, the personas\' names and phone numbers withheld (results.jsonl keeps every verdict whole)',
   '  the keys: from the environment, then the app\'s .env, then the repository\'s .env; never printed. Refused in CI.',
@@ -111,9 +111,9 @@ export interface EvalRun {
   /** What is spent: the caller, the judge and the line's own model. Shared across runs (eval:compare). */
   spend: Budget;
   outDir: string;
-  /** A converse app's model in place of agent.yaml's (eval:compare). */
+  /** An agent app's model in place of agent.yaml's (eval:compare). */
   model?: EvalModel;
-  /** A converse app's persona style in place of agent.yaml's (eval --opener). */
+  /** An agent app's persona style in place of agent.yaml's (eval --opener). */
   style?: EvalStyle;
   /** summary.md as a page to commit (--publish): no per-call notes, the personas' names withheld. */
   publish?: boolean;
@@ -121,7 +121,7 @@ export interface EvalRun {
   comparisonFolder?: string;
   /** Write claims-cases.jsonl into outDir (--claims-cases): each reply the check after speaking read, with its input. */
   claimsCases?: boolean;
-  /** The wire each call goes over (--channel): the chat's (the default), or the voice path's (a converse app only). */
+  /** The wire each call goes over (--channel): the chat's (the default), or the voice path's (an agent app only). */
   channel?: EvalChannel;
 }
 
@@ -134,13 +134,13 @@ export interface EvalOutcome {
   text: string;
 }
 
-/** The business the judge holds the line to: a converse app's agent.yaml. */
+/** The business the judge holds the line to: an agent app's agent.yaml. */
 export function businessTextOf(appDir: string): string {
   const file = join(appDir, 'agent.yaml');
   return existsSync(file) ? readFileSync(file, 'utf8') : '(this app has no agent.yaml: judge by what its own answers say)';
 }
 
-/** The line's own model of a run: the one it names, or a converse app's agent.yaml's; null for a scripted app. */
+/** The line's own model of a run: the one it names, or an agent app's agent.yaml's; null for a scripted app. */
 export function lineModelOf(app: HostedApp, model?: EvalModel): string | null {
   return model?.default ?? (isConverseApp(app) ? app.business.model.default : null);
 }
@@ -161,10 +161,10 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     AUDIO_DIR: work, DASHBOARD: 'off', JEV_CLIENT: o.decision,
     TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}`, TWILIO_AUTH_TOKEN: 'eval-not-a-token',
   });
-  // A converse app: a server of its own for each call, on the app made fresh (eval/server.ts); a scripted app: one server for the run.
+  // An agent app: a server of its own for each call, on the app made fresh (eval/server.ts); a scripted app: one server for the run.
   const perCall = isConverseApp(app);
   const voice = o.channel === 'voice';
-  if (voice && !perCall) throw new Error(`the voice path is for a converse app (app.yaml mode: converse); ${app.id} is a scripted app`);
+  if (voice && !perCall) throw new Error(`the voice path is for an agent app (app.yaml mode: agent); ${app.id} is a scripted app`);
   const cases = o.claimsCases === true ? new ClaimsCases(o.outDir) : null;
   const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, ...(voice ? { channel: 'voice' as const } : {}), textProvider: fakeTextProvider(), ...(cases !== null ? { onClaimsRead: cases.onClaimsRead } : {}), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
   let shared: EvalServer | null = null;
@@ -175,7 +175,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     rmSync(work, { recursive: true, force: true });
     throw new Error(`the app's server did not start: ${e instanceof Error ? e.message : String(e)}`);
   }
-  // The day the judge reads the line's dates against: today, where the business is (a converse app's agent.yaml time zone, else the server's).
+  // The day the judge reads the line's dates against: today, where the business is (an agent app's agent.yaml time zone, else the server's).
   const zone = (isConverseApp(app) ? app.business.business.timezone : undefined) ?? env.TIMEZONE ?? (defaultTimeZone() || 'UTC');
   const todayWords = (): string => new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: zone }).format(new Date());
   const businessText = businessTextOf(appDir);
@@ -250,7 +250,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   const limits = [
     voice
       ? 'Each call came from the number the persona calls from (callingFrom), or from a 555 number of the harness\'s own.'
-      : 'A chat carries a caller number only where the persona names one (callingFrom): a converse app takes it from the chat\'s context on the harness\'s own server (never a deployed setting); any other persona who would be recognized by the number they call from can only name who they are.',
+      : 'A chat carries a caller number only where the persona names one (callingFrom): an agent app takes it from the chat\'s context on the harness\'s own server (never a deployed setting); any other persona who would be recognized by the number they call from can only name who they are.',
     ...(perCall ? ['Each call ran on a server of its own, on the app made fresh: no call saw what another booked.'] : ['Every call ran on one server, so a later call sees what earlier ones booked.']),
     ...(timeoutMs !== undefined ? [`Each model request ran to its end (up to 30 s) and its true time was recorded; the timeouts are the turns that would have reached the line's own ${timeoutMs} ms (no first event within half of it, or not done within it), worked out from those times.`] : []),
     ...(voice
@@ -408,11 +408,11 @@ export async function evalCommand(argv: readonly string[], io: EvalIo): Promise<
     return 1;
   }
   if ((values.model !== undefined || opener !== undefined) && !isConverseApp(app)) {
-    io.err('dialogwright eval: --model and --opener are for a converse app (app.yaml mode: converse), whose agent.yaml names its model and persona');
+    io.err('dialogwright eval: --model and --opener are for an agent app (app.yaml mode: agent), whose agent.yaml names its model and persona');
     return 2;
   }
   if (channel === 'voice' && !isConverseApp(app)) {
-    io.err('dialogwright eval: --channel voice is for a converse app (app.yaml mode: converse): the voice path\'s turns are the converse runtime\'s');
+    io.err('dialogwright eval: --channel voice is for an agent app (app.yaml mode: agent): the voice path\'s turns are the converse runtime\'s');
     return 2;
   }
   const own = lineModelOf(app);

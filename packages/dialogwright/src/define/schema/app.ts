@@ -12,8 +12,10 @@ import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
 import { PERSONA_FILE, PERSONA_VALUE } from './persona';
 
-/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, or converse (agent.yaml, the converse runtime); agent, the old agent mode's, is refused by the loader with its fix. */
-export const APP_MODES = ['scripted', 'agent', 'converse'] as const;
+/** How an app's conversation is run (app.yaml's `mode`): scripted, the default, or agent (agent.yaml, the converse runtime, the one agent mode). The name `converse` was this mode's before the rename and is refused with RENAMED_MODE_FIX. */
+export const APP_MODES = ['scripted', 'agent'] as const;
+/** The fix for an app.yaml that still says `mode: converse`, the agent mode's name before it was renamed (no alias). */
+export const RENAMED_MODE_FIX = 'write mode: agent';
 export type AppMode = (typeof APP_MODES)[number];
 
 /** A key of voice.numbers: a number written out (E.164) or env.<NAME>. */
@@ -592,7 +594,7 @@ export const appSchema = z
     mode: z
       .enum(APP_MODES)
       .optional()
-      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": the old agent mode (business.yaml), which was removed: pnpm check refuses it, with the fix to rebuild the app on the converse runtime. "converse": the converse runtime, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.'),
+      .describe('How the conversation is run. "scripted" (the default): the decision model reads the caller through typed questions, and the app\'s intents.yaml, forms.yaml and prompts.yaml say every line. "agent": the agent mode, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.'),
     locale: localeTag()
       .optional()
       .describe('The default locale of prompts.yaml, as a language tag ("en-US"). Other locales\' prompts go in locale/<tag>/prompts.yaml. Default "en-US".'),
@@ -642,7 +644,7 @@ export const appSchema = z
         callerNumberFromContext: z
           .boolean({ error: 'must be true or false' })
           .optional()
-          .describe('A converse app only (mode: converse): a chat has no calling number, so with true a chat whose start\'s context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the "caller" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.'),
+          .describe('An agent app only (mode: agent): a chat has no calling number, so with true a chat whose start\'s context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the "caller" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.'),
         page: z
           .strictObject({
             serve: z

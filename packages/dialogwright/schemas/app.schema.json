@@ -8,12 +8,11 @@
       "description": "The app's id (for example \"clinic\"): lowercase letters, digits, hyphens and underscores. It names the app in the registry and, by default, its browser storage."
     },
     "mode": {
-      "description": "How the conversation is run. \"scripted\" (the default): the decision model reads the caller through typed questions, and the app's intents.yaml, forms.yaml and prompts.yaml say every line. \"agent\": the old agent mode (business.yaml), which was removed: pnpm check refuses it, with the fix to rebuild the app on the converse runtime. \"converse\": the converse runtime, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.",
+      "description": "How the conversation is run. \"scripted\" (the default): the decision model reads the caller through typed questions, and the app's intents.yaml, forms.yaml and prompts.yaml say every line. \"agent\": the agent mode, whose model holds the conversation from agent.yaml (the business, its lines, its actions and their rules), every change read back and confirmed by the caller before the gate lets it run; the folder holds app.yaml, agent.yaml and its code (defineConverseApp), and none of the scripted files.",
       "type": "string",
       "enum": [
         "scripted",
-        "agent",
-        "converse"
+        "agent"
       ]
     },
     "locale": {
@@ -1001,7 +1000,7 @@
           ]
         },
         "callerNumberFromContext": {
-          "description": "A converse app only (mode: converse): a chat has no calling number, so with true a chat whose start's context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the \"caller\" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.",
+          "description": "An agent app only (mode: agent): a chat has no calling number, so with true a chat whose start's context names `callerNumber` is taken as calling from that number (the account it is recognised as, and the \"caller\" phone token), for tests and the simulated callers. Default false: a site cannot claim an account by default.",
           "type": "boolean"
         },
         "page": {

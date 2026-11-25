@@ -12,14 +12,14 @@ import { turnEndSignal, type TurnEnds } from './chatDriver';
 
 /**
  * The server a simulated call runs on (pnpm eval): in this process, its audit and traces in folders under
- * `work`, its texts to a fake sender. A converse app gets a server of its own for each call, on the app made
+ * `work`, its texts to a fake sender. An agent app gets a server of its own for each call, on the app made
  * fresh (ConverseApp.fresh), so no call sees what another booked, and its chat takes the number a persona
  * calls from out of the start's context (chat.callerNumberFromContext), whatever app.yaml says; its model is
  * the one a run names (eval:compare), its opener the one a run names (eval --opener), and its model's time the eval's own (EVAL_MODEL_TIMEOUT_MS). Each is the
  * harness's own override, given to this server alone, never a setting a deployment can have. A scripted app
  * runs on one server for the whole run, as it is registered. Either way the server tells each chat turn's end
  * (ServerOverrides.onTurnEnd) to `turnEnds`, which the driver ends each reply on (eval/chatDriver.ts). On the voice
- * path (`channel: 'voice'`, a converse app only) the server also takes calls on Twilio, its webhooks unsigned
+ * path (`channel: 'voice'`, an agent app only) the server also takes calls on Twilio, its webhooks unsigned
  * (voiceEnv), and tells each call turn's end the same way (eval/voiceDriver.ts).
  */
 
@@ -41,7 +41,7 @@ export interface EvalStyle {
   opener?: Opener;
 }
 
-/** A converse app as an evaluation runs it: the model and the opener a run names, if it names them, and the eval's long timeout. The app given is left as it is. */
+/** An agent app as an evaluation runs it: the model and the opener a run names, if it names them, and the eval's long timeout. The app given is left as it is. */
 export function evalApp(app: ConverseApp, model?: EvalModel, style: EvalStyle = {}): ConverseApp {
   const { effort: own, ...rest } = app.business.model;
   const effort = model?.effort === undefined ? own : model.effort ?? undefined;
@@ -87,7 +87,7 @@ export async function startEvalServer(app: HostedApp, env: Record<string, string
   mkdirSync(dir, { recursive: true });
   const voice = o.channel === 'voice';
   // The voice path runs on the converse runtime alone (its turns' ends are what the driver ends a reply on).
-  if (voice && !isConverseApp(app)) throw new Error(`the voice path is for a converse app (app.yaml mode: converse); ${app.id} is a scripted app`);
+  if (voice && !isConverseApp(app)) throw new Error(`the voice path is for an agent app (app.yaml mode: agent); ${app.id} is a scripted app`);
   const serverEnv: Record<string, string | undefined> = { ...(voice ? voiceEnv(env) : env), AUDIT_DIR: auditDir, TRACE_DIR: traceDir };
   let running: RunningServer;
   const ends = turnEndSignal();

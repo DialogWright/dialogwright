@@ -11,7 +11,7 @@ import { requireEmbedder } from '../../kb/fallback';
  */
 const apps = new Map<string, App>();
 let first: string | null = null;
-/** The converse apps this process serves (registerConverseApp), in the order registered. */
+/** The agent apps this process serves (registerConverseApp), in the order registered. */
 const converseApps = new Map<string, ConverseApp>();
 
 export function registerApp(app: App): void {
@@ -52,8 +52,8 @@ export function appOf(session: { readonly appId?: string; readonly callData?: Re
 }
 
 /**
- * A converse app this process serves (defineConverseApp), as an app package's launcher registers it before
- * serverMain: a server started with no host serves the converse apps registered, as a host of them (the
+ * An agent app this process serves (defineConverseApp), as an app package's launcher registers it before
+ * serverMain: a server started with no host serves the agent apps registered, as a host of them (the
  * first the default), where no scripted app is registered. A session never names one: its chats are the
  * converse runtime's.
  */
@@ -62,7 +62,7 @@ export function registerConverseApp(app: ConverseApp): void {
   converseApps.set(app.id, app);
 }
 
-/** The converse apps registered, in the order registered. */
+/** The agent apps registered, in the order registered. */
 export function registeredConverseApps(): ConverseApp[] {
   return [...converseApps.values()];
 }

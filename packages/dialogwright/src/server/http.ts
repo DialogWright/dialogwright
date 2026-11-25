@@ -51,7 +51,7 @@ export interface HttpApp {
    */
   readonly numbers?: readonly NumberLocale[];
   /**
-   * A converse app's part (src/converse), absent for a scripted app: its calls' answer and reconnect
+   * An agent app's part (src/converse), absent for a scripted app: its calls' answer and reconnect
    * documents are interruptible by speech whatever BARGE_IN says (the converse line always is), on Telnyx
    * with the playback events on whatever TELNYX_EVENTS says (CONVERSE_TELNYX_EVENTS: what the caller heard,
    * and a real cut-in), in the business's own voice per carrier (agent.yaml persona.voices), else the
@@ -60,7 +60,7 @@ export interface HttpApp {
   readonly converseVoice?: ConverseVoiceSettings;
 }
 
-/** A converse app's voices on the phone (agent.yaml persona.voices), each in its carrier's own names. */
+/** An agent app's voices on the phone (agent.yaml persona.voices), each in its carrier's own names. */
 export interface ConverseVoiceSettings {
   readonly voices: Readonly<Partial<Record<VoiceProviderId, string | { readonly voice: string; readonly provider: string }>>>;
 }
@@ -139,8 +139,8 @@ export interface HttpDeps extends HttpApp {
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
   /**
-   * The converse apps' calls (server/voice/converseRuntime.ts): a converse call's hangup is its runtime's to
-   * record (the turn running stopped, the caller leaving, the audit's `call_ended`). Absent, no converse app.
+   * The agent apps' calls (server/voice/converseRuntime.ts): a converse call's hangup is its runtime's to
+   * record (the turn running stopped, the caller leaving, the audit's `call_ended`). Absent, no agent app.
    */
   converse?: { hangup(entry: ConverseCallEntry): Promise<void> };
   /**

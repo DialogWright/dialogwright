@@ -54,5 +54,5 @@ export const FILE_NAMES: Readonly<Record<FileKind, string>> = Object.fromEntries
 /** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one), and so are routes.yaml (an app without it routes nothing) and style.yaml (read only by an app that generates a line). */
 export const REQUIRED_KINDS: readonly FileKind[] = ['app', 'intents', 'forms', 'prompts', 'policy'];
 
-/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the kinds, then the optional slots.yaml, then a converse app's agent.yaml. */
+/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the kinds, then the optional slots.yaml, then an agent app's agent.yaml. */
 export const FOLDER_FILES: readonly string[] = [...Object.values(FILE_NAMES), SLOTS_FILE, AGENT_FILE_NAME];

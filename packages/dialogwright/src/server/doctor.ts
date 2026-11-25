@@ -326,7 +326,7 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
   // A folder of the old agent mode (a business.yaml): refused, with the fix.
   if (o.appDir !== undefined) results.push(...agentChecks(o.appDir));
-  // A converse app: its files, its model's key, the read-back's decision model, its chat; from the settings alone.
+  // An agent app: its files, its model's key, the read-back's decision model, its chat; from the settings alone.
   if (o.appDir !== undefined) results.push(...converseChecks(o.appDir, o.env, config));
   // Texts: the number they are sent from and the Twilio account, from the settings alone (nothing is sent).
   results.push(...textChecks(o.env));
@@ -434,7 +434,7 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
 }
 
 /**
- * A converse app (app.yaml's mode: converse), read from its folder's app.yaml and agent.yaml as the server
+ * An agent app (app.yaml's mode: agent), read from its folder's app.yaml and agent.yaml as the server
  * reads them: their problems (pnpm check lists them; the server will not start); the conversation's model
  * (agent.yaml's model.default) with its key's variable, never the key (unset, the server will not start);
  * the decision model that reads a caller's answer to a read-back (JEV_CLIENT=jev with its key: under a stub,
@@ -449,7 +449,7 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
   const loaded = loadAppFolder(appDir);
   if (loaded.converse !== true) return [];
   if (loaded.problems.length > 0) {
-    return [{ id: 'converse', status: 'fail', message: `a converse app whose ${APP_FILE} and ${AGENT_FILE} have ${loaded.problems.length} problem${loaded.problems.length === 1 ? '' : 's'}: the server will not start`, fix: 'run pnpm check on the app folder, and fix each line it prints' }];
+    return [{ id: 'converse', status: 'fail', message: `an agent app whose ${APP_FILE} and ${AGENT_FILE} have ${loaded.problems.length} problem${loaded.problems.length === 1 ? '' : 's'}: the server will not start`, fix: 'run pnpm check on the app folder, and fix each line it prints' }];
   }
   let business: ReturnType<typeof agentBusinessProblems>['value'];
   let chat = false;
@@ -457,13 +457,13 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
     business = agentBusinessProblems(readFileSync(join(appDir, AGENT_FILE), 'utf8')).value;
     chat = converseAppYamlProblems(readFileSync(join(appDir, APP_FILE), 'utf8')).value?.chat?.callerNumberFromContext === true;
   } catch (e) {
-    return [{ id: 'converse', status: 'fail', message: `a converse app whose files cannot be read (${messageOf(e)})`, fix: 'run pnpm check on the app folder' }];
+    return [{ id: 'converse', status: 'fail', message: `an agent app whose files cannot be read (${messageOf(e)})`, fix: 'run pnpm check on the app folder' }];
   }
-  if (business === undefined) return [{ id: 'converse', status: 'fail', message: `a converse app whose ${AGENT_FILE} does not load: the server will not start`, fix: 'run pnpm check on the app folder' }];
+  if (business === undefined) return [{ id: 'converse', status: 'fail', message: `an agent app whose ${AGENT_FILE} does not load: the server will not start`, fix: 'run pnpm check on the app folder' }];
   const out: CheckResult[] = [];
   const spec = business.model.default;
   const keyVar = converseModelKeyVar(spec);
-  const said = `a converse app: the conversation's model ${spec} (agent.yaml's model.default)`;
+  const said = `an agent app: the conversation's model ${spec} (agent.yaml's model.default)`;
   if (keyVar === null) out.push({ id: 'converse', status: 'fail', message: `${said} names no provider the runtime takes: the server will not start`, fix: 'write the model as anthropic:<model>, inception:<model>, openrouter:<model> or meta:<model>' });
   else if (!env[keyVar]?.trim()) out.push({ id: 'converse', status: 'fail', message: `${said}, but ${keyVar} is unset: the server will not start`, fix: `set ${keyVar} in the settings file (the model's key)` });
   else out.push({ id: 'converse', status: 'ok', message: `${said}, key in ${keyVar}, within ${business.model.timeoutMs} ms a reply` });
@@ -472,29 +472,29 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
   if (config !== null) {
     const p = config.jevProvider;
     if (config.jevClient !== 'jev' || p === null) {
-      out.push({ id: 'converse', status: 'fail', message: `a converse app's read-backs are read by the decision model, and JEV_CLIENT is ${config.jevClient}: no caller's yes is read, so no change is ever made`, fix: 'set JEV_CLIENT=jev and its key, TYPESAFE_API_KEY (pnpm configure asks)' });
+      out.push({ id: 'converse', status: 'fail', message: `an agent app's read-backs are read by the decision model, and JEV_CLIENT is ${config.jevClient}: no caller's yes is read, so no change is ever made`, fix: 'set JEV_CLIENT=jev and its key, TYPESAFE_API_KEY (pnpm configure asks)' });
     } else if (p.apiKey === null) {
-      out.push({ id: 'converse', status: 'fail', message: `a converse app's read-backs are read by the decision model, and ${p.keyVar} is unset: no caller's yes is read`, fix: `set ${p.keyVar} in the settings file` });
+      out.push({ id: 'converse', status: 'fail', message: `an agent app's read-backs are read by the decision model, and ${p.keyVar} is unset: no caller's yes is read`, fix: `set ${p.keyVar} in the settings file` });
     } else {
-      out.push({ id: 'converse', status: 'ok', message: `a converse app's read-backs are read by ${p.model} from ${p.provider}, key in ${p.keyVar}` });
+      out.push({ id: 'converse', status: 'ok', message: `an agent app's read-backs are read by ${p.model} from ${p.provider}, key in ${p.keyVar}` });
     }
     for (const carrier of config.voiceProviders) {
       const own = business.persona.voices?.[carrier as 'twilio' | 'telnyx'];
       const deployed = voiceFor(config as ServerConfig, carrier).voice;
       const setting = carrier === 'twilio' ? 'TTS_VOICE' : 'TELNYX_VOICE';
       const named = `agent.yaml persona.voices.${carrier}`;
-      if (typeof own === 'object') out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in ${own.voice} by ${own.provider} (${named})` });
-      else if (own !== undefined && carrier === 'twilio' && config.ttsProvider === null) out.push({ id: 'converse', status: 'warn', message: `a converse app's calls on twilio are spoken in ${own} (${named}), a name with no TTS provider: TTS_PROVIDER is unset, so Twilio's default provider speaks it`, fix: `write the voice with its provider in ${named}: { voice: ${own}, provider: Google }` });
-      else if (own !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in ${own} (${named})` });
-      else if (deployed !== undefined) out.push({ id: 'converse', status: 'ok', message: `a converse app's calls on ${carrier} are spoken in the deployment's voice, ${deployed} (${setting}): agent.yaml names none (persona.voices.${carrier})` });
-      else out.push({ id: 'converse', status: 'warn', message: `a converse app's calls on ${carrier} have no voice of the business's own (${named}) nor the deployment's (${carrier === 'twilio' ? 'TTS_PROVIDER and TTS_VOICE' : 'TELNYX_VOICE'}): they are spoken in the carrier's default voice`, fix: `name the voice in ${named}` });
+      if (typeof own === 'object') out.push({ id: 'converse', status: 'ok', message: `an agent app's calls on ${carrier} are spoken in ${own.voice} by ${own.provider} (${named})` });
+      else if (own !== undefined && carrier === 'twilio' && config.ttsProvider === null) out.push({ id: 'converse', status: 'warn', message: `an agent app's calls on twilio are spoken in ${own} (${named}), a name with no TTS provider: TTS_PROVIDER is unset, so Twilio's default provider speaks it`, fix: `write the voice with its provider in ${named}: { voice: ${own}, provider: Google }` });
+      else if (own !== undefined) out.push({ id: 'converse', status: 'ok', message: `an agent app's calls on ${carrier} are spoken in ${own} (${named})` });
+      else if (deployed !== undefined) out.push({ id: 'converse', status: 'ok', message: `an agent app's calls on ${carrier} are spoken in the deployment's voice, ${deployed} (${setting}): agent.yaml names none (persona.voices.${carrier})` });
+      else out.push({ id: 'converse', status: 'warn', message: `an agent app's calls on ${carrier} have no voice of the business's own (${named}) nor the deployment's (${carrier === 'twilio' ? 'TTS_PROVIDER and TTS_VOICE' : 'TELNYX_VOICE'}): they are spoken in the carrier's default voice`, fix: `name the voice in ${named}` });
     }
     if (config.voiceProviders.length > 0) {
       const number = business.transfer?.number;
       if (number === undefined) out.push({ id: 'converse', status: 'ok', message: 'agent.yaml names no transfer number (transfer.number): a call the line hands to a person ends after the handoff line, the caller offered a call back; a call the server cannot keep goes to HANDOFF_NUMBER' });
-      else if (number.startsWith('env.')) out.push({ id: 'converse', status: 'ok', message: `a converse app hands its calls to a person at the number ${number.slice(4)} names (agent.yaml transfer.number), read from its settings as the server starts` });
-      else if (FICTIONAL.test(number)) out.push({ id: 'converse', status: 'warn', message: `a converse app hands its calls to a person at ${number} (agent.yaml transfer.number), a 555 number: calls handed off will go nowhere`, fix: 'set it to a phone a person answers' });
-      else out.push({ id: 'converse', status: 'ok', message: `a converse app hands its calls to a person at ${number} (agent.yaml transfer.number)` });
+      else if (number.startsWith('env.')) out.push({ id: 'converse', status: 'ok', message: `an agent app hands its calls to a person at the number ${number.slice(4)} names (agent.yaml transfer.number), read from its settings as the server starts` });
+      else if (FICTIONAL.test(number)) out.push({ id: 'converse', status: 'warn', message: `an agent app hands its calls to a person at ${number} (agent.yaml transfer.number), a 555 number: calls handed off will go nowhere`, fix: 'set it to a phone a person answers' });
+      else out.push({ id: 'converse', status: 'ok', message: `an agent app hands its calls to a person at ${number} (agent.yaml transfer.number)` });
     }
   }
   out.push({ id: 'converse', status: chat ? 'warn' : 'ok', message: chat ? 'a chat may name the number it calls from in its context (app.yaml chat.callerNumberFromContext: true): a site could claim an account' : 'a chat calls from no number (app.yaml chat.callerNumberFromContext is off)', ...(chat ? { fix: 'turn it off (delete chat.callerNumberFromContext) outside tests and the simulated callers' } : {}) });
@@ -502,7 +502,7 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
 }
 
 /**
- * A converse app whose calendar is Google Calendar (agent.yaml sources.calendar.kind: google): the service
+ * An agent app whose calendar is Google Calendar (agent.yaml sources.calendar.kind: google): the service
  * account's key file the app's setting GOOGLE_CALENDAR_KEY_FILE names, read here to see that it is one (its
  * path and what it holds never printed), and the calendar's id where agent.yaml reads it from a setting.
  * Google is not asked: whether the calendar is shared with the service account shows on the first lookup. Nor
@@ -511,7 +511,7 @@ export function converseChecks(appDir: string, env: Env, config: Pick<ServerConf
  */
 export function googleCalendarChecks(calendarId: string | undefined, env: Env): CheckResult[] {
   const out: CheckResult[] = [];
-  const said = 'a converse app\'s calendar is Google Calendar (agent.yaml sources.calendar)';
+  const said = 'an agent app\'s calendar is Google Calendar (agent.yaml sources.calendar)';
   const variable = envVariableOf(calendarId);
   if (variable !== null && !env[variable]?.trim()) out.push({ id: 'converse', status: 'fail', message: `${said}, its id read from ${variable}, which is unset: the server will not start`, fix: `set ${variable} in the settings file to the calendar's id (its settings in Google Calendar, "Integrate calendar")` });
   const keyFile = env[GOOGLE_CALENDAR_KEY_FILE]?.trim();
@@ -1025,7 +1025,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
   } catch (e) {
     out.push({ id: 'host', status: 'fail', message: `${e instanceof Error ? e.message : String(e)}: the server will not start`, fix: 'set the number in the server\'s settings file' });
   }
-  // The apps a call reaches: the default, and each a number is listed for (a converse app's voices are checked
+  // The apps a call reaches: the default, and each a number is listed for (an agent app's voices are checked
   // only where its calls come, below).
   const reached = new Set([host.defaultApp, ...host.numbers.map((n) => n.app)]);
   const signIn = env.CHAT?.trim() === 'on' && env.CHAT_SIGNIN?.trim() === 'jwt';
@@ -1045,7 +1045,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     out.push(...agentChecks(app.dir).map(tag));
     out.push(...textChecks(read.env).map(tag));
     const server = serverConfigOf(env);
-    // A converse app's calls (its voices, its transfer number): only where a call reaches it, the default or a number listed for it.
+    // An agent app's calls (its voices, its transfer number): only where a call reaches it, the default or a number listed for it.
     out.push(...converseChecks(app.dir, read.env, server === null ? null : { ...server, voiceProviders: reached.has(app.id) ? server.voiceProviders : [] }).map(tag));
     if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.
@@ -1098,9 +1098,9 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
   return out;
 }
 
-/** Whether an app folder has transfer targets (app.yaml's `transfer:`, or a converse app's agent.yaml `transfer:`), read from the YAML alone. */
+/** Whether an app folder has transfer targets (app.yaml's `transfer:`, or an agent app's agent.yaml `transfer:`), read from the YAML alone. */
 function hasTransfer(dir: string): boolean {
-  // A scripted app's transfer targets (app.yaml), or a converse app's transfer number (agent.yaml).
+  // A scripted app's transfer targets (app.yaml), or an agent app's transfer number (agent.yaml).
   return [APP_FILE, AGENT_FILE].some((file) => {
     try {
       const doc = parseYaml(readFileSync(join(dir, file), 'utf8')) as { transfer?: unknown } | null;

@@ -77,7 +77,7 @@ export interface DashboardDeps {
   figuresRetentionDays?: number;
 }
 
-/** One app of a host, as the console reads it: a scripted app, or a converse app (its calls in Calls, by their own view). */
+/** One app of a host, as the console reads it: a scripted app, or an agent app (its calls in Calls, by their own view). */
 export interface ConsoleApp {
   readonly id: string;
   readonly app: HostedApp;
@@ -446,7 +446,7 @@ function callsSources(deps: DashboardDeps, only: string | null): CallsSource<Hos
   return [{ id: null, app: getApp(defaultAppId()), traceDir: deps.traceDir, ...(deps.traces ? { traces: deps.traces } : {}) }];
 }
 
-/** Where Insights and the Knowledge page read: callsSources' scripted apps (a converse app has no forms, slots or knowledge base for them). */
+/** Where Insights and the Knowledge page read: callsSources' scripted apps (an agent app has no forms, slots or knowledge base for them). */
 function scriptedSources(deps: DashboardDeps, only: string | null): CallsSource[] {
   return callsSources(deps, only).filter((s): s is CallsSource => !isConverseApp(s.app));
 }

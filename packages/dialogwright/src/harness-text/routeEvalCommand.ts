@@ -12,7 +12,7 @@ import { loadHarnessEnv } from '../server/envFile';
 
 /**
  * `dialogwright converse:route-eval <app dir> --calls <results.jsonl>... --labels <labels.jsonl> [--personas <file>] [--replay] [--out <file.md>] [--json] [--timeout-ms N]`
- * (../converse/routeEval.ts): how well the decision model routes a converse app's journeys, on caller turns a
+ * (../converse/routeEval.ts): how well the decision model routes an agent app's journeys, on caller turns a
  * person labelled. Recording (the default) asks the decision model, with the author's own key, only what the
  * cassette beside the labels file does not have yet, and refuses in CI; `--replay` reads the cassette alone,
  * with no key. Never prints a key.
@@ -21,7 +21,7 @@ import { loadHarnessEnv } from '../server/envFile';
 export const ROUTE_EVAL_USAGE = [
   'usage: dialogwright converse:route-eval <app dir> --calls <results.jsonl>... --labels <labels.jsonl> [--personas <file>] [--replay] [--out <file.md>] [--json] [--timeout-ms N]',
   '  measures journey routing on labelled caller turns: accuracy, wrong and missed switches by bar, unclear recall and precision, and the start-bar table; a label\'s task is a journey id, "question" or "none", and fits: false marks a turn in a task that does not fit it',
-  '  <app dir>: the converse app (its agent.yaml gives the journeys and routing.switchAt, routing.startAt)',
+  '  <app dir>: the agent app (its agent.yaml gives the journeys and routing.switchAt, routing.startAt)',
   '  --calls: the results.jsonl of one or more evaluations (dialogwright eval); a call\'s id is <folder of the file>/<persona>-<run>',
   '  --personas: the personas file of those evaluations; a call whose persona has callingFrom is a recognised account (open to the journeys for accounts), any other is not',
   '  --labels: one line per labelled caller turn: {"id": <call id>, "turn": <caller turn, 0-based>, "task": <journey id, "question" or "none">, "fits"?: false (a turn inside a task that does not give what the line asked; absent: it fits), "drops"?: true, "again"?: true, "confirms"?: <action>}; a turn labelled confirms is a yes to a read-back, never routed, and runs that action; a turn or call with no label is skipped and counted',

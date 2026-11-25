@@ -16,6 +16,7 @@ import type { ConfigHashes } from '../core/app/types';
 import { readKbFolder, type KbEntry, type KbFolderIo } from '../kb/folder';
 import { kbContentProblems } from '../kb/rules';
 import { KB_KINDS, type KbKind } from '../kb/schema';
+import { RENAMED_MODE_FIX } from './schema/app';
 import { hostSchema, type HostYaml } from './schema/host';
 import { AGENT_FILE, AgentBusinessError, agentSchemaLineProblem } from '../converse/business/load';
 import { agentBusinessSchema, type AgentBusiness } from '../converse/business/schema';
@@ -122,7 +123,7 @@ export interface LoadResult {
   locateKey?(file: string, path: DataPath): { line: number; column: number } | null;
   /** The parsed YAML of a file that was read, with its line table, for a check that builds something from it and positions its problems (slots.yaml's library slots). */
   document?(file: string): { doc: Document; lines: LineCounter } | null;
-  /** A converse app's folder (app.yaml's mode: converse): checked here as YAML, with no scripted config to build. */
+  /** An agent app's folder (app.yaml's mode: agent): checked here as YAML, with no scripted config to build. */
   converse?: boolean;
 }
 
@@ -243,9 +244,9 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     problems.push(problemAt(OLD_BUSINESS_FILE, WHOLE_FILE, `${OLD_BUSINESS_FILE} is the old agent mode's file, and that mode is no longer read or run`, OLD_AGENT_MODE_FIX));
     return null;
   }
-  // A converse app (app.yaml's mode: converse): app.yaml and agent.yaml, and none of the scripted files.
+  // An agent app (app.yaml's mode: agent): app.yaml and agent.yaml, and none of the scripted files.
   let converse = false;
-  // app.yaml unreadable by its schema beside an agent.yaml: whether the folder is a converse app is not
+  // app.yaml unreadable by its schema beside an agent.yaml: whether the folder is an agent app is not
   // guessed; app.yaml's problems are the folder's (the rest is read once app.yaml says its mode). Also set
   // where app.yaml names the old agent mode: nothing else is read.
   let undecided = false;
@@ -253,7 +254,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     const file = kind === 'slots' ? SLOTS_FILE : FILE_NAMES[kind];
     if (undecided) continue;
     const read = readFile(root.real, file);
-    // A converse app reads agent.yaml alone: a style.yaml is not read either.
+    // An agent app reads agent.yaml alone: a style.yaml is not read either.
     if (kind === 'style' && converse) {
       if (read.kind !== 'missing') problems.push(converseHasNo(file));
       continue;
@@ -273,25 +274,21 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     const checked = checkFile(file, kind, read.text, problems, documents, contents);
     if (checked !== undefined) (valid as Record<string, unknown>)[kind] = checked;
     if (kind === 'app') {
-      converse = checked !== undefined && (checked as AppYaml).mode === 'converse';
-      undecided = checked === undefined && top.includes(AGENT_FILE);
-      if (checked !== undefined && (checked as AppYaml).mode === 'agent') {
-        problems.push(inFileOf(documents, 'app.yaml', ['mode'], '"mode: agent" names the old agent mode, which is no longer read or run', OLD_AGENT_MODE_FIX));
-        undecided = true;
-      }
+      converse = checked !== undefined && (checked as AppYaml).mode === 'agent';
+      undecided = checked === undefined && (top.includes(AGENT_FILE) || namesRenamedMode(read.text));
     }
   }
   if (undecided) return null;
   strayYamlFiles(top, problems, converse, new Set(Object.values(valid.app?.personas?.files ?? {})));
 
-  // agent.yaml (the converse runtime's business file): a converse app's, read with its app.yaml; refused
+  // agent.yaml (the converse runtime's business file): an agent app's, read with its app.yaml; refused
   // beside any other app.
   const agentFile = readFile(root.real, AGENT_FILE);
   if (agentFile.kind === 'problem') problems.push(agentFile.problem);
-  else if (agentFile.kind === 'missing' && converse) problems.push(problemAt(AGENT_FILE, WHOLE_FILE, `${AGENT_FILE} is missing: a converse app's business, its lines and its actions are its ${AGENT_FILE}`, `create ${AGENT_FILE}; it starts with "business:", "persona:", "lines:", "model:" and "actions:"`));
+  else if (agentFile.kind === 'missing' && converse) problems.push(problemAt(AGENT_FILE, WHOLE_FILE, `${AGENT_FILE} is missing: an agent app's business, its lines and its actions are its ${AGENT_FILE}`, `create ${AGENT_FILE}; it starts with "business:", "persona:", "lines:", "model:" and "actions:"`));
   else if (agentFile.kind === 'ok') {
     if (!converse && valid.app !== undefined) {
-      problems.push(problemAt(AGENT_FILE, WHOLE_FILE, `${AGENT_FILE} is read only by a converse app, and app.yaml does not say "mode: converse"`, `add "mode: converse" to app.yaml (and take out the scripted files), or delete ${AGENT_FILE}`));
+      problems.push(problemAt(AGENT_FILE, WHOLE_FILE, `${AGENT_FILE} is read only by an agent app, and app.yaml does not say "mode: agent"`, `add "mode: agent" to app.yaml (and take out the scripted files), or delete ${AGENT_FILE}`));
     }
     const line = agentSchemaLineProblem(agentFile.text);
     if (line) problems.push(line);
@@ -311,10 +308,10 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
       }
     }
   }
-  // A converse app is not built here: its code joins agent.yaml in defineConverseApp, which the server runs.
+  // An agent app is not built here: its code joins agent.yaml in defineConverseApp, which the server runs.
   if (converse) {
     seen.converse = true;
-    if (valid.app?.personas !== undefined) problems.push(inFileOf(documents, 'app.yaml', ['personas'], 'personas reword a scripted app\'s lines (prompts.yaml), and a converse app has none: its lines are its agent.yaml\'s', 'delete "personas"'));
+    if (valid.app?.personas !== undefined) problems.push(inFileOf(documents, 'app.yaml', ['personas'], 'personas reword a scripted app\'s lines (prompts.yaml), and an agent app has none: its lines are its agent.yaml\'s', 'delete "personas"'));
     return null;
   }
 
@@ -599,7 +596,12 @@ function missingFile(file: string, kind: Kind, top: readonly string[]): Problem 
   return problemAt(file, WHOLE_FILE, `${file} is missing`, `create ${file}; it starts with ${STARTS_WITH[kind]}.${hint}`);
 }
 
-/** The scripted files a converse app does not have: its business, lines and actions are its agent.yaml. */
+/** Whether app.yaml's text names the renamed mode (`mode: converse`): the folder is then not read further, its one problem being the name. */
+function namesRenamedMode(text: string): boolean {
+  return /^mode:\s*["']?converse["']?\s*(#.*)?$/m.test(text);
+}
+
+/** The scripted files an agent app does not have: its business, lines and actions are its agent.yaml. */
 const CONVERSE_HAS_NO: readonly (FileKind | 'slots')[] = ['intents', 'forms', 'prompts', 'policy', 'identity', 'routes', 'slots'];
 
 /** The old agent mode's file (app.yaml `mode: agent` with a business.yaml), which is no longer read: a folder that has it, and no agent.yaml, is refused with this fix. */
@@ -616,9 +618,9 @@ export function isOldAgentModeFolder(dir: string): boolean {
   return top.includes(OLD_BUSINESS_FILE) && !top.includes(AGENT_FILE);
 }
 
-/** The problem a scripted file in a converse app's folder is: the converse runtime reads agent.yaml alone. */
+/** The problem a scripted file in an agent app's folder is: the converse runtime reads agent.yaml alone. */
 function converseHasNo(file: string): Problem {
-  return problemAt(file, WHOLE_FILE, `${file} is not read by a converse app: its business, lines and actions are its ${AGENT_FILE}`, `delete ${file} and say it in ${AGENT_FILE}, or set app.yaml's mode to scripted`);
+  return problemAt(file, WHOLE_FILE, `${file} is not read by an agent app: its business, lines and actions are its ${AGENT_FILE}`, `delete ${file} and say it in ${AGENT_FILE}, or set app.yaml's mode to scripted`);
 }
 
 /**
@@ -630,7 +632,7 @@ const TOOLING_YAML: ReadonlySet<string> = new Set(['pnpm-lock.yaml', 'pnpm-works
 /** YAML files in the folder that DialogWright does not read: almost always a misspelled name. */
 function strayYamlFiles(top: readonly string[], problems: Problem[], converse = false, personaFiles: ReadonlySet<string> = new Set()): void {
   const known = new Set<string>(FOLDER_FILES);
-  // The files named to the author: a converse app's, or a scripted app's (agent.yaml is converse's alone).
+  // The files named to the author: an agent app's, or a scripted app's (agent.yaml is converse's alone).
   const listed = converse ? ['app.yaml', AGENT_FILE] : FOLDER_FILES.filter((f) => f !== AGENT_FILE);
   for (const name of top) {
     // A host file (several apps on one server) sits beside the apps: in a project of its own, whose folder
@@ -825,6 +827,10 @@ function checkFile(
 
   if (isOldShape(kind, value)) {
     problems.push(oldShape(file, kind));
+    return undefined;
+  }
+  if (kind === 'app' && (value as { mode?: unknown } | null)?.mode === 'converse') {
+    problems.push(inFileOf(documents, file, ['mode'], 'app.yaml says "mode: converse", the agent mode\'s name before it was renamed, and there is no alias', RENAMED_MODE_FIX));
     return undefined;
   }
   const result = SCHEMAS_OF[kind].safeParse(value);

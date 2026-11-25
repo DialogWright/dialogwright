@@ -29,7 +29,7 @@ export interface ReportInfo {
   stoppedByBudget: boolean;
   /** Plain sentences on what the run could not measure or did differently; printed under the table. */
   limits: string[];
-  /** The line's own model (a converse app's), as the run asked it. */
+  /** The line's own model (an agent app's), as the run asked it. */
   lineModel?: string;
   /** The line's own model time (agent.yaml model.timeoutMs), which the timeout rate is read against. */
   timeoutMs?: number;

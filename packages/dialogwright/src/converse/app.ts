@@ -4,7 +4,7 @@ import { LineCounter, parseDocument } from 'yaml';
 import { z } from 'zod';
 import type { App, AppBrand, ChatPageChoice, ChatPageConfig } from '../core/app/types';
 import { positionOf, problemsOfIssues, type Problem } from '../define/problems';
-import { appSchema } from '../define/schema/app';
+import { appSchema, RENAMED_MODE_FIX } from '../define/schema/app';
 import type { JsonSchema } from '../define/schema/json';
 import type { AppRoutes } from '../server/appRoutes';
 import type { Texts } from '../texts/types';
@@ -18,8 +18,8 @@ import { businessZone } from './state';
 import type { ToolImpl } from './turn';
 
 /**
- * A converse app (docs/designs/2026-11-11-agent-runtime.md, "One runtime, chosen per app"): a folder whose
- * app.yaml says `mode: converse` and names the app (`id`, as a scripted app's does), and whose agent.yaml
+ * An agent app (docs/designs/2026-11-11-agent-runtime.md, "One runtime, chosen per app"): a folder whose
+ * app.yaml says `mode: agent` and names the app (`id`, as a scripted app's does), and whose agent.yaml
  * is the business, joined with the code of each action it names.
  */
 export interface ConverseApp {
@@ -43,7 +43,7 @@ export interface ConverseApp {
   fresh?: () => ConverseApp;
 }
 
-/** What a converse app's pages are made with, as the server starts: as a scripted app's pages are (AppPageDeps), for an app with no scripted parts. */
+/** What an agent app's pages are made with, as the server starts: as a scripted app's pages are (AppPageDeps), for an app with no scripted parts. */
 export interface ConversePageDeps {
   /** The app, its agent.yaml's references read from its own settings. */
   app: ConverseApp;
@@ -61,10 +61,10 @@ export interface ConversePageDeps {
   consoleSignIn: boolean;
 }
 
-/** A converse app's pages, made by the server as it starts. */
+/** An agent app's pages, made by the server as it starts. */
 export type ConversePagesFactory = (deps: ConversePageDeps) => AppRoutes;
 
-/** What a converse app's chat takes from app.yaml's `chat`. */
+/** What an agent app's chat takes from app.yaml's `chat`. */
 export interface ConverseChatSettings {
   /**
    * A chat has no calling number. With this on (app.yaml `chat.callerNumberFromContext: true`), a chat
@@ -76,15 +76,15 @@ export interface ConverseChatSettings {
   page?: ChatPageConfig;
 }
 
-/** The file beside agent.yaml that names a converse app and holds its chat settings. */
+/** The file beside agent.yaml that names an agent app and holds its chat settings. */
 export const APP_FILE = 'app.yaml';
 
 type AppYaml = z.output<typeof appSchema>;
 let appJsonSchema: JsonSchema | null = null;
 
 /**
- * The problems of a converse app's app.yaml, checked by app.yaml's own schema (as `pnpm check` checks it),
- * and that it says `mode: converse`: each at its line with a fix. The file's value where it has none.
+ * The problems of an agent app's app.yaml, checked by app.yaml's own schema (as `pnpm check` checks it),
+ * and that it says `mode: agent`: each at its line with a fix. The file's value where it has none.
  */
 export function converseAppYamlProblems(text: string, file: string = APP_FILE): { problems: Problem[]; value?: AppYaml } {
   const lines = new LineCounter();
@@ -96,26 +96,30 @@ export function converseAppYamlProblems(text: string, file: string = APP_FILE): 
   }
   if (problems.length > 0) return { problems };
   const raw = doc.toJS();
+  if ((raw as { mode?: unknown } | null)?.mode === 'converse') {
+    const at = positionOf(doc, lines, ['mode']);
+    return { problems: [{ file, line: at.line, column: at.column, path: 'mode', message: 'app.yaml says "mode: converse", the agent mode\'s name before it was renamed, and there is no alias', fix: RENAMED_MODE_FIX }] };
+  }
   const parsed = appSchema.safeParse(raw ?? {});
   if (!parsed.success) {
     appJsonSchema ??= z.toJSONSchema(appSchema, { io: 'input', target: 'draft-7' }) as JsonSchema;
     return { problems: problemsOfIssues(parsed.error.issues, { file, doc, lines, value: raw ?? {}, schema: appJsonSchema }) };
   }
-  if (parsed.data.mode !== 'converse') {
+  if (parsed.data.mode !== 'agent') {
     // At the mode key's value where it has one; at the file's start where it names none.
     const at = parsed.data.mode === undefined ? { line: 1, column: 1 } : positionOf(doc, lines, ['mode']);
-    return { problems: [{ file, line: at.line, column: at.column, path: 'mode', message: `a converse app's app.yaml says "mode: converse"${parsed.data.mode === undefined ? ', and this one names no mode' : `, and this one says "${parsed.data.mode}"`}`, fix: 'write "mode: converse" in app.yaml' }] };
+    return { problems: [{ file, line: at.line, column: at.column, path: 'mode', message: `an agent app's app.yaml says "mode: agent"${parsed.data.mode === undefined ? ', and this one names no mode' : `, and this one says "${parsed.data.mode}"`}`, fix: 'write "mode: agent" in app.yaml' }] };
   }
   return { problems: [], value: parsed.data };
 }
 
-/** The app.yaml of a converse app's folder, checked (converseAppYamlProblems); throws AgentBusinessError with its problems. */
+/** The app.yaml of an agent app's folder, checked (converseAppYamlProblems); throws AgentBusinessError with its problems. */
 function readAppYaml(dir: string): AppYaml {
   let text: string;
   try {
     text = readFileSync(resolve(dir, APP_FILE), 'utf8');
   } catch {
-    throw new AgentBusinessError([{ file: APP_FILE, line: 1, column: 1, path: '(file)', message: `${APP_FILE} cannot be read in ${dir}`, fix: `create ${APP_FILE} there, with the app's id and "mode: converse"` }]);
+    throw new AgentBusinessError([{ file: APP_FILE, line: 1, column: 1, path: '(file)', message: `${APP_FILE} cannot be read in ${dir}`, fix: `create ${APP_FILE} there, with the app's id and "mode: agent"` }]);
   }
   const { problems, value } = converseAppYamlProblems(text);
   if (!value) throw new AgentBusinessError(problems);
@@ -123,7 +127,7 @@ function readAppYaml(dir: string): AppYaml {
 }
 
 /**
- * The app of the folder `dir`: its app.yaml (the app's id, `mode: converse`, its chat settings), its
+ * The app of the folder `dir`: its app.yaml (the app's id, `mode: agent`, its chat settings), its
  * agent.yaml (its env.<NAME> references kept as written: the server reads them from the app's own settings
  * as it starts, appWithSettings) and `code`. Refuses (AgentBusinessError, a path
  * and a fix per problem) an app.yaml its schema refuses or that is not converse's, an action with no code,
@@ -174,7 +178,7 @@ export function appWithSettings(app: ConverseApp, settings: Record<string, strin
   return { ...app, business: resolveAgentSettings(app.business, settings) };
 }
 
-/** Whether a hosted app is a converse app (the server's dispatch: a converse app's chat runs on the converse runtime). */
+/** Whether a hosted app is an agent app (the server's dispatch: an agent app's chat runs on the converse runtime). */
 export function isConverseApp(app: unknown): app is ConverseApp {
   return typeof app === 'object' && app !== null && (app as { mode?: unknown }).mode === 'converse';
 }

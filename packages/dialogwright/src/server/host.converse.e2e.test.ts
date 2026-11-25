@@ -15,7 +15,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { callbackApp } from '../testing/callback/app';
 
 /**
- * A host of a scripted app and a converse app, each on its own number, as a carrier reaches it: a call to each
+ * A host of a scripted app and an agent app, each on its own number, as a carrier reaches it: a call to each
  * number reaches its app; a converse call's answer document is interruptible by speech and, on Telnyx, has the
  * playback events on, whatever BARGE_IN and TELNYX_EVENTS say, in the business's own voice, with the noise
  * suppression any call has; a scripted call's document on the same server is the one it was; and a converse
@@ -47,7 +47,7 @@ function folder(): string {
   return d;
 }
 
-/** The callback fixture's settings and the converse app's number, on both carriers. */
+/** The callback fixture's settings and the agent app's number, on both carriers. */
 function hostEnv(dir: string, extra: Record<string, string> = {}): Env {
   return {
     PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'twilio,telnyx', SIGNATURE_CHECK: 'off', PORT: '0', HANDOFF_NUMBER, TWILIO_AUTH_TOKEN: 't', TELNYX_PUBLIC_KEY,
@@ -63,7 +63,7 @@ function converseWith(transfer = true, twilio: string | { voice: string; provide
   return { ...app, business: { ...app.business, persona: { ...app.business.persona, voices: { ...VOICES, twilio } }, ...(transfer ? { transfer: { number: TRANSFER } } : {}) } };
 }
 
-/** A host of the callback app (the default) and, with `converse`, a converse app on VISIT_LINE. */
+/** A host of the callback app (the default) and, with `converse`, an agent app on VISIT_LINE. */
 async function hostOf(converse: ConverseApp | null, extra: Record<string, string> = {}, model = fakeModel([[text('Sure.'), done()], [text('Sure.'), done()]])): Promise<{ base: string }> {
   const dir = folder();
   const env = hostEnv(dir, extra);
@@ -109,8 +109,8 @@ async function call(base: string, callId: string, to: string): Promise<FakeRelay
 
 const finals = (relay: FakeRelay): string[] => relay.received.filter((m) => m.type === 'text' && m.last === true).map((m) => (m.token as string).trimEnd());
 
-describe('a host of a scripted app and a converse app', () => {
-  it('a converse app on a host takes a call on its number', async () => {
+describe('a host of a scripted app and an agent app', () => {
+  it('an agent app on a host takes a call on its number', async () => {
     const { base } = await hostOf(converseWith());
     const scripted = await call(base, 'CAhostscripted0000000000000000001', MAIN_LINE);
     const conversing = await call(base, 'CAhostconverse0000000000000000001', VISIT_LINE);

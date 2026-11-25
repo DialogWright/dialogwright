@@ -11,7 +11,7 @@ import { agentBusinessProblems } from './load';
 import { ROUTING_DEFAULTS } from './schema';
 
 /**
- * `pnpm check` and agent.yaml: a converse app's folder (app.yaml's mode: converse) has its agent.yaml
+ * `pnpm check` and agent.yaml: an agent app's folder (app.yaml's mode: agent) has its agent.yaml
  * validated with its app.yaml; a scripted app's folder with none is unchanged (one with an agent.yaml is
  * refused: define/converseCheck.test.ts).
  */
@@ -30,7 +30,7 @@ async function problemsOf(agent: string | null): Promise<string[]> {
     cpSync(CALLBACK_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
     return (await checkAppFully(dir, { code: callbackCode, fixturesRoot: PACKAGE_DIR })).problems.map(formatProblem);
   }
-  writeFileSync(join(dir, 'app.yaml'), '# yaml-language-server: $schema=../schemas/app.schema.json\nid: example\nmode: converse\n');
+  writeFileSync(join(dir, 'app.yaml'), '# yaml-language-server: $schema=../schemas/app.schema.json\nid: example\nmode: agent\n');
   writeFileSync(join(dir, 'agent.yaml'), agent);
   return (await checkAppFully(dir)).problems.map(formatProblem);
 }

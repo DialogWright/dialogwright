@@ -12,8 +12,8 @@ import { main } from './cli';
 import { workspaceRootOf } from './matrixCommand';
 
 /**
- * The pages of a converse app, written from agent.yaml's actions: what each says of the fixture's actions, and
- * the three commands (policy:matrix, policy:card, app:diagram) finding a converse app's folder and writing its
+ * The pages of an agent app, written from agent.yaml's actions: what each says of the fixture's actions, and
+ * the three commands (policy:matrix, policy:card, app:diagram) finding an agent app's folder and writing its
  * pages only when they changed. The commands run on a scratch copy of apps/wheelshop-agent: no test writes a
  * committed page.
  */
@@ -39,7 +39,7 @@ function scratch(): string {
   return copy.root;
 }
 
-describe('the pages of a converse app', () => {
+describe('the pages of an agent app', () => {
   const { app } = converseFixture();
 
   it('the matrix: a lookup is open, a change runs only with the caller\'s yes to exactly its values', () => {
@@ -148,7 +148,7 @@ describe('an edit to agent.yaml changes the pages', () => {
   });
 });
 
-describe('dialogwright policy:matrix, policy:card and app:diagram on a converse app', () => {
+describe('dialogwright policy:matrix, policy:card and app:diagram on an agent app', () => {
   it('write nothing when the pages are what the app generates', async () => {
     const root = scratch();
     for (const [command, file] of [['policy:matrix', 'policy.matrix'], ['policy:card', 'POLICY.md'], ['app:diagram', 'APP-MAP.md']] as const) {
@@ -171,7 +171,7 @@ describe('dialogwright policy:matrix, policy:card and app:diagram on a converse 
   });
 });
 
-describe('the pages of a converse app with journeys', () => {
+describe('the pages of an agent app with journeys', () => {
   const { app: plain } = converseFixture();
   const withJourneys = (yaml: string) => {
     const { value, problems } = agentBusinessProblems(read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8') + LEAVE_NOTE_ACTION + yaml);

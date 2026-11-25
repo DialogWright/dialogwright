@@ -18,7 +18,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { callbackApp } from '../testing/callback/app';
 
 /**
- * A converse app's phone call over a real server and socket (FakeRelay), on Twilio and on Telnyx: the greeting,
+ * An agent app's phone call over a real server and socket (FakeRelay), on Twilio and on Telnyx: the greeting,
  * a booking read back and confirmed, the end; a yes said over the read-back that confirms nothing; a restart in
  * the middle of a turn, on which the new server asks the model again once and the booking is made once; and a
  * scripted app's call on the same server, as it was.
@@ -127,7 +127,7 @@ function played(relay: FakeRelay, text: string): void {
 
 const auditOf = (dir: string): ReturnType<typeof auditRowsIn> => auditRowsIn(join(dir, 'audit', 'converse'));
 
-describe.each(['twilio', 'telnyx'] as const)('a converse app\'s call on %s', (carrier) => {
+describe.each(['twilio', 'telnyx'] as const)('an agent app\'s call on %s', (carrier) => {
   const callId = carrier === 'telnyx' ? 'v3:converse-voice-telnyx-1' : 'CAconversevoice00000000000000001';
 
   it('a call is greeted, books a visit after the read-back and a yes, and ends', async () => {
@@ -285,7 +285,7 @@ describe.each(['twilio', 'telnyx'] as const)('a converse app\'s call on %s', (ca
   }, 20_000);
 });
 
-describe('a converse app\'s call on telnyx: the frame log', () => {
+describe('an agent app\'s call on telnyx: the frame log', () => {
   it('a report of a line played is masked as the trace masks the line', async () => {
     const dir = folder();
     const { app } = converseFixture();
@@ -304,7 +304,7 @@ describe('a converse app\'s call on telnyx: the frame log', () => {
   }, 20_000);
 });
 
-describe('a converse app\'s call on telnyx: a line reported while its turn runs', () => {
+describe('an agent app\'s call on telnyx: a line reported while its turn runs', () => {
   it('a report of a line whose turn still runs keeps none of the turn\'s masked values', async () => {
     const dir = folder();
     const { app } = converseFixture();
@@ -335,8 +335,8 @@ describe('a converse app\'s call on telnyx: a line reported while its turn runs'
   }, 20_000);
 });
 
-describe('a host of a scripted app and a converse app', () => {
-  /** The callback fixture's settings, and the converse app's number. */
+describe('a host of a scripted app and an agent app', () => {
+  /** The callback fixture's settings, and the agent app's number. */
   const hostEnv = (dir: string): Env => settings(dir, 'twilio', {
     MAIN_LINE: '+15555550101', PRIORITY_LINE: '+15555550102', CALLBACK_DESK: '+15555550103', SECURITY_DESK: '+15555550104', VISIT_LINE: '+15555550105',
   });
@@ -369,7 +369,7 @@ describe('a host of a scripted app and a converse app', () => {
     const alone = await scriptedCall((await hostOf(false)).base);
     const both = await hostOf(true);
     expect(await scriptedCall(both.base)).toEqual(alone);
-    // And a call to the converse app's number is the converse app's.
+    // And a call to the agent app's number is the agent app's.
     const relay = await call(both.base, 'twilio', 'CAconverseonahost000000000000001', '+15555550105');
     await relay.waitFor(() => finals(relay).length >= 1);
     expect(finals(relay)).toEqual([GREETING]);

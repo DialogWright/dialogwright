@@ -11,7 +11,7 @@ import { driveChat } from './chatDriver';
 import { EVAL_MODEL_TIMEOUT_MS, evalApp, startEvalServer, type EvalServer } from './server';
 
 /**
- * The server a simulated call runs on (eval/server.ts): for a converse app, a server of its own per call,
+ * The server a simulated call runs on (eval/server.ts): for an agent app, a server of its own per call,
  * on the app made fresh, taking the number a persona calls from out of the chat's context whatever the
  * app's app.yaml says (the harness's override, never a setting a deployment has).
  */
@@ -32,13 +32,13 @@ function folder(): string {
 const ORIGIN = 'https://eval.example.com';
 const env = (dir: string): Record<string, string> => ({ PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN, PORT: '0', AUDIO_DIR: dir, DASHBOARD: 'off', JEV_CLIENT: 'stub' });
 
-/** A converse app whose app.yaml says callerNumberFromContext: false (a deployment's), and a regular account on the number CALLER. */
+/** An agent app whose app.yaml says callerNumberFromContext: false (a deployment's), and a regular account on the number CALLER. */
 function deployedApp(): string {
   const own = join(folder(), 'converse');
   mkdirSync(own);
   copyFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), join(own, 'agent.yaml'));
   writeFileSync(join(own, 'agent.yaml'), readFileSync(join(own, 'agent.yaml'), 'utf8').replace('sources:\n', `sources:\n  accounts:\n    - { name: Example Regular, numbers: ["${CALLER}"] }\n`));
-  writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\nchat:\n  callerNumberFromContext: false\n');
+  writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: agent\nchat:\n  callerNumberFromContext: false\n');
   return own;
 }
 
@@ -63,7 +63,7 @@ async function chat(url: string): Promise<void> {
 }
 
 describe('startEvalServer', () => {
-  it('takes the number a persona calls from for a converse app whose app.yaml does not: the harness\'s override alone', async () => {
+  it('takes the number a persona calls from for an agent app whose app.yaml does not: the harness\'s override alone', async () => {
     const dir = deployedApp();
     const model = fakeModel([[text('Hello.'), done()]]);
     const app = defineConverseApp(dir, { tools: { availability: async () => [], book: async () => 'booked' } });
@@ -76,7 +76,7 @@ describe('startEvalServer', () => {
     expect(app.chat.callerNumberFromContext).toBe(false);
   });
 
-  it('runs each call of a converse app on the app made fresh, with an audit and traces of its own', async () => {
+  it('runs each call of an agent app on the app made fresh, with an audit and traces of its own', async () => {
     const dir = deployedApp();
     let made = 0;
     const make = (): ConverseApp => defineConverseApp(dir, { tools: { availability: async () => [], book: async () => 'booked' }, fresh: () => (made += 1, make()) });

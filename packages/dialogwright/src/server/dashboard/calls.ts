@@ -37,7 +37,7 @@ import type { ReplayRecord } from './routes';
 
 /**
  * Where one app's traces are, as the console reads them; `id` null on a server of one app. `A`: the
- * Calls page reads any app's (a converse app's calls too); Insights and the Knowledge page a scripted app's.
+ * Calls page reads any app's (an agent app's calls too); Insights and the Knowledge page a scripted app's.
  */
 export interface CallsSource<A extends HostedApp = App> {
   readonly id: string | null;

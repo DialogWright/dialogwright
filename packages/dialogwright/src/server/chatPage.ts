@@ -37,7 +37,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const capitalized = (words: string): string => (words === '' ? words : words[0]!.toUpperCase() + words.slice(1));
 
 /**
- * What the page needs of an app, of either kind: a scripted app is one (App), and a converse app gives
+ * What the page needs of an app, of either kind: a scripted app is one (App), and an agent app gives
  * its id, brand and app.yaml's chat.page (it has no intents or forms to take default starters from).
  */
 export interface ChatPageApp {

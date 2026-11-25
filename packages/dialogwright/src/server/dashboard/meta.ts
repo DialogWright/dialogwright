@@ -129,7 +129,7 @@ export function consoleMetaOf(app: App): ConsoleMeta {
 }
 
 /**
- * The console's words for a converse app (agent.yaml): its business's name, and the neutral words for
+ * The console's words for an agent app (agent.yaml): its business's name, and the neutral words for
  * everything else, as it has no forms, slots or identity levels (its calls are shown by their own view).
  */
 export function converseMetaOf(app: ConverseApp): ConsoleMeta {
@@ -159,12 +159,12 @@ export function converseMetaOf(app: ConverseApp): ConsoleMeta {
   };
 }
 
-/** The console's words for any app the server runs: a scripted app's (consoleMetaOf), or a converse app's (converseMetaOf). */
+/** The console's words for any app the server runs: a scripted app's (consoleMetaOf), or an agent app's (converseMetaOf). */
 export function metaOfHosted(app: HostedApp): ConsoleMeta {
   return isConverseApp(app) ? converseMetaOf(app) : consoleMetaOf(app);
 }
 
-/** An app's name as the console shows it: its brand's (a scripted app), its business's (a converse app), else its id. */
+/** An app's name as the console shows it: its brand's (a scripted app), its business's (an agent app), else its id. */
 export function nameOfHosted(app: HostedApp): string {
   return isConverseApp(app) ? app.business.business.name : app.brand?.name ?? app.id;
 }

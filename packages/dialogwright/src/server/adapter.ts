@@ -1780,9 +1780,9 @@ export interface AdapterDeps {
    */
   speechOverLine?: SpeechOverLine;
   /**
-   * The converse apps' calls (server/voice/converseRuntime.ts): a call whose app is one of them is handed to it
+   * The agent apps' calls (server/voice/converseRuntime.ts): a call whose app is one of them is handed to it
    * at its setup, each frame, each carrier event and its socket's close, before any scripted code runs. Absent,
-   * a server with no converse app: every call is scripted, as before.
+   * a server with no agent app: every call is scripted, as before.
    */
   converse?: ConverseVoiceRuntime;
 }
@@ -2457,7 +2457,7 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   }
   // On a host, the app its number reached; on a server of one, the default, as before.
   const appId = deps.host ? deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)) : undefined;
-  // A converse app's call is its runtime's, from its setup on.
+  // An agent app's call is its runtime's, from its setup on.
   if (appId !== undefined && deps.converse?.serves(appId)) return converseBegun(deps, socket, ctx, parsed, callId, appId);
   const entry = appId !== undefined ? deps.store.create(callId, socket, ctx.provider, appId) : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
@@ -2916,7 +2916,7 @@ function hasLocaleParameter(setup: { readonly customParameters?: unknown }): boo
 }
 
 /**
- * A converse app's new call (server/voice/converseRuntime.ts): its entry, its setup in the frame log as a
+ * An agent app's new call (server/voice/converseRuntime.ts): its entry, its setup in the frame log as a
  * scripted call's is (the caller's number as the records write it), then its runtime's greeting.
  */
 async function converseBegun(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, parsed: SetupFrame, callId: string, appId: string): Promise<void> {

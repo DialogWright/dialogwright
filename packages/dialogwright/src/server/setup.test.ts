@@ -16,7 +16,7 @@ import { envLine, linePrompt, runSetup, type Prompt, type SetupIo } from './setu
 
 const TELNYX_KEY = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).subarray(12).toString('base64');
 const MODEL_KEY = 'or-test-key-made-up-for-this-test';
-/** The engine's converse fixture: app.yaml (mode: converse) and agent.yaml, its model anthropic:claude-haiku-5-5. */
+/** The engine's converse fixture: app.yaml (mode: agent) and agent.yaml, its model anthropic:claude-haiku-5-5. */
 const CONVERSE_FIXTURE = fileURLToPath(new URL('../testing/converse', import.meta.url));
 const TWILIO_TOKEN = 'abcdef0123456789abcdef0123456789';
 
@@ -192,7 +192,7 @@ describe('pnpm configure, a decision model and no phone line (to record the app)
     expect(said).not.toContain('--client heuristic');
   });
 
-  it('asks a converse app for its conversation model\'s key (ANTHROPIC_API_KEY) with the echo off, takes it from its variable, and allows none', async () => {
+  it('asks an agent app for its conversation model\'s key (ANTHROPIC_API_KEY) with the echo off, takes it from its variable, and allows none', async () => {
     const w = workspace();
     for (const f of ['app.yaml', 'agent.yaml']) copyFileSync(join(CONVERSE_FIXTURE, f), join(w.dir('alpha'), f));
     const CONVERSE_KEY = 'an-test-key-made-up-for-this-test';

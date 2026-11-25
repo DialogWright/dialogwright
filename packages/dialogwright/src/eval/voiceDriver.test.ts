@@ -15,7 +15,7 @@ import { driveVoice, SPEAKING_WORDS_PER_S } from './voiceDriver';
 
 /**
  * The simulated callers on the voice path (eval/voiceDriver.ts): a Twilio carrier played over the relay wire to a
- * converse app's server, replies "played" at speaking pace (here at a twentieth of real time), a caller who cuts in
+ * agent app's server, replies "played" at speaking pace (here at a twentieth of real time), a caller who cuts in
  * on long replies, and one whose longer turns a recognizer ends early. A fake model and scripted callers: no model.
  */
 

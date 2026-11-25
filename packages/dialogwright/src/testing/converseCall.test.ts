@@ -6,7 +6,7 @@ import { converseFixture } from './converse/app';
 import { converseTestCall, fakeConverseModel } from './index';
 
 /**
- * A converse app's own tests (`dialogwright/testing`, converseCall.ts): one conversation with the app's
+ * An agent app's own tests (`dialogwright/testing`, converseCall.ts): one conversation with the app's
  * agent.yaml, code and gate, its model a script and its decision model the test's, as the server runs it.
  */
 

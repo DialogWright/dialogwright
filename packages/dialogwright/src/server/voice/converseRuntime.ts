@@ -14,7 +14,7 @@ import type { VoiceIo } from './io';
 import type { ConverseCallEntry } from '../sessions';
 
 /**
- * A converse app's phone call (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and "Settled
+ * An agent app's phone call (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and "Settled
  * after the builder's review" items 4 and 5): each call a ConverseState, each turn converseTurn, its words sent
  * to the carrier on the call's io (server/voice/io.ts) as the chat runtime sends them on the chat wire
  * (server/chat/converseRuntime.ts). The adapter (server/adapter.ts) hands a converse call's setup, frames,
@@ -60,7 +60,7 @@ import type { ConverseCallEntry } from '../sessions';
 
 /** What the converse voice runtime is given. */
 export interface ConverseVoiceDeps {
-  /** The converse apps this server runs, by id. */
+  /** The agent apps this server runs, by id. */
   apps: ReadonlyMap<string, ConverseApp>;
   /** A turn's dependencies for a call in `app` (the model, the decision model, the audit, the tools); its trace is the call's own. */
   converseDeps: (app: ConverseApp, callId: string) => ConverseDeps;
@@ -261,7 +261,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
 
   const appOf = (e: ConverseCallEntry): ConverseApp => {
     const app = deps.apps.get(e.session.appId);
-    if (app === undefined) throw new Error(`${e.callSid}: "${e.session.appId}" is not a converse app this server runs`);
+    if (app === undefined) throw new Error(`${e.callSid}: "${e.session.appId}" is not an agent app this server runs`);
     return app;
   };
 

@@ -1,7 +1,7 @@
 import { sayDigits } from '../channel/sayDigits';
 
 /**
- * The words a converse app's call sends to the voice, made speakable. The model writes as it would for a screen
+ * The words an agent app's call sends to the voice, made speakable. The model writes as it would for a screen
  * at times, and a carrier's text-to-speech reads a screen's marks badly: on the first live calls (2026-11-25) a
  * price range "$125–$175" was said "125 175", a list's dashes and line breaks were read out or run together, and
  * the caller's last four "9110" was said "nine thousand one hundred ten". The prompt tells the model to write for

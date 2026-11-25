@@ -12,7 +12,7 @@ import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
 import { CHAT_ORIGIN, yesJev } from '../testing/converse/chat';
 
 /**
- * A converse app's chat page: the engine's, built from app.yaml's chat.page as a scripted app's is, at
+ * An agent app's chat page: the engine's, built from app.yaml's chat.page as a scripted app's is, at
  * /<app id>/chat, its script connecting to the app's own chat path (/chat on a server of one app,
  * /chat/<app id> beside others).
  */
@@ -43,7 +43,7 @@ function appWith(appYaml: string): ConverseApp {
 }
 
 const PAGE = `id: converse
-mode: converse
+mode: agent
 brand:
   name: Example Visits
   mark: EV
@@ -73,7 +73,7 @@ async function boot(apps: HostedApp[], env: Env): Promise<{ base: string; logs: 
   return { base: `http://127.0.0.1:${server.port}`, logs };
 }
 
-describe("a converse app's chat page", () => {
+describe("an agent app's chat page", () => {
   it('is served at /<app id>/chat from app.yaml, its script connecting to /chat on a server of one app', async () => {
     const { base, logs } = await boot([appWith(PAGE)], settings());
     const res = await fetch(`${base}/converse/chat`);
@@ -94,7 +94,7 @@ describe("a converse app's chat page", () => {
   });
 
   it('is not served without chat.page, with serve: off or CHAT_PAGE=off, and says why without the widget', async () => {
-    let { base } = await boot([appWith('id: converse\nmode: converse\n')], settings());
+    let { base } = await boot([appWith('id: converse\nmode: agent\n')], settings());
     expect((await fetch(`${base}/converse/chat`)).status).toBe(404);
     await servers.pop()!.close();
     ({ base } = await boot([appWith(PAGE.replace('serve: public', 'serve: off'))], settings()));

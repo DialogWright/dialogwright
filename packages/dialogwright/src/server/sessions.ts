@@ -156,7 +156,7 @@ export type AnyCallEntry = CallEntry | ConverseCallEntry;
 /**
  * A call's resources (its session, run options, trace and frame log), by its id and, on a server of
  * several apps (server/host.ts), the app it is in: the one its number reached, or the one it was saved
- * in. Absent, the default app, as on a server of one. Where `appId` names a converse app, a converse
+ * in. Absent, the default app, as on a server of one. Where `appId` names an agent app, a converse
  * call's (converseCallResources).
  */
 export type CallFactory = (callSid: string, appId?: string) => CallResources | ConverseCallResources;
@@ -208,7 +208,7 @@ export interface SessionStoreOptions {
   state?: CallStateStore | null;
   /** The leases of a store many servers share (SESSION_STORE=postgres); absent or null, none is taken. */
   lease?: SessionLease | null;
-  /** The ids of the converse apps this server runs: a converse call saved for one of them may be resumed here. Absent, none. */
+  /** The ids of the agent apps this server runs: a converse call saved for one of them may be resumed here. Absent, none. */
   converseApps?: ReadonlySet<string>;
   log?: (line: string) => void;
 }
@@ -367,12 +367,12 @@ export class SessionStore {
 
   /**
    * A new scripted call, on `provider`'s socket (default Twilio's, as the legacy path is), in `appId` (default:
-   * the default app). A converse app's call is createConverse's.
+   * the default app). An agent app's call is createConverse's.
    */
   create(callSid: string, socket: SocketLike, provider?: string, appId?: string): CallEntry {
     if (this.calls.has(callSid)) throw new Error(`session for ${callSid} already exists`);
     const resources = appId === undefined ? this.factory(callSid) : this.factory(callSid, appId);
-    if (isConverseResources(resources)) throw new Error(`${callSid}: "${resources.session.appId}" is a converse app: its calls are made with createConverse`);
+    if (isConverseResources(resources)) throw new Error(`${callSid}: "${resources.session.appId}" is an agent app: its calls are made with createConverse`);
     const entry: CallEntry = {
       ...resources,
       callSid,
@@ -391,11 +391,11 @@ export class SessionStore {
     return entry;
   }
 
-  /** A new converse call, on `provider`'s socket (default Twilio's), in the converse app `appId`. */
+  /** A new converse call, on `provider`'s socket (default Twilio's), in the agent app `appId`. */
   createConverse(callSid: string, socket: SocketLike, provider: string | undefined, appId: string): ConverseCallEntry {
     if (this.calls.has(callSid)) throw new Error(`session for ${callSid} already exists`);
     const resources = this.factory(callSid, appId);
-    if (!isConverseResources(resources)) throw new Error(`${callSid}: "${appId}" is not a converse app: its calls are made with create`);
+    if (!isConverseResources(resources)) throw new Error(`${callSid}: "${appId}" is not an agent app: its calls are made with create`);
     const entry: ConverseCallEntry = {
       ...resources,
       callSid,
@@ -674,7 +674,7 @@ export class SessionStore {
    * Whether a saved call may go on here, on `provider`'s callback or socket: 'ok'; 'unreadable' when it
    * was saved under a schema this server does not read, or for an app this server does not run (then
    * forgotten): a scripted call under SESSION_SCHEMA for a scripted app (appOf), a converse call under
-   * CONVERSE_CALL_SCHEMA for a converse app of its id (SessionStoreOptions.converseApps);
+   * CONVERSE_CALL_SCHEMA for an agent app of its id (SessionStoreOptions.converseApps);
    * 'none' when it is another carrier's, or past its time or over (then forgotten), or it ended with a
    * transfer still owed (kept for the callback that takes it). `owned`: this server holds its lease.
    */
@@ -702,7 +702,7 @@ export class SessionStore {
   private unreadable(c: AnyStoredCall): string | null {
     const session = c.session;
     if (c.schema === CONVERSE_CALL_SCHEMA) {
-      return isConverseCall(session) && this.converseApps.has(session.appId) ? null : `saved for the converse app "${String(session.appId)}", which this server does not run`;
+      return isConverseCall(session) && this.converseApps.has(session.appId) ? null : `saved for the agent app "${String(session.appId)}", which this server does not run`;
     }
     // A runtime's own schema (a string) is said against the converse runtime's; a number, against the scripted engine's.
     if (c.schema !== SESSION_SCHEMA) return `saved under session schema ${c.schema}, and this server reads ${typeof c.schema === 'string' ? CONVERSE_CALL_SCHEMA : SESSION_SCHEMA}`;
@@ -768,13 +768,13 @@ export class SessionStore {
     let entry: AnyCallEntry;
     if (isConverseCall(c.session)) {
       if (!isConverseResources(resources)) {
-        this.log(`${callId}: not resumed: saved as a converse call, and "${c.session.appId}" is not a converse app here`);
+        this.log(`${callId}: not resumed: saved as a converse call, and "${c.session.appId}" is not an agent app here`);
         return null;
       }
       entry = { trace: resources.trace, frames: resources.frames, session: c.session, ...transport, ...(typeof c.turnWords === 'string' ? { turnWords: c.turnWords, ...(isHeard(c.turnHeard) ? { turnHeard: c.turnHeard } : {}) } : {}) };
     } else {
       if (isConverseResources(resources)) {
-        this.log(`${callId}: not resumed: saved as a scripted call, and "${c.session.appId}" is a converse app here`);
+        this.log(`${callId}: not resumed: saved as a scripted call, and "${c.session.appId}" is an agent app here`);
         return null;
       }
       const session: Session = c.session;

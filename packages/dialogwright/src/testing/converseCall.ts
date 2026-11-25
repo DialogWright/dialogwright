@@ -13,7 +13,7 @@ import { TextKeys, textAuditRow } from '../texts/record';
 import type { TextProvider } from '../texts/types';
 
 /**
- * One conversation with a converse app in its own tests (docs/designs/2026-11-11-agent-runtime.md): the
+ * One conversation with an agent app in its own tests (docs/designs/2026-11-11-agent-runtime.md): the
  * app's agent.yaml, its code and its gate, run turn by turn as the server's chat runs them, with the
  * test's model (a script: fakeConverseModel), the test's decision model reading each read-back's answer,
  * and, where the test gives them, a caller's number, a clock, the app's settings and a fake text sender.

@@ -193,8 +193,8 @@ export interface ServerOverrides {
    */
   apps?: HostRouting<HostedApp>;
   /**
-   * The model of each converse app's conversations, by the app's id: a test's fake (converse/model/fake.ts),
-   * so no test calls a real model. A test seam, not a setting: left out, each converse app's agent.yaml
+   * The model of each agent app's conversations, by the app's id: a test's fake (converse/model/fake.ts),
+   * so no test calls a real model. A test seam, not a setting: left out, each agent app's agent.yaml
    * `model.default`, resolved with the app's own settings (its key from them).
    */
   converseModel?: (appId: string) => ConverseModel;
@@ -202,7 +202,7 @@ export interface ServerOverrides {
    * Told each web chat's turn end, by the chat's id: once a turn of the person (the start, a text) has sent
    * all it says, a converse reply's correction included (chat/runtime.ts). The simulated callers' server
    * gives it (eval/server.ts), so its driver ends a reply there rather than after a pause, the chat wire having
-   * no end-of-turn message. A converse app's call is told the same, by the call's id, once a turn has sent its
+   * no end-of-turn message. An agent app's call is told the same, by the call's id, once a turn has sent its
    * lines (voice/converseRuntime.ts). A harness's seam, not a setting: a deployment gives none.
    */
   onTurnEnd?: (chatId: string) => void;
@@ -358,7 +358,7 @@ function pageTexts(t: TurnTexts, sink: AuditSink): Texts {
 }
 
 /**
- * The host a server started with no host serves where its launcher registered converse apps
+ * The host a server started with no host serves where its launcher registered agent apps
  * (registerConverseApp): each of them, the first the default, reached by no number, on the server's
  * environment. Null with none registered. A process that registers a scripted app beside them runs them
  * as a host of its own (host.yaml), so the start says so.
@@ -368,7 +368,7 @@ function converseHostOf(env: Env): HostRouting<HostedApp> | null {
   if (converse.length === 0) return null;
   const scripted = defaultAppOrNull();
   if (scripted !== null) {
-    throw new Error(`this process registered the scripted app "${scripted.id}" and the converse app${converse.length === 1 ? '' : 's'} ${converse.map((a) => `"${a.id}"`).join(', ')}: serve them together as a host (host.yaml: pnpm start --host), or register one kind`);
+    throw new Error(`this process registered the scripted app "${scripted.id}" and the agent app${converse.length === 1 ? '' : 's'} ${converse.map((a) => `"${a.id}"`).join(', ')}: serve them together as a host (host.yaml: pnpm start --host), or register one kind`);
   }
   return hostRouting<HostedApp>({ apps: converse.map((app) => ({ id: app.id, app, dir: app.dir, env, own: [], ignored: [] })), numbers: [], defaultApp: converse[0]!.id, env });
 }
@@ -399,10 +399,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // The apps this server runs: its one (the default, its references read from `env`, as always), or a
   // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
   // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
-  // A launcher that registered converse apps (registerConverseApp) and no scripted app: a host of them.
+  // A launcher that registered agent apps (registerConverseApp) and no scripted app: a host of them.
   const host = overrides.apps ?? converseHostOf(overrides.env ?? process.env);
   // A client that answers by an app's own heuristics (JEV_CLIENT=heuristic or stub) is one per app on a
-  // host (below), a launcher's host of converse apps included; every other client asks a model, which
+  // host (below), a launcher's host of agent apps included; every other client asks a model, which
   // knows no app, and is shared.
   const perAppClient = host !== null && overrides.client === undefined && (config.jevClient === 'heuristic' || config.jevClient === 'stub');
   const client: JevClient | null = overrides.client ?? (perAppClient ? null : buildClient(config.jevClient, undefined, thresholds, undefined, config.jevProvider ?? undefined));
@@ -411,7 +411,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
   const todayIso = () => config.todayOverride ?? localDateIso(now(), config.timezone);
 
-  /** A converse app with its agent.yaml's references read from its own settings, its id named where one is not set. */
+  /** An agent app with its agent.yaml's references read from its own settings, its id named where one is not set. */
   const converseWithSettings = (id: string, app: ConverseApp, settings: Env): ConverseApp => {
     try {
       return appWithSettings(app, settings);
@@ -422,10 +422,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // `settings` is what each app's code reads by name (AppContext.env): on a host, its own settings file over
   // the server's; on a server of one, its environment.
   const hosted: readonly AppRun<HostedApp>[] = host
-    // A converse app's agent.yaml references (env.<NAME>: accounts' numbers, a transfer number) are read here, from its own settings.
+    // An agent app's agent.yaml references (env.<NAME>: accounts' numbers, a transfer number) are read here, from its own settings.
     ? host.apps.map((a) => ({ id: a.id, app: isConverseApp(a.app) ? converseWithSettings(a.id, a.app, a.settings ?? a.env) : a.app, env: a.env, settings: a.settings ?? a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
     : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env, settings: overrides.env ?? process.env }];
-  // A converse app (src/converse) runs on its own runtime: its chat (chatOf, below), its audit, traces and
+  // An agent app (src/converse) runs on its own runtime: its chat (chatOf, below), its audit, traces and
   // texts. Everything else the server does per app (the phone line, the decision model's corpus, clips,
   // generated wording, pages, the console's metadata) is a scripted app's, over `appsRun`.
   const appsRun: readonly AppRun<App>[] = hosted.filter((a): a is AppRun<App> => !isConverseApp(a.app));
@@ -456,13 +456,13 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       if (info !== null) log(`${tag(a.id)}${info}`);
     }
   }
-  // A converse app's chats and calls are the converse runtime's (server/chat/converseRuntime.ts,
+  // An agent app's chats and calls are the converse runtime's (server/chat/converseRuntime.ts,
   // server/voice/converseRuntime.ts): a call to a number that reaches it (or the default) is its call.
   for (const a of conversesRun) {
     const on = config.voiceProviders.length > 0 ? 'its chat and its calls' : 'its chat';
-    log(`${tag(a.id)}a converse app: ${on} on the converse runtime (${a.app.business.model.default})`);
+    log(`${tag(a.id)}an agent app: ${on} on the converse runtime (${a.app.business.model.default})`);
   }
-  // Each converse app's model: agent.yaml's model.default with its key from the app's own settings (a test's fake).
+  // Each agent app's model: agent.yaml's model.default with its key from the app's own settings (a test's fake).
   const converseModels = new Map<string, ConverseModel>(conversesRun.map((a) => [a.id, forApp(a.id, () => overrides.converseModel?.(a.id) ?? resolveConverseModel(a.app.business.model.default, a.settings))]));
   // Each app's client, when it answers by the app's own heuristics: its own fixtures' corpus for the stub
   // (from the app's package, as its regression reads it), the heuristics alone where it has none.
@@ -473,10 +473,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       if (config.jevClient === 'stub' && corpus === null) log(`${tag(a.id)}JEV_CLIENT=stub: no corpus in its fixtures, so its heuristics answer alone`);
       clients.set(a.id, buildClient(corpus === null ? 'heuristic' : 'stub', corpus ?? undefined, thresholds, undefined, config.jevProvider ?? undefined, a.app));
     }
-    // A converse app asks the decision model only to read a caller's answer to a read-back: the heuristics
+    // An agent app asks the decision model only to read a caller's answer to a read-back: the heuristics
     // read no such answer, so under a stub no read-back is ever confirmed.
     for (const a of conversesRun) {
-      log(`WARNING: ${tag(a.id)}JEV_CLIENT=${config.jevClient}: a converse app's read-backs are read by the decision model, and the heuristics read none as a yes: run it with JEV_CLIENT=jev`);
+      log(`WARNING: ${tag(a.id)}JEV_CLIENT=${config.jevClient}: an agent app's read-backs are read by the decision model, and the heuristics read none as a yes: run it with JEV_CLIENT=jev`);
       clients.set(a.id, buildClient('heuristic', undefined, thresholds, undefined, config.jevProvider ?? undefined));
     }
   }
@@ -746,7 +746,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (config.traceStore) {
     for (const a of hosted) {
       const setting = host ? { ...config.traceStore, prefix: `${config.traceStore.prefix}${a.id}/` } : config.traceStore;
-      // A converse app's records are written as its turns masked them: no app's slots to mask them by.
+      // An agent app's records are written as its turns masked them: no app's slots to mask them by.
       const scripted = isConverseApp(a.app) ? undefined : a.app;
       const store = new S3TraceStore(setting, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}), ...(host && scripted ? { app: scripted } : {}) });
       traceStores.set(a.id, store);
@@ -763,7 +763,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (store) return store.open(file, meta);
     const dir = traceDirOf(appId);
     // On a host, each record masked by its own app's slots; on a server of one, by its one app's, as always.
-    // A converse app's records are written as its turns masked them (trace/writer.ts traceLine).
+    // An agent app's records are written as its turns masked them (trace/writer.ts traceLine).
     const own = hostedOf(appId).app;
     const trace = guardTrace(() => (host && !isConverseApp(own) ? new TraceWriter(join(dir, `${file}.jsonl`), own) : new TraceWriter(join(dir, `${file}.jsonl`))), traceFailures, `the trace of ${file}`);
     return { trace, frames: guardFrames(() => new FrameLog(join(dir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
@@ -775,7 +775,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const calledOf = (id: string): Readonly<Record<string, string>> => calledByApp.get(id)!;
   /** RESTART_PAUSE_S with a durable store: how long a planned restart's handover asks each carrier to wait; 0 with none. */
   const restartPauseS = config.sessionStore?.restartPauseS ?? 0;
-  /** The ids of the converse apps this server runs: a call in one of them is a converse call (the factory's converse form). */
+  /** The ids of the agent apps this server runs: a call in one of them is a converse call (the factory's converse form). */
   const converseIds: ReadonlySet<string> = new Set(conversesRun.map((a) => a.id));
   const store: SessionStore = new SessionStore(
     (callSid, appId) => {
@@ -848,7 +848,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (durable) sweepSaved();
   // The app's pages share the phone line's client, book of business, audit chain and console. On a host,
   // a launcher's own pages are its default app's: that app's client, tools, audit, traces and services.
-  // (A server of converse apps alone has no scripted app for a launcher's pages: it mounts none.)
+  // (A server of agent apps alone has no scripted app for a launcher's pages: it mounts none.)
   const routesApp = appsRun[0]?.id;
   const mounted = (routesApp === undefined ? undefined : overrides.routes?.({
     config, client: clientOf(routesApp), thresholds, todayIso, tools: toolsOf(routesApp), audit: auditOf(routesApp), bus, traceDir: traceDirOf(routesApp), serviceUrls: serviceUrlsOf(routesApp), log, now,
@@ -881,7 +881,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     for (const w of built.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
     return [...forApp(a.id, () => mountAppPages(base, built.routes)), ...builtIn(built.routes)];
   });
-  // A converse app's own pages (ConverseApp.pages, built by its code), under /<app id> as a scripted app's are.
+  // An agent app's own pages (ConverseApp.pages, built by its code), under /<app id> as a scripted app's are.
   const conversePages = conversesRun.flatMap((a) => {
     const own = a.app.pages;
     const base = appPagesBase(a.id);
@@ -957,7 +957,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       log(`WARNING: ${tag(a.id)}no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server's HANDOFF_NUMBER, as every such app's do; set HANDOFF_NUMBER in its own settings file`);
     }
   }
-  // Each converse app's part of the webhooks: its calls' documents interruptible by speech, with Telnyx's playback
+  // Each agent app's part of the webhooks: its calls' documents interruptible by speech, with Telnyx's playback
   // events and the business's voices (http.ts converseOptions), and its handoffs to agent.yaml's transfer number,
   // else its HANDOFF_NUMBER.
   const converseHttpApps = new Map<string, HttpApp>();
@@ -966,12 +966,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const transferNumber = b.transfer?.number;
     converseHttpApps.set(a.id, { hints: '', transfer: null, audit: auditOf(a.id), handoffNumber: transferNumber ?? (host ? forApp(a.id, () => handoffNumberOf(a.env, config.handoffNumber)) : config.handoffNumber), converseVoice: { voices: { ...(b.persona.voices ?? {}) } } });
     if (config.voiceProviders.length > 0) {
-      log(`${tag(a.id)}a converse app's handoffs: ${transferNumber !== undefined ? `agent.yaml's transfer number, ...${transferNumber.slice(-4)}` : 'none put through (agent.yaml names no transfer number): the handoff line, then the call ends'}`);
+      log(`${tag(a.id)}an agent app's handoffs: ${transferNumber !== undefined ? `agent.yaml's transfer number, ...${transferNumber.slice(-4)}` : 'none put through (agent.yaml names no transfer number): the handoff line, then the call ends'}`);
       const unvoiced = config.voiceProviders.filter((id) => b.persona.voices?.[id as 'twilio' | 'telnyx'] === undefined && voiceFor(config, id).voice === undefined);
-      if (unvoiced.length > 0) log(`WARNING: ${tag(a.id)}a converse app with no voice on ${unvoiced.join(', ')}: its calls there are in the carrier's default voice; name one in agent.yaml persona.voices`);
+      if (unvoiced.length > 0) log(`WARNING: ${tag(a.id)}an agent app with no voice on ${unvoiced.join(', ')}: its calls there are in the carrier's default voice; name one in agent.yaml persona.voices`);
     }
   }
-  // The default app's part of the webhooks; none on a server of converse apps alone (each its own, above).
+  // The default app's part of the webhooks; none on a server of agent apps alone (each its own, above).
   const first = appsRun[0] === undefined ? undefined : httpApps.get(appsRun[0].id)!;
   const app = first?.app;
   const startParameters = first?.startParameters ?? {};
@@ -1008,7 +1008,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ...(host ? { appId: a.id } : {}),
     ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
   });
-  /** An app's chat endpoint: the converse runtime for a converse app (each chat its model's), else the scripted. */
+  /** An app's chat endpoint: the converse runtime for an agent app (each chat its model's), else the scripted. */
   const chatOf = (a: (typeof hosted)[number]): ChatEndpoint => (isConverseApp(a.app) ? converseChatOf(a as AppRun<ConverseApp>) : scriptedChatOf(a as AppRun<App>));
   const converseChatOf = (a: AppRun<ConverseApp>): ChatEndpoint => chatTransport(transportOf(a), converseChatRuntime({
     app: a.app, model: converseModels.get(a.id)!, jev: clientOf(a.id), jevTimeoutMs: thresholds.JEV_TIMEOUT_MS, audit: auditOf(a.id), texts: textsOf(a.id), now, log,
@@ -1135,7 +1135,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
    */
   const textAppOf = (to: string): string | null => {
     if (!host) return hosted[0]!.id;
-    // Any app of the host, a converse app's too: a text is its own app's, never another's.
+    // Any app of the host, an agent app's too: a text is its own app's, never another's.
     const byFrom = hosted.find((a) => {
       const t = textSenders.get(a.id);
       return t !== undefined && sameNumber(to, t.from);
@@ -1177,7 +1177,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped })));
     try {
       const decide = textDecider(clientOf(a.id), thresholds.JEV_TIMEOUT_MS, m, (row) => rows.push(row), now);
-      // A converse app's hook has no systems: its code is its actions' (TextContext.sys undefined).
+      // An agent app's hook has no systems: its code is its actions' (TextContext.sys undefined).
       const sys = isConverseApp(a.app) ? undefined : toolsOf(a.id).sys;
       if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys, nowMs: now(), decide });
     } catch (err) {
@@ -1187,8 +1187,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
   };
   /**
-   * The converse apps' calls, each turn's dependencies those of the app's chat (its model, decision model,
-   * audit, actions, texts recorded in its audit and settings), on the voice channel. None without a converse app.
+   * The agent apps' calls, each turn's dependencies those of the app's chat (its model, decision model,
+   * audit, actions, texts recorded in its audit and settings), on the voice channel. None without an agent app.
    */
   const converseVoice = conversesRun.length === 0 ? null : converseVoiceRuntime({
     apps: new Map(conversesRun.map((a) => [a.id, a.app])),
@@ -1276,7 +1276,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       }
     }
     if (chatSettings.signIn.method !== 'none') {
-      for (const a of conversesRun) log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${a.id}" is a converse app, which takes no sign-in: every token will be refused`);
+      for (const a of conversesRun) log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${a.id}" is an agent app, which takes no sign-in: every token will be refused`);
     }
     // On a host, one audience for two apps' chats means a token for one app's portal signs in at the other's.
     for (const shared of sharedAudiences(chatSettings, appsRun)) log(`WARNING: CHAT_SIGNIN=jwt: ${shared}`);

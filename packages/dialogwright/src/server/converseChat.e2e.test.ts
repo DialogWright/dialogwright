@@ -20,7 +20,7 @@ import { callbackApp } from '../testing/callback/app';
 import type { HostedApp } from './host';
 
 /**
- * The web chat on the converse runtime: a converse app (src/testing/converse) served over the real chat
+ * The web chat on the converse runtime: an agent app (src/testing/converse) served over the real chat
  * socket, its model a fake script. The greeting follows ready; a reply streamed in sentences reaches a
  * client as one `say` (and as `say_delta` pieces first to a client that asks for them); a read-back
  * answered yes books the visit; the audit is one chain and the trace holds converse records; and a
@@ -163,7 +163,7 @@ describe('the web chat on the converse runtime', () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(own);
     copyFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), join(own, 'agent.yaml'));
-    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\n');
+    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: agent\n');
     const app = defineConverseApp(own, { tools: { availability: async () => [{ id: SLOT, label: 'Tuesday, January 15, 9 to 12' }], book: async () => 'booked' } });
     expect(app.chat.callerNumberFromContext).toBe(false);
     const model = fakeModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('What number should we use?'), done()]]);
@@ -216,12 +216,12 @@ describe('the web chat on the converse runtime', () => {
     expect(existsSync(join(dir, 'traces', 'converse', `${ready.session}.jsonl`))).toBe(true);
   }, 20_000);
 
-  it('serves a converse app\'s own pages under its id', async () => {
+  it('serves an agent app\'s own pages under its id', async () => {
     const own = join(folder(), 'converse');
     const { mkdirSync } = await import('node:fs');
     mkdirSync(own);
     copyFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), join(own, 'agent.yaml'));
-    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\n');
+    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: agent\n');
     const page = {
       label: 'a page', path: '/hello', localOnly: false,
       handle: async (_req: unknown, res: import('node:http').ServerResponse) => {
@@ -236,7 +236,7 @@ describe('the web chat on the converse runtime', () => {
     expect(await res.text()).toBe('hello from the app');
   });
 
-  it('gives a converse app\'s actions its settings (ctx.env), the app\'s own over the server\'s', async () => {
+  it('gives an agent app\'s actions its settings (ctx.env), the app\'s own over the server\'s', async () => {
     const dir = folder();
     const read: (string | undefined)[] = [];
     const app = defineConverseApp(CONVERSE_FIXTURE_DIR, {
@@ -264,7 +264,7 @@ describe('the web chat on the converse runtime', () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(own);
     writeFileSync(join(own, 'agent.yaml'), `${readFileSync(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8').replace('sources:\n', 'sources:\n  accounts:\n    - { name: Example Regular, numbers: [env.VISIT_REGULAR_LINE] }\n')}`);
-    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: converse\nchat:\n  callerNumberFromContext: true\n');
+    writeFileSync(join(own, 'app.yaml'), 'id: converse\nmode: agent\nchat:\n  callerNumberFromContext: true\n');
     expect(process.env.VISIT_REGULAR_LINE).toBeUndefined();
     const app = defineConverseApp(own, { tools: { availability: async () => [], book: async () => 'booked' } });
     // Made with the app, the reference is kept as it is written: no setting is read until a server starts.
@@ -281,7 +281,7 @@ describe('the web chat on the converse runtime', () => {
     expect(model.requests[0]!.system).toContain('on file for the account "Example Regular"');
   });
 
-  it('makes a converse app\'s pages as the server starts, with its settings, its sender, the clock and the log', async () => {
+  it('makes an agent app\'s pages as the server starts, with its settings, its sender, the clock and the log', async () => {
     const dir = folder();
     let given: { base: string; desk: string | undefined; texts: boolean; now: number } | null = null;
     const page = {
@@ -381,7 +381,7 @@ describe('the web chat on the converse runtime', () => {
     expect(results.at(-1)).toMatchObject({ content: expect.stringContaining('book: already booked (bk-1)') });
   }, 20_000);
 
-  it('takes a converse app\'s calls as the server starts, and still serves its chat', async () => {
+  it('takes an agent app\'s calls as the server starts, and still serves its chat', async () => {
     const dir = folder();
     const { app } = converseFixture();
     const env = settings(dir, { VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15555550199', SIGNATURE_CHECK: 'off' });
@@ -396,7 +396,7 @@ describe('the web chat on the converse runtime', () => {
     expect(says(c.received)).toEqual(['Example Visits, how can I help?']);
   });
 
-  it('starts where a number of a host with a phone line puts a call through to a converse app', async () => {
+  it('starts where a number of a host with a phone line puts a call through to an agent app', async () => {
     resetAppsForTest();
     registerApp(callbackApp);
     try {

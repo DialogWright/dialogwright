@@ -72,7 +72,7 @@ describe('dialogwright: one command line', () => {
     expect(verify).toEqual({ code: 0, lines: [`no audit files in ${join(dir, 'none')}`] });
   });
 
-  it('check: a clean converse app prints its ok line and nothing else', async () => {
+  it('check: a clean agent app prints its ok line and nothing else', async () => {
     const run = io();
     const app = join(ROOT, 'apps', 'wheelshop-agent');
     expect(await main(['check', app], run.io)).toBe(0);

@@ -262,7 +262,7 @@ export interface ServerConfig {
   minSpeechMs?: number;
   /**
    * BRIDGE_AFTER_MS, 0 to 10000, default 2500 (converse/turn.ts BRIDGE_AFTER_MS, the maintainer's decision,
-   * 2026-11-25): on a converse app's call, how long a caller turn waits for its reply's first words before the
+   * 2026-11-25): on an agent app's call, how long a caller turn waits for its reply's first words before the
    * line says the business's bridge (agent.yaml lines.bridge). 1200 restores the wait before it. Optional in the
    * type only (absent reads as the default).
    */

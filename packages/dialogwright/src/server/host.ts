@@ -31,8 +31,8 @@ import { serverSettingNames } from './serverSettings';
  */
 
 /**
- * An app a server runs: a scripted app (App, the engine's turn) or a converse app (ConverseApp, whose
- * model holds the conversation: src/converse). The server dispatches by it: a converse app's chats and calls
+ * An app a server runs: a scripted app (App, the engine's turn) or an agent app (ConverseApp, whose
+ * model holds the conversation: src/converse). The server dispatches by it: an agent app's chats and calls
  * run on the converse runtime (server/chat/converseRuntime.ts, server/voice/converseRuntime.ts).
  */
 export type HostedApp = App | ConverseApp;
@@ -235,8 +235,8 @@ function isApp(x: unknown): x is App {
 
 /**
  * The app of id `id` an app folder's module exports: app.ts or src/app.ts (what `pnpm check` reads), else
- * index.ts or src/index.ts. A scripted app (the App defineApp builds), or a converse app (the ConverseApp
- * defineConverseApp builds, for a folder whose app.yaml says mode: converse). Its module is imported as
+ * index.ts or src/index.ts. A scripted app (the App defineApp builds), or an agent app (the ConverseApp
+ * defineConverseApp builds, for a folder whose app.yaml says mode: agent). Its module is imported as
  * the app's own code is anywhere else.
  */
 export async function importApp(dir: string, id: string): Promise<HostedApp> {
@@ -248,7 +248,7 @@ export async function importApp(dir: string, id: string): Promise<HostedApp> {
     const found = Object.values(module).find((a): a is HostedApp => (isApp(a) || isConverseApp(a)) && a.id === id);
     if (found) return found;
   }
-  throw new Error(`${dir}: ${tried.length === 0 ? `no module (${APP_MODULE_FILES.join(', ')})` : tried.join(' or ')} exports the app "${id}" (its app.yaml's id): export the App defineApp builds (export const app = defineApp(...)), or for a converse app the one defineConverseApp builds`);
+  throw new Error(`${dir}: ${tried.length === 0 ? `no module (${APP_MODULE_FILES.join(', ')})` : tried.join(' or ')} exports the app "${id}" (its app.yaml's id): export the App defineApp builds (export const app = defineApp(...)), or for an agent app the one defineConverseApp builds`);
 }
 
 /**

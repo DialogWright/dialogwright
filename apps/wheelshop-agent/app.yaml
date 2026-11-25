@@ -3,7 +3,7 @@
 # conversation from agent.yaml; the runtime reads every change back, runs it on the caller's yes and puts
 # every action through the gate. Its code is src/app.ts. Invented throughout.
 id: wheelshop-agent
-mode: converse
+mode: agent
 brand:
   name: Example Wheel Works
   mark: EW

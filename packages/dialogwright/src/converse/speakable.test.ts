@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { forTheEar, speakableOn } from './speakable';
 
 /**
- * The words sent to the voice on a converse app's call (speakable.ts), with the frames of the first live calls
+ * The words sent to the voice on an agent app's call (speakable.ts), with the frames of the first live calls
  * (2026-11-25) as cases, and what must be left as it is.
  */
 

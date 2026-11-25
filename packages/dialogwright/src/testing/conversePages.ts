@@ -12,7 +12,7 @@ import { andList, cell, code, mermaidLabel, nodeId } from './generatedPage';
 import { verdictText } from './policyMatrix';
 
 /**
- * Test support: the pages written from a converse app's agent.yaml (docs/designs/2026-11-11-agent-runtime.md,
+ * Test support: the pages written from an agent app's agent.yaml (docs/designs/2026-11-11-agent-runtime.md,
  * "Per-app obligations"): the policy matrix, the policy card and the app map, as a scripted app's pages are
  * (policyMatrix.ts, policyCard.ts, appMap.ts) and read from the same gate: each action's rules as agent.yaml
  * writes them, with `confirmed` over all of a change's params last (converse/policy.ts policyOf). The
@@ -106,7 +106,7 @@ function daysFrom(iso: string, days: number): string {
 // The matrix
 // ---------------------------------------------------------------------------------------------
 
-/** policy.matrix's text for a converse app: every action's verdict, with and without the caller's yes, and for the values its rules list. */
+/** policy.matrix's text for an agent app: every action's verdict, with and without the caller's yes, and for the values its rules list. */
 export function conversePolicyMatrixText(app: ConverseApp): string {
   const policy = policyOf(app.business);
   const out: string[] = [
@@ -267,7 +267,7 @@ function openCardWords(b: AgentBusiness): string[] {
   ];
 }
 
-/** The policy card for a converse app, as Markdown. */
+/** The policy card for an agent app, as Markdown. */
 export function conversePolicyCardText(app: ConverseApp): string {
   const b = app.business;
   const followOns = followOnsOf(b);
@@ -343,7 +343,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
 // The map
 // ---------------------------------------------------------------------------------------------
 
-/** The app map for a converse app, as Markdown: its actions, what follows what, where a value must come from, and its sources. */
+/** The app map for an agent app, as Markdown: its actions, what follows what, where a value must come from, and its sources. */
 export function converseAppMapText(app: ConverseApp): string {
   const b = app.business;
   const followOns = followOnsOf(b);

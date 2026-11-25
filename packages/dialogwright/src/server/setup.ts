@@ -417,7 +417,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   };
 
   /**
-   * A converse app (app.yaml's mode: converse): the key of the model its conversations run on, the variable
+   * An agent app (app.yaml's mode: agent): the key of the model its conversations run on, the variable
    * agent.yaml's model.default names (ANTHROPIC_API_KEY for anthropic:<model>, say), read as every key is,
    * from the environment or with the echo off, the one being replaced kept. Enter for none: the server will
    * not start until it is set. Its read-backs are read by the decision model, which the file says. Nothing
@@ -433,10 +433,10 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     }
     const variable = spec === undefined ? null : converseModelKeyVar(spec);
     if (spec === undefined || variable === null) return [];
-    const key = await secret(variable, `The key of the model this converse app's conversations run on, ${variable} (${spec}, agent.yaml's model.default; Enter for none, and the server will not start; not shown as you type):`, () => null, true, true);
+    const key = await secret(variable, `The key of the model this agent app's conversations run on, ${variable} (${spec}, agent.yaml's model.default; Enter for none, and the server will not start; not shown as you type):`, () => null, true, true);
     return [{
       comment: [
-        `The model this converse app's conversations run on (${spec}, agent.yaml's model.default).${key ? '' : ' Unset: the server will not start until it is set.'}`,
+        `The model this agent app's conversations run on (${spec}, agent.yaml's model.default).${key ? '' : ' Unset: the server will not start until it is set.'}`,
         "A caller's answer to a read-back is read by the decision model (JEV_CLIENT=jev and its key): with the app's examples alone, no change is ever confirmed.",
       ],
       lines: [key ? { name: variable, value: key, secret: true } : { name: variable, value: '', commented: true }],

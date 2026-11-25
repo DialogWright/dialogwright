@@ -101,8 +101,8 @@ describe('dialogwright eval', () => {
     writeFileSync(file, 'personas:\n  - id: a\n    goal: g\n    truth: { n: m }\n    manner: plain\n    expects: none\n');
     const s = io({ ANTHROPIC_API_KEY: 'not-a-key' });
     expect(await evalCommand([LIBRARY_DIR, '--personas', file, '--channel', 'voice'], s.io)).toBe(2);
-    expect(s.err.join('\n')).toMatch(/--channel voice is for a converse app/);
-    expect(EVAL_USAGE).toContain('--channel voice (a converse app)');
+    expect(s.err.join('\n')).toMatch(/--channel voice is for an agent app/);
+    expect(EVAL_USAGE).toContain('--channel voice (an agent app)');
   });
 
   it('--channel voice: each call over the voice path, the page and run.json saying so', async () => {

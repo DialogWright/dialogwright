@@ -221,7 +221,7 @@ export { startServer, main as serverMain } from './server/index';
 export { loadHost, hostRouting } from './server/host';
 export type { HostApp, HostedApp, HostRouting } from './server/host';
 
-// A converse app (docs/designs/2026-11-11-agent-runtime.md): app.yaml (mode: converse) and agent.yaml joined
+// An agent app (docs/designs/2026-11-11-agent-runtime.md): app.yaml (mode: agent) and agent.yaml joined
 // with its actions' code, on the chat, its model holding the conversation. Served by a launcher that
 // registers it (registerConverseApp, then serverMain), by host.yaml beside other apps, or by startServer's overrides.apps.
 export { defineConverseApp, isConverseApp, businessCalendar } from './converse/app';

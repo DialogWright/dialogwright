@@ -65,7 +65,7 @@ function resolved(value: string, env: Record<string, string | undefined>): strin
 
 /**
  * The business of the app folder `dir` (its agent.yaml), its `env.<NAME>` references kept as they are
- * written: what a converse app is made with, before any server has read the app's settings
+ * written: what an agent app is made with, before any server has read the app's settings
  * (resolveAgentSettings reads them as the server starts). Throws AgentBusinessError, whose message is
  * `pnpm check`'s own lines.
  */

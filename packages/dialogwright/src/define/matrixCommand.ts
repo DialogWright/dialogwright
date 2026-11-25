@@ -76,7 +76,7 @@ function isApp(x: unknown): x is App {
 
 /**
  * The App a folder's module exports: the one with a policy matrix (TestingHooks.policyMatrix). A converse
- * app (app.yaml `mode: converse`) has no matrix of its own to name: the module's one converse app is taken.
+ * app (app.yaml `mode: agent`) has no matrix of its own to name: the module's one agent app is taken.
  */
 export async function loadMatrixApp(dir: string): Promise<App | ConverseApp> {
   for (const file of MATRIX_APP_MODULES) {
@@ -84,7 +84,7 @@ export async function loadMatrixApp(dir: string): Promise<App | ConverseApp> {
     const module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
     const converse = [...new Set(Object.values(module).filter(isConverseApp))];
     if (converse.length === 1) return converse[0]!;
-    if (converse.length > 1) throw new Error(`${join(dir, file)} exports more than one converse app (${converse.map((a) => a.id).join(', ')}): give each its own folder`);
+    if (converse.length > 1) throw new Error(`${join(dir, file)} exports more than one agent app (${converse.map((a) => a.id).join(', ')}): give each its own folder`);
     const apps = [...new Set(Object.values(module).filter(isApp))];
     const withMatrix = apps.filter((a) => typeof a.testing?.policyMatrix === 'function');
     if (withMatrix.length === 1) return withMatrix[0]!;

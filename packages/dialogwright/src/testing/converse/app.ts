@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { businessCalendar, defineConverseApp, type Calendar, type ConverseApp } from '../../converse/app';
 
 /**
- * A tiny converse app the engine's tests of the chat on the converse runtime build (server/converseChat.e2e.test.ts):
+ * A tiny agent app the engine's tests of the chat on the converse runtime build (server/converseChat.e2e.test.ts):
  * a visit looked up and booked into a window of a fake calendar, its read-back confirmed by the caller.
  * Its app.yaml lets a chat name the number it is calling from in its context (`chat.callerNumberFromContext`).
  */

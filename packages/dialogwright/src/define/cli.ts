@@ -67,7 +67,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['converse:route-eval', 'journey routing measured on caller turns a person labelled: accuracy, wrong and missed switches by bar, the decision model recorded into a cassette beside the labels (--replay: from the cassette)'],
   ['converse:claims-eval', "the check after speaking's question sets measured on replies a person labelled: recall, precision and average precision by rule, the decision model recorded into a cassette beside the labels (--replay: from the cassette)"],
   ['eval', "simulated callers over the chat wire: a model plays each persona, a model judges the call (--judge none: each call's judge input written for judging by hand), one summary of the measures (the author's own keys; refused in CI)"],
-  ['eval:compare', "a converse app's models compared on its simulated callers, cheapest first, against the bars, within a budget; stops at the first that clears them (the author's own keys; refused in CI)"],
+  ['eval:compare', "an agent app's models compared on its simulated callers, cheapest first, against the bars, within a budget; stops at the first that clears them (the author's own keys; refused in CI)"],
   ['eval:rejudge', "a run's stored calls judged again under the material-claims rubric, with no call made again: rejudged/summary.md beside each, and a comparison's table again (a judge model: the author's own key, refused in CI; --inputs writes each call's judge input and --verdicts reads verdicts given by hand, with no model)"],
   ['policy:matrix', 'write policy.matrix, the reviewed golden of what the gate decides'],
   ['policy:card', 'write POLICY.md, the policy in plain English with its diagrams'],
@@ -382,7 +382,7 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
     if (json) continue;
     for (const problem of problems) io.out(formatProblem(problem));
     io.out(problems.length === 0 ? `${label}: ok` : `${problems.length} problem${problems.length === 1 ? '' : 's'} in ${label}`);
-    // A converse app's code is checked as defineConverseApp joins it to its YAML, where the server or its tests build it: a clean check says nothing more of it.
+    // An agent app's code is checked as defineConverseApp joins it to its YAML, where the server or its tests build it: a clean check says nothing more of it.
     if (converse !== true && !codeChecked && problems.length === 0) io.err(`${label}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`);
   }
   if (json) io.out(JSON.stringify(dirs.length === 1 && hosts.length === 0 && !discovered ? results[dirs[0]!.label] : results, null, 2));

@@ -281,7 +281,7 @@ export interface CheckResult {
   problems: Problem[];
   /** Whether the folder was checked against the app's code: false when there was none to check. */
   codeChecked: boolean;
-  /** A converse app's folder: its app.yaml and agent.yaml checked together; its code is checked as defineConverseApp joins it to them. */
+  /** An agent app's folder: its app.yaml and agent.yaml checked together; its code is checked as defineConverseApp joins it to them. */
   converse?: boolean;
   /**
    * What is not wrong but likely a mistake: printed, never counted as a problem (the exit code is

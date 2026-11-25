@@ -74,14 +74,14 @@ export async function loadFolderApp(dir: string): Promise<App> {
   throw new Error(`${dir}: no module (${MATRIX_APP_MODULES.join(', ')}) exports an App`);
 }
 
-/** What a page is written from: a folder's scripted App (loadFolderApp), or, where its module exports one, its converse app. */
+/** What a page is written from: a folder's scripted App (loadFolderApp), or, where its module exports one, its agent app. */
 export async function loadPageApp(dir: string): Promise<App | ConverseApp> {
   for (const file of MATRIX_APP_MODULES) {
     if (!existsSync(join(dir, file))) continue;
     const module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
     const converse = [...new Set(Object.values(module).filter(isConverseApp))];
     if (converse.length === 1) return converse[0]!;
-    if (converse.length > 1) throw new Error(`${join(dir, file)} exports more than one converse app (${converse.map((a) => a.id).join(', ')}): give each its own folder`);
+    if (converse.length > 1) throw new Error(`${join(dir, file)} exports more than one agent app (${converse.map((a) => a.id).join(', ')}): give each its own folder`);
   }
   return loadFolderApp(dir);
 }
