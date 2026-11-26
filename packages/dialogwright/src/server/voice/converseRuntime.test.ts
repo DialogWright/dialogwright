@@ -703,12 +703,34 @@ describe('the converse voice runtime: a held read-back, fix round 2', () => {
   };
   const ignoredCount = (h: ReturnType<typeof harness>): number => h.fio.records.filter((r) => r.dir === 'log' && Object.hasOwn(r.msg as object, 'ignoredOverHeld')).length;
 
-  it('the whole reply is held: the model\'s words before the read-back go not interruptible too', async () => {
-    const h = harness({ model: gatedModel(rounds([text('Sure, let me read that again.')])) });
-    await toHeldTurn(h);
-    const frames = h.said().slice(-2);
-    expect(frames.map((f) => [f.token.trim(), f.interruptible])).toEqual([['Sure, let me read that again.', false], [h.entry.session.pending!.text, false]]);
-  });
+  for (const provider of ['twilio', 'telnyx'] as const) {
+    it(`${provider}: the model's words before a held read-back go interruptible, and a cut over them, before the held line begins, makes the read-back unheard`, async () => {
+      const h = harness({ model: gatedModel(rounds([text('Sure, let me read that again.')])), provider });
+      await toHeldTurn(h);
+      const [words, held] = h.said().slice(-2);
+      expect([words!.token.trim(), words!.interruptible]).toEqual(['Sure, let me read that again.', true]);
+      expect(held!.interruptible).toBe(false);
+      // The caller cuts in on the words, before the held line has begun to play.
+      if (provider === 'telnyx') {
+        h.event({ kind: 'playback', state: 'started' });
+        await h.settle(300);
+        h.event({ kind: 'caller', speaking: true });
+        await h.frame({ type: 'interrupt', utteranceUntilInterrupt: 'Sure, let', durationUntilInterruptMs: 300 });
+        h.event({ kind: 'caller', speaking: false });
+      } else {
+        await h.settle(300);
+        await h.frame({ type: 'interrupt', utteranceUntilInterrupt: 'Sure, let', durationUntilInterruptMs: 300 });
+      }
+      // Once the held line has played (or its hold has ended), a yes confirms nothing.
+      await h.settle(Math.ceil(textEstimateMs(held!.token) * 1.5) + 2500);
+      if (provider === 'telnyx') h.event({ kind: 'caller', speaking: true });
+      else await h.prompt('yes', false);
+      await h.prompt('yes');
+      expect(h.booked).toEqual([]);
+      expect(h.rows.filter((r) => r.type === 'confirmed')).toEqual([]);
+      expect(h.traces.at(-1)!.heard).toMatchObject({ cutIn: true });
+    });
+  }
 
   it('Twilio: the held line\'s end counts from the bridge said before it', async () => {
     const g = gate();
@@ -940,7 +962,7 @@ describe('the converse voice runtime: a held read-back, fix round 3', () => {
     const h = harness({ model: gatedModel(rounds([text('Sure, let me read that again.')])), provider: 'telnyx' });
     const held = await toHeld(h);
     const before = h.said().at(-2)!;
-    expect(before.interruptible).toBe(false);
+    expect(before.interruptible).toBe(true);
     h.event({ kind: 'playback', state: 'started' });
     await h.settle(textEstimateMs(held.token));
     h.event({ kind: 'playback', state: 'finished', text: `${before.token}${held.token}` });

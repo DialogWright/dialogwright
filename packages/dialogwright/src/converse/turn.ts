@@ -333,14 +333,6 @@ class Speaker {
   private kept: string[] | null = null;
   /** Text came while held: the first text the caller could hear is at the release. */
   private heldText = false;
-  /**
-   * Pieces said while a held read-back may follow in the round (deferred): kept, not yet sent, so a reply whose read-back
-   * is held goes held from its first word and nothing that can be talked over plays ahead of it; null when not deferred.
-   */
-  private deferred: { piece: string; final: boolean }[] | null = null;
-  /** The round's text as endRound kept it (in the turn's replies, the conversation and the model's own words) while its pieces were deferred. */
-  private deferredReply: string | null = null;
-
   constructor(private readonly t: Turn) {}
 
   /**
@@ -353,68 +345,10 @@ class Speaker {
     const spoken = speakableOn(this.t.st, text);
     // A piece that was only a list's marker or line breaks: as it came, as Out never takes an empty piece.
     const piece = spoken.trim() === '' ? text : spoken;
-    // Deferred: kept until the round's calls say whether its read-back is held (the bridge's wait goes on meanwhile).
-    if (this.deferred !== null) {
-      this.deferred.push({ piece, final });
-      return piece;
-    }
     clearBridge(this.t);
     if (held) this.t.out.say(piece, final, true);
     else this.t.out.say(piece, final);
     return piece;
-  }
-
-  /** Pieces said from here on are kept, not sent, until flush. */
-  defer(): void {
-    this.deferred ??= [];
-  }
-
-  /**
-   * The pieces kept are sent, held or not, in order, and the deferral ends. Where the turn was stopped they are never
-   * sent, and are taken back (takeBack): the result says whether any were.
-   */
-  flush(held: boolean): boolean {
-    const kept = this.deferred;
-    this.deferred = null;
-    if (kept === null || kept.length === 0) {
-      this.deferredReply = null;
-      return false;
-    }
-    if (cut(this.t)) {
-      this.takeBack();
-      return true;
-    }
-    this.deferredReply = null;
-    clearBridge(this.t);
-    for (const k of kept) {
-      if (held) this.t.out.say(k.piece, k.final, true);
-      else this.t.out.say(k.piece, k.final);
-    }
-    return false;
-  }
-
-  /** Whether pieces are kept and not yet sent: a turn that throws takes them back (takeBack). */
-  get unsent(): boolean {
-    return this.deferred !== null && this.deferred.length > 0;
-  }
-
-  /**
-   * Pieces deferred and never sent taken back: what the round had said so far (all of it kept, as the round was deferred
-   * from its start) and its text where endRound kept it, out of the turn's replies, the model's own words and the
-   * conversation, so neither the model nor the console is told of a line the caller never heard.
-   */
-  takeBack(): void {
-    this.deferred = null;
-    this.said = '';
-    this.sentences.rest();
-    const reply = this.deferredReply;
-    this.deferredReply = null;
-    if (reply === null) return;
-    const at = this.t.replies.lastIndexOf(reply);
-    if (at >= 0) this.t.replies.splice(at, 1);
-    const own = this.t.own.lastIndexOf(reply);
-    if (own >= 0) this.t.own.splice(own, 1);
-    unsay(this.t.st, reply);
   }
 
   delta(d: string): void {
@@ -472,7 +406,6 @@ class Speaker {
     const all = (this.said + (saidRest ?? '')).trim();
     this.said = '';
     if (all !== '') this.t.replies.push(all);
-    if (this.deferred !== null && all !== '') this.deferredReply = all;
     return all;
   }
 
@@ -507,19 +440,6 @@ function add(st: ConverseState, role: ModelMessage['role'], content: ModelConten
   const last = st.messages.at(-1);
   if (last?.role === role) last.content.push(...content);
   else st.messages.push({ role, content });
-}
-
-/** A text of the line's taken out of the conversation: the latest of its messages holding it, dropped where nothing is left of it. */
-function unsay(st: ConverseState, text: string): void {
-  for (let m = st.messages.length - 1; m >= 0; m--) {
-    const msg = st.messages[m]!;
-    if (msg.role !== 'assistant') continue;
-    const at = msg.content.findIndex((c) => c.type === 'text' && c.text === text);
-    if (at < 0) continue;
-    msg.content.splice(at, 1);
-    if (msg.content.length === 0) st.messages.splice(m, 1);
-    return;
-  }
 }
 
 async function record(t: Turn, d: AuditDraft): Promise<void> {
@@ -985,10 +905,6 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
     leaveOffJourney(t);
     const count = routed.route.unclear;
     if (count !== undefined && t.said !== null) t.unclear = { count, said: t.said };
-    // The route known: the words wait for the round's calls only where this turn may call a change read back held (its
-    // sentences were kept while the route was read, so nothing was deferred before now).
-    if (holdDue(t)) sp.defer();
-    else sp.flush(false);
     if (t.unclear === undefined && routed.next.active === j.active && routed.next.phase === j.phase) {
       if (cut(t) || (settled.round !== undefined && !settled.round.ok)) sp.discard();
       else sp.release();
@@ -1089,26 +1005,19 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
   let route = routing;
   for (let i = 0; i < MAX_ROUNDS; i++) {
     if (cut(t)) return interrupted(t, sp);
-    // Where a change's read-back may be said held this round, its words wait for its calls: a held reply is held whole.
-    if (holdDue(t)) sp.defer();
     const emptyOk = first && (silent || carried !== undefined);
     const r = route !== undefined ? await routedRound(t, sp, emptyOk, route) : await round(t, sp, emptyOk);
     route = undefined;
     first = false;
     // Stopped from outside while the model was asked: whatever the round came to (a client's abort reads as a timeout), it is no failure.
-    if (cut(t)) {
-      sp.flush(false);
-      return interrupted(t, sp);
-    }
+    if (cut(t)) return interrupted(t, sp);
     if (r === UNCLEAR_END) {
-      sp.flush(false);
       await endUnclear(t, sp);
       return { ok: true };
     }
     if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
       // Only a first answer may be empty (streamOnce's emptyOk).
       sp.abandon();
-      sp.flush(false);
       if (silent) return { ok: true, declined: true };
       // The message's carried note answered with nothing: out with it, and asked again (no round spent).
       dropNote(t.st, carried!);
@@ -1118,7 +1027,6 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     }
     if (!r.ok) {
       const said = sp.abandon();
-      sp.flush(false);
       if (said !== '') {
         add(t.st, 'assistant', [{ type: 'text', text: said }]);
         t.own.push(said);
@@ -1141,21 +1049,17 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       t.confirmedRan = false;
       t.own.push(said);
     }
-    // The words go out now unless a call of the round may be read back held: a call of a change whose read-back was not heard.
-    if (final || !r.calls.some((c) => unheardOf(t, c.name) !== undefined)) sp.flush(false);
     if (final) return { ok: true };
     const { results, readBack } = await runCalls(t, r.calls);
     add(t.st, 'user', results);
     if (cut(t)) {
-      sp.flush(false);
       // A read-back the caller never heard waits for no answer: nothing is done, and the model may call it again.
       if (readBack !== null) unheardReadBack(t);
       return interrupted(t, sp);
     }
-    const heldNow = readBack !== null && t.st.pending?.held === true;
-    sp.flush(heldNow);
     if (readBack !== null) {
-      const held = heldNow;
+      // A held read-back goes whole, not interruptible; the model's words before it went out as they came.
+      const held = t.st.pending?.held === true;
       sp.line(readBack, true, held);
       // Said held: on the record of the read-back not heard, as the trace and the state show it.
       const action = t.st.pending!.action;
@@ -1343,11 +1247,6 @@ const unheardOf = (t: Turn, action: string): UnheardReadBack | undefined => (t.s
 /** Whether a read-back of `action` is said held now: a read-back of it was not heard on this call, and the change has not been let go since (whatever values it has now). */
 const holdsNow = (t: Turn, action: string): boolean => holding(t) && unheardOf(t, action) !== undefined;
 
-/**
- * Whether a round's words wait for its calls: a change this turn may call (its journey's actions, the lookups alone on an
- * unclear turn) would be read back held. A turn that cannot call one streams as ever.
- */
-const holdDue = (t: Turn): boolean => holding(t) && t.st.pending === null && t.st.unheardReadBacks !== undefined && offeredNow(t).some((a) => unheardOf(t, a) !== undefined);
 
 /** The not-heard read-back of `action` let go, its entry taken out (and the record with its last entry). */
 function letGoUnheard(t: Turn, action: string): void {
@@ -1714,8 +1613,6 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   try {
     return await turnBody(t, sp, input, now);
   } catch (e) {
-    // Words held back for a read-back that may have been held, never sent: not the line's (the caller never heard them).
-    if (sp.unsent) sp.takeBack();
     let record: ConverseTraceRecord | null = null;
     try {
       record = { ...traceRecordOf(t, input, now).record, failed: 'internal' };

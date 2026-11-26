@@ -128,8 +128,9 @@ interface Reply {
   unheard: boolean;
   /**
    * Its held read-back (said again after the caller spoke over it before hearing it, not interruptible: Out.say's
-   * `held`), its last frame; null: it holds none. The whole reply is held, every frame of it sent not interruptible,
-   * and speech that begins before the read-back has played is ignored (heldEnd).
+   * `held`), its last frame; null: it holds none. Only the read-back is sent not interruptible (the model's words before
+   * it go as they came: a cut over them, as over the read-back, makes it unheard), and speech that begins before it has
+   * played is ignored (heldEnd).
    */
   held: Sent | null;
   /** The bridge said with it, as sent: a held read-back after it begins once it has played (heldStart). */
@@ -726,7 +727,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           const sentNow: Sent = { text: token, at: now() };
           reply.frames.push(sentNow);
           keepSent(l, reply, sentNow);
-          // A held reply goes whole, not interruptible, its read-back its final piece: speech over it is ignored (finalWords).
+          // A held read-back goes whole, not interruptible, the reply's final piece: speech over it is ignored (finalWords).
           if (held === true && final) reply.held = sentNow;
           if (final) finalSent = true;
           send({ ...textFrame(token, held !== true), last: final });
