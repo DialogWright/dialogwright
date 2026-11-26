@@ -281,3 +281,29 @@ guidance before the end said exactly what to say; in 4 it said what the line can
 | The line's model, per call | $0.0038 to $0.0040 | $0.0032 to $0.0033 |
 
 The second run cost $1.41.
+
+## Part 3: an answer to the line (2026-11-25)
+
+The amendment of 2026-11-25 ([the design](../2026-11-12-journeys.md#amendment-2026-11-25-an-answer-to-the-line-is-never-unclear-and-kinder-guidance))
+added `answers` at the root and widened the wheel shop's request trigger. It was measured on the same 304 labelled
+turns, the labels mapped onto today's journeys (the repair request and the callback are one request journey; a
+dealership's callback is its booking journey), at `routing.switchAt` 0.6 and the shop's start bar, 0.7.
+
+| | Accuracy | Unclear recall | Unclear precision | Missed starts |
+| --- | --- | --- | --- | --- |
+| Before (today's journeys, mapped labels) | 0.89 | 0.32 (6 of 19) | 0.50 (6 of 12) | 16 of 52 |
+| `answers` alone | 0.88 | 0.21 (4 of 19) | 0.40 (4 of 10) | 16 of 52 |
+| `answers` and the request's new trigger | 0.91 | 0.21 (4 of 19) | 0.36 (4 of 11) | 7 of 52 |
+
+- **`answers` changed two turns, both labelled none.** The decision model read each as answering the line (0.78 to
+  0.82): a goodbye, and a reply to the line's own suggestion. The labels make both unclear, so recall and precision
+  fell. It rescued none of the turns wrongly read as unclear.
+- **Five of the turns wrongly read as unclear are still read so.** Each is an opening that names the damage in two
+  words after the greeting, read as none with `answers` at 0.15: the live calls' shape. The labels say the request.
+  This set holds no turn where a caller at the root answers a question the model asked.
+- **The request's trigger did the most.** Missed starts fell from 16 of 52 to 7, and accuracy rose to 0.91.
+- **One other wording was measured,** with the trigger: "a reply to what the line last said to them, answering its
+  question or giving what it asked for, however briefly". It read the five openings at 0.21 and took one more
+  labelled none out of the unclear reading (recall 0.16, precision 0.30, accuracy 0.90). The first wording is kept.
+
+The decision model answered in 89 ms at the median and 131 ms at the 95th percentile with the question added.

@@ -335,6 +335,20 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log, and anything the model said of the value before the short read-back.
 
+## 20. Answering the line at an agent app's root, on the phone
+
+**Why.** At the root of an agent app with journeys, a turn that answers the line's own last question is never unclear ([the guide's 18.7](guide/18-agent-mode.md#187-journeys)), and the second guidance helps kindly rather than telling the caller they have not given what was asked (the amendment of 2026-11-25 to [the journeys design](designs/2026-11-12-journeys.md#amendment-2026-11-25-an-answer-to-the-line-is-never-unclear-and-kinder-guidance)). On 2026-11-25 live callers describing the damage to a wheel were read as unclear, and one was told off for it. The tests hold the rule on scripted readings; how the decision model reads real speech is a call's to say.
+
+**Set.** The wheel shop on the converse runtime (`apps/wheelshop-agent`), on Telnyx and on Twilio, a number on no dealership account.
+
+**Do and look for.**
+
+1. **Start by describing the damage.** At the greeting, describe the damage to a wheel without asking for anything ("I've got curb rash on my car"). The request starts, or the line asks about it; it never guides you as if it could not follow.
+2. **Answer the line's question.** Answer whatever the line asks next in a few words ("It's scratched up", "The two on the passenger side"). Never told off: the console's call view shows no unclear turn, and the trace's `route` has `answers` at 0.5 or above wherever `task` read none on top.
+3. **Two turns it cannot follow.** Say two unrelated things in a row: the second reply says what the line can do and what to say, kindly, and never that you have not given what it asked for.
+
+**Record.** One row per carrier and step in the results log, with each turn's `task` and `answers` readings from the trace.
+
 ## Results log
 
 One row per check run. Keep earlier rows.
