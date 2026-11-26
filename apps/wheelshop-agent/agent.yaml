@@ -175,7 +175,7 @@ journeys:
     facts: # assumption: the owner corrects these
     - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window, up to three cars in one window. # assumption: the owner corrects these
     - Dealership work is billed at the rates agreed with the shop. # assumption: the owner corrects these
-    - A dealership's booking is made on this line once we read it back and the caller confirms it, and the line says it is booked and gives its reference. # assumption: the owner corrects these
+    - A dealership's booking is made on this call once it is read back and the caller confirms it; it is then booked, and the caller is given its reference. # assumption: the owner corrects these
     actions: [recognise_caller, check_availability, book_dealer, leave_callback]
     # The booking ends the journey; a callback note does not, so a dealership may leave one and still book.
     completes: [book_dealer]
