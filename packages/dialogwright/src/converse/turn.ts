@@ -37,8 +37,9 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   (lines.notConfirmed), word for word, where it has one, and the model is told the line asked (answered);
  * - the model ends the call with the runtime's own action, end_call: its own words written with it are the goodbye, and
  *   the line says the closing line where it wrote none. But a change whose read-back the caller did not confirm is kept
- *   (ConverseState.unsent), and the first end_call while it is kept is refused, its words never said (each round is held
- *   while it is kept), so the model asks whether the caller still wants it; the next end_call ends the call;
+ *   (ConverseState.unsent), and the first end_call while it is kept is refused: the goodbye written with it has been
+ *   said (never as the turn's last piece), the call goes on, and the model asks whether the caller still wants it; the
+ *   next end_call ends the call;
  * - a model that errs or says nothing is asked once more while half its time is left, and one that has
  *   not begun to answer within half its time is stopped and asked once more; else the line says the
  *   recovery line (the done line instead, where an action the caller confirmed has just run), and once
@@ -269,6 +270,8 @@ interface Turn {
   readBackSaid?: true;
   /** The caller's words answer a read-back (one waited for their answer as the turn began, whatever came of it). */
   answersReadBack?: true;
+  /** The model's own words of the round whose calls are running were said (a refused end_call's goodbye among them). */
+  roundSpoke: boolean;
 }
 
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
@@ -348,11 +351,6 @@ class Speaker {
     this.kept = null;
     this.heldText = false;
     this.sentences.rest();
-  }
-
-  /** Whether the speaker holds what it is given (hold), until it is released or discarded. */
-  get holding(): boolean {
-    return this.kept !== null;
   }
 
   /** Whether the current round has said anything yet. */
@@ -544,10 +542,12 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     if (c.name === END_CALL && t.st.unsent !== undefined) {
       // A change the caller turned down or cut into was never sent: the first end_call after it is refused, so the model
       // asks whether they still want it; the change is let go here, so the next end_call ends the call. Counted toward
-      // no refusal: nothing about ending the call was wrong.
+      // no refusal: nothing about ending the call was wrong. The goodbye written with it streamed as it came, so it has
+      // been said, and the model is told so (a person would add "before you go..."): context, never a script.
       const { action } = t.st.unsent;
       delete t.st.unsent;
-      const why = `Not run: "${action}" was read back to the caller and not confirmed, so it was never done or sent. Unless the caller has said they no longer want it, ask whether they still want it before ending the call; if they do, call "${action}" again and the line reads it back. Otherwise, end the call.`;
+      const lead = t.roundSpoke ? 'Not run: you have said goodbye, but ' : 'Not run: ';
+      const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and the line reads it back. Otherwise, end the call.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-change', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
@@ -842,8 +842,7 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
     if (count !== undefined && t.said !== null) t.unclear = { count, said: t.said };
     if (t.unclear === undefined && routed.next.active === j.active && routed.next.phase === j.phase) {
       if (cut(t) || (settled.round !== undefined && !settled.round.ok)) sp.discard();
-      // While a change is kept unsent, the round's words stay held until it is known whether it ends the call (converse).
-      else if (t.st.unsent === undefined) sp.release();
+      else sp.release();
       return await first;
     }
     stop.abort();
@@ -864,7 +863,6 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
   if (cut(t)) return { ok: false, error: 'interrupted: the turn was stopped from outside', spoke: false, stalled: false };
   if (t.unclear !== undefined && t.unclear.count >= UNCLEAR_ENDS_AT) return UNCLEAR_END;
   t.route.restarted = true;
-  if (t.st.unsent !== undefined) sp.hold();
   return round(t, sp, emptyOk);
 }
 
@@ -943,9 +941,6 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
   for (let i = 0; i < MAX_ROUNDS; i++) {
     if (cut(t)) return interrupted(t, sp);
     const emptyOk = first && (silent || carried !== undefined);
-    // While a change the caller turned down is kept unsent, a round's words are held until it is known whether it ends the
-    // call: a goodbye written with the end_call refused for it is never said (the model writes a new reply).
-    if (route === undefined && t.st.unsent !== undefined) sp.hold();
     const r = route !== undefined ? await routedRound(t, sp, emptyOk, route) : await round(t, sp, emptyOk);
     route = undefined;
     first = false;
@@ -954,11 +949,6 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     if (r === UNCLEAR_END) {
       await endUnclear(t, sp);
       return { ok: true };
-    }
-    if (sp.holding) {
-      // Held for a change kept unsent: a round that fails, or that ends the call while the change is kept, says none of it.
-      if (!r.ok || (t.st.unsent !== undefined && r.calls.some((c) => c.name === END_CALL))) sp.discard();
-      else sp.release();
     }
     if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
       // Only a first answer may be empty (streamOnce's emptyOk).
@@ -981,8 +971,10 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     }
     const final = r.calls.length === 0;
     // A round that only ends the call (nothing waits on a read-back) ends on its own words, where it wrote any: they are the goodbye.
-    const goodbye = !final && t.st.pending === null && r.calls.every((c) => c.name === END_CALL);
+    // Not while a change is kept unsent: that end_call is refused, the call goes on, and the next round's words end the turn.
+    const goodbye = !final && t.st.pending === null && t.st.unsent === undefined && r.calls.every((c) => c.name === END_CALL);
     const said = sp.endRound(final || goodbye);
+    t.roundSpoke = said !== '';
     add(t.st, 'assistant', [...(said !== '' ? [{ type: 'text' as const, text: said }] : []), ...r.calls.map((c) => ({ type: 'tool_call' as const, id: c.id, name: c.name, args: c.args }))]);
     // The caller has heard a reply after the action they confirmed.
     if (said !== '') {
@@ -1400,6 +1392,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     said: input.kind === 'text' ? input.text : null,
     ...(signal !== undefined ? { signal } : {}),
     bridged: false,
+    roundSpoke: false,
   };
   const sp = new Speaker(t);
   // The bridge: on a call, where the channel can say one, once if nothing of a caller turn's reply is said by its wait (bridgeAfterMs).

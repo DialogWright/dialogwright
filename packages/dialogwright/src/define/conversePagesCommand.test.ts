@@ -79,7 +79,7 @@ describe('the pages of an agent app', () => {
     const card = conversePolicyCardText({ ...app, business: lined });
     expect(card).toContain('- A clear no that says nothing of what should be different (read by the decision model) is answered by `lines.notConfirmed`, word for word ("What should we change?", and in the web chat "What should we change in the chat?"), and the agent model is told the line asked; it answers what the caller says next.');
     expect(conversePolicyCardText(app)).not.toContain('lines.notConfirmed');
-    expect(conversePolicyCardText(app)).toContain('The first `end_call` after a read-back the caller did not confirm (turned down, spoken over or not read) is refused, audited, and its goodbye not said');
+    expect(conversePolicyCardText(app)).toContain('The first `end_call` after a read-back the caller did not confirm (turned down, spoken over or not read) is refused and audited, and the call goes on: a goodbye written with it has been said');
   });
 
   it('the card: only the audit records an action\'s result, and only a gate refusal is scrubbed before the model is told it', () => {

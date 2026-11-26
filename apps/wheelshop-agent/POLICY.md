@@ -14,7 +14,7 @@
 - A clear no that says nothing of what should be different (read by the decision model) is answered by `lines.notConfirmed`, word for word ("No problem. What would you like to change, or would you rather cancel the request?"), and the agent model is told the line asked; it answers what the caller says next.
 - A follow-on action runs only after its parent ran on the caller's yes, with the values read back there, through the gate with its own confirmation hash; it has no read-back of its own.
 - After 3 refusals of the same action on a call (`limits.refusalsPerAction`), the agent model is told to offer the caller a person rather than try again.
-- `end_call` is the runtime's own action, offered to the model on every call: it ends the call on the model's own goodbye (the closing line where the model writes none), and changes nothing. The first `end_call` after a read-back the caller did not confirm (turned down, spoken over or not read) is refused, audited, and its goodbye not said: the agent model is told the change was never done and to ask whether the caller still wants it, unless they have said they do not. The next `end_call` ends the call.
+- `end_call` is the runtime's own action, offered to the model on every call: it ends the call on the model's own goodbye (the closing line where the model writes none), and changes nothing. The first `end_call` after a read-back the caller did not confirm (turned down, spoken over or not read) is refused and audited, and the call goes on: a goodbye written with it has been said, and the agent model is told the change was never done and to ask whether the caller still wants it, unless they have said they do not. The next `end_call` ends the call.
 
 ## What a model is sent and what is recorded
 

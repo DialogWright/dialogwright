@@ -128,7 +128,7 @@ const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most wh
  * recognizer acknowledged with a bare "Thanks.", and first heard the mistake in the read-back a minute later: a value
  * said back as understood is caught on the turn it is given.
  */
-const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When you acknowledge a name, a number, a make or model, or anything else easily misheard, say back the value as you understood it, so a mishearing is caught at once.';
+const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When you acknowledge a name, a number, a product or anything else easily misheard, say back the value as you understood it, so a mishearing is caught at once.';
 
 /**
  * What a call adds: the caller cannot see the questions, and a voice reads a screen's marks badly (a range

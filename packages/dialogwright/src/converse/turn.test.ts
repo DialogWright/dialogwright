@@ -827,7 +827,7 @@ describe('converseTurn: a read-back turned down with nothing to change (lines.no
 describe('converseTurn: a change turned down and never sent', () => {
   const ASKED = 'Before you go, would you still like that visit booked?';
 
-  it('refuses the first end_call after a read-back the caller turned down: nothing of its goodbye is said, the model is told the change was never sent, and a second end_call ends the call', async () => {
+  it('refuses the first end_call after a read-back the caller turned down: its goodbye is said as it streamed, the call does not end, the model is told the change was never sent and asks in its next round, and a second end_call ends the call', async () => {
     const h = harness([
       ...lookupThenBook,
       [text('Sure. Anything else I can help with?'), done()],
@@ -838,26 +838,42 @@ describe('converseTurn: a change turned down and never sent', () => {
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'text', text: 'hmm, not right now' });
     expect(s.unsent).toEqual({ action: 'book' });
-    // A reply held while a change is kept unsent is said whole, in order, once its round is known to end nothing.
+    // Replies stream from their first sentence while a change is kept, as everywhere else.
     expect(h.said.slice(-2)).toEqual([['Sure. ', false], ['Anything else I can help with?', true]]);
+    const before = h.said.length;
     s = await h.run(s, { kind: 'text', text: 'no' });
     expect(h.ended).toEqual([]);
     expect(s.ended).toBeUndefined();
-    expect(h.said.map(([t]) => t).join(' ')).not.toMatch(/Alright|goodbye|Thanks for calling/);
-    expect(h.said.at(-1)).toEqual([ASKED, true]);
-    const WHY = 'Not run: "book" was read back to the caller and not confirmed, so it was never done or sent. Unless the caller has said they no longer want it, ask whether they still want it before ending the call; if they do, call "book" again and the line reads it back. Otherwise, end the call.';
+    // The goodbye was said as it streamed, never as the turn's last piece: the question from the model's next round is.
+    expect(h.said.slice(before)).toEqual([['Alright. ', false], ['Thanks for calling, goodbye!', false], [ASKED, true]]);
+    const WHY = 'Not run: you have said goodbye, but "book" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "book" again and the line reads it back. Otherwise, end the call.';
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'end_call', args: {}, outcome: 'refused', reason: WHY }]);
     expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'end_call', reason: 'unsent-change', unsent: 'book' }]);
     expect(h.rows.some((r) => r.type === 'converse_end')).toBe(false);
     expect(h.model.requests.at(-1)!.messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'tool_result', id: 'c3', content: WHY, isError: true }] });
-    // The refused round's words are not in the conversation: its call and the refusal are.
-    expect(JSON.stringify(s.messages)).not.toContain('goodbye');
+    // The goodbye said is in the conversation as the line's, with the refused call and its result after it.
+    expect(JSON.stringify(s.messages)).toContain('Thanks for calling, goodbye!');
     expect(s.unsent).toBeUndefined();
     expect(s.refusals).toEqual({});
     s = await h.run(s, { kind: 'text', text: 'no thanks' });
     expect(h.ended).toEqual(['closing']);
     expect(s.ended).toBe('closing');
     expect(h.said.at(-1)).toEqual(['Thanks for calling. Goodbye.', true]);
+  });
+
+  it('where the refused end_call came with no words of the model\'s, does not say the model said goodbye', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [text('Sure. Anything else?'), done()],
+      [call('c3', 'end_call', {}), done('tool')],
+      [text(ASKED), done()],
+    ], { reading: { yes: 0.05, no: 0.9 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'not right now' });
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.traces.at(-1)!.tools[0]!.reason).toMatch(/^Not run: "book" was read back/);
+    expect(h.said.at(-1)).toEqual([ASKED, true]);
+    expect(h.ended).toEqual([]);
   });
 
   it('keeps the change of a read-back the caller spoke over, and of one the line said the line\'s own line for', async () => {
