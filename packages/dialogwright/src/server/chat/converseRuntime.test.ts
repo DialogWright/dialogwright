@@ -83,15 +83,24 @@ describe('converseChatRuntime: a saved state', () => {
     }
   });
 
-  it('loads a state saved before the unheard read-back was kept (none), keeps one that was, and drops one not in its shape', () => {
+  it('loads a state saved before the unheard read-backs were kept (none), keeps them by action, reads a single one as one entry, and drops one not in its shape', () => {
     const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-19', channel: 'voice' }))) as unknown;
-    expect(stateOf(before)!.unheardReadBack).toBeUndefined();
-    for (const unheard of [{ action: 'book', params: { window: '2030-01-15:morning', name: 'Sam Example', phone: '' } }, { action: 'book', params: { name: 'Sam Example' }, held: true }]) {
-      const kept = { ...newConverseState({ appId: 'visits', callId: 'chat-20', channel: 'voice' }), unheardReadBack: unheard };
-      expect(stateOf(JSON.parse(JSON.stringify(kept)))!.unheardReadBack).toEqual(unheard);
+    expect(stateOf(before)!.unheardReadBacks).toBeUndefined();
+    const record = { book: { params: { window: '2030-01-15:morning', name: 'Sam Example', phone: '' } }, note: { params: { name: 'Sam Example' }, held: true } };
+    const kept = { ...newConverseState({ appId: 'visits', callId: 'chat-20', channel: 'voice' }), unheardReadBacks: record };
+    expect(stateOf(JSON.parse(JSON.stringify(kept)))!.unheardReadBacks).toEqual(record);
+    // The single read-back of a state saved while there was one (unheardReadBack): one entry, under its action.
+    const single = stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-21', channel: 'voice' }), unheardReadBack: { action: 'book', params: { name: 'Sam Example' }, held: true } })!;
+    expect(single.unheardReadBacks).toEqual({ book: { params: { name: 'Sam Example' }, held: true } });
+    expect(single).not.toHaveProperty('unheardReadBack');
+    for (const odd of ['book', null, [], { book: null }, { book: { params: [] } }, { book: { params: { name: 7 } } }, { book: { params: {}, held: false } }, { '': { params: {} } }]) {
+      const st = stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-22', channel: 'voice' }), unheardReadBacks: odd })!;
+      expect(st.unheardReadBacks).toBeUndefined();
     }
-    for (const odd of ['book', null, {}, { action: 'book' }, { action: '', params: {} }, { action: 'book', params: [] }, { action: 'book', params: { name: 7 } }, { action: 'book', params: {}, held: false }, { action: 'book', params: {}, held: 'yes' }]) {
-      expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-21', channel: 'voice' }), unheardReadBack: odd })!.unheardReadBack).toBeUndefined();
+    for (const odd of [{ action: 'book' }, { action: '', params: {} }, { action: 'book', params: {}, held: 'yes' }]) {
+      const st = stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-23', channel: 'voice' }), unheardReadBack: odd })!;
+      expect(st.unheardReadBacks).toBeUndefined();
+      expect(st).not.toHaveProperty('unheardReadBack');
     }
   });
 

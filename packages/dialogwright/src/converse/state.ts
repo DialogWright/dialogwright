@@ -65,14 +65,15 @@ export interface ConverseState {
    */
   heardReadBack?: HeardReadBack;
   /**
-   * On a call, the last read-back of a change the caller did not hear (they cut in before READ_BACK_HEARD_AT of it, or
-   * spoke as it began), with the values it was read with: a call of that action again with the same values is read back
-   * held (agent.yaml's readBacks.holdAfterCut). `held`: a held read-back of it has been said, so no other is held for it
-   * (once per change). Kept only where the setting is on. Taken out when a read-back of its action is confirmed or
-   * withdrawn, when the caller says they no longer want it, or when the journey no longer offers its action. Absent (as
-   * in a state saved before it was kept): none.
+   * On a call, by action, the last read-back of each change the caller did not hear (they cut in before
+   * READ_BACK_HEARD_AT of it, or spoke as it began), with the values it was read with: a call of that action again with
+   * the same values is read back held (agent.yaml's readBacks.holdAfterCut). `held`: a held read-back of it has been
+   * said, so no other is held for it (once per change, kept apart for each change, so two changes interleaved keep
+   * theirs). Kept only where the setting is on. An action's entry is taken out when a read-back of it is confirmed or
+   * withdrawn, when the caller says they no longer want it, or when the journey no longer offers it. Absent (as in a
+   * state saved before it was kept): none.
    */
-  unheardReadBack?: UnheardReadBack;
+  unheardReadBacks?: Record<string, UnheardReadBack>;
   /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
   ended?: 'closing' | 'handoff' | 'left';
 }
@@ -102,9 +103,8 @@ export interface HeardReadBack {
   params: Record<string, string>;
 }
 
-/** A read-back the caller did not hear: its action, its values as the call carried them, and whether a held one has been said for it. */
+/** A read-back the caller did not hear (kept by its action): its values as the call carried them, and whether a held one has been said for it. */
 export interface UnheardReadBack {
-  action: string;
   params: Record<string, string>;
   held?: true;
 }

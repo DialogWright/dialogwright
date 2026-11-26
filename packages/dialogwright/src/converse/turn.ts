@@ -18,7 +18,7 @@ import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
 import { followOnsOf, systemPrompt, toolsOf, type UnclearTurn } from './prompt';
 import { SentenceBuffer } from './sentences';
-import { businessZone, openAt, type ConverseState, type JourneyState } from './state';
+import { businessZone, openAt, type ConverseState, type JourneyState, type UnheardReadBack } from './state';
 import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
 
 /**
@@ -319,6 +319,11 @@ class Speaker {
   private kept: string[] | null = null;
   /** Text came while held: the first text the caller could hear is at the release. */
   private heldText = false;
+  /**
+   * Pieces said while a held read-back may follow in the round (deferred): kept, not yet sent, so a reply whose read-back
+   * is held goes held from its first word and nothing that can be talked over plays ahead of it; null when not deferred.
+   */
+  private deferred: { piece: string; final: boolean }[] | null = null;
 
   constructor(private readonly t: Turn) {}
 
@@ -329,13 +334,35 @@ class Speaker {
    */
   private say(text: string, final: boolean, held = false): string | null {
     if (cut(this.t)) return null;
-    clearBridge(this.t);
     const spoken = speakableOn(this.t.st, text);
     // A piece that was only a list's marker or line breaks: as it came, as Out never takes an empty piece.
     const piece = spoken.trim() === '' ? text : spoken;
+    // Deferred: kept until the round's calls say whether its read-back is held (the bridge's wait goes on meanwhile).
+    if (this.deferred !== null) {
+      this.deferred.push({ piece, final });
+      return piece;
+    }
+    clearBridge(this.t);
     if (held) this.t.out.say(piece, final, true);
     else this.t.out.say(piece, final);
     return piece;
+  }
+
+  /** Pieces said from here on are kept, not sent, until flush. */
+  defer(): void {
+    this.deferred ??= [];
+  }
+
+  /** The pieces kept are sent, held or not, in order, and the deferral ends; where the turn was stopped they are never sent. */
+  flush(held: boolean): void {
+    const kept = this.deferred;
+    this.deferred = null;
+    if (kept === null || kept.length === 0 || cut(this.t)) return;
+    clearBridge(this.t);
+    for (const k of kept) {
+      if (held) this.t.out.say(k.piece, k.final, true);
+      else this.t.out.say(k.piece, k.final);
+    }
   }
 
   delta(d: string): void {
@@ -436,7 +463,7 @@ async function record(t: Turn, d: AuditDraft): Promise<void> {
 const describe = (tool: string, args: Record<string, string>): string => `${tool}(${Object.entries(args).map(([k, v]) => `${k}=${v}`).join(', ')})`;
 
 /** The gate's decision on a call, written to the audit with the params as the action records them. */
-async function gate(t: Turn, spec: ActionSpec | undefined, call: ToolCall, confirmedHash: string | null): Promise<GateDecision> {
+async function gate(t: Turn, spec: ActionSpec | undefined, call: ToolCall, confirmedHash: string | null, more?: (d: GateDecision) => Record<string, true>): Promise<GateDecision> {
   const facts: GateFacts = { attempts: 0, confirmedHash, todayIso: t.todayIso, ...(t.st.caller.number ? { callerNumber: t.st.caller.number } : {}) };
   const d = t.deps.policy.evaluate(call, CALLER, facts, NO_LOOKUPS);
   const scrub = scrubOf(spec, call);
@@ -448,6 +475,8 @@ async function gate(t: Turn, spec: ActionSpec | undefined, call: ToolCall, confi
       verdict: d.verdict,
       reason: d.reason ?? null,
       rules: d.rules.map((r) => scrub(`${r.id} ${r.pass ? 'pass' : 'fail'}: ${r.compared}`)),
+      // How the read-back the decision holds for is to be said (held, brief), where the call gives it.
+      ...(more?.(d) ?? {}),
     },
   });
   return d;
@@ -624,18 +653,18 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       params = checked.params;
     }
     const call: ToolCall = { tool: c.name, params };
-    const d = await gate(t, spec, call, confirmedHashFor(call, t.st.pending));
+    // A change called again with the same values after the caller spoke over its read-back before hearing it is read back
+    // held (agent.yaml's readBacks.holdAfterCut): whole, not interruptible, its brief version where the action has one.
+    const held = spec?.kind === 'change' && holdsNow(t, c.name, params);
+    const brief = held && spec.readBackBrief !== undefined;
+    const d = await gate(t, spec, call, confirmedHashFor(call, t.st.pending), (dd) => (held && awaitsConfirmation(dd) ? { held: true, ...(brief ? { brief: true } : {}) } : {}));
     if (spec !== undefined && spec.kind === 'change' && awaitsConfirmation(d)) {
       // As the channel says it (speakable on a call): the text waiting for the yes is the text the caller hears, so
       // what the carrier reports played is compared with it as it was sent (readBackHeard). A correction of a read-back
       // the caller heard and did not confirm is read back by its changed values alone, where the business words it
       // (readBackChange); the yes to it confirms every value, its hash over all of them, as on the full read-back.
-      // A change called again with the same values after the caller spoke over its read-back before hearing it is read back
-      // held (agent.yaml's readBacks.holdAfterCut): whole, not interruptible, its brief version where the action has one.
-      const held = holdsNow(t, c.name, params);
       const kept = t.st.heardReadBack;
       const changes = !held && kept?.action === c.name ? changedParams(b, c.name, params, kept.params, 'en') : null;
-      const brief = held && spec.readBackBrief !== undefined;
       const words = brief
         ? readBackBriefText(b, c.name, params, 'en', t.st.seen, t.st.caller.number)
         : changes === null ? readBackText(b, c.name, params, 'en', t.st.seen, t.st.caller.number) : shortReadBackText(b, c.name, params, changes, 'en', t.st.seen, t.st.caller.number);
@@ -988,19 +1017,26 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
   let route = routing;
   for (let i = 0; i < MAX_ROUNDS; i++) {
     if (cut(t)) return interrupted(t, sp);
+    // Where a change's read-back may be said held this round, its words wait for its calls: a held reply is held whole.
+    if (holdDue(t)) sp.defer();
     const emptyOk = first && (silent || carried !== undefined);
     const r = route !== undefined ? await routedRound(t, sp, emptyOk, route) : await round(t, sp, emptyOk);
     route = undefined;
     first = false;
     // Stopped from outside while the model was asked: whatever the round came to (a client's abort reads as a timeout), it is no failure.
-    if (cut(t)) return interrupted(t, sp);
+    if (cut(t)) {
+      sp.flush(false);
+      return interrupted(t, sp);
+    }
     if (r === UNCLEAR_END) {
+      sp.flush(false);
       await endUnclear(t, sp);
       return { ok: true };
     }
     if (r.ok && r.text.trim() === '' && r.calls.length === 0) {
       // Only a first answer may be empty (streamOnce's emptyOk).
       sp.abandon();
+      sp.flush(false);
       if (silent) return { ok: true, declined: true };
       // The message's carried note answered with nothing: out with it, and asked again (no round spent).
       dropNote(t.st, carried!);
@@ -1010,6 +1046,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     }
     if (!r.ok) {
       const said = sp.abandon();
+      sp.flush(false);
       if (said !== '') {
         add(t.st, 'assistant', [{ type: 'text', text: said }]);
         t.own.push(said);
@@ -1032,19 +1069,26 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       t.confirmedRan = false;
       t.own.push(said);
     }
+    // The words go out now unless a call of the round may be read back held: a call of a change whose read-back was not heard.
+    if (final || !r.calls.some((c) => unheardOf(t, c.name) !== undefined)) sp.flush(false);
     if (final) return { ok: true };
     const { results, readBack } = await runCalls(t, r.calls);
     add(t.st, 'user', results);
     if (cut(t)) {
+      sp.flush(false);
       // A read-back the caller never heard waits for no answer: nothing is done, and the model may call it again.
       if (readBack !== null) unheardReadBack(t);
       return interrupted(t, sp);
     }
+    const heldNow = readBack !== null && t.st.pending?.held === true;
+    sp.flush(heldNow);
     if (readBack !== null) {
-      const held = t.st.pending?.held === true;
+      const held = heldNow;
       sp.line(readBack, true, held);
       // Said held: no other read-back of its action is held until the change is let go (once per change).
-      if (held && t.st.unheardReadBack !== undefined) t.st.unheardReadBack = { ...t.st.unheardReadBack, held: true };
+      const action = t.st.pending!.action;
+      const u = unheardOf(t, action);
+      if (held && u !== undefined) t.st.unheardReadBacks = { ...t.st.unheardReadBacks, [action]: { ...u, held: true } };
       t.readBackSaid = true;
       return { ok: true };
     }
@@ -1212,24 +1256,42 @@ function keepHeard(t: Turn, p: PendingReadBack): void {
  * its action stays said (once per change), whatever values the later one had.
  */
 function keepUnheard(t: Turn, p: PendingReadBack): void {
-  if (t.st.channel !== 'voice' || !t.deps.business.readBacks.holdAfterCut) return;
-  const before = t.st.unheardReadBack;
-  const held = p.held === true || (before?.action === p.action && before.held === true);
-  t.st.unheardReadBack = { action: p.action, params: { ...p.params }, ...(held ? { held: true as const } : {}) };
+  if (!holding(t)) return;
+  const before = t.st.unheardReadBacks?.[p.action];
+  const held = p.held === true || before?.held === true;
+  t.st.unheardReadBacks = { ...t.st.unheardReadBacks, [p.action]: { params: { ...p.params }, ...(held ? { held: true as const } : {}) } };
 }
+
+/** Whether read-backs are held on this call: a call, with agent.yaml's readBacks.holdAfterCut on. */
+const holding = (t: Turn): boolean => t.st.channel === 'voice' && t.deps.business.readBacks.holdAfterCut;
+
+/** The read-back not heard kept for `action`, where there is one. */
+const unheardOf = (t: Turn, action: string): UnheardReadBack | undefined => (t.st.unheardReadBacks !== undefined && Object.hasOwn(t.st.unheardReadBacks, action) ? t.st.unheardReadBacks[action] : undefined);
 
 /** Whether a read-back of `action` with `params` is said held now: a read-back of it with these very values was not heard, and no held one has been said for it. */
 function holdsNow(t: Turn, action: string, params: Readonly<Record<string, string>>): boolean {
-  const u = t.st.unheardReadBack;
-  if (t.st.channel !== 'voice' || !t.deps.business.readBacks.holdAfterCut || u === undefined || u.action !== action || u.held === true) return false;
+  const u = unheardOf(t, action);
+  if (!holding(t) || u === undefined || u.held === true) return false;
   const keys = new Set([...Object.keys(u.params), ...Object.keys(params)]);
   return [...keys].every((k) => (u.params[k] ?? '') === (params[k] ?? ''));
+}
+
+/** Whether a round may read a change back held: some change's read-back was not heard and none has been held for it yet. */
+const holdDue = (t: Turn): boolean => holding(t) && t.st.pending === null && Object.values(t.st.unheardReadBacks ?? {}).some((u) => u.held !== true);
+
+/** The not-heard read-back of `action` let go, its entry taken out (and the record with its last entry). */
+function letGoUnheard(t: Turn, action: string): void {
+  const all = t.st.unheardReadBacks;
+  if (all === undefined || !Object.hasOwn(all, action)) return;
+  const { [action]: _gone, ...rest } = all;
+  if (Object.keys(rest).length === 0) delete t.st.unheardReadBacks;
+  else t.st.unheardReadBacks = rest;
 }
 
 /** The read-backs kept for `action` let go: the one heard (a correction's base) and the one not heard (a hold's). */
 function letGoReadBacks(t: Turn, action: string): void {
   if (t.st.heardReadBack?.action === action) delete t.st.heardReadBack;
-  if (t.st.unheardReadBack?.action === action) delete t.st.unheardReadBack;
+  letGoUnheard(t, action);
 }
 
 /** How a read-back was said (short, held, brief), as the trace keeps it beside its text. */
@@ -1278,8 +1340,7 @@ function leaveOffJourney(t: Turn): void {
   // The read-back kept for a correction goes with it: its action can no longer be called again to be read back.
   const kept = t.st.heardReadBack;
   if (kept !== undefined && !offered.includes(kept.action)) delete t.st.heardReadBack;
-  const unheard = t.st.unheardReadBack;
-  if (unheard !== undefined && !offered.includes(unheard.action)) delete t.st.unheardReadBack;
+  for (const action of Object.keys(t.st.unheardReadBacks ?? {})) if (!offered.includes(action)) letGoUnheard(t, action);
   const u = t.st.unsent;
   if (u === undefined || offered.includes(u.action)) return;
   delete t.st.unsent;

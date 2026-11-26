@@ -110,13 +110,24 @@ const isHeardReadBack = (h: unknown): boolean => {
   return typeof v.action === 'string' && v.action !== '' && typeof params === 'object' && params !== null && !Array.isArray(params) && Object.values(params).every((x) => typeof x === 'string');
 };
 
-/** An unheard read-back in its shape (UnheardReadBack): a heard read-back's, and `held` absent or true. */
-const isUnheardReadBack = (h: unknown): boolean => isHeardReadBack(h) && (!Object.hasOwn(h as object, 'held') || (h as { held?: unknown }).held === true);
+/** Values by param, each text. */
+const isParams = (p: unknown): boolean => typeof p === 'object' && p !== null && !Array.isArray(p) && Object.values(p).every((x) => typeof x === 'string');
+
+/** An unheard read-back in its shape (UnheardReadBack): its values, and `held` absent or true. */
+const isUnheardReadBack = (h: unknown): boolean => {
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) return false;
+  const v = h as Record<string, unknown>;
+  return isParams(v.params) && (!Object.hasOwn(v, 'held') || v.held === true);
+};
+
+/** The unheard read-backs by action in their shape: each key an action's name, each value an UnheardReadBack. */
+const isUnheardReadBacks = (u: unknown): boolean =>
+  typeof u === 'object' && u !== null && !Array.isArray(u) && Object.entries(u).every(([k, v]) => k !== '' && isUnheardReadBack(v));
 
 /**
  * A saved converse state as it was written (newConverseState's shape), or null. A state saved before a field
  * was kept loads as it is: a carried note absent is none (and one that is not text is dropped); a journey absent or not in its shape, none;
- * an unsent change absent or not in its shape, none; a heard read-back absent or not in its shape, none; an unheard read-back absent or not in its shape, none.
+ * an unsent change absent or not in its shape, none; a heard read-back absent or not in its shape, none; the unheard read-backs absent or not in their shape, none (a single one saved alone, its action's entry).
  */
 export function stateOf(session: unknown): ConverseState | null {
   const s = session as Partial<ConverseState> | null;
@@ -129,8 +140,17 @@ export function stateOf(session: unknown): ConverseState | null {
   if (Object.hasOwn(s, 'unsent') && !(typeof s.unsent === 'object' && s.unsent !== null && typeof s.unsent.action === 'string' && s.unsent.action !== '')) delete s.unsent;
   // The read-back heard and not confirmed, a correction's base: one not an action's name with its values as text loads as none.
   if (Object.hasOwn(s, 'heardReadBack') && !isHeardReadBack(s.heardReadBack)) delete s.heardReadBack;
-  // The read-back the caller did not hear, a hold's base: one not in its shape loads as none (the next read-back is not held).
-  if (Object.hasOwn(s, 'unheardReadBack') && !isUnheardReadBack(s.unheardReadBack)) delete s.unheardReadBack;
+  // The read-backs the caller did not hear, by action, a hold's base: not in their shape, none (the next read-back is not
+  // held). A state saved while one alone was kept (unheardReadBack: its action with it) loads it as that action's entry.
+  const single = (s as { unheardReadBack?: unknown }).unheardReadBack;
+  if (Object.hasOwn(s, 'unheardReadBack')) {
+    delete (s as { unheardReadBack?: unknown }).unheardReadBack;
+    const v = single as { action?: unknown; params?: unknown; held?: unknown } | null;
+    if (s.unheardReadBacks === undefined && typeof v === 'object' && v !== null && typeof v.action === 'string' && v.action !== '' && isUnheardReadBack({ params: v.params, ...(Object.hasOwn(v, 'held') ? { held: v.held } : {}) })) {
+      s.unheardReadBacks = { [v.action]: { params: v.params as Record<string, string>, ...(v.held === true ? { held: true as const } : {}) } };
+    }
+  }
+  if (Object.hasOwn(s, 'unheardReadBacks') && !isUnheardReadBacks(s.unheardReadBacks)) delete s.unheardReadBacks;
   // Where the call is among the journeys: one not in its shape loads as none (the turn starts it again, initialJourney).
   if (Object.hasOwn(s, 'journey') && !isJourneyState(s.journey)) delete s.journey;
   // The unclear turns in a row: a count that is not a whole number of turns is none.
