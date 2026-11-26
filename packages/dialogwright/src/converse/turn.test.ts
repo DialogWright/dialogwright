@@ -281,9 +281,9 @@ describe('converseTurn: a line\'s words in the web chat', () => {
     await h.run(chat(), { kind: 'start' });
     expect(h.said).toEqual([['Example Menders, how can I help?', true]]);
   });
-  it('tells the model that a goodbye alone does not end the chat: it ends it with end_call', () => {
+  it('tells the model that a goodbye alone does not end the chat, and that its words written with end_call are its parting words to the caller, never of how the line works (a simulated call, 2026-11-26: "ending the call with a goodbye")', () => {
     const end = toolsOf(business()).find((t) => t.name === 'end_call')!;
-    expect(end.description).toContain('Write your goodbye in the same reply as this call: a goodbye alone does not end it');
+    expect(end.description).toBe('End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", a bare "no" when just asked whether there is anything else, or a goodbye): never wait for them to say goodbye. What you write in the same reply as this call is said to the caller as your parting words, as you would say them to them: like everything you write, it speaks as the business, never of how the line works, this call included. A goodbye written without this call does not end it, and leaves the caller in a conversation that is still open. If you write nothing with it, the business\'s closing line is said.');
   });
   it('ends a chat on the model\'s own goodbye, with no closing line after it', async () => {
     const h = harness([[text('Thanks for messaging, take care!'), call('c1', 'end_call', {}), done('tool')]], { edit: chatWords });
