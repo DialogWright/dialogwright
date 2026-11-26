@@ -80,6 +80,8 @@ describe('the pages of an agent app', () => {
     expect(card).toContain('- A clear no that says nothing of what should be different (read by the decision model) is answered by `lines.notConfirmed`, word for word ("What should we change?", and in the web chat "What should we change in the chat?"), and the agent model is told the line asked; it answers what the caller says next.');
     expect(conversePolicyCardText(app)).not.toContain('lines.notConfirmed');
     expect(conversePolicyCardText(app)).toContain('The first `end_call` after a read-back the caller did not confirm (turned down, spoken over or not read) is refused and audited, and the call goes on: a goodbye written with it has been said');
+    expect(conversePolicyCardText(app)).toContain('Any later `end_call` in that turn is refused too, and the caller\'s next turn decides');
+    expect(conversePolicyCardText(app)).toContain('No change is kept where the decision model reads that the caller withdrew it (in their answer to the read-back, or on a later turn), or once the journey no longer offers its action.');
   });
 
   it('the card: only the audit records an action\'s result, and only a gate refusal is scrubbed before the model is told it', () => {
@@ -92,7 +94,8 @@ describe('the pages of an agent app', () => {
 
   it('the card: what the decision model is sent: each read-back with the caller\'s words in answer, and the business\'s day', () => {
     const text = conversePolicyCardText(app);
-    expect(text).toContain('- The decision model (not the agent model) is sent each read-back as it was said, the caller\'s own words in answer to it and the business\'s day (today\'s date, in words), to read a yes or a no, and whether the caller says what should be different.');
+    expect(text).toContain('- The decision model (not the agent model) is sent each read-back as it was said, the caller\'s own words in answer to it and the business\'s day (today\'s date, in words), to read a yes or a no, whether the caller says what should be different, and whether they withdraw it.');
+    expect(text).toContain('While a change the caller did not confirm is kept, each later caller turn\'s words, the line\'s last reply and what the change is for (its action\'s `about`, never its values) are also sent, to read whether the caller no longer wants it.');
     expect(text).toContain('it is also sent the business information, the business\'s day, the call\'s actions so far');
     expect(text).toContain('any words of the caller\'s that imitate the note\'s mark are rewritten before the agent model is sent them');
   });

@@ -52,9 +52,17 @@ export interface ConverseTraceRecord {
   model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; rateLimited?: number; rateLimitedMs?: number; requests?: ModelRequestTime[] };
   /**
    * The read-back said, or answered, this turn: the decision model's reading of the answer (its yes, its no, and where
-   * it was read, `change`: whether the caller said what should be different) and whether it confirmed.
+   * each was read, `change`: whether the caller said what should be different, and `withdraws`: whether they withdrew
+   * it) and whether it confirmed.
    */
-  readBack?: { text: string; yes?: number; no?: number; change?: number; confirmed?: boolean };
+  readBack?: { text: string; yes?: number; no?: number; change?: number; withdraws?: number; confirmed?: boolean };
+  /**
+   * A change the caller did not confirm, kept unsent (ConverseState.unsent), as the turn found it or let it go: its action,
+   * the decision model's reading of whether the caller no longer wants it (`noLongerWants`: null where it was asked and
+   * failed or was late; absent where it was not asked), and why it was let go this turn (`cleared`: the caller withdrew
+   * it, or the journey moved off the journey that offers it). Absent: none was kept, or it was neither read nor let go.
+   */
+  unsent?: { action: string; noLongerWants?: number | null; cleared?: 'withdrawn' | 'journey' };
   /**
    * The check after speaking (docs/designs/2026-11-11-claims-check.md), where the turn's reply was read: the
    * decision model's readings (null each where the check was unread: the model failed or was late), the

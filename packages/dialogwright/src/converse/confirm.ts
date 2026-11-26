@@ -124,12 +124,26 @@ export function isDeclinedWithoutChange(r: ReadBackReading | null): boolean {
   return r !== null && !isConfirmed(r) && r.no >= DECLINED_AT && r.change !== undefined && r.change < CHANGE_BELOW;
 }
 
-/** The decision model's reading of the caller's answer to a read-back: a yes, a no, and (where it was read) whether they say what should be different. */
+/**
+ * At or above this, the caller withdraws what was read back (they want none of it): the bar a yes is held to
+ * (CONFIRM_YES_AT), since a withdrawal lets go of the guard that keeps a change from being left unsent unasked,
+ * and that needs a reading as clear as running one does.
+ */
+export const WITHDRAWN_AT = CONFIRM_YES_AT;
+
+/** Whether the reading is a clear withdrawal: not a yes, and `withdraws` read at WITHDRAWN_AT or above. No reading, or none of it, is not. */
+export function isWithdrawn(r: ReadBackReading | null): boolean {
+  return r !== null && !isConfirmed(r) && r.withdraws !== undefined && r.withdraws >= WITHDRAWN_AT;
+}
+
+/** The decision model's reading of the caller's answer to a read-back: a yes, a no, and (where each was read) whether they say what should be different and whether they withdraw it. */
 export interface ReadBackReading {
   yes: number;
   no: number;
   /** Whether the caller says what should be different (a change, a correction or a new detail). Absent: not read. */
   change?: number;
+  /** Whether the caller withdraws what was read back, wanting none of it. Absent: not read. */
+  withdraws?: number;
 }
 
 /**
@@ -137,7 +151,8 @@ export interface ReadBackReading {
  * confirmsNo wording), copied, not imported, so the converse runtime stays off the scripted engine; the
  * state they read is the read-back and what the caller said. And the converse runtime's own, asked in the
  * same request: whether the caller says what should be different, so a bare no can be met with the
- * business's line for it (lines.notConfirmed) and a correction left to the model.
+ * business's line for it (lines.notConfirmed) and a correction left to the model; and whether they withdraw
+ * it, so a change they no longer want is neither asked about by that line nor kept unsent.
  */
 const YES_NO: QuestionMap = {
   confirmsYes: {
@@ -158,6 +173,30 @@ const YES_NO: QuestionMap = {
     criteria: {
       true: 'The caller gives a change, a correction or a new detail: a value that replaces or adds to what was read back, or what they want instead',
       false: 'The caller only agrees or declines, asks something, or says nothing of what should be different',
+    },
+  },
+  withdraws: {
+    type: 'noul',
+    instructions: 'Read said and readBack. Does the caller withdraw what was read back, wanting none of it at all, as opposed to wanting something in it changed?',
+    criteria: {
+      true: 'The caller does not want it at all: they cancel it, say never mind or forget it, or say they no longer need it',
+      false: 'The caller agrees, wants something in it changed or added, asks something, or says nothing of whether they still want it',
+    },
+  },
+};
+
+/**
+ * The question asked on a caller turn while a change the caller did not confirm is kept unsent (ConverseState.unsent):
+ * whether they say they no longer want it. Its state is what the caller said, the line's last words before them, and
+ * what the change is for in the business's own words (`unsentRequest`: its action's `about`, never its values).
+ */
+export const NO_LONGER_WANTS: QuestionMap = {
+  noLongerWants: {
+    type: 'noul',
+    instructions: 'Read said, with lastReply for context, and unsentRequest. Does the caller say they no longer want unsentRequest at all?',
+    criteria: {
+      true: 'The caller withdraws it: they cancel it, say never mind or forget it, or say they no longer need it',
+      false: 'The caller wants it, wants something in it changed, talks of something else, or says nothing of whether they still want it',
     },
   },
 };
@@ -205,8 +244,9 @@ export function probabilityOf(a: Answer | undefined): number | null {
 
 /**
  * The decision model's reading of what the caller said to the read-back, in one request: how much it
- * reads as a yes and as a no, and whether it says what should be different (`change`, absent where that
- * answer is missing or no probability: the yes and the no stand without it). `today`, the business's day in words (dayInWords), is in its state where
+ * reads as a yes and as a no, whether it says what should be different (`change`) and whether it withdraws
+ * what was read back (`withdraws`), each absent where its answer is missing or no probability (the yes and
+ * the no stand without them). `today`, the business's day in words (dayInWords), is in its state where
  * given, so an answer that names a day ("tomorrow", "Thursday") is read against the day the read-back
  * says rather than as a value that replaces it. Null when the model errs, gives no answer to either, or
  * has not answered within `timeoutMs` (the request is then aborted). It never throws.
@@ -217,5 +257,6 @@ export async function readYesNo(jev: JevClient, readBack: string, said: string, 
   const yes = probabilityOf(answers.confirmsYes);
   const no = probabilityOf(answers.confirmsNo);
   const change = probabilityOf(answers.saysChange);
-  return yes === null || no === null ? null : { yes, no, ...(change !== null ? { change } : {}) };
+  const withdraws = probabilityOf(answers.withdraws);
+  return yes === null || no === null ? null : { yes, no, ...(change !== null ? { change } : {}), ...(withdraws !== null ? { withdraws } : {}) };
 }

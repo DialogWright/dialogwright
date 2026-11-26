@@ -7,7 +7,7 @@ import type { JevClient, JevRequest, JevResponse } from '../jev/types';
 import type { Seen } from './actions';
 import { agentBusinessProblems } from './business/load';
 import type { AgentBusiness } from './business/schema';
-import { CHANGE_BELOW, CONFIRM_NO_BELOW, CONFIRM_YES_AT, DECLINED_AT, isConfirmed, isDeclinedWithoutChange, readBackText, readYesNo } from './confirm';
+import { CHANGE_BELOW, CONFIRM_NO_BELOW, CONFIRM_YES_AT, DECLINED_AT, isConfirmed, isDeclinedWithoutChange, isWithdrawn, readBackText, readYesNo, WITHDRAWN_AT } from './confirm';
 
 /** The read-back said before a change, and the decision model's reading of the caller's answer to it. */
 
@@ -102,6 +102,17 @@ const response = (yes: number, no: number): JevResponse => ({
   source: 'jev',
 });
 
+describe('isWithdrawn', () => {
+  it('is a withdrawal read as clearly as a yes must be, never with a yes', () => {
+    expect(WITHDRAWN_AT).toBe(0.7);
+    expect(isWithdrawn({ yes: 0.05, no: 0.95, withdraws: 0.7 })).toBe(true);
+    expect(isWithdrawn({ yes: 0.05, no: 0.95, withdraws: 0.69 })).toBe(false);
+    expect(isWithdrawn({ yes: 0.9, no: 0.1, withdraws: 0.9 })).toBe(false);
+    expect(isWithdrawn({ yes: 0.05, no: 0.95 })).toBe(false);
+    expect(isWithdrawn(null)).toBe(false);
+  });
+});
+
 describe('isDeclinedWithoutChange', () => {
   it('is a clear no that says nothing of what should be different', () => {
     expect(DECLINED_AT).toBe(0.7);
@@ -128,7 +139,7 @@ describe('readYesNo', () => {
     expect(jev.asked).toHaveLength(1);
     const req = jev.asked[0]!;
     expect(req.state).toEqual({ readBack, said: 'yes, that works' });
-    expect(Object.keys(req.questions)).toEqual(['confirmsYes', 'confirmsNo', 'saysChange']);
+    expect(Object.keys(req.questions)).toEqual(['confirmsYes', 'confirmsNo', 'saysChange', 'withdraws']);
     expect(req.questions.confirmsYes).toEqual({ type: 'noul', instructions: 'Read said and readBack. Does the caller answer yes to the confirmation question?' });
     expect(req.questions.confirmsNo).toEqual({
       type: 'noul',
@@ -147,6 +158,19 @@ describe('readYesNo', () => {
       criteria: {
         true: 'The caller gives a change, a correction or a new detail: a value that replaces or adds to what was read back, or what they want instead',
         false: 'The caller only agrees or declines, asks something, or says nothing of what should be different',
+      },
+    });
+  });
+
+  it('asks in the same request whether the caller withdraws what was read back, and gives that reading where it was read', async () => {
+    const jev = fakeJev(async () => ({ ...response(0.02, 0.97), answers: { ...response(0.02, 0.97).answers, withdraws: { type: 'noul', noul: 0.9 } } }));
+    expect(await readYesNo(jev, readBack, 'no, cancel it', 2000)).toEqual({ yes: 0.02, no: 0.97, withdraws: 0.9 });
+    expect(jev.asked[0]!.questions.withdraws).toEqual({
+      type: 'noul',
+      instructions: 'Read said and readBack. Does the caller withdraw what was read back, wanting none of it at all, as opposed to wanting something in it changed?',
+      criteria: {
+        true: 'The caller does not want it at all: they cancel it, say never mind or forget it, or say they no longer need it',
+        false: 'The caller agrees, wants something in it changed or added, asks something, or says nothing of whether they still want it',
       },
     });
   });

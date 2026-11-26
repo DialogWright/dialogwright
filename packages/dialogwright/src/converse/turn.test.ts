@@ -759,6 +759,37 @@ function readingsJev(readings: { yes: number; no: number; change?: number }[]): 
   };
 }
 
+/**
+ * A decision model that answers by question: a read-back's answer with the next of `readings` (its `withdraws` where
+ * given), and whether the caller no longer wants a change kept unsent (`noLongerWants`) with the next of `noLonger`
+ * ('fail' throws), keeping what it was asked.
+ */
+function byQuestionJev(readings: { yes: number; no: number; change?: number; withdraws?: number }[], noLonger: (number | 'fail')[] = []): Harness['jev'] {
+  const asked: JevRequest[] = [];
+  let nextReading = 0;
+  let nextNoLonger = 0;
+  return {
+    asked,
+    async ask(req) {
+      asked.push(req);
+      const answers: AnswerMap = {};
+      if (Object.hasOwn(req.questions, 'confirmsYes')) {
+        const r = readings[nextReading++] ?? { yes: 0.5, no: 0.5 };
+        answers.confirmsYes = { type: 'noul', noul: r.yes };
+        answers.confirmsNo = { type: 'noul', noul: r.no };
+        if (r.change !== undefined) answers.saysChange = { type: 'noul', noul: r.change };
+        if (r.withdraws !== undefined) answers.withdraws = { type: 'noul', noul: r.withdraws };
+      }
+      if (Object.hasOwn(req.questions, 'noLongerWants')) {
+        const n = noLonger[nextNoLonger++];
+        if (n === 'fail') throw new Error('the decision model is down');
+        if (n !== undefined) answers.noLongerWants = { type: 'noul', noul: n };
+      }
+      return { answers, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
+    },
+  };
+}
+
 describe('converseTurn: a read-back turned down with nothing to change (lines.notConfirmed)', () => {
   it('says the line word for word where the caller says no and nothing of what should be different: the model is not asked, the line is the line\'s own in the conversation, and the model is told the line asked', async () => {
     const h = harness(lookupThenBook, { edit: withNotConfirmed, reading: { yes: 0.05, no: 0.95, change: 0.05 } });
@@ -772,7 +803,7 @@ describe('converseTurn: a read-back turned down with nothing to change (lines.no
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
     // One request to the decision model: the yes, the no and the change together.
     expect(confirmAsks(h)).toHaveLength(1);
-    expect(Object.keys(confirmAsks(h)[0]!.questions)).toEqual(['confirmsYes', 'confirmsNo', 'saysChange']);
+    expect(Object.keys(confirmAsks(h)[0]!.questions)).toEqual(['confirmsYes', 'confirmsNo', 'saysChange', 'withdraws']);
     expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: NOT_CONFIRMED }] });
     const result = s.messages.at(-2)!;
     expect(result.role).toBe('user');
@@ -826,6 +857,92 @@ describe('converseTurn: a read-back turned down with nothing to change (lines.no
 
 describe('converseTurn: a change turned down and never sent', () => {
   const ASKED = 'Before you go, would you still like that visit booked?';
+
+  it('a read-back withdrawn ("no, cancel it") hears no notConfirmed line and keeps nothing unsent: the model is told, and the first end_call ends the call', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [text('Okay, I won\'t book it. Anything else?'), done()],
+      [text('Thanks for calling, goodbye!'), call('c3', 'end_call', {}), done('tool')],
+    ], { edit: withNotConfirmed, jev: byQuestionJev([{ yes: 0.02, no: 0.97, change: 0.05, withdraws: 0.95 }]) });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, cancel it' });
+    expect(h.said.map(([t]) => t)).not.toContain(NOT_CONFIRMED);
+    expect(h.said.at(-1)).toEqual(['Anything else?', true]);
+    expect(s.unsent).toBeUndefined();
+    expect(JSON.stringify(h.model.requests.at(-1)!.messages.at(-1))).toContain('The caller withdrew it: they do not want it at all, so do not ask them about it again unless they bring it up.');
+    expect(h.traces.at(-1)!.readBack).toMatchObject({ withdraws: 0.95, confirmed: false });
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.ended).toEqual(['closing']);
+    expect(h.rows.filter((r) => r.type === 'converse_refused')).toEqual([]);
+    expect(h.said.at(-1)).toEqual(['Thanks for calling, goodbye!', true]);
+  });
+
+  it('the line, then "cancel it", then "anything else?", "no": the decision model reads the withdrawal, and the first end_call ends the call', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [text('Okay, I won\'t book it. Anything else?'), done()],
+      [text('Thanks for calling, goodbye!'), call('c3', 'end_call', {}), done('tool')],
+    ], { edit: withNotConfirmed, jev: byQuestionJev([{ yes: 0.02, no: 0.97, change: 0.05, withdraws: 0.1 }], [0.95]) });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.said.at(-1)).toEqual([NOT_CONFIRMED, true]);
+    expect(s.unsent).toEqual({ action: 'book' });
+    s = await h.run(s, { kind: 'text', text: 'cancel it' });
+    // Its own request (no journeys here), with what the change was for in the business's words, never the read-back's values.
+    const ask = h.jev.asked.find((r) => Object.hasOwn(r.questions, 'noLongerWants'))!;
+    expect(ask.state).toEqual({ said: 'cancel it', lastReply: NOT_CONFIRMED, unsentRequest: h.deps.business.actions.book!.about });
+    expect(ask.timeoutMs).toBe(1000);
+    expect(s.unsent).toBeUndefined();
+    expect(h.traces.at(-1)!.unsent).toEqual({ action: 'book', noLongerWants: 0.95, cleared: 'withdrawn' });
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.ended).toEqual(['closing']);
+    expect(h.rows.filter((r) => r.type === 'converse_refused')).toEqual([]);
+    // Nothing is kept, so the decision model is not asked again.
+    expect(h.jev.asked.filter((r) => Object.hasOwn(r.questions, 'noLongerWants'))).toHaveLength(1);
+  });
+
+  it('a reading that is not a clear withdrawal, or a decision model that fails, changes nothing: the end_call is refused', async () => {
+    for (const noLonger of [0.4, 'fail'] as const) {
+      const h = harness([
+        ...lookupThenBook,
+        [text('Anything else?'), done()],
+        [call('c3', 'end_call', {}), done('tool')],
+        [text(ASKED), done()],
+      ], { jev: byQuestionJev([{ yes: 0.05, no: 0.9 }], [noLonger, noLonger]) });
+      let s = await upToReadBack(h);
+      s = await h.run(s, { kind: 'text', text: 'not now' });
+      s = await h.run(s, { kind: 'text', text: 'no' });
+      expect(h.ended).toEqual([]);
+      expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail.reason)).toEqual(['unsent-change']);
+      expect(h.traces.at(-1)!.unsent).toEqual({ action: 'book', noLongerWants: noLonger === 'fail' ? null : 0.4 });
+    }
+  });
+
+  it('after the refusal, a further end_call in the same turn is refused too, and the closing line is never said after the goodbye: the caller\'s next turn decides', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [text('Anything else?'), done()],
+      [text('Thanks for calling, goodbye!'), call('c3', 'end_call', {}), done('tool')],
+      [call('c4', 'end_call', {}), done('tool')],
+      [text(ASKED), done()],
+      [call('c5', 'end_call', {}), done('tool')],
+    ], { reading: { yes: 0.05, no: 0.9 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'not now' });
+    const before = h.said.length;
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.ended).toEqual([]);
+    expect(h.said.slice(before)).toEqual([['Thanks for calling, goodbye!', false], [ASKED, true]]);
+    expect(h.said.map(([t]) => t)).not.toContain('Thanks for calling. Goodbye.');
+    const AGAIN = 'Not run: the caller has not yet answered whether they still want "book": ask them if you have not, wait for their answer, and end the call after it if they do not want it.';
+    expect(h.traces.at(-1)!.tools.map((x) => [x.name, x.outcome, x.reason?.slice(0, 40)])).toEqual([['end_call', 'refused', 'Not run: you have said goodbye, but "boo'], ['end_call', 'refused', AGAIN.slice(0, 40)]]);
+    expect(h.traces.at(-1)!.tools[1]!.reason).toBe(AGAIN);
+    expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'end_call', reason: 'unsent-change', unsent: 'book' }, { action: 'end_call', reason: 'unsent-asked', unsent: 'book' }]);
+    expect(s.refusals).toEqual({});
+    // The caller's next turn: nothing is kept, and the end_call ends the call.
+    s = await h.run(s, { kind: 'text', text: 'no, thanks' });
+    expect(h.ended).toEqual(['closing']);
+  });
 
   it('refuses the first end_call after a read-back the caller turned down: its goodbye is said as it streamed, the call does not end, the model is told the change was never sent and asks in its next round, and a second end_call ends the call', async () => {
     const h = harness([
@@ -1889,6 +2006,50 @@ describe('journeys', () => {
     expect(Object.keys(routeAsks(h)[1]!.questions)).toEqual(['task', 'again']);
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', again: 0.1 });
     expect(h.traces.at(-1)!.journeyEnded).toBeUndefined();
+  });
+
+  it('a change kept unsent is let go when the journey moves off the journey that offers it: a switch, then end_call ends the call', async () => {
+    const h = harness([DROPPED, ...lookupThenBook, DROPPED, [text('I can leave a note for a call back. Anything else?'), done()], [call('c9', 'end_call', {}), done('tool')]], {
+      edit: withJourneys,
+      jev: routeJev([{ task: VISIT }, { task: NOTE, drops: 0.2 }, { task: NOTE, fits: 0.9 }], { yes: 0.05, no: 0.9 }),
+    });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, actually, just have someone call me' });
+    expect(s.journey?.active).toBe('note');
+    expect(s.unsent).toBeUndefined();
+    expect(h.traces.at(-1)!.unsent).toMatchObject({ action: 'book', cleared: 'journey' });
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.ended).toEqual(['closing']);
+    expect(h.rows.filter((r) => r.type === 'converse_refused')).toEqual([]);
+  });
+
+  it('while a change is kept unsent, a routed turn asks in the routing request whether the caller no longer wants it, and a clear yes lets it go', async () => {
+    const h = harness([DROPPED, ...lookupThenBook, [text('Anything else?'), done()], [text('Okay, forgotten. Goodbye!'), call('c9', 'end_call', {}), done('tool')]], {
+      edit: withJourneys,
+      jev: (() => {
+        const j = routeJev([{ task: VISIT }, { task: VISIT, fits: 0.9 }, { task: VISIT, fits: 0.9 }], { yes: 0.05, no: 0.9 });
+        const ask = j.ask.bind(j);
+        j.ask = async (req) => {
+          const res = await ask(req);
+          return Object.hasOwn(req.questions, 'noLongerWants') ? { ...res, answers: { ...res.answers, noLongerWants: { type: 'noul', noul: 0.92 } } } : res;
+        };
+        return j;
+      })(),
+    });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'hmm, not that' });
+    expect(s.unsent).toEqual({ action: 'book' });
+    const asks = routeAsks(h).length;
+    s = await h.run(s, { kind: 'text', text: 'forget it, I do not need it' });
+    // One request for the turn: the routing, with the question beside it.
+    expect(routeAsks(h)).toHaveLength(asks + 1);
+    const routing = routeAsks(h).at(-1)!;
+    expect(Object.keys(routing.questions)).toContain('noLongerWants');
+    expect(routing.state).toMatchObject({ unsentRequest: h.deps.business.actions.book!.about });
+    expect(h.jev.asked.filter((r) => Object.hasOwn(r.questions, 'noLongerWants') && !Object.hasOwn(r.questions, 'task'))).toEqual([]);
+    expect(h.traces.at(-1)!.unsent).toEqual({ action: 'book', noLongerWants: 0.92, cleared: 'withdrawn' });
+    expect(h.ended).toEqual(['closing']);
+    expect(h.said.slice(-2)).toEqual([['Okay, forgotten. ', false], ['Goodbye!', true]]);
   });
 
   it('declining a read-back routes on the same words: nothing runs, the other journey starts, and its model sees the declined read-back', async () => {
