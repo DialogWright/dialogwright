@@ -1920,7 +1920,7 @@ describe('journeys', () => {
   const withJourneys = (t: string): string => `${t}${JOURNEYS}${CHECKS_OFF}`;
 
   /** One routing answer: `task`'s probabilities and the yes/no readings; or the decision model failing, or never answering. */
-  type RouteStep = { task?: Record<string, number>; drops?: number; again?: number; fits?: number } | 'fail' | 'hang';
+  type RouteStep = { task?: Record<string, number>; drops?: number; again?: number; fits?: number; answers?: number } | 'fail' | 'hang';
 
   /** A decision model that answers each routing request with the next step, and a read-back's answer as `reading`, keeping what it was asked. */
   function routeJev(steps: RouteStep[], reading = { yes: 0.95, no: 0.05 }): Harness['jev'] {
@@ -1942,6 +1942,7 @@ describe('journeys', () => {
           if (step.drops !== undefined && Object.hasOwn(req.questions, 'drops')) answers.drops = { type: 'noul', noul: step.drops };
           if (step.again !== undefined && Object.hasOwn(req.questions, 'again')) answers.again = { type: 'noul', noul: step.again };
           if (step.fits !== undefined && Object.hasOwn(req.questions, 'fits')) answers.fits = { type: 'noul', noul: step.fits };
+          if (step.answers !== undefined && Object.hasOwn(req.questions, 'answers')) answers.answers = { type: 'noul', noul: step.answers };
         } else {
           answers.confirmsYes = { type: 'noul', noul: reading.yes };
           answers.confirmsNo = { type: 'noul', noul: reading.no };
@@ -2683,6 +2684,30 @@ describe('journeys', () => {
       expect(h.ended).toEqual([]);
       expect(s.ended).toBeUndefined();
       expect(h.rows.some((r) => r.type === 'converse_end')).toBe(false);
+    });
+
+    it('at the root, a turn that answers what the line last asked is never unclear, though none is on top: no guidance, the count reset, the reading traced', async () => {
+      // The live calls of 2026-11-25: a caller describing what the line had just asked about was read as none of these.
+      const h = harness([
+        DROPPED, [text('We can book a visit or arrange a call back.'), done()],
+        [text('Would you like a visit for it?'), done()],
+      ], { edit: withLine, jev: routeJev([{ task: NONE, answers: 0.1 }, { task: NONE, answers: 0.9 }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
+      expect(s.journey).toEqual({ ...root, unclear: 1 });
+      expect(h.traces.at(-1)!.route).toMatchObject({ outcome: 'root', unclear: 1, answers: 0.1 });
+      s = await h.run(s, { kind: 'text', text: 'it is the kettle, the handle is loose' });
+      // Asked in the one routing request, beside task, with the line's last reply.
+      const ask = routeAsks(h).at(-1)!;
+      expect(Object.keys(ask.questions)).toEqual(['task', 'answers']);
+      expect((ask.state as { lastReply: string }).lastReply).toBe('We can book a visit or arrange a call back.');
+      const route = h.traces.at(-1)!.route!;
+      expect(route).toMatchObject({ from: null, to: null, outcome: 'root', answers: 0.9 });
+      expect(route.unclear).toBeUndefined();
+      expect(route.restarted).toBeUndefined();
+      expect(s.journey).toEqual(root);
+      expect(h.model.requests.at(-1)!.system).not.toMatch(/unclear/);
+      expect(h.said.at(-1)).toEqual(['Would you like a visit for it?', true]);
     });
   });
 

@@ -55,14 +55,17 @@ export interface RouteCase {
 const CALLER_NUMBER = '+15555550100';
 const ACCOUNT_NAME = 'Example Account';
 
-/** The reading a perfect decision model would give a labelled turn. */
-function perfectReading(b: AgentBusiness, j: JourneyState, label: RouteLabel, open: string[]): RouteReading {
+/**
+ * The reading a perfect decision model would give a labelled turn. Where `answers` was asked (at the root, after a line):
+ * a turn labelled none does not answer what the line asked (the label makes it unclear), any other does.
+ */
+function perfectReading(b: AgentBusiness, j: JourneyState, label: RouteLabel, open: string[], questions: QuestionMap): RouteReading {
   const task: Record<string, number> = { [NONE_TASK]: 0, [QUESTION_TASK]: 0 };
   for (const id of open) task[id] = 0;
   task[label.task] = 1;
   const active = j.active !== null;
   const working = active && j.phase === 'working';
-  return { task, drops: working ? (label.drops === true ? 1 : 0) : null, again: active && j.phase === 'after' ? (label.again === true ? 1 : 0) : null, fits: working ? (label.fits === false ? 0 : 1) : null };
+  return { task, drops: working ? (label.drops === true ? 1 : 0) : null, again: active && j.phase === 'after' ? (label.again === true ? 1 : 0) : null, fits: working ? (label.fits === false ? 0 : 1) : null, answers: Object.hasOwn(questions, 'answers') ? (label.task === NONE_TASK ? 0 : 1) : null };
 }
 
 const callerOf = (c: RouteCall): { number: string; account: string | null } => ({ number: CALLER_NUMBER, account: c.account ? ACCOUNT_NAME : null });
@@ -104,8 +107,9 @@ export function routeCaseSet(b: AgentBusiness, calls: readonly RouteCall[], labe
         journey = completeJourney(b, journey, label.confirms);
         continue;
       }
-      cases.push({ id: key, state: routeState(b, journey, t.text, lastReply), questions: routeQuestions(b, journey, caller), expected: label, journey });
-      journey = decideRoute(b, journey, perfectReading(b, journey, label, open), open).next;
+      const questions = routeQuestions(b, journey, caller, lastReply);
+      cases.push({ id: key, state: routeState(b, journey, t.text, lastReply), questions, expected: label, journey });
+      journey = decideRoute(b, journey, perfectReading(b, journey, label, open, questions), open).next;
     }
     if (!any) unlabelledCalls += 1;
   }
@@ -288,7 +292,7 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
     const misses: RouteEvalReport['wrongCases'] = [];
     for (const c of cases) {
       const open = Object.keys((c.questions.task as { criteria: Record<string, string | null> }).criteria).filter((k) => k !== NONE_TASK && k !== QUESTION_TASK);
-      const expected = decideRoute(biz, c.journey, perfectReading(biz, c.journey, c.expected, open), open);
+      const expected = decideRoute(biz, c.journey, perfectReading(biz, c.journey, c.expected, open, c.questions), open);
       const got = decideRoute(biz, c.journey, readRoute(answers.get(c.id) ?? null), open);
       const wasUnclear = expected.unclear === true;
       const readUnclear = got.unclear === true;
@@ -346,7 +350,7 @@ export function scoreRoutes(b: AgentBusiness, cases: readonly RouteCase[], answe
 /** What the figures mean. */
 export const ROUTE_DEFINITIONS = [
   'Accuracy: the share of turns where the journey and phase Jev routes to, and whether the line could not follow the turn (unclear), are those the label gives.',
-  'Unclear: the line could not follow the turn. At the root, the label is none (a journey asked for below the start bar is a missed start, not unclear); in a working task, fits is false and the turn is no question and switches nowhere. A turn labelled question is never unclear at the root.',
+  'Unclear: the line could not follow the turn. At the root, the label is none (a journey asked for below the start bar is a missed start, not unclear); in a working task, fits is false and the turn is no question and switches nowhere. A turn labelled question is never unclear at the root. At the root Jev\'s reading is unclear only where none is on top and it does not read the turn as answering what the line last asked (answers); a turn labelled none is taken as not answering it.',
   'Unclear recall: of the turns the label makes unclear, the share Jev also reads unclear.',
   'Unclear precision: of the turns Jev reads unclear, the share the label also makes unclear.',
   'Missed start: the label starts (or returns to) a journey from the root and Jev\'s route at that start bar does not; its share is of the turns where the label starts one.',

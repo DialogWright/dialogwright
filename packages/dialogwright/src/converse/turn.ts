@@ -73,7 +73,8 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   and on the second in a row, that the line can only help when the caller gives what it asks for, with the
  *   business's reason for the line), offered the turn's lookups only, so no change is acted on: a change it calls
  *   anyway is refused as not offered. A turn that answers a read-back is never unclear (the caller is following the
- *   line), so it keeps the journey's actions and a correction is read back again in the same turn. The first round, asked before the route was known, is asked again for it.
+ *   line), so it keeps the journey's actions and a correction is read back again in the same turn; nor, at the root, is
+ *   one the decision model reads as answering what the line last asked (journeys.ts `answers`). The first round, asked before the route was known, is asked again for it.
  *   On the third unclear turn in a row (UNCLEAR_ENDS_AT) the model is asked nothing more: the line says
  *   lines.unclear and ends the call, as end_call does with the closing line;
  * - on a call, a turn may be stopped from outside (converseTurn's `signal`: the caller spoke): nothing more
@@ -1419,7 +1420,7 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
   const unsent = t.st.unsent !== undefined && t.answersReadBack !== true ? t.st.unsent.action : null;
   try {
     const state = unsent === null ? routeState(b, j, said, lastReply) : { ...(routeState(b, j, said, lastReply) as { [key: string]: JsonValue }), unsentRequest: unsentAbout(t, unsent) };
-    const asked = await askWithinWhy(t.deps.jev, state, unsent === null ? routeQuestions(b, j, t.st.caller) : { ...routeQuestions(b, j, t.st.caller), ...NO_LONGER_WANTS }, b.routing.timeoutMs);
+    const asked = await askWithinWhy(t.deps.jev, state, unsent === null ? routeQuestions(b, j, t.st.caller, lastReply) : { ...routeQuestions(b, j, t.st.caller, lastReply), ...NO_LONGER_WANTS }, b.routing.timeoutMs);
     const ms = Date.now() - started;
     const reading = readRoute(asked.answers);
     const route = decideRoute(b, j, reading, openJourneys(b, t.st.caller), { answersReadBack: t.answersReadBack === true });
@@ -1434,6 +1435,7 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
         ...(reading.drops !== null ? { drops: reading.drops } : {}),
         ...(reading.again !== null ? { again: reading.again } : {}),
         ...(reading.fits !== null ? { fits: reading.fits } : {}),
+        ...(reading.answers !== null ? { answers: reading.answers } : {}),
         ms,
         ...(asked.answers === null && asked.why === 'late' ? { timedOut: true as const } : {}),
         ...(route.droppedPaused !== undefined ? { droppedPaused: route.droppedPaused } : {}),

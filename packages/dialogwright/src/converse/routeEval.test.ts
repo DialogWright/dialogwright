@@ -146,6 +146,27 @@ describe('unclear turns and the start bar', () => {
     expect(r.unclearPrecision).toBeNull();
     expect(r.accuracy).toBe(0);
   });
+  it('a root case asks answers (the line said something before it), and a turn read as answering the line is not unclear', () => {
+    const cs = routeCases(b, [call('f/a-1', ['the handle is loose'])], [label('f/a-1', 0, 'none')]);
+    expect(Object.keys(cs[0]!.questions)).toEqual(['task', 'answers']);
+    const answering = (p: number): AnswerMap => ({ ...reading(none), answers: { type: 'noul', noul: p } });
+    // Labelled none: unclear by the label, so a reading that it answers the line is a missed unclear.
+    const missed = scoreRoutes(b, cs, new Map([['f/a-1#0', answering(0.9)]]), BARS);
+    expect(missed.unclearExpected).toBe(1);
+    expect(missed.unclearRead).toBe(0);
+    expect(missed.accuracy).toBe(0);
+    expect(scoreRoutes(b, cs, new Map([['f/a-1#0', answering(0.1)]]), BARS).unclearRecall).toBe(1);
+    // Labelled a journey below the start bar: read as none but answering the line, it is clear, as the label is.
+    const started = routeCases(b, [call('f/a-1', ['the handle is loose'])], [label('f/a-1', 0, 'question')]);
+    const clear = scoreRoutes(b, started, new Map([['f/a-1#0', answering(0.9)]]), BARS);
+    expect(clear.unclearRead).toBe(0);
+    expect(clear.accuracy).toBe(1);
+    expect(scoreRoutes(b, started, new Map([['f/a-1#0', answering(0.1)]]), BARS).unclearPrecision).toBe(0);
+  });
+  it('a root case with no line before it does not ask answers', () => {
+    const c: RouteCall = { id: 'f/a-1', account: false, turns: [{ who: 'caller', text: 'hello' }] };
+    expect(Object.keys(routeCases(b, [c], [label('f/a-1', 0, 'none')])[0]!.questions)).toEqual(['task']);
+  });
   it('a fits: false turn read as fitting is a missed unclear', () => {
     const cs = routeCases(b, [call('f/a-1', ['v1', 'odd'])], [label('f/a-1', 0, 'visit'), label('f/a-1', 1, 'visit', { fits: false })]);
     const fit = (p: number): AnswerMap => ({ ...reading({ visit: 0.9, note: 0, none: 0.1, question: 0 }, 0.1), fits: { type: 'noul', noul: p } });

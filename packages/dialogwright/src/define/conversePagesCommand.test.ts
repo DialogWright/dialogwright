@@ -261,6 +261,8 @@ describe('the pages of an agent app with journeys', () => {
     expect(sent).toMatch(/whether the caller's turn has anything to do with the task \(`fits`\)/);
     expect(sent).not.toMatch(/gives what the line just asked for|reaches no journey/);
     expect(sent).toMatch(/At the root, a turn is unclear only when none is the top reading/);
+    expect(sent).toMatch(/At the root, where the line has said something, the decision model is also asked whether the caller's turn answers what the line last asked \(`answers`\)/);
+    expect(sent).toMatch(/none is the top reading and the turn does not answer what the line last asked/);
     expect(sent).toMatch(/`routing\.startAt`/);
     expect(sent).toMatch(/`routing\.switchAt`/);
     expect(sent).toMatch(/`business\.line`/);

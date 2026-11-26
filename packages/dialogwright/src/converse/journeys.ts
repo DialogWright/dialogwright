@@ -16,6 +16,8 @@ export interface RouteReading {
   again: number | null;
   /** In a working journey: that the turn gives what the line just asked for, or carries on with the task. Null: not asked or not answered. */
   fits: number | null;
+  /** At the root, where the line has said something: that the turn answers what the line last asked. Null: not asked or not answered. */
+  answers: number | null;
 }
 export interface Route {
   outcome: RouteOutcome;
@@ -35,7 +37,10 @@ const NONE_WHEN = 'none of these: nothing the line can act on or answer (unrelat
 /** The `task` option for a question about the business, which the line answers whichever task it is in. */
 export const QUESTION_TASK = 'question';
 const QUESTION_WHEN = 'a question about the business or about this line: its hours, prices, where it is, what it fixes or doesn\'t, how things work, or whether this is a person or an automated line';
-/** Below this, a turn does not give what the line just asked for (a working journey's `fits`). */
+/**
+ * Below this, a turn does not give what the line just asked for: a working journey's `fits`, and at the root `answers`
+ * (the same meaning, so the same bar: a yes read at even odds or better).
+ */
 const FITS_AT = 0.5;
 
 /** Whether the line could not follow the turn. */
@@ -96,8 +101,12 @@ export function offeredActions(b: AgentBusiness, j: JourneyState | undefined): s
 
 const whenOf = (b: AgentBusiness, id: string | null): string | null => (id === null ? null : (b.journeys?.[id]?.when ?? null));
 
-/** The questions put to the decision model for a turn: `task` always, `drops` and `fits` in a working journey, `again` in a finished one. */
-export function routeQuestions(b: AgentBusiness, j: JourneyState, caller: Caller): QuestionMap {
+/**
+ * The questions put to the decision model for a turn: `task` always, `drops` and `fits` in a working journey, `again` in
+ * a finished one, and at the root `answers` where the line has said something before the turn (`lastReply`, as
+ * routeState sends it), all in the one request.
+ */
+export function routeQuestions(b: AgentBusiness, j: JourneyState, caller: Caller, lastReply: string | null = null): QuestionMap {
   const criteria: Record<string, string | null> = {};
   for (const id of openJourneys(b, caller)) criteria[id] = whenOf(b, id);
   criteria[QUESTION_TASK] = QUESTION_WHEN;
@@ -109,6 +118,9 @@ export function routeQuestions(b: AgentBusiness, j: JourneyState, caller: Caller
       criteria,
     },
   };
+  if (j.active === null && lastReply !== null) {
+    questions.answers = { type: 'noul', instructions: 'Read said and lastReply. Does the caller\'s turn answer what the line last asked them, or give what it asked for, as opposed to something that has nothing to do with it?' };
+  }
   const active = j.active === null ? undefined : b.journeys?.[j.active];
   if (active !== undefined && j.phase === 'working') {
     questions.drops = { type: 'noul', instructions: 'Read said and active. Has the caller said they no longer want to go on with the active task?' };
@@ -129,13 +141,14 @@ export function routeState(b: AgentBusiness, j: JourneyState, said: string, last
 
 /** The answers as a reading; all null where the decision model gave none. */
 export function readRoute(answers: AnswerMap | null): RouteReading {
-  if (answers === null) return { task: null, drops: null, again: null, fits: null };
+  if (answers === null) return { task: null, drops: null, again: null, fits: null, answers: null };
   const task = answers.task;
   return {
     task: isChoice(task) ? task.probabilities : null,
     drops: probabilityOf(answers.drops),
     again: probabilityOf(answers.again),
     fits: probabilityOf(answers.fits),
+    answers: probabilityOf(answers.answers),
   };
 }
 
@@ -162,7 +175,10 @@ const moreUnclear = (j: JourneyState): JourneyState => ({ ...j, unclear: (j.uncl
  * A turn that answers a read-back (`answersReadBack`: one waited for the caller's answer as the turn began, whatever came
  * of it) is never unclear either: the caller is following the line, whatever the words (a live call, 2026-11-25: "Excuse
  * me." at a read-back's end was read as unclear, and the correction that followed could not be read back), so it clears
- * the count; a switch or a drop on it is as on any turn.
+ * the count; a switch or a drop on it is as on any turn. So too at the root a turn the decision model reads as answering
+ * what the line last asked (`answers` at FITS_AT or above), with none the top option: the caller is following the line
+ * (live calls, 2026-11-25: a caller describing the damage the line had just asked about was read as unclear twice, and
+ * told off for it), so it stays at the root, clear; it never starts a journey, which still needs routing.startAt.
  */
 export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[], o: { answersReadBack?: boolean } = {}): Route {
   const route = routeOfReading(b, j, r, open);
@@ -192,14 +208,15 @@ function routeOfReading(b: AgentBusiness, j: JourneyState, r: RouteReading, open
   };
 
   if (j.active === null) {
-    // From the root a journey starts only at the stricter bar; the turn is unclear only when none is the top option.
+    // From the root a journey starts only at the stricter bar; the turn is unclear only when none is the top option
+    // and the turn does not answer what the line last asked.
     const starts = wantedAt(b.routing.startAt);
     if (starts !== null) {
       // The journey set aside (a drop that kept it) comes back: a return, not a fresh start.
       if (starts === j.paused) return { outcome: 'return', next: { ...calm(j), active: starts, phase: 'working', paused: null } };
       return { outcome: 'start', next: { ...calm(j), active: starts, phase: 'working' } };
     }
-    if (top === NONE_TASK) return { outcome: 'root', next: moreUnclear(j), unclear: true };
+    if (top === NONE_TASK && !(r.answers !== null && r.answers >= FITS_AT)) return { outcome: 'root', next: moreUnclear(j), unclear: true };
     return { outcome: 'root', next: calm(j) };
   }
 

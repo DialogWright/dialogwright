@@ -21,7 +21,7 @@ const recognised = { number: '+15555550100', account: 'Example Account' };
 const anon = { number: '+15555550100', account: null };
 const root: JourneyState = { active: null, phase: 'working', paused: null, done: [] };
 const inVisit: JourneyState = { ...root, active: 'visit' };
-const reading = (r: Partial<RouteReading>): RouteReading => ({ task: null, drops: null, again: null, fits: null, ...r });
+const reading = (r: Partial<RouteReading>): RouteReading => ({ task: null, drops: null, again: null, fits: null, answers: null, ...r });
 const open = ['visit', 'note'];
 
 describe('open journeys and the start', () => {
@@ -91,7 +91,7 @@ describe('routeState', () => {
 
 describe('readRoute', () => {
   it('a missing answer set is all null, and decides carry', () => {
-    expect(readRoute(null)).toEqual({ task: null, drops: null, again: null, fits: null });
+    expect(readRoute(null)).toEqual({ task: null, drops: null, again: null, fits: null, answers: null });
     expect(decideRoute(plain, inVisit, readRoute(null), open)).toEqual({ outcome: 'carry', next: inVisit });
     expect(decideRoute(plain, root, readRoute(null), open)).toEqual({ outcome: 'carry', next: root });
   });
@@ -100,7 +100,7 @@ describe('readRoute', () => {
       task: { type: 'choice', choice: 'note', probabilities: { note: 0.7, none: 0.3 }, confidence: 0.9 },
       drops: { type: 'noul', noul: 0.8 },
     };
-    expect(readRoute(answers)).toEqual({ task: { note: 0.7, none: 0.3 }, drops: 0.8, again: null, fits: null });
+    expect(readRoute(answers)).toEqual({ task: { note: 0.7, none: 0.3 }, drops: 0.8, again: null, fits: null, answers: null });
   });
 });
 
@@ -266,6 +266,39 @@ describe('unclear turns', () => {
     const j: JourneyState = { ...root, paused: 'visit' };
     const r = decideRoute(plain, j, reading({ task: { visit: 0.65, none: 0.35 } }), open);
     expect(r).toEqual({ outcome: 'root', next: j });
+  });
+  it('at the root, answers is asked only where the line has said something, and never in a journey', () => {
+    expect(Object.keys(routeQuestions(plain, root, anon, 'Which day would you like?'))).toEqual(['task', 'answers']);
+    expect(Object.keys(routeQuestions(plain, root, anon, null))).toEqual(['task']);
+    expect(Object.keys(routeQuestions(plain, inVisit, anon, 'Which day would you like?'))).toEqual(['task', 'drops', 'fits']);
+    expect(Object.keys(routeQuestions(plain, { ...inVisit, phase: 'after', done: ['visit'] }, anon, 'Done.'))).toEqual(['task', 'again']);
+    const q = routeQuestions(plain, root, anon, 'Which day would you like?').answers!;
+    expect(q.type).toBe('noul');
+    expect(q.instructions).toMatch(/lastReply/);
+    expect(q.instructions).toMatch(/answer what the line last asked/);
+  });
+  it('readRoute reads answers', () => {
+    expect(readRoute({ answers: { type: 'noul', noul: 0.8 } }).answers).toBe(0.8);
+  });
+  it('at the root, none on top with answers at or above 0.5 is the caller answering the line: root, not unclear, the count reset', () => {
+    const r = decideRoute(plain, { ...root, unclear: 2 }, reading({ task: { visit: 0.15, none: 0.84 }, answers: 0.9 }), open);
+    expect(r).toEqual({ outcome: 'root', next: root });
+    expect(isUnclear(r)).toBe(false);
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.2, none: 0.8 }, answers: 0.5 }), open)).toEqual({ outcome: 'root', next: root });
+  });
+  it('at the root, none on top with answers below 0.5 is unclear, as before', () => {
+    const r = decideRoute(plain, { ...root, unclear: 1 }, reading({ task: { visit: 0.2, none: 0.8 }, answers: 0.49 }), open);
+    expect(r).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 2 } });
+  });
+  it('at the root, no answers reading (not asked, or not answered) is as before', () => {
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.2, none: 0.8 }, answers: null }), open)).toEqual({ outcome: 'root', unclear: true, next: { ...root, unclear: 1 } });
+  });
+  it('at the root, answers never starts a journey: a start still needs routing.startAt', () => {
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.69, none: 0.31 }, answers: 1 }), open)).toEqual({ outcome: 'root', next: root });
+    expect(decideRoute(plain, root, reading({ task: { visit: 0.7, none: 0.3 }, answers: 0 }), open)).toEqual({ outcome: 'start', next: { ...root, active: 'visit' } });
+  });
+  it('in a working journey, answers changes nothing: fits decides', () => {
+    expect(decideRoute(plain, inVisit, reading({ task: { none: 0.9, visit: 0.1 }, drops: 0.1, fits: 0.2, answers: 1 }), open)).toEqual({ outcome: 'carry', unclear: true, next: { ...inVisit, unclear: 1 } });
   });
   it('a null reading starts the count again and is never unclear', () => {
     expect(decideRoute(plain, unclearOf(2), readRoute(null), open)).toEqual({ outcome: 'carry', next: inVisit });
