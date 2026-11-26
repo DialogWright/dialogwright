@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -231,6 +231,52 @@ async function farEnd(replies: { token: string; interruptible: boolean }[]): Pro
     }),
   };
 }
+
+/** Every trace record the server wrote, from its trace folder. */
+function tracesOf(s: EvalServer): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const at = join(dir, name);
+      if (statSync(at).isDirectory()) walk(at);
+      else if (name.endsWith('.jsonl') && !name.endsWith('.frames.jsonl')) for (const line of readFileSync(at, 'utf8').split('\n')) if (line.trim() !== '') out.push(JSON.parse(line) as Record<string, unknown>);
+    }
+  };
+  walk(s.traceDir);
+  return out;
+}
+
+describe('driveVoice: silence', () => {
+  it('a normal run answers every reply well within the line\'s silence wait: no turn on a silence', async () => {
+    const s = await server(fakeModel(BOOKING));
+    const c = scripted([`Is there a visit free on ${DAY}?`, 'The morning please, for Sam Example, on this number.', 'yes']);
+    const call = await driveVoice({ url: s.ws, serverHttp: s.http, persona: persona(), caller: c.caller, maxTurns: 6, timeoutMs: 5000, turnEnds: s.turnEnds, timeScale: SCALE });
+    expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line', 'caller', 'line', 'caller', 'line']);
+    const records = tracesOf(s).filter((r) => r.kind === 'converse');
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.filter((r) => r.silence !== undefined)).toEqual([]);
+  }, 20_000);
+
+  it('a persona that stays silent once (voice.silentOnce) hears the line answer the silence, then goes on', async () => {
+    const { app } = converseFixture();
+    const quick = { ...app, business: { ...app.business, silence: { afterMs: 3000, reprompts: 1 } } };
+    const work = folder();
+    const s = await startEvalServer(quick, env(folder()), { work, converseModel: () => fakeModel([[text('We have mornings and afternoons. Which day?'), done()], [text('Take your time.'), done()], [text('Tuesday works.'), done()]]), client: yesJev(), channel: 'voice' });
+    servers.push(s);
+    const c = scripted(['Hi, I need a visit.', 'Tuesday please.']);
+    const call = await driveVoice({ url: s.ws, serverHttp: s.http, persona: persona({ interrupts: false, fragments: false, silentOnce: true }), caller: c.caller, maxTurns: 6, timeoutMs: 15_000, turnEnds: s.turnEnds, timeScale: SCALE });
+    expect(call.turns.map((t) => [t.who, t.text, t.silent ?? false])).toEqual([
+      ['line', 'Example Visits, how can I help?', false],
+      ['caller', 'Hi, I need a visit.', false],
+      ['line', 'We have mornings and afternoons. Which day?', false],
+      ['caller', '(says nothing)', true],
+      ['line', 'Take your time.', false],
+      ['caller', 'Tuesday please.', false],
+      ['line', 'Tuesday works.', false],
+    ]);
+    expect(tracesOf(s).filter((r) => r.silence !== undefined).map((r) => r.silence)).toEqual([1]);
+  }, 30_000);
+});
 
 describe('driveVoice: a line the caller cannot interrupt', () => {
   const HELD = 'So that is a visit on Tuesday, January fifteenth, in the morning window from nine to twelve, for Sam Example, and we will reach you on the number you are calling from, ending in zero one two three, with a text the day before. Is that right?';

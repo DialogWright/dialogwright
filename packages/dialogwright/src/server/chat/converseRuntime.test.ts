@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AuditSink } from '../../audit/sink';
 import type { AuditDraft } from '../../audit/types';
 import type { ServerMessage } from '../../channel/chat/protocol';
@@ -370,6 +370,20 @@ describe('converseChatRuntime: a reply on the wire', () => {
     const logged = c.frames.filter((f) => f.dir === 'out' && (f.msg as ServerMessage).type === 'say').map((f) => (f.msg as { text: string }).text);
     expect(logged.at(-1)).toBe('A visit • for <11 chars>, on ...0123. Is that right?');
     expect(JSON.stringify(c.frames)).not.toContain('Sam Example');
+  });
+});
+
+describe('converseChatRuntime: no silence wait', () => {
+  it('a chat whose person says nothing hears nothing more: the silence wait is a call\'s alone', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = await chat([[text('Are you still there?'), done()]], { contradicted: 0.1, notDone: 0.1, gap: 0.1 });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(c.says()).toEqual(['Example Visits, how can I help?']);
+      expect(c.ends).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

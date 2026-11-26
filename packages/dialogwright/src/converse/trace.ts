@@ -109,7 +109,10 @@ export interface ConverseTraceRecord {
    * The runtime ended the call on this turn of its own accord: `unclear`, the third unclear turn in a row, on which
    * the line said lines.unclear and the call ended as end_call ends it (the state's `ended` is `closing`).
    */
-  ended?: 'unclear';
+  ended?: 'unclear' | 'silence';
+  /** On a call, the turn answered a silence of the caller's (agent.yaml's `silence`): its count in a row, and how long it was (`silenceMs`). It has no words of the caller's (`said` null). */
+  silence?: number;
+  silenceMs?: number;
   /** A journey the turn's confirmed action completed: it is in its after phase from this turn on. */
   journeyEnded?: { journey: string; how: 'done' };
   /** Whether the business was open at the turn (agent.yaml `business.open`); absent where it gives no opening hours. */

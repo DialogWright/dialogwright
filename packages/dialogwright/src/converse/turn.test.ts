@@ -3498,6 +3498,74 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
   });
 });
 
+describe('converseTurn: a silence on a call', () => {
+  const OFF = 'checks:\n  claims: { mode: off }\n';
+  const LINES = '  silence: { en: "Are you still there? We can carry on whenever you are ready." }\n  silenceEnd: { en: "I will let you go for now. Call back any time." }\n';
+  const withLines = (t: string): string => `${t.replace('lines:\n', `lines:\n${LINES}`)}${OFF}`;
+  const NOTE = '[The caller has said nothing for 9 seconds since your last reply. Help them go on, as a person on the phone would when the other side goes quiet, in a short reply.]';
+
+  it('a silence turn tells the model the caller said nothing, with no words of theirs, and records it', async () => {
+    const h = harness([[text('Take your time. Which day suits you?'), done()]], { edit: withLines });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
+    expect(JSON.stringify(h.model.requests[0]!.messages.at(-1))).toContain(NOTE);
+    expect(h.traces.at(-1)).toMatchObject({ said: null, silence: 1, replies: ['Take your time. Which day suits you?'] });
+    expect(h.ended).toEqual([]);
+  });
+
+  it('a silence while a read-back waits is never a yes: nothing runs, and the model is told the caller said nothing', async () => {
+    const h = harness([...lookupThenBook, [text('Shall I go ahead with that?'), done()]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
+    expect(h.calendar.bookings).toEqual([]);
+    expect(confirmAsks(h)).toEqual([]);
+    expect(s.pending).toBeNull();
+    expect(s.unsent).toEqual({ action: 'book' });
+    const sent = JSON.stringify(h.model.requests.at(-1)!.messages);
+    expect(sent).toContain('Not done: nothing was changed, booked or sent. The caller said nothing for 9 seconds after it, so it is not confirmed.');
+    expect(sent).toContain(NOTE);
+    expect(h.traces.at(-1)!.readBack).toMatchObject({ confirmed: false });
+  });
+
+  it('a model that fails on a silence turn: the app\'s silence line, word for word', async () => {
+    const h = harness([[timeout], [timeout]], { edit: withLines });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
+    expect(h.said.at(-1)).toEqual(['Are you still there? We can carry on whenever you are ready.', true]);
+    expect(s.failures).toBe(1);
+  });
+
+  it('with no silence line, a failed silence turn says the recovery line, as any failed turn does', async () => {
+    const h = harness([[timeout], [timeout]], { edit: (t) => `${t}${OFF}` });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
+    expect(h.said.at(-1)).toEqual(['Sorry, could you say that again?', true]);
+  });
+
+  it('the silence that ends the call: the silence end line, word for word, then the end, as end_call ends it', async () => {
+    const h = harness([], { edit: withLines });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 2, end: true });
+    expect(h.said.at(-1)).toEqual(['I will let you go for now. Call back any time.', true]);
+    expect(h.ended).toEqual(['closing']);
+    expect(s.ended).toBe('closing');
+    expect(h.model.requests).toHaveLength(0);
+    expect(h.rows.at(-1)).toMatchObject({ type: 'converse_end', detail: { by: 'silence' } });
+    expect(h.traces.at(-1)).toMatchObject({ said: null, silence: 2, ended: 'silence' });
+  });
+
+  it('with no silence end line, the closing line; and a change kept unsent does not keep the call open, but is recorded', async () => {
+    const h = harness([...lookupThenBook], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 2, end: true });
+    expect(h.said.at(-1)).toEqual(['Thanks for calling. Goodbye.', true]);
+    expect(h.ended).toEqual(['closing']);
+    expect(h.calendar.bookings).toEqual([]);
+    expect(h.rows.at(-1)).toMatchObject({ type: 'converse_end', detail: { by: 'silence', pending: 'book' } });
+    expect(h.traces.at(-1)!.unsent).toEqual({ action: 'book' });
+  });
+});
+
 describe('converseTurn: what the caller heard', () => {
   const OFF = 'checks:\n  claims: { mode: off }\n';
   const REPLY = 'Sure, we have the morning free.';

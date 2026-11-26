@@ -81,6 +81,9 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   one the decision model reads as answering what the line last asked (journeys.ts `answers`). The first round, asked before the route was known, is asked again for it.
  *   On the third unclear turn in a row (UNCLEAR_ENDS_AT) the model is asked nothing more: the line says
  *   lines.unclear and ends the call, as end_call does with the closing line;
+ * - on a call, a silence of the caller's (the channel's silence wait, agent.yaml's `silence`) is a turn with no words of
+ *   theirs: the model is told of it (silenceNote) and answers it, lines.silence where it fails; the last one says
+ *   lines.silenceEnd (the closing line where there is none) and ends the call (silenceTurn);
  * - on a call, a turn may be stopped from outside (converseTurn's `signal`: the caller spoke): nothing more
  *   is said or asked, and it is no failure. The channel tells the next turn what the caller heard of the last
  *   reply (Input's `heard`), which the conversation is rewritten to; a yes over a read-back the caller did not
@@ -183,7 +186,16 @@ export interface Heard {
  * A turn's input. `ignored`, on a call: the caller's speech the channel ignored since the last turn because it began while
  * a held read-back played, each utterance by its length in characters (never its words), for the turn's trace record.
  */
-export type Input = { kind: 'start' } | { kind: 'text'; text: string; heard?: Heard; ignored?: number[] } | { kind: 'left'; ignored?: number[] };
+export type Input =
+  | { kind: 'start' }
+  | { kind: 'text'; text: string; heard?: Heard; ignored?: number[] }
+  | { kind: 'left'; ignored?: number[] }
+  /**
+   * On a call, the caller said nothing for `ms` once the line's last reply had played (agent.yaml's `silence`): the
+   * `count`-th silence in a row. With `end`, the line says lines.silenceEnd (the closing line where it has none) and ends
+   * the call; else the model answers the silence, told the caller said nothing.
+   */
+  | { kind: 'silence'; ms: number; count: number; end?: true; ignored?: number[] };
 
 /**
  * How long a caller turn on a call waits for the first words of its reply before the line says the bridge, by
@@ -275,6 +287,8 @@ interface Turn {
   unclear?: UnclearTurn;
   /** The runtime ended the call on this turn of its own accord. */
   ended?: ConverseTraceRecord['ended'];
+  /** The turn answers a silence of the caller's (its count in a row): a failure says lines.silence where the app has it. */
+  silence?: number;
   /** The journey the turn's confirmed action completed. */
   journeyEnded?: ConverseTraceRecord['journeyEnded'];
   /** The signal that stops the turn from outside (the caller spoke on a call); absent, nothing does. */
@@ -1035,7 +1049,7 @@ function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void 
     said.push(lineFor(t, lines.done));
   }
   if (handoff) said.push(lineFor(t, lines.handoff));
-  else if (said.length === 0) said.push(lineFor(t, why === 'stuck' ? lines.stuck : lines.recovery));
+  else if (said.length === 0) said.push(lineFor(t, why === 'stuck' ? lines.stuck : t.silence !== undefined && lines.silence !== undefined ? lines.silence : lines.recovery));
   said.forEach((line, i) => sp.line(line, i === said.length - 1));
   if (doneOwed) t.out.replied?.();
   add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
@@ -1771,7 +1785,8 @@ function traceRecordOf(t: Turn, input: Input, now: Date): { record: ConverseTrac
     said: input.kind === 'text' ? input.text : null,
     replies: t.replies.map(scrubbed),
     tools: t.tools,
-    model: { ...t.model, costUsd: input.kind === 'text' ? costUsd(deps.model.id, t.model.usage) : null },
+    model: { ...t.model, costUsd: input.kind === 'text' || input.kind === 'silence' ? costUsd(deps.model.id, t.model.usage) : null },
+    ...(input.kind === 'silence' ? { silence: input.count, silenceMs: input.ms } : {}),
     ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
     ...(t.check !== undefined ? { check: t.check } : {}),
     ...(t.carriedNote ? { carriedNote: true as const } : {}),
@@ -1794,6 +1809,51 @@ export function lineSaid(st: ConverseState, text: string): void {
   add(st, 'assistant', [{ type: 'text', text }]);
 }
 
+/**
+ * What the model is told of a silence, in the conversation where it learns what the caller said: context and the goal
+ * (help the caller go on, as a person would), never words for it to say.
+ */
+export const silenceNote = (ms: number): string => `[The caller has said nothing for ${Math.round(ms / 1000)} seconds since your last reply. Help them go on, as a person on the phone would when the other side goes quiet, in a short reply.]`;
+
+/**
+ * A silence of the caller's on a call (agent.yaml's `silence`): a read-back waiting for the yes is not confirmed (a
+ * silence is never a yes), its change kept unsent; then either the model answers the silence, told of it (silenceNote),
+ * a failure saying lines.silence where the app has it; or, the last one (`end`), the line says lines.silenceEnd (the
+ * closing line where it has none) and ends the call as end_call ends it. The end is the line's own decision, not the
+ * model's: a change kept unsent does not keep the call open (the unclear end and the handoff do the same), and the trace
+ * records it.
+ */
+async function silenceTurn(t: Turn, sp: Speaker, input: Extract<Input, { kind: 'silence' }>): Promise<void> {
+  const { st, deps } = t;
+  t.silence = input.count;
+  const p = st.pending;
+  const secs = Math.round(input.ms / 1000);
+  if (input.end) {
+    st.pending = null;
+    if (st.unsent !== undefined) t.unsent = { action: st.unsent.action };
+    else if (p !== null) t.unsent = { action: p.action };
+    await record(t, { type: 'converse_end', detail: { by: 'silence', ...(p !== null ? { pending: p.action } : {}) } });
+    const line = lineFor(t, deps.business.lines.silenceEnd ?? deps.business.lines.closing);
+    if (p !== null) add(st, 'user', [{ type: 'tool_result', id: p.id, content: `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller said nothing for ${secs} seconds after it, and the call ended.` }]);
+    sp.line(line);
+    add(st, 'assistant', [{ type: 'text', text: line }]);
+    t.ended = 'silence';
+    st.ended = 'closing';
+    t.out.end('closing');
+    return;
+  }
+  if (p !== null) {
+    st.pending = null;
+    const spec = Object.hasOwn(deps.business.actions, p.action) ? deps.business.actions[p.action] : undefined;
+    t.readBack = { text: p.text, ...changesOf(p), confirmed: false };
+    traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller said nothing');
+    keepUnsent(t, p);
+    add(st, 'user', [{ type: 'tool_result', id: p.id, content: `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller said nothing for ${secs} seconds after it, so it is not confirmed. ${ONLY_THE_READ_BACK}` }]);
+  }
+  add(st, 'user', [{ type: 'text', text: silenceNote(input.ms) }]);
+  await converse(t, sp);
+}
+
 /** The turn's work once its clock, speaker and bridge are set up: converseTurn's, which clears the bridge after it. */
 async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<ConverseState> {
   const { st, deps, out } = t;
@@ -1812,6 +1872,8 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
     const greeting = lineFor(t, closedGreeting ?? started?.greeting ?? deps.business.lines.greeting);
     sp.line(greeting);
     add(st, 'assistant', [{ type: 'text', text: greeting }]);
+  } else if (input.kind === 'silence') {
+    await silenceTurn(t, sp, input);
   } else if (input.kind === 'left') {
     // The caller left: a read-back waiting for an answer is dropped, and nothing runs.
     const pending = st.pending?.action ?? null;

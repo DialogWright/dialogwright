@@ -334,6 +334,38 @@ describe('readBacks: whether a read-back the caller spoke over is said again hel
   });
 });
 
+describe('silence: the re-prompt when the caller says nothing on a call', () => {
+  it('waits 9 s and re-prompts once by default; an app may set both, or turn it off', () => {
+    expect(agentBusinessProblems(source).value!.silence).toEqual({ afterMs: 9000, reprompts: 1 });
+    expect(agentBusinessProblems(`${source}silence: { afterMs: 12000, reprompts: 2 }\n`).value!.silence).toEqual({ afterMs: 12000, reprompts: 2 });
+    expect(agentBusinessProblems(`${source}silence: { afterMs: 6000 }\n`).value!.silence).toEqual({ afterMs: 6000, reprompts: 1 });
+    const { value, problems } = agentBusinessProblems(`${source}silence: off\n`);
+    expect(problems).toEqual([]);
+    expect(value!.silence).toBe('off');
+  });
+
+  it('refuses a wait under 3 s or over 30 s, and more than three re-prompts, with the fix', () => {
+    const [low] = problemsOf(`${source}silence: { afterMs: 1000 }\n`);
+    expect(low).toMatchObject({ path: 'silence.afterMs' });
+    expect(low!.fix).toMatch(/3000/);
+    const [high] = problemsOf(`${source}silence: { afterMs: 60000 }\n`);
+    expect(high).toMatchObject({ path: 'silence.afterMs' });
+    expect(high!.fix).toMatch(/30000/);
+    const [many] = problemsOf(`${source}silence: { reprompts: 5 }\n`);
+    expect(many).toMatchObject({ path: 'silence.reprompts' });
+    expect(many!.fix).toMatch(/3/);
+  });
+
+  it('lines.silence and lines.silenceEnd are optional lines', () => {
+    const withLines = changed('lines:\n', 'lines:\n  silence: { en: "Are you still there?" }\n  silenceEnd: { en: "I will let you go. Call back any time." }\n');
+    const { value, problems } = agentBusinessProblems(withLines);
+    expect(problems).toEqual([]);
+    expect(value!.lines.silence).toEqual({ en: 'Are you still there?' });
+    expect(value!.lines.silenceEnd).toEqual({ en: 'I will let you go. Call back any time.' });
+    expect(agentBusinessProblems(source).value!.lines.silence).toBeUndefined();
+  });
+});
+
 describe('businessText', () => {
   const b = loadAgentBusiness(FIXTURE, { OFFICE_LINE: '+15555550199' });
   const text = businessText(b);

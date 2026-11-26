@@ -72,6 +72,10 @@
                 "default": false,
                 "description": "The caller's longer turns (more than 8 words) reach the line in two parts, as a recognizer that ended a turn early.",
                 "type": "boolean"
+              },
+              "silentOnce": {
+                "description": "Once, after their first turn, the caller says nothing when the line hands them the turn, and waits for the line to answer the silence (agent.yaml's silence wait) before going on.",
+                "type": "boolean"
               }
             },
             "additionalProperties": false

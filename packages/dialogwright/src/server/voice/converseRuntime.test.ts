@@ -163,8 +163,10 @@ function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?
     session: newConverseState({ appId: app.id, callId: 'CA-converse-1', channel: 'voice' }),
   };
   const jev = o.jev ?? jevOf();
+  // The business a test gives is the app's, so the runtime's own reading of it (the silence wait) is the turn's.
+  const served = o.business === undefined ? app : { ...app, business: o.business(app.business) };
   const rt = converseVoiceRuntime({
-    apps: new Map([[app.id, app]]),
+    apps: new Map([[app.id, served]]),
     converseDeps: (a) => ({
       business: o.business?.(a.business) ?? a.business, model: o.model, jev, policy: policyOf(a.business), audit, tools: withBefore(a.tools, o.before ?? {}), texts: null,
       now: () => new Date(), trace: () => {}, jevTimeoutMs: 1000,
@@ -987,11 +989,168 @@ describe('the converse voice runtime: a held read-back, fix round 3', () => {
     await h.settle(200);
     g.open();
     await turn;
-    expect(h.said().at(-1)!.token).toContain('Is that right?');
-    await h.settle(20_000);
+    const readBack = h.said().at(-1)!.token;
+    expect(readBack).toContain('Is that right?');
+    // The yes once the read-back has played, well within the silence wait.
+    await h.settle(textEstimateMs(readBack) + 1000);
     await h.prompt('yes');
     expect(h.traces.at(-1)!.heard).toMatchObject({ cutIn: false, spokeBefore: false });
     expect(h.booked).toHaveLength(1);
+  });
+});
+
+describe('the converse voice runtime: silence', () => {
+  const SILENCE = 'Are you still there? We can carry on whenever you are ready.';
+  const SILENCE_END = 'I will let you go for now. Call back any time.';
+  const withLines = (b: AgentBusiness): AgentBusiness => ({ ...b, lines: { ...b.lines, silence: { en: SILENCE }, silenceEnd: { en: SILENCE_END } } });
+  const NOTE = '[The caller has said nothing for 9 seconds since your last reply.';
+  const silenceTurns = (h: ReturnType<typeof harness>): ConverseTraceRecord[] => h.traces.filter((r) => r.silence !== undefined);
+  /** The greeting played: on Telnyx its report, on Twilio its estimate. */
+  async function greeted(h: ReturnType<typeof harness>, provider: 'twilio' | 'telnyx'): Promise<void> {
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider }, h.io);
+    if (provider === 'telnyx') {
+      h.event({ kind: 'playback', state: 'started' });
+      await h.settle(1000);
+      h.event({ kind: 'playback', state: 'finished', text: GREETING });
+      h.event({ kind: 'playback', state: 'finished' });
+    } else await h.settle(textEstimateMs(GREETING));
+  }
+
+  for (const provider of ['twilio', 'telnyx'] as const) {
+    it(`${provider}: nine seconds of silence after the line's reply has played: a turn on the silence, the model told of it`, async () => {
+      const model = gatedModel([[text('Take your time.'), done()]]);
+      const h = harness({ model, provider, business: withLines });
+      await greeted(h, provider);
+      await h.settle(8900);
+      expect(model.requests).toHaveLength(0);
+      await h.settle(200);
+      expect(model.requests).toHaveLength(1);
+      expect(JSON.stringify(model.requests[0]!.messages.at(-1))).toContain(NOTE);
+      expect(silenceTurns(h).map((r) => [r.silence, r.said])).toEqual([[1, null]]);
+      expect(h.said().at(-1)!.token).toBe('Take your time.');
+    });
+
+    it(`${provider}: speech just before the nine seconds: no silence turn`, async () => {
+      const model = gatedModel([[text('Sure, what day?'), done()], [text('Unused.'), done()]]);
+      const h = harness({ model, provider, business: withLines });
+      await greeted(h, provider);
+      await h.settle(8800);
+      if (provider === 'telnyx') h.event({ kind: 'caller', speaking: true });
+      else await h.prompt('I', false);
+      await h.settle(300);
+      if (provider === 'telnyx') h.event({ kind: 'caller', speaking: false });
+      await h.prompt('I need a visit');
+      expect(silenceTurns(h)).toEqual([]);
+      expect(model.requests).toHaveLength(1);
+    });
+
+    it(`${provider}: a sign of speech with no words resets the wait`, async () => {
+      const model = gatedModel([[text('Take your time.'), done()]]);
+      const h = harness({ model, provider, business: withLines });
+      await greeted(h, provider);
+      await h.settle(8000);
+      if (provider === 'telnyx') {
+        h.event({ kind: 'caller', speaking: true });
+        h.event({ kind: 'caller', speaking: false });
+      } else await h.prompt('mm', false);
+      await h.settle(8900);
+      expect(model.requests).toHaveLength(0);
+      await h.settle(200);
+      expect(model.requests).toHaveLength(1);
+    });
+
+    it(`${provider}: two silences: the model answers the first, the silence end line ends the call on the second`, async () => {
+      const model = gatedModel([[text('Take your time.'), done()]]);
+      const h = harness({ model, provider, business: withLines });
+      await greeted(h, provider);
+      await h.settle(9100);
+      const reprompt = h.said().at(-1)!;
+      expect(reprompt.token).toBe('Take your time.');
+      if (provider === 'telnyx') {
+        h.event({ kind: 'playback', state: 'started' });
+        await h.settle(textEstimateMs(reprompt.token));
+        h.event({ kind: 'playback', state: 'finished', text: reprompt.token });
+      } else await h.settle(textEstimateMs(reprompt.token));
+      await h.settle(9100);
+      expect(model.requests).toHaveLength(1);
+      expect(h.fio.sent.filter((f) => f.type === 'text').at(-1)).toMatchObject({ token: SILENCE_END });
+      expect(h.fio.sent.at(-1)!.type).toBe('end');
+      expect(h.entry.session.ended).toBe('closing');
+      expect(h.rows.filter((r) => r.type === 'call_ended').map((r) => r.detail)).toEqual([{ reason: 'silence' }]);
+      expect(h.fio.records).toContainEqual({ dir: 'log', msg: { ended: 'silence' } });
+      expect(silenceTurns(h).map((r) => [r.silence, r.ended])).toEqual([[1, undefined], [2, 'silence']]);
+      // Nothing more: the call is over.
+      await h.settle(60_000);
+      expect(model.requests).toHaveLength(1);
+    });
+  }
+
+  it('a turn still running past nine seconds (a lookup that waits): no silence turn while it runs', async () => {
+    const model = gatedModel([BOOKING[0]!, [text('Unused.'), done()]]);
+    const h = harness({ model, business: withLines, before: { availability: () => new Promise<void>(() => {}) } });
+    await greeted(h, 'twilio');
+    void h.prompt('I need a visit on Tuesday');
+    await h.settle(30_000);
+    expect(model.requests).toHaveLength(1);
+    expect(silenceTurns(h)).toEqual([]);
+  });
+
+  it('silence: off: nothing, however long the caller says nothing', async () => {
+    const model = gatedModel([[text('Unused.'), done()]]);
+    const h = harness({ model, business: (b) => ({ ...withLines(b), silence: 'off' }) });
+    await greeted(h, 'twilio');
+    await h.settle(120_000);
+    expect(model.requests).toHaveLength(0);
+    expect(h.said()).toHaveLength(1);
+  });
+
+  it('a model that fails on a silence turn: the app\'s silence line', async () => {
+    const model = gatedModel([[{ type: 'error', kind: 'http', detail: 'down' }], [{ type: 'error', kind: 'http', detail: 'down' }]]);
+    const h = harness({ model, business: withLines });
+    await greeted(h, 'twilio');
+    await h.settle(9100);
+    expect(h.said().at(-1)).toMatchObject({ token: SILENCE, last: true });
+  });
+
+  it('with no silence end line, the closing line ends the call', async () => {
+    const model = gatedModel([[text('Take your time.'), done()]]);
+    const h = harness({ model });
+    await greeted(h, 'twilio');
+    await h.settle(9100);
+    await h.settle(textEstimateMs('Take your time.') + 9100);
+    expect(h.fio.sent.filter((f) => f.type === 'text').at(-1)).toMatchObject({ token: 'Thanks for getting in touch. Goodbye.' });
+    expect(h.fio.sent.at(-1)!.type).toBe('end');
+  });
+
+  it('a held read-back\'s wait starts at its end', async () => {
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'book', { window: SLOT, name: 'Sam Example', phone: 'caller' }), done('tool')], [text('Take your time.'), done()]]);
+    const h = harness({ model, business: withLines });
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: 'twilio' }, h.io);
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    const first = h.said().at(-1)!;
+    await h.frame({ type: 'interrupt', utteranceUntilInterrupt: first.token.slice(0, 12), durationUntilInterruptMs: 600 });
+    await h.prompt('wait, what was that?');
+    const held = h.said().at(-1)!;
+    expect(held.interruptible).toBe(false);
+    const asked = model.requests.length;
+    const end = Math.ceil(READ_BACK_HEARD_AT * textEstimateMs(held.token));
+    await h.settle(end + 8800);
+    expect(model.requests).toHaveLength(asked);
+    await h.settle(400);
+    expect(model.requests).toHaveLength(asked + 1);
+    expect(h.entry.session.pending).toBeNull();
+    expect(h.booked).toEqual([]);
+  });
+
+  it('an end held for its playback: no silence turn after it', async () => {
+    const model = gatedModel([[text('Goodbye then.'), call('c1', 'end_call', {}), done('tool')], [text('Unused.'), done()]]);
+    const h = harness({ model, business: withLines });
+    await greeted(h, 'twilio');
+    await h.prompt('that is all, thanks');
+    await h.settle(60_000);
+    expect(model.requests).toHaveLength(1);
+    expect(silenceTurns(h)).toEqual([]);
   });
 });
 

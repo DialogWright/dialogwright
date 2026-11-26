@@ -158,6 +158,19 @@ describe('a converse phone call in the console', () => {
     expect(turns[3]).toMatchObject({ interrupted: true, heard: { cutIn: false, spokeBefore: true, chars: null, text: null } });
   });
 
+  it('shows a turn on a silence, and a call ended on one', () => {
+    const records = [
+      { v: 3, kind: 'converse', sessionId: 'CA-3', turnIndex: 0, ts: ts(0), said: null, replies: ['Example Visits, how can I help?'], tools: [], model: model(0, 0) },
+      { v: 3, kind: 'converse', sessionId: 'CA-3', turnIndex: 1, ts: ts(12), said: null, silence: 1, replies: ['Take your time.'], tools: [], model: model(300, 0.0001) },
+      { v: 3, kind: 'converse', sessionId: 'CA-3', turnIndex: 2, ts: ts(24), said: null, silence: 2, ended: 'silence', replies: ['Call back any time.'], tools: [], model: model(0, 0) },
+    ];
+    const turns = converseCall(records).turns;
+    expect(turns[0]).not.toHaveProperty('silence');
+    expect(turns[1]).toMatchObject({ said: null, silence: { count: 1, ms: null } });
+    expect(turns[2]).toMatchObject({ silence: { count: 2, ms: null }, endedBy: 'silence' });
+    expect(converseRow(records, [{ ts: ts(30), dir: 'log' as const, msg: { ended: 'silence' } }])).toMatchObject({ status: 'ended', ending: { kind: 'hangup', text: 'ended after silence' } });
+  });
+
   it('shows a read-back said again held (and brief), and the speech over it that was ignored, by its length', () => {
     const turns = converseCall([
       { v: 3, kind: 'converse', sessionId: 'CA-2', turnIndex: 0, ts: ts(0), said: 'wait, what?', replies: ['Tuesday morning, on ending in 0123. Right?'], tools: [{ name: 'book', args: {}, outcome: 'readBack' }], readBack: { text: 'Tuesday morning, on ending in 0123. Right?', held: true, brief: true }, model: model(300, 0.0001) },

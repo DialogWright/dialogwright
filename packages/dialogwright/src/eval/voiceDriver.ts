@@ -25,6 +25,10 @@ import type { Persona } from './personas';
  *   reply's own (its first frame for `replyFirstMs`, never counted as the bridge); the caller answers once it has played.
  * - Speech begins with a partial prompt (its first word, `last: false`), then the final, as Twilio sends them with
  *   partial prompts on: the line reads when the caller began to speak from it.
+ * - Silence (the persona's `voice.silentOnce`). Once, after the caller's first turn, the caller says nothing when the line
+ *   hands them the turn: the driver waits for the line's next reply (its answer to the silence), keeps a caller turn
+ *   "(says nothing)" marked `silent`, and the caller goes on after it. Otherwise the caller is asked for its words as soon
+ *   as a reply has played, so a run never waits as long as the line's silence wait.
  * - Fragments (the persona's `voice.fragments`). A caller turn of more than FRAGMENT_OVER_WORDS words is sent as
  *   two final prompts split at its middle word, FRAGMENT_GAP_MS apart, as a recognizer that ended the turn early.
  * - Timing. `firstWordMs` is from the caller's (last) final prompt to the first text frame heard (the bridge
@@ -157,6 +161,8 @@ export async function driveVoice(o: {
   const from = o.persona.callingFrom ?? VOICE_FROM;
   const interrupts = o.persona.voice?.interrupts === true;
   const fragmenting = o.persona.voice?.fragments === true;
+  /** The caller has yet to stay silent once (voice.silentOnce). */
+  let silentDue = o.persona.voice?.silentOnce === true;
   const call: SimCall = { persona: o.persona.id, turns: [], ended: 'turns', firstWordMs: [], callId: callSid, channel: 'voice', cutIns: 0, fragments: 0, replyFirstMs: [], bridged: 0 };
   const callback = (params: Record<string, string>): Promise<unknown> =>
     fetch(`${o.serverHttp}/cr-action/twilio`, form({ CallSid: callSid, ...params })).then((r) => r.text()).catch(() => undefined);
@@ -349,6 +355,14 @@ export async function driveVoice(o: {
       if (said >= o.maxTurns) {
         call.ended = 'turns';
         break;
+      }
+      if (silentDue && said >= 1 && r.cut === null) {
+        // The caller says nothing: the line's answer to the silence is the next reply.
+        silentDue = false;
+        call.turns.push({ who: 'caller', text: '(says nothing)', atMs: Date.now() - started, silent: true });
+        turn += 1;
+        r = await reply(turn, Date.now());
+        continue;
       }
       let line: Awaited<ReturnType<CallerFn>>;
       if (r.cut !== null) {

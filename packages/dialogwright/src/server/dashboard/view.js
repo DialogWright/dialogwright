@@ -1998,6 +1998,7 @@ function converseEnding(reason, voice = false) {
   if (reason === 'handoff') return { kind: 'person', reason: 'handoff', text: 'to a person' };
   if (reason === 'caller') return { kind: 'hangup', text: voice ? 'hung up' : 'left the chat' };
   if (reason === 'idle') return { kind: 'hangup', text: 'left the chat (idle)' };
+  if (reason === 'silence') return { kind: 'hangup', text: 'ended after silence' };
   return { kind: 'error', text: 'ended in an error' };
 }
 
@@ -2089,6 +2090,9 @@ export function converseCall(records) {
     }
     if (r.bridge === true) callView.bridge = true;
     if (r.interrupted === true) callView.interrupted = true;
+    // A turn on the caller's silence (no words of theirs), with how long it was; and a call the line ended on one.
+    if (typeof r.silence === 'number') callView.silence = { count: r.silence, ms: typeof r.silenceMs === 'number' ? r.silenceMs : null };
+    if (r.ended === 'silence') callView.endedBy = 'silence';
     // The caller's speech over a held read-back, ignored before this turn: each utterance by its length.
     if (Array.isArray(r.ignored) && r.ignored.length > 0) callView.ignored = r.ignored.filter((n) => typeof n === 'number');
     // The turn threw in the line (an audit row or a trace that could not be written): a chat's turn too.

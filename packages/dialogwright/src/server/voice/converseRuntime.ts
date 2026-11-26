@@ -136,6 +136,8 @@ interface Reply {
   bridgeSent: Sent | null;
   /** When the carrier reported the held read-back played (Telnyx's tokensPlayed); null: not yet, or no report. */
   heldPlayedAt: number | null;
+  /** When the carrier reported the reply played to its end (its last line reported, or the voice stopping after it); null: not yet, or no report. */
+  playedAt: number | null;
   /**
    * The carrier reported it begun before the caller began to speak: a playback start after its first line was
    * sent, or a report of its own words played. Where the carrier reports its playback, a caller with no such
@@ -197,6 +199,12 @@ interface Live {
   callerSpeaking: boolean;
   /** The lines sent, oldest first, each with its reply (a few kept): a carrier's report of a line played is the first of them with its words. */
   sentLines: { reply: Reply; line: Sent }[];
+  /** The silence wait (agent.yaml's `silence`) while it runs: a turn on the silence when it ends; null: none runs. */
+  silenceTimer: ReturnType<typeof setTimeout> | null;
+  /** Silences in a row the line has answered, since caller speech was last taken. */
+  silences: number;
+  /** The call this is kept for. */
+  entry: ConverseCallEntry;
 }
 
 /** The lines kept to match a carrier's reports of what played against, by the order they were sent. */
@@ -237,7 +245,7 @@ const folded = (text: string): string => text.replace(/\s+/g, ' ').trim();
 /** Text pieces joined with a space between them. */
 const joined = (a: string, b: string): string => (a === '' ? b : `${a}${/\s$/.test(a) ? '' : ' '}${b}`);
 
-const newReply = (): Reply => ({ frames: [], bridge: null, played: '', interrupted: null, cutIn: false, unheard: false, began: false, held: null, bridgeSent: null, heldPlayedAt: null });
+const newReply = (): Reply => ({ frames: [], bridge: null, played: '', interrupted: null, cutIn: false, unheard: false, began: false, held: null, bridgeSent: null, heldPlayedAt: null, playedAt: null });
 
 /** Every line of the reply as sent, the bridge among them, in the order sent. */
 const linesOf = (r: Reply): Sent[] => [...(r.bridgeSent !== null ? [r.bridgeSent] : []), ...r.frames].sort((a, b) => a.at - b.at);
@@ -254,6 +262,13 @@ function heldStart(r: Reply): number | null {
     t = start + textEstimateMs(f.text);
   }
   return null;
+}
+
+/** When the reply's lines are estimated to have played, each from when it was sent or once the one before it has (the bridge included); null: none was sent. */
+function linesEnd(r: Reply): number | null {
+  let t: number | null = null;
+  for (const f of linesOf(r)) t = Math.max(t ?? f.at, f.at) + textEstimateMs(f.text);
+  return t;
 }
 
 /** When the held reply's first line was sent (the bridge included): speech signs from before it are not of words over it. */
@@ -326,7 +341,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   const liveOf = (e: ConverseCallEntry): Live => {
     let l = lives.get(e.callSid);
     if (l === undefined) {
-      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [], ignored: [], run: null, prevRun: null, callerSpeaking: false, sentLines: [] };
+      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [], ignored: [], run: null, prevRun: null, callerSpeaking: false, sentLines: [], silenceTimer: null, silences: 0, entry: e };
       lives.set(e.callSid, l);
     }
     return l;
@@ -559,7 +574,10 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     });
     void io.send(frames, { logged: (f) => (f.type === 'text' ? loggedText(f, c.scrub) : f) })
       .catch((err: unknown) => log(`correction not sent: ${describe(err)}`))
-      .finally(c.settled);
+      .finally(() => {
+        c.settled();
+        armSilence(l.entry, l);
+      });
   };
 
   /** Whether the carrier reported the reply's last line played. */
@@ -582,6 +600,74 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     c.timer.unref?.();
   };
 
+  /** Whether half the estimate of the reply's last line has passed since it was estimated to begin: a report of the voice stopping sooner is of a line before it. */
+  const lastLineDue = (r: Reply): boolean => {
+    const lines = linesOf(r);
+    const last = lines.at(-1);
+    if (last === undefined || r.frames.length === 0) return false;
+    let t: number | null = null;
+    let start = last.at;
+    for (const f of lines) {
+      start = Math.max(t ?? f.at, f.at);
+      t = start + textEstimateMs(f.text);
+    }
+    return now() >= start + 0.5 * textEstimateMs(last.text);
+  };
+
+  /** The silence wait stopped. */
+  const clearSilence = (l: Live): void => {
+    if (l.silenceTimer !== null) clearTimeout(l.silenceTimer);
+    l.silenceTimer = null;
+  };
+
+  /**
+   * When the line's last reply has played, for the silence wait: a held read-back's end (heldEnd); with the carrier's
+   * playback reports (Telnyx), its report that the reply played, else one and a half times its estimate and two seconds
+   * from its first line, a ceiling; with none (Twilio), its lines' estimate, at 100%, the bridge among them.
+   */
+  const replyEnd = (l: Live): number => {
+    const r = l.reply;
+    if (r === null) return now();
+    const held = heldEnd(l);
+    if (held !== null) return held;
+    if (r.playedAt !== null) return r.playedAt;
+    const end = linesEnd(r);
+    if (end === null) return now();
+    const first = linesOf(r)[0]!.at;
+    return l.reports ? first + (end - first) * 1.5 + 2000 : end;
+  };
+
+  /**
+   * The silence wait (agent.yaml's `silence`; the maintainer's decision, 2026-11-26), started again: `afterMs` once the
+   * line's last reply has played (replyEnd), or from now where that is past (a sign of the caller's speech starts it
+   * again). Never while a turn runs, a correction waits to be said, the caller is heard speaking, the call has ended, or
+   * where the app turns it off. When it ends with nothing heard: a turn on the silence.
+   */
+  const armSilence = (e: ConverseCallEntry, l: Live): void => {
+    clearSilence(l);
+    const app = deps.apps.get(e.session.appId);
+    const cfg = app?.business.silence;
+    if (cfg === undefined || cfg === 'off' || e.session.ended !== undefined || e.ended || lives.get(e.callSid) !== l) return;
+    if (l.running !== null || l.correction !== null || l.callerSpeaking) return;
+    const start = Math.max(replyEnd(l), now());
+    l.silenceTimer = setTimeout(() => silenceDue(e, l, cfg), start + cfg.afterMs - now());
+    l.silenceTimer.unref?.();
+  };
+
+  /**
+   * The silence wait ended with nothing heard: a turn on the silence, the model told of it; after `reprompts` of them
+   * in a row, the last, which says lines.silenceEnd and ends the call.
+   */
+  const silenceDue = (e: ConverseCallEntry, l: Live, cfg: { afterMs: number; reprompts: number }): void => {
+    l.silenceTimer = null;
+    const io = l.io;
+    if (io === null || e.session.ended !== undefined || e.ended || lives.get(e.callSid) !== l || l.running !== null || l.callerSpeaking) return;
+    const end = l.silences >= cfg.reprompts;
+    l.silences += 1;
+    const ignored = l.ignored.splice(0);
+    void runTurn(e, { kind: 'silence', ms: cfg.afterMs, count: l.silences, ...(end ? { end: true as const } : {}), ...(ignored.length > 0 ? { ignored } : {}) }, io);
+  };
+
   /**
    * One turn, run now (in the call's queue): its words sent as they are said, its state kept, the call ended
    * where it ended it, else saved.
@@ -592,6 +678,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const l = liveOf(e);
     l.io = io;
     dropCorrection(l);
+    clearSilence(l);
     let settle!: () => void;
     const running: Running = { ac: new AbortController(), done: new Promise<void>((r) => (settle = r)), bridged: false, dropped: false };
     // Running from here: a final prompt, a cut-in or the hangup reaches it even while its words are saved.
@@ -720,7 +807,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       delete e.turnHeard;
       const ended = state.ended;
       if (ended === 'closing' || ended === 'handoff') {
-        endCall(e, app, ended, sent.map((s) => s.frame), io);
+        endCall(e, app, ended, sent.map((s) => s.frame), io, input.kind === 'silence' && input.end === true ? 'silence' : undefined);
         return;
       }
       if (correction.length > 0) {
@@ -728,6 +815,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         armCorrection(l, { pieces: correction, after: reply, scrub: masked, timer: null, settled: () => turnEnded(e.callSid) });
       }
       await io.save();
+      // The reply handed the turn back: the silence wait from when it has played.
+      armSilence(e, l);
     } finally {
       settle();
       if (!endTold) turnEnded(e.callSid);
@@ -735,12 +824,15 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /** The call ended by its turn: the audit's row, the console told, the `end` sent once the lines before it have played (or kept for the next socket). */
-  const endCall = (e: ConverseCallEntry, app: ConverseApp, ended: 'closing' | 'handoff', lines: readonly OutboundFrame[], io: VoiceIo): void => {
+  const endCall = (e: ConverseCallEntry, app: ConverseApp, ended: 'closing' | 'handoff', lines: readonly OutboundFrame[], io: VoiceIo, why?: 'silence'): void => {
     const reason = ended === 'closing' ? 'completed' : 'handoff';
-    audited(app, e.callSid, reason);
+    // An end on silence is the line's own: said so in the audit and the frame log (the console's Live list counts it completed).
+    audited(app, e.callSid, why ?? reason);
     // How the call ended, in the frame log as a converse chat's (the console's Calls page reads it: view.js converseRow).
-    io.record('log', { ended });
+    io.record('log', { ended: why ?? ended });
     io.publish({ type: 'ended', callSid: e.callSid, at: now(), reason });
+    const gone = lives.get(e.callSid);
+    if (gone !== undefined) clearSilence(gone);
     lives.delete(e.callSid);
     const completed = (e.session.done ?? []).map((d) => d.action);
     // A handoff goes to the business's transfer number where it names one (http.ts dials it); else the call ends as a goodbye does.
@@ -778,6 +870,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         l.speechAt = null;
         l.ignored.push(text.length);
         io.record('log', { ignoredOverHeld: text.length });
+        // Speech, though ignored: the silence wait starts again from it.
+        armSilence(e, l);
         return Promise.resolve();
       }
       // Taken after a held read-back: what the caller heard of it is read from when these words began (any sign before
@@ -787,6 +881,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     } else signsSaid(l);
     // A correction still waiting was not heard: dropped first, so the turn is told so.
     dropCorrection(l);
+    // The caller's speech taken: the silences in a row begin again.
+    clearSilence(l);
+    l.silences = 0;
     const heard = heardOf(l, now());
     const overTheBridge = overBridge(l);
     l.speechAt = null;
@@ -823,12 +920,15 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
             l.speechAt ??= now();
             sign(l, 'tick');
             dropCorrection(l);
+            // A sign of speech: the silence wait starts again from it.
+            armSilence(entry, l);
             return;
           }
           // An empty final says nothing, but ends the run of signs before it, as words do.
           if (frame.voicePrompt.trim() === '') {
             l.speechAt = null;
             signsSaid(l);
+            armSilence(entry, l);
             return;
           }
           return finalWords(entry, l, frame.voicePrompt, io);
@@ -841,12 +941,14 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           }
           sign(l, 'tick');
           cutIn(l, frame.utteranceUntilInterrupt, true);
+          armSilence(entry, l);
           return;
         case 'error':
           log(`${entry.callSid}: the carrier reported: ${frame.description.slice(0, 200)}`);
           return;
         default:
-          // Keys are logged and otherwise ignored (the converse line has no keypad menu).
+          // Keys are logged and otherwise ignored (the converse line has no keypad menu), but start the silence wait again.
+          armSilence(entry, l);
           return;
       }
     },
@@ -858,6 +960,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       const r = l.reply;
       if (ev.kind === 'caller') {
         l.callerSpeaking = ev.speaking;
+        // No silence while the caller is heard speaking; it starts again when they stop.
+        armSilence(entry, l);
         sign(l, ev.speaking ? 'on' : 'off');
         if (!ev.speaking) return;
         l.speechAt ??= now();
@@ -871,13 +975,16 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       }
       // A held read-back plays on whatever the caller says over it: its playback counts as it is reported.
       const holds = r !== null && r.held !== null;
+      const endedBefore = r === null ? null : (r.heldPlayedAt ?? r.playedAt);
       if (ev.state === 'started') {
         l.agentSpeaking = true;
         if (r !== null && r.frames.length > 0 && (l.speechAt === null || holds)) r.began = true;
       } else if (ev.text === undefined) {
         l.agentSpeaking = false;
-        // The voice stopped: the held read-back has played, where it is not too soon (heldReported).
+        // The voice stopped: the held read-back has played, where it is not too soon (heldReported); so has any other reply,
+        // once half its last line's estimate has passed since it began (for the silence wait).
         if (holds && heldReported(r, undefined)) r.heldPlayedAt = now();
+        else if (r !== null && !holds && r.playedAt === null && lastLineDue(r)) r.playedAt = now();
       } else {
         const reported = takeReported(l, ev.text);
         // What played is what the carrier reported before the caller began to speak: Telnyx reports the text it
@@ -889,7 +996,11 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         // The held read-back's end is its own report, matched by the order the lines were sent, never a late one of the
         // earlier read-back's same words; a cut one ends too, as reported (the cut is kept: its yes confirms nothing).
         if (holds && heldReported(r, reported)) r.heldPlayedAt = now();
+        // Any other reply has played once its last line is reported (for the silence wait).
+        else if (r !== null && !holds && r.playedAt === null && r.frames.length > 0 && playedOut(r)) r.playedAt = now();
       }
+      // The reply reported played: the silence wait starts from now.
+      if (r !== null && endedBefore === null && (r.heldPlayedAt ?? r.playedAt) !== null) armSilence(entry, l);
       const c = l.correction;
       if (c !== null && playedOut(c.after)) sayCorrection(l, c);
     },
@@ -914,6 +1025,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       const l = lives.get(entry.callSid);
       if (l === undefined) return;
       dropCorrection(l);
+      clearSilence(l);
       l.io = null;
       l.speechAt = null;
       l.agentSpeaking = false;
@@ -961,6 +1073,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       const l = lives.get(callSid);
       if (l === undefined) return;
       dropCorrection(l);
+      clearSilence(l);
       lives.delete(callSid);
     },
 
@@ -969,6 +1082,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       lives.delete(entry.callSid);
       if (l !== undefined) {
         dropCorrection(l);
+        clearSilence(l);
         l.running?.ac.abort();
         await l.running?.done;
       }

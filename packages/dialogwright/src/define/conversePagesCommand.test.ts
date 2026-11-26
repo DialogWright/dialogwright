@@ -162,6 +162,16 @@ describe('an edit to agent.yaml changes the pages', () => {
     expect(conversePolicyCardText(app)).not.toContain('readBackChange');
   });
 
+  it('the silence wait: the card says it, its lines word for word, and that it is off where it is', () => {
+    const card = conversePolicyCardText(app);
+    expect(card).toContain('- On a call (`silence`: after 9 s, 1 re-prompt), when the caller says nothing for 9 s once the line\'s last reply has played, the agent model is told so and answers it (where it fails, the recovery line); after 1 such in a row, one more ends the call with the closing line, word for word ("Thanks for getting in touch. Goodbye."), audited as `converse_end` by `silence`, a change not confirmed included (it was never done). Any speech of the caller\'s starts the count again. A chat has no silence wait.');
+    const lines = conversePolicyCardText(edited((t) => t.replace('lines:\n', 'lines:\n  silence: { en: "Still there?" }\n  silenceEnd: { en: "Call back any time." }\n')));
+    expect(lines).toContain('the agent model is told so and answers it (where it fails, `lines.silence`, word for word: "Still there?")');
+    expect(lines).toContain('one more ends the call with `lines.silenceEnd`, word for word ("Call back any time.")');
+    const off = conversePolicyCardText(edited((t) => `${t}silence: off\n`));
+    expect(off).toContain('- On a call (`silence`: off), the line waits for the caller as long as the call lasts.');
+  });
+
   it('the hold of a read-back said again: the card says the setting, and prints a brief read-back beside the full one', () => {
     const READ_BACK = '      en: "A visit {window} for {name}, on {phone}. Is that right?"\n';
     const HOLD = '- On a call (`readBacks.holdAfterCut`: on), once the caller has spoken over a read-back of a change before hearing it (cut in before 85% of it, or spoke as it began), every later read-back of that change is said whole and cannot be talked over, with the agent model\'s words before it in that reply, until the change is confirmed, withdrawn or its journey no longer offers it; its first read-back can always be talked over. Speech that began before a held read-back finished playing is ignored, recorded by its length only, never its words, and where the carrier cuts it all the same (an interrupt), it counts as cut in on and the yes after it confirms nothing. Where a change gives a brief read-back (`readBackBrief`, shown with each action below), a held read-back says it, naming every value the full one names, and a correction\'s short read-back is held too; the yes to either confirms them all. A chat is unchanged.';

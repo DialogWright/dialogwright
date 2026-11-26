@@ -567,6 +567,66 @@
           ],
           "additionalProperties": false,
           "description": "The short line said on a call when the model is slow to begin, per language."
+        },
+        "silence": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said on a call when the caller has said nothing for silence.afterMs and the model fails to answer the silence (it asks whether they are still there), in English."
+            },
+            "chat": {
+              "description": "The line said on a call when the caller has said nothing for silence.afterMs and the model fails to answer the silence (it asks whether they are still there) in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said on a call when the caller has said nothing for silence.afterMs and the model fails to answer the silence (it asks whether they are still there) in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said on a call when the caller has said nothing for silence.afterMs and the model fails to answer the silence (it asks whether they are still there), per language."
+        },
+        "silenceEnd": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given), in English."
+            },
+            "chat": {
+              "description": "The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given) in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given) in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given), per language."
         }
       },
       "required": [
@@ -641,6 +701,40 @@
         }
       },
       "additionalProperties": false
+    },
+    "silence": {
+      "default": {
+        "afterMs": 9000,
+        "reprompts": 1
+      },
+      "description": "On a call: what the line does when the caller says nothing (the maintainer's decision, 2026-11-26). Each silence of afterMs, counted once the line's last reply has played, is answered by the model, told the caller has said nothing (lines.silence where it fails); after reprompts of them in a row, one more ends the call with lines.silenceEnd (the closing line where it has none), as end_call ends it. Any speech of the caller's resets the count. A chat has no silence wait.",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "off",
+          "description": "No silence wait: the line waits for the caller as long as the call lasts, as before."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "afterMs": {
+              "default": 9000,
+              "description": "How long the caller may say nothing, once the line's last reply has played, before the line answers the silence: from 3000 to 30000 ms. Default: 9000 (time to think, short of wondering whether the line has hung up).",
+              "type": "integer",
+              "minimum": 3000,
+              "maximum": 30000
+            },
+            "reprompts": {
+              "default": 1,
+              "description": "How many silences in a row the model answers (helping the caller go on) before one more ends the call with lines.silenceEnd: from 0 to 3. Default: 1.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "readBacks": {
       "default": {

@@ -10,6 +10,8 @@ export interface SimTurn {
   cut?: true;
   /** On the voice path, a turn cut in on: the words of the reply the caller did not hear, for the author's reading; never shown to the caller or the judge. */
   unheard?: string;
+  /** On the voice path, a caller turn in which the caller said nothing (the persona's voice.silentOnce): its text is "(says nothing)". */
+  silent?: true;
 }
 
 export interface SimCall {

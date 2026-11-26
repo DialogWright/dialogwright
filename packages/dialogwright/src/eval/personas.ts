@@ -23,6 +23,7 @@ export const personaSchema = z.strictObject({
     .strictObject({
       interrupts: z.boolean().default(false).describe('The caller cuts in on long replies: on a reply of more than 30 words, once 40% of its words have played.'),
       fragments: z.boolean().default(false).describe('The caller\'s longer turns (more than 8 words) reach the line in two parts, as a recognizer that ended a turn early.'),
+      silentOnce: z.boolean().optional().describe('Once, after their first turn, the caller says nothing when the line hands them the turn, and waits for the line to answer the silence (agent.yaml\'s silence wait) before going on.'),
     })
     .optional()
     .describe('How the caller behaves on the voice path (pnpm eval --channel voice): the caller cuts in on long replies; the caller\'s longer turns reach the line in two parts, as a recognizer that ended a turn early. Ignored over the chat wire.'),

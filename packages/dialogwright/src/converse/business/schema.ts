@@ -76,6 +76,9 @@ const bar = (what: string, d: number) => z.number().gt(0).max(1).default(d).desc
 /** The runtime's own action, offered to every model: it ends the call, on the model's own goodbye or the closing line. No business action takes its name. */
 export const END_CALL = 'end_call';
 
+/** The silence wait on a call by default (agent.yaml `silence`): nine seconds, then one re-prompt (the maintainer's decision, 2026-11-26). */
+export const SILENCE_DEFAULTS = { afterMs: 9000, reprompts: 1 } as const;
+
 /** How read-backs are said on a call by default (agent.yaml `readBacks`): one the caller spoke over is said again held (the maintainer's decision, 2026-11-26). */
 export const READ_BACK_DEFAULTS = { holdAfterCut: true } as const;
 
@@ -463,6 +466,8 @@ export const agentBusinessSchema = z
         greetingAfterHours: said('The greeting said instead of the greeting (and of a journey\'s) when a call starts while the business is closed by business.open (required to have business.open)').optional(),
         stuck: said('The line said when the model is still looking things up after its last round of a turn (where nothing the caller confirmed has just run)').default({ en: 'Let me have someone follow up on that.' }),
         bridge: said('The short line said on a call when the model is slow to begin').default({ en: 'One sec.' }),
+        silence: said('The line said on a call when the caller has said nothing for silence.afterMs and the model fails to answer the silence (it asks whether they are still there)').optional(),
+        silenceEnd: said('The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given)').optional(),
       })
       .describe('The lines said word for word.'),
     model: z
@@ -480,6 +485,16 @@ export const agentBusinessSchema = z
       })
       .default({ failuresPerCall: 4, refusalsPerAction: 3 })
       .describe('When to stop trying and offer a person.'),
+    silence: z
+      .union([
+        z.literal('off').describe('No silence wait: the line waits for the caller as long as the call lasts, as before.'),
+        z.strictObject({
+          afterMs: z.number().int().min(3000).max(30000).default(SILENCE_DEFAULTS.afterMs).describe(`How long the caller may say nothing, once the line's last reply has played, before the line answers the silence: from 3000 to 30000 ms. Default: ${SILENCE_DEFAULTS.afterMs} (time to think, short of wondering whether the line has hung up).`),
+          reprompts: z.number().int().min(0).max(3).default(SILENCE_DEFAULTS.reprompts).describe(`How many silences in a row the model answers (helping the caller go on) before one more ends the call with lines.silenceEnd: from 0 to 3. Default: ${SILENCE_DEFAULTS.reprompts}.`),
+        }),
+      ])
+      .default({ ...SILENCE_DEFAULTS })
+      .describe('On a call: what the line does when the caller says nothing (the maintainer\'s decision, 2026-11-26). Each silence of afterMs, counted once the line\'s last reply has played, is answered by the model, told the caller has said nothing (lines.silence where it fails); after reprompts of them in a row, one more ends the call with lines.silenceEnd (the closing line where it has none), as end_call ends it. Any speech of the caller\'s resets the count. A chat has no silence wait.'),
     readBacks: z
       .strictObject({
         holdAfterCut: z.boolean().default(READ_BACK_DEFAULTS.holdAfterCut).describe('On a call: once the caller has spoken over a read-back of a change before hearing it (cut in before 85% of it, or spoke as it began), every later read-back of that change is said held, until the change is confirmed, withdrawn or its journey no longer offers it: whole and not interruptible, any speech that began while it played ignored (recorded by its length only), its brief version (an action\'s readBackBrief) said where the action gives one, and a correction\'s short read-back held too. Its first read-back can always be talked over. A chat is unchanged. Default: true (the maintainer\'s decision, 2026-11-26); false: every read-back can be talked over, as before.'),
