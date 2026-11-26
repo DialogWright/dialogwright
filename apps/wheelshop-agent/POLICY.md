@@ -114,7 +114,7 @@ A correction is read back by its changed values alone, after the caller heard th
 
 Read back in full instead where a value was cleared, or the values are the same as the last read-back (the caller asked to hear it all). The yes to a short read-back confirms every value, as the yes to the full one does.
 
-Said again held, after the caller spoke over it before hearing it, in these words: "That's {name}, your {vehicle}, {finish}, work on {wheels} of its wheels for {damage}, for {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
+Said again held, after the caller spoke over it before hearing it, in these words: "That's {name}, your {vehicle}, for {slot}: {finish}, and work on {wheels} of its wheels for {damage}. We'll reach you on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
 
 Rules, in the order they run:
 
@@ -126,7 +126,7 @@ After the caller's yes it is followed by `send_photo_request` and `notify_shop_r
 | --- | --- | --- |
 | `name` | text (one line, at most 120 characters) | hidden (`•`) |
 | `vehicle` | text (one line, at most 120 characters) | as it is |
-| `wheels` | choice (one, two, three, four) | as it is |
+| `wheels` | choice (one, two, three, all four) | as it is |
 | `damage` | text (one line, at most 120 characters) | as it is |
 | `finish` | choice (the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check) | as it is |
 | `slot` | slot from `check_availability` | as it is |
@@ -164,7 +164,7 @@ Rules, in the order they run:
 | --- | --- | --- |
 | `name` | text (one line, at most 120 characters) | hidden (`•`) |
 | `vehicle` | text (one line, at most 120 characters) | as it is |
-| `wheels` | choice (one, two, three, four) | as it is |
+| `wheels` | choice (one, two, three, all four) | as it is |
 | `damage` | text (one line, at most 120 characters) | as it is |
 | `finish` | choice (the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check) | as it is |
 | `slot` | slot from `check_availability` | as it is |

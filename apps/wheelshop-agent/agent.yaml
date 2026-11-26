@@ -272,10 +272,12 @@ actions:
     params:
       name: { type: text, about: "The customer's name, as they gave it." }
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
-      wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
+      # Each said in the read-back's "work on ... of its wheels": "one of its wheels", "two of its wheels", "three of its
+      # wheels", and four as a person says it, "all four of its wheels".
+      wheels: { type: choice, options: [one, two, three, all four], about: How many wheels need work. }
       # The read-back says it after "work on one of its wheels for": a value with where in it ("curb rash on front right
       # wheel") read "with curb rash on front right wheel on one of its wheels" before (a simulated call, 2026-11-26).
-      damage: { type: text, about: "The kind of damage, with where it is when the customer says (which wheel, or where on it), short and in their own terms: a phrase the read-back says after the word for (for example: curb rash, curb rash on the front right, a deep scratch on the face), never a sentence, and never how many wheels, which wheels holds." }
+      damage: { type: text, about: "The kind of damage, with where it is when the customer says (which wheel, or where on it), short and in their own terms: a phrase the read-back says after the word for (for example: curb rash, curb rash on the front right, a deep scratch on the face), never a sentence, and never how many wheels (the wheels param says that)." }
       finish: { type: choice, options: [the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Pick from what the caller says: shiny, machined or bright metal is the bright metal finish; painted is the painted finish; a mix of both is the mixed metal finish; not sure, or they cannot say, is a finish the shop will check. The read-back says the option as it is. Whether it is diamond cut is the shop's to work out from it, never the caller's to hear." }
       slot: { type: slot, from: check_availability, about: "The drop-off window the customer accepted, from check_availability's results, after hearing its day, date and drop-off time from you." }
       callbackNumber: { type: phone, about: The best number to reach them on. }
@@ -290,7 +292,8 @@ actions:
     # Said in its place where a read-back the caller talked over is said again held (readBacks.holdAfterCut): every value
     # still in it, a yes to it confirming them all, in about half the words.
     readBackBrief:
-      en: "That's {name}, your {vehicle}, {finish}, work on {wheels} of its wheels for {damage}, for {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
+      # The window before the work, so "for" is never said twice in a row ("for curb rash, for Tuesday").
+      en: "That's {name}, your {vehicle}, for {slot}: {finish}, and work on {wheels} of its wheels for {damage}. We'll reach you on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
     # A correction after the full read-back, said by the changed details alone (a live call, 2026-11-25: a caller who
     # corrected the car sat through the whole read-back again, twice). Every param has a phrase; a call again with the
     # same values (the caller asked to hear it all) is read back in full.
@@ -327,7 +330,7 @@ actions:
     params:
       name: { type: text, about: "The customer's name, as they gave it." }
       vehicle: { type: text, about: The car. }
-      wheels: { type: choice, options: [one, two, three, four], about: How many wheels. }
+      wheels: { type: choice, options: [one, two, three, all four], about: How many wheels. }
       damage: { type: text, about: The damage. }
       finish: { type: choice, options: [the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check], about: "The wheel's face, as the caller described it." }
       slot: { type: slot, from: check_availability, about: The drop-off window. }

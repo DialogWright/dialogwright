@@ -154,7 +154,8 @@ describe('send_request', () => {
       ['one', 'curb rash on the front right', 'work on one of its wheels for curb rash on the front right. '],
       ['one', 'a scratch', 'work on one of its wheels for a scratch. '],
       ['two', 'scuffs on the rim', 'work on two of its wheels for scuffs on the rim. '],
-      ['four', 'curb rash', 'work on four of its wheels for curb rash. '],
+      ['three', 'a deep scratch on the face', 'work on three of its wheels for a deep scratch on the face. '],
+      ['all four', 'curb rash', 'work on all four of its wheels for curb rash. '],
     ] as const) {
       const { app } = wheelshop({ now: () => NOW });
       const script: ConverseModelEvent[][] = [
