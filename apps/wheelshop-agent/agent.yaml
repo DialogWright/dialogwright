@@ -209,6 +209,10 @@ lines:
   notConfirmed: { en: "No problem. What would you like to change, or would you rather cancel the request?" }
   done: { en: "That's done." }
   stuck: { en: "Let me get someone from the shop to follow up on that." }
+  # assumption: the owner corrects these (on a call, said when the caller has said nothing and the model cannot answer
+  # the silence; and the goodbye after one more, before the call ends)
+  silence: { en: "Are you still there? Take your time, we can carry on whenever you're ready." }
+  silenceEnd: { en: "It sounds like now isn't a good time, so we'll let you go. Call us back any time." }
 model:
   # Muse Ember (Meta's Standard mode, which does not train on the conversations): the model comparison of
   # 2026-11-11 (docs/designs/eval/2026-11-model-comparison.md) found it better than Mercury on both quality bars
