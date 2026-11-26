@@ -62,6 +62,8 @@ export interface StoredRun {
   opener?: string;
   /** The calls went over the voice path (--channel voice); absent: over the chat wire. */
   channel?: 'voice';
+  /** On the voice path, the agent app's silence wait for personas who never fall silent (appForPersona); absent: the app's own throughout. */
+  silenceWaitMs?: number;
 }
 
 export const RUN_FILE = 'run.json';

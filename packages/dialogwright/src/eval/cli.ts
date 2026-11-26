@@ -125,6 +125,21 @@ export interface EvalRun {
   channel?: EvalChannel;
 }
 
+/** The silence wait a voice run gives an agent app for personas who never fall silent, so a slow caller model never brings a silence turn of its own. */
+export const EVAL_SILENCE_WAIT_MS = 30_000;
+
+/**
+ * The app a persona's call runs on: on the voice path, an agent app's silence wait (agent.yaml's `silence`) set to
+ * EVAL_SILENCE_WAIT_MS, so the time a caller model takes to answer never reads as a silence; a persona who falls silent
+ * on purpose (voice.silentOnce) keeps the app's own, and so does an app with it off. Over the chat wire, the app as it is.
+ */
+export function appForPersona(app: HostedApp, persona: Persona, channel: EvalChannel): HostedApp {
+  if (channel !== 'voice' || !isConverseApp(app) || persona.voice?.silentOnce === true) return app;
+  const silence = app.business.silence;
+  if (silence === 'off') return app;
+  return { ...app, business: { ...app.business, silence: { ...silence, afterMs: EVAL_SILENCE_WAIT_MS } } };
+}
+
 export interface EvalOutcome {
   records: RunRecord[];
   planned: number;
@@ -166,7 +181,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   const voice = o.channel === 'voice';
   if (voice && !perCall) throw new Error(`the voice path is for an agent app (app.yaml mode: agent); ${app.id} is a scripted app`);
   const cases = o.claimsCases === true ? new ClaimsCases(o.outDir) : null;
-  const serverFor = (): Promise<EvalServer> => startEvalServer(app, perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, ...(voice ? { channel: 'voice' as const } : {}), textProvider: fakeTextProvider(), ...(cases !== null ? { onClaimsRead: cases.onClaimsRead } : {}), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
+  const serverFor = (p?: Persona): Promise<EvalServer> => startEvalServer(p === undefined ? app : appForPersona(app, p, voice ? 'voice' : 'chat'), perCall ? { ...serverEnv, PORT: '0' } : serverEnv, { work, ...(voice ? { channel: 'voice' as const } : {}), textProvider: fakeTextProvider(), ...(cases !== null ? { onClaimsRead: cases.onClaimsRead } : {}), ...(o.model !== undefined ? { model: o.model } : {}), ...(o.style !== undefined ? { style: o.style } : {}) });
   let shared: EvalServer | null = null;
   try {
     if (!perCall) shared = await serverFor();
@@ -184,10 +199,13 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
   const lineModel = lineModelOf(app, o.model);
   const lineWords = lineModel === null ? undefined : `${lineModel}${o.model?.effort === null ? ' (no effort sent)' : o.model?.effort ? ` (effort ${o.model.effort})` : ''}`;
   const decisionClient = o.decision === 'jev' ? 'the real decision model (Jev)' : 'the heuristic stub';
+  // The silence wait a voice run gave personas who never fall silent, where it changed the app's (appForPersona).
+  const silenceWaitMs = voice && o.personas.some((p) => appForPersona(app, p, 'voice') !== app) ? EVAL_SILENCE_WAIT_MS : undefined;
   writeRunInfo(o.outDir, {
     app: app.id, business: businessText, personas: o.personas, callerModel: o.callerModel.id, decisionClient, runsPerPersona: o.runs,
     ...(lineWords !== undefined ? { lineModel: lineWords } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(o.style?.opener !== undefined ? { opener: o.style.opener } : {}),
     ...(voice ? { channel: 'voice' as const } : {}),
+    ...(silenceWaitMs !== undefined ? { silenceWaitMs } : {}),
   });
   const caller = modelCaller(o.callerModel, spend, { channel: voice ? 'voice' : 'chat' });
   const records: RunRecord[] = [];
@@ -199,7 +217,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     let call: SimCall = { persona: p.id, turns: [], ended: 'line', firstWordMs: [] };
     let server: EvalServer | null = shared;
     try {
-      server ??= await serverFor();
+      server ??= await serverFor(p);
       call = voice
         ? await driveVoice({ url: server.ws, serverHttp: server.http, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, turnEnds: server.turnEnds })
         : await driveChat({ url: server.url, persona: p, caller, maxTurns: MAX_TURNS, timeoutMs: TURN_TIMEOUT_MS, origin: CHAT_ORIGIN, turnEnds: server.turnEnds });
@@ -257,6 +275,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
       ? [
           'Each call went over the voice path in text: the harness played Twilio\'s carrier over the relay wire, with no speech recognition, no text-to-speech and no network to a phone; what a real carrier does on a call (its recognizer, its playback, its reports) is not measured.',
           `Each reply was played at ${SPEAKING_WORDS_PER_S} words a second from its first frame, and the caller answered once it had played; a caller who cuts in (voice.interrupts) did so once ${CUT_IN_AT * 100}% of the words of a reply of more than ${CUT_IN_OVER_WORDS} words had played, or later where the reply's final frame came after that point, and never on a reply still streaming; the judge was shown where they cut in, and not the words they did not hear. A fragmenting caller's (voice.fragments) turns of more than ${FRAGMENT_OVER_WORDS} words reached the line in two parts ${FRAGMENT_GAP_MS} ms apart.`,
+          ...(silenceWaitMs !== undefined ? [`The silence wait was ${silenceWaitMs / 1000} s for personas who never fall silent (voice.silentOnce keeps the app's own).`] : []),
           'The first sentence is timed from the caller\'s last final prompt twice: to the first frame heard (the bridge included, said while the model is slow to begin) and to the reply\'s own first frame (the bridge left out). The latency bars of eval:compare read the reply\'s.',
         ]
       : [

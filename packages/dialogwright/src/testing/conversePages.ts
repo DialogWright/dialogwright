@@ -278,7 +278,7 @@ function silenceCardLine(b: AgentBusiness): string {
   const secs = `${Math.round(s.afterMs / 1000)} s`;
   const failed = b.lines.silence === undefined ? 'the recovery line' : `\`lines.silence\`, word for word: "${cell(b.lines.silence.en)}"`;
   const end = b.lines.silenceEnd === undefined ? `the closing line, word for word ("${cell(b.lines.closing.en)}")` : `\`lines.silenceEnd\`, word for word ("${cell(b.lines.silenceEnd.en)}")`;
-  return `- On a call (\`silence\`: after ${secs}, ${s.reprompts} re-prompt${s.reprompts === 1 ? '' : 's'}), when the caller says nothing for ${secs} once the line's last reply has played, the agent model is told so and answers it (where it fails, ${failed}); after ${s.reprompts} such in a row, one more ends the call with ${end}, audited as \`converse_end\` by \`silence\`, a change not confirmed included (it was never done). Any speech of the caller's starts the count again. A chat has no silence wait.`;
+  return `- On a call (\`silence\`: after ${secs}, ${s.reprompts} re-prompt${s.reprompts === 1 ? '' : 's'}), when the caller says nothing for ${secs} once the line's last reply has played, the agent model is told so and answers it (where it fails, ${failed}); after ${s.reprompts} such in a row, one more ends the call with ${end}, audited as \`converse_end\` by \`silence\`, a change not confirmed included (it was never done). A silence is no answer: a read-back waiting for the caller's yes goes on waiting. Any speech of the caller's starts the count again. A chat has no silence wait.`;
 }
 
 /** The policy card for an agent app, as Markdown. */

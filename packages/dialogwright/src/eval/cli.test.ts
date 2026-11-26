@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DIR } from '../define/fixture/app';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
-import { EVAL_USAGE, evalCommand, registerFolderApp, runEval } from './cli';
+import { appForPersona, EVAL_USAGE, evalCommand, registerFolderApp, runEval } from './cli';
 import { costUsd } from '../converse/model/price';
 import { fakeModel } from '../converse/model/fake';
 import { Budget } from './budget';
@@ -117,11 +117,24 @@ describe('dialogwright eval', () => {
       expect(caller.requests[0]!.system).toContain('phoned a business');
       expect(o.text).toContain('1 calls over the voice path');
       expect(o.text).toContain('Each call went over the voice path in text');
-      expect(JSON.parse(readFileSync(join(out, 'run.json'), 'utf8'))).toMatchObject({ channel: 'voice' });
+      expect(JSON.parse(readFileSync(join(out, 'run.json'), 'utf8'))).toMatchObject({ channel: 'voice', silenceWaitMs: 30_000 });
+      expect(o.text).toContain('The silence wait was 30 s for personas who never fall silent (voice.silentOnce keeps the app\'s own).');
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it('on the voice path, an app\'s silence wait is 30 s for a persona who never falls silent, and the app\'s own for one who does', async () => {
+    const app = await registerFolderApp(CONVERSE_FIXTURE_DIR);
+    const base: Persona = { id: 'visitor', goal: 'Book a visit.', truth: { name: 'Sam Example' }, manner: 'Plain.', expects: 'booking' };
+    const served = (p: Persona, channel: 'voice' | 'chat') => appForPersona(app, p, channel) as typeof app & { business: { silence: unknown } };
+    expect(served(base, 'voice').business.silence).toEqual({ afterMs: 30_000, reprompts: 1 });
+    expect(served({ ...base, voice: { interrupts: true, fragments: false } }, 'voice').business.silence).toEqual({ afterMs: 30_000, reprompts: 1 });
+    expect(served({ ...base, voice: { interrupts: false, fragments: false, silentOnce: true } }, 'voice')).toBe(app);
+    expect(served(base, 'chat')).toBe(app);
+    const off = { ...app, business: { ...(app as typeof app & { business: object }).business, silence: 'off' } } as typeof app;
+    expect(appForPersona(off, base, 'voice')).toBe(off);
+  });
 
   it('wants the folder and the personas file', async () => {
     const t = io({});

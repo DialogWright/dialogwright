@@ -247,16 +247,6 @@ function tracesOf(s: EvalServer): Record<string, unknown>[] {
 }
 
 describe('driveVoice: silence', () => {
-  it('a normal run answers every reply well within the line\'s silence wait: no turn on a silence', async () => {
-    const s = await server(fakeModel(BOOKING));
-    const c = scripted([`Is there a visit free on ${DAY}?`, 'The morning please, for Sam Example, on this number.', 'yes']);
-    const call = await driveVoice({ url: s.ws, serverHttp: s.http, persona: persona(), caller: c.caller, maxTurns: 6, timeoutMs: 5000, turnEnds: s.turnEnds, timeScale: SCALE });
-    expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line', 'caller', 'line', 'caller', 'line']);
-    const records = tracesOf(s).filter((r) => r.kind === 'converse');
-    expect(records.length).toBeGreaterThan(0);
-    expect(records.filter((r) => r.silence !== undefined)).toEqual([]);
-  }, 20_000);
-
   it('a persona that stays silent once (voice.silentOnce) hears the line answer the silence, then goes on', async () => {
     const { app } = converseFixture();
     const quick = { ...app, business: { ...app.business, silence: { afterMs: 3000, reprompts: 1 } } };

@@ -156,6 +156,10 @@ interface Running {
   bridged: boolean;
   /** Stopped because the socket closed: asked again when the carrier reconnects. */
   dropped: boolean;
+  /** A turn on the caller's silence: a sign of their speech before it has sent anything stops it, and it counts for nothing. */
+  silence: boolean;
+  /** It has sent a line (the bridge among them). */
+  spoke: boolean;
 }
 
 /** A correction from the check after speaking, waiting for the reply before it to play. */
@@ -204,9 +208,19 @@ interface Live {
   silenceTimer: ReturnType<typeof setTimeout> | null;
   /** Silences in a row the line has answered, since caller speech was last taken. */
   silences: number;
-  /** The call this is kept for. */
+  /** The call this is kept for: its entry as last handed to the runtime (a reconnect or a takeover gives a new one). */
   entry: ConverseCallEntry;
+  /** Signs of the caller's speech so far (partials, the caller heard speaking, interrupts, finals): a silence turn queued before one is not run. */
+  speechSigns: number;
+  /** When the caller was last heard beginning to speak (Telnyx's clientSpeaking on), while they are; null: not speaking. */
+  speakingSince: number | null;
 }
+
+/**
+ * The longest the caller heard speaking (Telnyx's clientSpeaking on, with no off and no final words) holds off the silence
+ * wait: a stray on that is never turned off must not keep the line from ever answering a silence. Used for nothing else.
+ */
+export const SILENCE_SPEAKING_HOLD_MS = 20_000;
 
 /** The lines kept to match a carrier's reports of what played against, by the order they were sent. */
 const SENT_LINES_KEPT = 32;
@@ -342,9 +356,10 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   const liveOf = (e: ConverseCallEntry): Live => {
     let l = lives.get(e.callSid);
     if (l === undefined) {
-      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [], ignored: [], run: null, prevRun: null, callerSpeaking: false, sentLines: [], silenceTimer: null, silences: 0, entry: e };
+      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [], ignored: [], run: null, prevRun: null, callerSpeaking: false, sentLines: [], silenceTimer: null, silences: 0, entry: e, speechSigns: 0, speakingSince: null };
       lives.set(e.callSid, l);
     }
+    l.entry = e;
     return l;
   };
 
@@ -622,70 +637,111 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /**
-   * When the line's last reply has played, for the silence wait: a held read-back's end (heldEnd); with the carrier's
-   * playback reports (Telnyx), its report that the reply played, else one and a half times its estimate and two seconds
-   * from its first line, a ceiling; with none (Twilio), its lines' estimate, at 100%, the bridge among them.
+   * When the line's last reply has played, for the silence wait: with the carrier's playback reports (Telnyx), its
+   * report that it played (a held read-back's, heldEnd; any other's, `playedAt`, never sooner than half its last line's
+   * estimate), else its ceiling (silenceCeiling); with none (Twilio), its lines' estimate at 100%, the bridge among them,
+   * a held read-back's too (the 85% is for speech over it alone).
    */
   const replyEnd = (l: Live): number => {
     const r = l.reply;
     if (r === null) return now();
-    const held = heldEnd(l);
-    if (held !== null) return held;
-    if (r.playedAt !== null) return r.playedAt;
-    const end = linesEnd(r);
-    if (end === null) return now();
+    if (l.reports) {
+      const reported = r.held !== null ? r.heldPlayedAt : r.playedAt;
+      return reported ?? silenceCeiling(l);
+    }
+    return linesEnd(r) ?? now();
+  };
+
+  /** The latest a reply counts as played with no report of it: one and a half times its lines' estimate and two seconds from its first line. */
+  const silenceCeiling = (l: Live): number => {
+    const r = l.reply;
+    const end = r === null ? null : linesEnd(r);
+    if (r === null || end === null) return now();
     const first = linesOf(r)[0]!.at;
-    return l.reports ? first + (end - first) * 1.5 + 2000 : end;
+    return first + (end - first) * 1.5 + 2000;
   };
 
   /**
    * The silence wait (agent.yaml's `silence`; the maintainer's decision, 2026-11-26), started again: `afterMs` once the
    * line's last reply has played (replyEnd), or from now where that is past (a sign of the caller's speech starts it
-   * again). Never while a turn runs, a correction waits to be said, the caller is heard speaking, the call has ended, or
-   * where the app turns it off. When it ends with nothing heard: a turn on the silence.
+   * again). Never while a turn runs, a correction waits to be said, the call has ended, or where the app turns it off.
+   * While the caller is heard speaking (for at most SILENCE_SPEAKING_HOLD_MS with no words) or the carrier reports its
+   * voice still playing (until the reply's ceiling), it waits for that to end. When it ends with nothing heard: a turn on
+   * the silence.
    */
   const armSilence = (e: ConverseCallEntry, l: Live): void => {
     clearSilence(l);
     const app = deps.apps.get(e.session.appId);
     const cfg = app?.business.silence;
     if (cfg === undefined || cfg === 'off' || e.session.ended !== undefined || e.ended || lives.get(e.callSid) !== l) return;
-    if (l.running !== null || l.correction !== null || l.callerSpeaking) return;
-    const start = Math.max(replyEnd(l), now());
-    l.silenceTimer = setTimeout(() => silenceDue(e, l, cfg), start + cfg.afterMs - now());
+    if (l.running !== null || l.correction !== null) return;
+    const at = now();
+    if (l.callerSpeaking && l.speakingSince !== null && at - l.speakingSince < SILENCE_SPEAKING_HOLD_MS) {
+      // Speaking: the wait starts once they stop (clientSpeaking off arms it), or at the hold's end with no words.
+      l.silenceTimer = setTimeout(() => armSilence(l.entry, l), l.speakingSince + SILENCE_SPEAKING_HOLD_MS - at);
+      l.silenceTimer.unref?.();
+      return;
+    }
+    let start = Math.max(replyEnd(l), at);
+    // The carrier's voice still playing: the wait starts when it stops (agentSpeaking off arms it), or at the ceiling.
+    if (l.agentSpeaking) start = Math.max(start, silenceCeiling(l));
+    l.silenceTimer = setTimeout(() => silenceDue(l, cfg), start + cfg.afterMs - at);
     l.silenceTimer.unref?.();
   };
 
   /**
    * The silence wait ended with nothing heard: a turn on the silence, the model told of it; after `reprompts` of them
-   * in a row, the last, which says lines.silenceEnd and ends the call.
+   * in a row, the last, which says lines.silenceEnd and ends the call. It runs only where no sign of the caller's speech
+   * came before it starts (speechSigns), and counts only once it has sent a line (Running.spoke).
    */
-  const silenceDue = (e: ConverseCallEntry, l: Live, cfg: { afterMs: number; reprompts: number }): void => {
+  const silenceDue = (l: Live, cfg: { afterMs: number; reprompts: number }): void => {
     l.silenceTimer = null;
+    const e = l.entry;
     const io = l.io;
-    if (io === null || e.session.ended !== undefined || e.ended || lives.get(e.callSid) !== l || l.running !== null || l.callerSpeaking) return;
+    if (io === null || e.session.ended !== undefined || e.ended || lives.get(e.callSid) !== l || l.running !== null) return;
     const end = l.silences >= cfg.reprompts;
-    l.silences += 1;
     const ignored = l.ignored.splice(0);
-    void runTurn(e, { kind: 'silence', ms: cfg.afterMs, count: l.silences, ...(end ? { end: true as const } : {}), ...(ignored.length > 0 ? { ignored } : {}) }, io);
+    void runTurn(e, { kind: 'silence', ms: cfg.afterMs, count: l.silences + 1, ...(end ? { end: true as const } : {}), ...(ignored.length > 0 ? { ignored } : {}) }, io, undefined, l.speechSigns);
+  };
+
+  /** A sign of the caller's speech: counted, and a turn on their silence that has sent nothing yet is stopped (it counts for nothing). */
+  const speechSign = (l: Live): void => {
+    l.speechSigns += 1;
+    if (l.running !== null && l.running.silence && !l.running.spoke) l.running.ac.abort();
   };
 
   /**
    * One turn, run now (in the call's queue): its words sent as they are said, its state kept, the call ended
    * where it ended it, else saved.
    */
-  const runNow = async (e: ConverseCallEntry, input: Input, io: VoiceIo, generation?: number): Promise<void> => {
+  const runNow = async (e: ConverseCallEntry, input: Input, io: VoiceIo, generation?: number, silenceSigns?: number): Promise<void> => {
     if (e.session.ended !== undefined) return;
     const app = appOf(e);
     const l = liveOf(e);
+    // A turn on a silence the caller broke before it began (a sign of their speech since its wait ended): not run.
+    if (input.kind === 'silence' && silenceSigns !== undefined && silenceSigns !== l.speechSigns) return;
     l.io = io;
     dropCorrection(l);
     clearSilence(l);
     let settle!: () => void;
-    const running: Running = { ac: new AbortController(), done: new Promise<void>((r) => (settle = r)), bridged: false, dropped: false };
+    const running: Running = { ac: new AbortController(), done: new Promise<void>((r) => (settle = r)), bridged: false, dropped: false, silence: input.kind === 'silence', spoke: false };
+    /**
+     * A line sent: a turn on a silence counts from its first (the silences in a row), and only then is its reply the line's
+     * last (until then what the caller heard is of the reply before it, so their words over a silence turn stopped
+     * unsaid are heard as after that reply).
+     */
+    const spoke = (): void => {
+      if (running.spoke) return;
+      running.spoke = true;
+      if (input.kind === 'silence') {
+        l.silences = input.count;
+        l.reply = reply;
+      }
+    };
     // Running from here: a final prompt, a cut-in or the hangup reaches it even while its words are saved.
     // (Stopped before the turn begins, the turn still runs, at once stopped: the caller's words are kept.)
     const reply = newReply();
-    l.reply = reply;
+    if (input.kind !== 'silence') l.reply = reply;
     l.running = running;
     // Words the caller went on from before this turn began (a later final prompt): it runs already stopped,
     // so its words are kept in the conversation and the latest turn answers them all at once.
@@ -725,6 +781,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           }
           const token = final ? text : spaced(text);
           const sentNow: Sent = { text: token, at: now() };
+          spoke();
           reply.frames.push(sentNow);
           keepSent(l, reply, sentNow);
           // A held read-back goes whole, not interruptible, the reply's final piece: speech over it is ignored (finalWords).
@@ -744,6 +801,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           changeRan = false;
         },
         bridge(text) {
+          spoke();
           running.bridged = true;
           reply.bridge = folded(text);
           reply.bridgeSent = { text, at: now() };
@@ -803,6 +861,14 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         await io.save();
         return;
       }
+      // A turn on a silence stopped by the caller's speech before it said anything: as if it never ran (its trace record,
+      // stopped with nothing said, stands), and the silence wait starts again.
+      if (running.silence && running.ac.signal.aborted && !running.spoke) {
+        e.session = { ...before, turnIndex: state.turnIndex };
+        await io.save();
+        armSilence(e, l);
+        return;
+      }
       e.session = state;
       delete e.turnWords;
       delete e.turnHeard;
@@ -847,7 +913,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /** A turn queued on the call. */
-  const runTurn = (e: ConverseCallEntry, input: Input, io: VoiceIo, generation?: number): Promise<void> => enqueue(e, (held) => runNow(held, input, io, generation));
+  const runTurn = (e: ConverseCallEntry, input: Input, io: VoiceIo, generation?: number, silenceSigns?: number): Promise<void> => enqueue(e, (held) => runNow(held, input, io, generation, silenceSigns));
 
   /**
    * The caller's final words: what they heard of the last reply, the turn running stopped (unless the bridge alone plays),
@@ -861,6 +927,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
    * caller's real answer after the line is never dropped for it: the converse line has no no-input wait to recover it).
    */
   const finalWords = (e: ConverseCallEntry, l: Live, text: string, io: VoiceIo): Promise<void> => {
+    speechSign(l);
     const end = heldEnd(l);
     if (end !== null) {
       const began = speechBegan(l, text);
@@ -920,6 +987,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           if (!frame.last) {
             l.speechAt ??= now();
             sign(l, 'tick');
+            speechSign(l);
             dropCorrection(l);
             // A sign of speech: the silence wait starts again from it.
             armSilence(entry, l);
@@ -938,9 +1006,11 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
           // held read-back, one with the caller heard speaking is the carrier's cut of it, recorded as such (fail closed).
           if (readsPlaybackEvents(entry.provider)) {
             if (holding(l) && l.callerSpeaking) heldCut(l, frame.utteranceUntilInterrupt);
+            if (l.callerSpeaking) speechSign(l);
             return;
           }
           sign(l, 'tick');
+          speechSign(l);
           cutIn(l, frame.utteranceUntilInterrupt, true);
           armSilence(entry, l);
           return;
@@ -961,6 +1031,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       const r = l.reply;
       if (ev.kind === 'caller') {
         l.callerSpeaking = ev.speaking;
+        l.speakingSince = ev.speaking ? now() : null;
+        if (ev.speaking) speechSign(l);
         // No silence while the caller is heard speaking; it starts again when they stop.
         armSilence(entry, l);
         sign(l, ev.speaking ? 'on' : 'off');
@@ -998,10 +1070,10 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         // earlier read-back's same words; a cut one ends too, as reported (the cut is kept: its yes confirms nothing).
         if (holds && heldReported(r, reported)) r.heldPlayedAt = now();
         // Any other reply has played once its last line is reported (for the silence wait).
-        else if (r !== null && !holds && r.playedAt === null && r.frames.length > 0 && playedOut(r)) r.playedAt = now();
+        else if (r !== null && !holds && r.playedAt === null && r.frames.length > 0 && playedOut(r) && lastLineDue(r)) r.playedAt = now();
       }
-      // The reply reported played: the silence wait starts from now.
-      if (r !== null && endedBefore === null && (r.heldPlayedAt ?? r.playedAt) !== null) armSilence(entry, l);
+      // The reply reported played, or the voice stopped: the silence wait starts from now.
+      if (r !== null && ((endedBefore === null && (r.heldPlayedAt ?? r.playedAt) !== null) || (ev.state !== 'started' && ev.text === undefined))) armSilence(entry, l);
       const c = l.correction;
       if (c !== null && playedOut(c.after)) sayCorrection(l, c);
     },
@@ -1050,6 +1122,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         const heard = e.turnHeard;
         await runNow(e, { kind: 'text', text: words, ...(heard !== undefined ? { heard } : {}) }, io);
       });
+      // The silence wait from the resume, as after a reply (a takeover's server counts the silences in a row afresh).
+      armSilence(entry, l);
     },
 
     async replay(entry, io) {

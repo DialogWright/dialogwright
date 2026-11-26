@@ -3481,18 +3481,59 @@ describe('converseTurn: a silence on a call', () => {
     expect(h.ended).toEqual([]);
   });
 
-  it('a silence while a read-back waits is never a yes: nothing runs, and the model is told the caller said nothing', async () => {
-    const h = harness([...lookupThenBook, [text('Shall I go ahead with that?'), done()]], { edit: (t) => `${t}${OFF}` });
+  it('a silence is no answer: a read-back waiting still waits, nothing is counted, and a yes after it confirms it', async () => {
+    const h = harness([...lookupThenBook, [text('Take your time.'), done()], [text('Booked.'), done()]], { edit: (t) => `${t}${OFF}` });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
     expect(h.calendar.bookings).toEqual([]);
     expect(confirmAsks(h)).toEqual([]);
-    expect(s.pending).toBeNull();
-    expect(s.unsent).toEqual({ action: 'book' });
+    expect(s.pending).toMatchObject({ action: 'book', text: READ_BACK });
+    expect(s.unsent).toBeUndefined();
+    expect(s.refusals).toEqual({});
     const sent = JSON.stringify(h.model.requests.at(-1)!.messages);
-    expect(sent).toContain('Not done: nothing was changed, booked or sent. The caller said nothing for 9 seconds after it, so it is not confirmed.');
     expect(sent).toContain(NOTE);
-    expect(h.traces.at(-1)!.readBack).toMatchObject({ confirmed: false });
+    expect(sent).not.toContain('not confirmed');
+    expect(h.traces.at(-1)!.readBack).toBeUndefined();
+    // The caller's yes, after the line's answer to the silence: the read-back they heard is confirmed.
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(confirmAsks(h).at(-1)!.state).toMatchObject({ readBack: READ_BACK, said: 'yes' });
+    // Every call in the conversation has one result, and the yes's comes as the caller's words.
+    const results = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : [])));
+    expect(new Set(results).size).toBe(results.length);
+  });
+
+  it('a silence turn on a call gets the bridge where the model is slow, as a turn of the caller\'s does', async () => {
+    let go!: () => void;
+    const wait = new Promise<void>((r) => (go = r));
+    const model: ConverseModel = {
+      id: 'fake',
+      async *stream() {
+        await wait;
+        yield text('Take your time.');
+        yield done();
+      },
+    };
+    const bridged: string[] = [];
+    const h = harness([], { edit: withLines, model });
+    const out: Out = { ...h.out, bridge: (t: string) => void bridged.push(t) };
+    let s = await h.run(fresh(), { kind: 'start' });
+    const turn = converseTurn(s, { kind: 'silence', ms: 9000, count: 1 }, { ...h.deps, bridgeAfterMs: 20 }, out);
+    await new Promise((r) => setTimeout(r, 50));
+    go();
+    s = await turn;
+    expect(bridged).toEqual(['One sec.']);
+  });
+
+  it('a silence end stopped before its goodbye is said ends nothing: the call goes on', async () => {
+    const h = harness([], { edit: withLines });
+    let s = await h.run(fresh(), { kind: 'start' });
+    const ac = new AbortController();
+    ac.abort();
+    s = await converseTurn(s, { kind: 'silence', ms: 9000, count: 2, end: true }, h.deps, h.out, ac.signal);
+    expect(s.ended).toBeUndefined();
+    expect(h.ended).toEqual([]);
+    expect(h.rows.filter((r) => r.type === 'converse_end')).toEqual([]);
   });
 
   it('a model that fails on a silence turn: the app\'s silence line, word for word', async () => {
