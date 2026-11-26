@@ -319,7 +319,8 @@ interface Turn {
    * A change could be left unsent as the turn began (one kept unsent, or a read-back waiting whose answer may keep it):
    * the decision model's reading of whether the caller is wrapping up the call (`known` once it is in; `reading` null
    * where it failed or was late), the request asked on its own where there is no routing (`asked`, settled once the
-   * reading is kept), whether a round's words were held for it, and the characters of held words never said.
+   * reading is kept), whether a round was held for it (from its start, or past its route), and the characters of held
+   * words never said.
    */
   wrapUp?: { reading: number | null; known: boolean; asked?: Promise<void>; held?: true; dropped?: number };
   /** The round whose calls are running wrote words that are held, not yet said: a refused end_call's result says so. */
@@ -591,6 +592,17 @@ function offeredNow(t: Turn): string[] {
 const NOT_SAID = 'what you wrote with it was not said to the caller';
 
 /**
+ * Where the words held with a refused end_call would have been the caller's first reply after a change they confirmed ran
+ * this turn (Turn.confirmedRan), they have not heard that it is done: the refusal says so, so the model's next reply tells
+ * them. Context, never words for it. Empty otherwise.
+ */
+function unheardDone(t: Turn): string {
+  if (!t.roundHeld || !t.confirmedRan) return '';
+  const action = t.st.done?.at(-1)?.action;
+  return action === undefined ? '' : ` The caller has not yet heard that "${action}" is done, so your next reply tells them that too.`;
+}
+
+/**
  * One round's calls, in order: each checked, put to the gate and run, or read back. Returns the results
  * the model is sent and the read-back said, if a change was read back. A call after a read-back in the
  * same round is refused: one confirmation at a time. Once the turn is stopped from outside, a call not yet
@@ -629,7 +641,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       // One ask per refusal: the caller's next turn says whether they still want it, so no end_call of this turn ends the call.
       const action = t.unsentRefused;
       t.unsentEnds += 1;
-      const why = `Not run: ${t.roundHeld ? `${NOT_SAID}, and ` : ''}the caller has not yet answered whether they still want "${action}": ask them if you have not, wait for their answer, and end the call after it if they do not want it.`;
+      const why = `Not run: ${t.roundHeld ? `${NOT_SAID}, and ` : ''}the caller has not yet answered whether they still want "${action}": ask them if you have not, wait for their answer, and end the call after it if they do not want it.${unheardDone(t)}`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-asked', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
@@ -646,7 +658,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       t.unsentRefused = action;
       t.unsentEnds += 1;
       const lead = t.roundSpoke ? 'Not run: you have said goodbye, but ' : t.roundHeld ? `Not run: ${NOT_SAID}, and ` : 'Not run: ';
-      const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, end the call.`;
+      const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, end the call.${unheardDone(t)}`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-change', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
@@ -881,6 +893,7 @@ async function round(t: Turn, sp: Speaker, emptyOk = false, routeStop?: AbortSig
   if (!sp.holding && holdsWords(t) !== 'stream') {
     const unknown = holdsWords(t) === 'unknown';
     sp.hold();
+    if (t.wrapUp !== undefined) t.wrapUp.held = true;
     if (unknown) void t.wrapUp?.asked?.then(() => {
       if (!over && sp.holding && holdsWords(t) === 'stream') sp.release();
     });
@@ -979,6 +992,7 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
       if (cut(t) || (settled.round !== undefined && !settled.round.ok)) sp.discard();
       // Held to the round's end while the caller may be wrapping up with a change unsent (holdsWords): converse says or drops it.
       else if (holdsWords(t) === 'stream') sp.release();
+      else if (t.wrapUp !== undefined) t.wrapUp.held = true;
       return await first;
     }
     stop.abort();
@@ -1116,7 +1130,6 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     // otherwise (and in every round with no end_call) they are said now, whole, before what the calls bring.
     const held = sp.holding;
     const wrote = r.text.trim();
-    if (held && wrote !== '' && t.wrapUp !== undefined) t.wrapUp.held = true;
     let ran: Awaited<ReturnType<typeof runCalls>> | undefined;
     let dropped = false;
     if (held && r.calls.some((c) => c.name === END_CALL)) {
@@ -1964,8 +1977,9 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
       if (!cut(t)) await checkAfterSpeaking(t, sp);
     } else if (routed) delete t.wrapUp;
     await settleWithdrawal(t);
-    // The reading asked on its own is in the turn's record: it is in by the decision model's time.
-    await t.wrapUp?.asked;
+    // The reading asked on its own is in the turn's record, waited for (it is in by the decision model's time) only where
+    // the model was asked and the turn was not stopped; else the record has it as it stands.
+    if (answer !== 'asked' && !cut(t)) await t.wrapUp?.asked;
   }
   // A turn on a silence stopped before it said anything (the caller spoke first) is as if it never ran: no record, and
   // the state as it was (converseTurn returns it).

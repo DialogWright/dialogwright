@@ -283,7 +283,7 @@ describe('converseTurn: a line\'s words in the web chat', () => {
   });
   it('tells the model that a goodbye alone does not end the chat, and that its words written with end_call are its parting words to the caller, never of how the line works (a simulated call, 2026-11-26: "ending the call with a goodbye")', () => {
     const end = toolsOf(business()).find((t) => t.name === 'end_call')!;
-    expect(end.description).toBe('End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", a bare "no" when just asked whether there is anything else, or a goodbye): never wait for them to say goodbye. What you write in the same reply as this call is said to the caller as your parting words, as you would say them to them: like everything you write, it speaks as the business, never of how the line works, this call included. A goodbye written without this call does not end it, and leaves the caller in a conversation that is still open. If you write nothing with it, the business\'s closing line is said.');
+    expect(end.description).toBe('End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", a bare "no" when just asked whether there is anything else, or a goodbye): never wait for them to say goodbye. What you write in the same reply as this call is said to the caller as your parting words, as you would say them to them: like everything you write, it speaks as the business, never of how the line works, ending the call included. A goodbye written without this call does not end it, and leaves the caller in a conversation that is still open. If you write nothing with it, the business\'s closing line is said.');
   });
   it('ends a chat on the model\'s own goodbye, with no closing line after it', async () => {
     const h = harness([[text('Thanks for messaging, take care!'), call('c1', 'end_call', {}), done('tool')]], { edit: chatWords });
@@ -1091,9 +1091,10 @@ describe('converseTurn: a goodbye held while a change could be left unsent', () 
   /**
    * A decision model that answers by question: a read-back's answer with the next of `readings`, whether the caller is
    * wrapping up the call (`wrappingUp`) with the next of `wrap` ('fail' throws; 'hang' answers only once the request is
-   * aborted at its time), and whether they no longer want a change kept unsent with the next of `noLonger`.
+   * aborted at its time; `{ at, value }` answers `value` once `at` is let go), and whether they no longer want a change
+   * kept unsent with the next of `noLonger`.
    */
-  function wrapJev(readings: { yes: number; no: number; change?: number }[], wrap: (number | 'fail' | 'hang')[], noLonger: number[] = []): Harness['jev'] {
+  function wrapJev(readings: { yes: number; no: number; change?: number }[], wrap: (number | 'fail' | 'hang' | { at: Promise<void>; value: number })[], noLonger: number[] = []): Harness['jev'] {
     const asked: JevRequest[] = [];
     let nextReading = 0;
     let nextWrap = 0;
@@ -1117,7 +1118,10 @@ describe('converseTurn: a goodbye held while a change could be left unsent', () 
           const w = wrap[nextWrap++];
           if (w === 'fail') throw new Error('the decision model is down');
           if (w === 'hang') return await new Promise<never>((_, reject) => req.signal?.addEventListener('abort', () => reject(new Error('aborted'))));
-          if (w !== undefined) answers.wrappingUp = { type: 'noul', noul: w };
+          if (typeof w === 'object') {
+            await w.at;
+            answers.wrappingUp = { type: 'noul', noul: w.value };
+          } else if (w !== undefined) answers.wrappingUp = { type: 'noul', noul: w };
         }
         return { answers, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
       },
@@ -1258,6 +1262,125 @@ describe('converseTurn: a goodbye held while a change could be left unsent', () 
       expect(h.ended, wrap).toEqual([]);
       expect(h.traces.at(-1)!.wrapUp, wrap).toEqual({ reading: null, held: true, dropped: { chars: GOODBYE.length } });
     }
+  });
+
+  /** A promise and the function that lets it go. */
+  const latch = (): { at: Promise<void>; go: () => void } => {
+    let go!: () => void;
+    const at = new Promise<void>((r) => (go = r));
+    return { at, go };
+  };
+
+  it('a goodbye dropped after another change the caller confirmed ran this turn: the model is told the caller has not heard it is done, and the done line stays owed until its next reply is said', async () => {
+    const NOTE_IN = 'Your note is in. ';
+    const DONE_UNHEARD = ' The caller has not yet heard that "leave_note" is done, so your next reply tells them that too.';
+    const told = (h: Harness): { events: string[]; out: Out } => {
+      const events: string[] = [];
+      return { events, out: { ...h.out, say: (x, f, hh) => (events.push(`say ${x}`), h.out.say(x, f, hh)), confirmed: () => void events.push('confirmed'), replied: () => void events.push('replied') } };
+    };
+    const script = (next: ModelEvent[][]): ModelEvent[][] => [...lookupThenBook, [call('n1', 'leave_note', { note: 'fragile' }), done('tool')], goodbye('c3'), ...next];
+    const jev = (): Harness['jev'] => wrapJev([{ yes: 0.05, no: 0.9 }, { yes: 0.95, no: 0.05 }], [0.1, 0.9]);
+    const h = harness(script([[text(NOTE_IN), text(ASKED), done()]]), { jev: jev() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'not now, just leave a note that it is fragile' });
+    expect(s.unsent).toEqual({ action: 'book' });
+    expect(s.pending).toMatchObject({ action: 'leave_note' });
+    const a = told(h);
+    s = await converseTurn(s, { kind: 'text', text: 'yes, thanks, that is all' }, h.deps, a.out);
+    // The note ran; the goodbye after it was never said; the done line is owed until the model's next words are said.
+    expect(a.events).toEqual(['confirmed', `say ${NOTE_IN}`, `say ${ASKED}`, 'replied']);
+    const refused = h.traces.at(-1)!.tools.find((x) => x.name === 'end_call')!;
+    expect(refused.reason).toBe(`${HELD_WHY}${DONE_UNHEARD}`);
+    expect(h.traces.at(-1)!.wrapUp).toEqual({ reading: 0.9, held: true, dropped: { chars: GOODBYE.length } });
+    // Where the next reply fails, the done line is said in its place: the caller still hears it was done.
+    const f = harness(script([]), { jev: jev() });
+    let t = await upToReadBack(f);
+    t = await f.run(t, { kind: 'text', text: 'not now, just leave a note that it is fragile' });
+    const b = told(f);
+    await converseTurn(t, { kind: 'text', text: 'yes, thanks, that is all' }, f.deps, b.out);
+    expect(b.events).toEqual(['confirmed', 'say That\'s done.', 'replied']);
+  });
+
+  it('a held round the caller speaks over says nothing, keeps nothing as said, and drops nothing: mid-round, and while its calls run', async () => {
+    // Mid-round: stopped while the model writes.
+    const mid = latch();
+    const model = waitingModel([...lookupThenBook, [text('Thanks for confirming that, Dana. '), { wait: mid.at }, text('Goodbye.'), call('c3', 'end_call', {}), done('tool')]]);
+    const h = harness([], { model, jev: wrapJev([NOT_A_CLEAR_YES], [0.9]) });
+    let s = await upToReadBack(h);
+    const before = h.said.length;
+    const ac = new AbortController();
+    const turn = converseTurn(s, { kind: 'text', text: SAID }, h.deps, h.out, ac.signal);
+    await vi.waitFor(() => expect(model.requests).toHaveLength(3));
+    ac.abort();
+    mid.go();
+    s = await turn;
+    expect(h.said.slice(before)).toEqual([]);
+    expect(JSON.stringify(s.messages)).not.toContain('Thanks for confirming');
+    expect(h.traces.at(-1)!.interrupted).toBe(true);
+    expect(h.traces.at(-1)!.wrapUp).toEqual({ reading: 0.9, held: true });
+    // While its calls run: a lookup the round calls with end_call waits, and the caller speaks.
+    let waitFor: Promise<void> | null = null;
+    const k = harness([...lookupThenBook, [text('Let me check, goodbye. '), call('c3', 'check_availability', { day: FRIDAY }), call('c4', 'end_call', {}), done('tool')]], {
+      jev: wrapJev([NOT_A_CLEAR_YES], [0.9]),
+      tools: { check_availability: async (p) => (await waitFor, k.calendar.free(p.day!)) },
+    });
+    let u = await upToReadBack(k);
+    const later = latch();
+    waitFor = later.at;
+    const kBefore = k.said.length;
+    const stop = new AbortController();
+    const running = converseTurn(u, { kind: 'text', text: SAID }, k.deps, k.out, stop.signal);
+    await vi.waitFor(() => expect(k.model.requests).toHaveLength(3));
+    await new Promise((r) => setTimeout(r, 10));
+    stop.abort();
+    later.go();
+    u = await running;
+    expect(k.said.slice(kBefore)).toEqual([]);
+    expect(JSON.stringify(u.messages)).not.toContain('Let me check, goodbye.');
+    expect(k.traces.at(-1)!.wrapUp?.dropped).toBeUndefined();
+    expect(k.ended).toEqual([]);
+  });
+
+  it('a low reading that comes in after the round has begun lets its words go on streaming from then', async () => {
+    const reading = latch();
+    const rest = latch();
+    const model = waitingModel([...lookupThenBook, [text('Which day would suit you? '), text('We have Friday. '), { wait: rest.at }, text('Or Monday.'), done()]]);
+    const h = harness([], { model, jev: wrapJev([NOT_A_CLEAR_YES], [{ at: reading.at, value: 0.1 }]) });
+    let s = await upToReadBack(h);
+    const before = h.said.length;
+    const turn = h.run(s, { kind: 'text', text: 'yes, but not that day' });
+    await vi.waitFor(() => expect(model.requests).toHaveLength(3));
+    await new Promise((r) => setTimeout(r, 10));
+    // Held while the reading is not in.
+    expect(h.said.slice(before)).toEqual([]);
+    reading.go();
+    await vi.waitFor(() => expect(h.said.slice(before)).toEqual([['Which day would suit you? ', false]]));
+    rest.go();
+    s = await turn;
+    expect(h.said.slice(before)).toEqual([['Which day would suit you? ', false], ['We have Friday. ', false], ['Or Monday.', true]]);
+    expect(h.traces.at(-1)!.wrapUp).toEqual({ reading: 0.1, held: true });
+  });
+
+  it('a held round with end_call and a change called with it: before end_call, its words and then the read-back; after end_call, the words dropped and the read-back said', async () => {
+    const KETTLE = 'A visit Friday, November 13, by noon, for the kettle. Is that right?';
+    const WORDS = 'Let me read that back. ';
+    const kettle = (id: string): ModelEvent => call(id, 'book', { slot: SLOT, item: 'kettle' });
+    // [book, end_call]: the read-back waits, so end_call is refused one confirmation at a time and the words are said.
+    const first = harness([...lookupThenBook, [text(WORDS), kettle('c3'), call('c4', 'end_call', {}), done('tool')]], { jev: wrapJev([NOT_A_CLEAR_YES], [0.9]) });
+    let s = await upToReadBack(first);
+    let before = first.said.length;
+    s = await first.run(s, { kind: 'text', text: SAID });
+    expect(first.said.slice(before)).toEqual([[WORDS, false], [KETTLE, true]]);
+    expect(first.traces.at(-1)!.wrapUp).toEqual({ reading: 0.9, held: true });
+    expect(first.rows.filter((x) => x.type === 'converse_refused').map((x) => x.detail.reason)).toEqual(['one-confirmation-at-a-time']);
+    // [end_call, book]: the unsent rule refuses end_call, so the words are dropped; the change called after it is read back.
+    const second = harness([...lookupThenBook, [text(WORDS), call('c3', 'end_call', {}), kettle('c4'), done('tool')]], { jev: wrapJev([NOT_A_CLEAR_YES], [0.9]) });
+    s = await upToReadBack(second);
+    before = second.said.length;
+    s = await second.run(s, { kind: 'text', text: SAID });
+    expect(second.said.slice(before)).toEqual([[KETTLE, true]]);
+    expect(second.traces.at(-1)!.wrapUp).toEqual({ reading: 0.9, held: true, dropped: { chars: WORDS.trim().length } });
+    expect(s.pending).toMatchObject({ action: 'book', params: { slot: SLOT, item: 'kettle' } });
   });
 
   it('on the web chat, the same: the goodbye refused is never sent', async () => {

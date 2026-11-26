@@ -260,16 +260,16 @@ function toolOf(name: string, spec: ActionSpec, held: boolean): ModelTool {
   return { name, description: about, parameters: { type: 'object', properties, required, additionalProperties: false } };
 }
 
-/** The runtime's own action, offered on every call: it ends the call, on the model's own goodbye or, where it wrote none, the business's closing line. */
 /**
- * The runtime's own end of the call, as the model is offered it. Its words written with it are the caller's goodbye, so the
+ * The runtime's own action, offered on every call: it ends the call, on the model's own goodbye or, where it wrote none,
+ * the business's closing line. Its words written with it are the caller's goodbye, so the
  * description says so as context (a simulated call, 2026-11-26, read "write your goodbye in the same reply as this call"
  * literally and said "That's everything, ending the call with a goodbye."), pointing at the prompt's rule to speak as the
  * business (AS_THE_BUSINESS) rather than giving words.
  */
 const END_CALL_TOOL: ModelTool = {
   name: END_CALL,
-  description: 'End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", a bare "no" when just asked whether there is anything else, or a goodbye): never wait for them to say goodbye. What you write in the same reply as this call is said to the caller as your parting words, as you would say them to them: like everything you write, it speaks as the business, never of how the line works, this call included. A goodbye written without this call does not end it, and leaves the caller in a conversation that is still open. If you write nothing with it, the business\'s closing line is said.',
+  description: 'End the call (on the web chat, the chat) as soon as the caller has nothing more they want, in whatever words they say it ("that\'s all", "no thanks", "I\'m all set", a bare "no" when just asked whether there is anything else, or a goodbye): never wait for them to say goodbye. What you write in the same reply as this call is said to the caller as your parting words, as you would say them to them: like everything you write, it speaks as the business, never of how the line works, ending the call included. A goodbye written without this call does not end it, and leaves the caller in a conversation that is still open. If you write nothing with it, the business\'s closing line is said.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 
