@@ -1212,6 +1212,21 @@ const READ_BACK_ANSWER_BEFORE = 'The line read back: "';
 const ONLY_THE_READ_BACK = 'Nothing is done until the caller hears the action\'s details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it.';
 
 /**
+ * What an answer to a read-back that is not confirmed leaves the model to know, said after the caller's words, which
+ * may hold a yes: the change is not in, so the caller is neither told it is nor thanked for confirming it (the prompt's
+ * third rule). A simulated call (2026-11-26) answered "Yes, that's right. ... I'm not sure about the December 1 date,
+ * but ..."; told only "The caller did not confirm" before those words, the model said "Thanks for confirming that" and
+ * goodbye, and the caller hung up believing the request was in.
+ */
+const NOT_IN = 'The change is not in: the caller must not be told it is, or thanked for confirming it (rule 3).';
+
+/**
+ * The same, where the decision model read the answer and did not read a clear yes: why the line did not take it, and
+ * that the caller's own words say what is left to take up with them.
+ */
+const NOT_A_CLEAR_YES = 'The line did not read their answer as a clear yes to all of it, so the change is not in: the caller must not be told it is, or thanked for confirming it (rule 3). Where their words show what they were unsure of, that is what to take up with them.';
+
+/**
  * A change the caller did not confirm is kept as unsent (ConverseState.unsent), replacing any kept before it, so the
  * call does not end without the caller asked whether they still want it.
  */
@@ -1353,7 +1368,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke over the read-back');
     keepUnsent(t, p);
     keepUnheard(t, p);
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK} ${NOT_IN}`) }]);
     return 'notRun';
   }
   // Stopped before the decision model is asked: the caller went on speaking, and nothing runs.
@@ -1369,7 +1384,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
     keepUnsent(t, p);
     keepHeard(t, p);
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}' ${NOT_IN}` }]);
     return 'notRun';
   }
   if (!yes && isWithdrawn(reading)) {
@@ -1388,12 +1403,12 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     if (notConfirmed !== undefined && isDeclinedWithoutChange(reading)) {
       // A clear no with nothing said of what should be different: the business's line asks, word for word.
       const line = lineFor(t, notConfirmed);
-      add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${line}" Answer what they say next. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
+      add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${line}" Answer what they say next. ${ONLY_THE_READ_BACK} They said: '${words}' ${NOT_A_CLEAR_YES}` }]);
       sp.line(line);
       add(t.st, 'assistant', [{ type: 'text', text: line }]);
       return 'asked';
     }
-    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}' ${NOT_A_CLEAR_YES}` }]);
     return 'notRun';
   }
   // A yes to a read-back of the change kept unsent lets it go, whatever then comes of running it.
@@ -1465,7 +1480,7 @@ function wentOn(t: Turn, p: PendingReadBack, words: string, reading?: ReadBackRe
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller went on speaking');
   keepUnsent(t, p);
   keepHeard(t, p);
-  const content = `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`;
+  const content = `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK} ${NOT_IN}`;
   // A yes lost to the words that followed it (or an answer stopped before it was read) counts as a read-back not
   // heard; an answer read as anything but a yes (a no, a correction, or one that could not be read) is the
   // caller's answer, as answered() takes it, and counts nothing.

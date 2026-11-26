@@ -440,6 +440,8 @@ describe('converseTurn: a booking', () => {
     expect(lastMessage(h)).toContain('Not done: nothing was changed, booked or sent. The caller\'s answer could not be read, so it is not known whether they confirmed. Nothing is done until the caller hears the action\'s details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it.');
     expect(lastMessage(h)).not.toContain('did not confirm');
     expect(lastMessage(h)).toContain('yes please');
+    // A yes in the caller's words is not taken as one: the change is not in (a simulated call, 2026-11-26).
+    expect(lastMessage(h)).toContain(`They said: 'yes please' ${NOT_IN_WORDS}`);
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed', reason: 'the answer could not be read' }]);
     expect(h.traces.at(-1)!.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?', confirmed: false });
@@ -743,6 +745,12 @@ describe('converseTurn: ending the call', () => {
 
 const HANDOFF_YAML = '  handoff: { en: "Let me get a person to call you back." }\n';
 const NOT_CONFIRMED = 'No problem. What would you like to change, or would you rather cancel?';
+/** What a read-back not confirmed tells the model of a yes elsewhere, pinned as it is said. */
+const ONLY_THE_READ_BACK_WORDS = 'Nothing is done until the caller hears the action\'s details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it.';
+/** What a read-back answered and not read as a clear yes tells the model after the caller's words, pinned as it is said. */
+/** What every other answer to a read-back not confirmed (spoken over, not read, the caller went on) tells the model after their words. */
+const NOT_IN_WORDS = 'The change is not in: the caller must not be told it is, or thanked for confirming it (rule 3).';
+const NOT_A_CLEAR_YES_WORDS = 'The line did not read their answer as a clear yes to all of it, so the change is not in: the caller must not be told it is, or thanked for confirming it (rule 3). Where their words show what they were unsure of, that is what to take up with them.';
 
 /** The test business's book read-back, and its short read-back of a correction (readBackChange) with a phrase for each of `phrases`. */
 const BOOK_READ_BACK_YAML = '      en: "A visit {slot}, for the {item}. Is that right?"\n';
@@ -821,7 +829,7 @@ describe('converseTurn: a read-back turned down with nothing to change (lines.no
     expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: NOT_CONFIRMED }] });
     const result = s.messages.at(-2)!;
     expect(result.role).toBe('user');
-    expect(result.content).toEqual([{ type: 'tool_result', id: 'c2', content: `Read back to the caller: "${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${NOT_CONFIRMED}" Answer what they say next. Nothing is done until the caller hears the action's details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it. They said: 'no'` }]);
+    expect(result.content).toEqual([{ type: 'tool_result', id: 'c2', content: `Read back to the caller: "${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${NOT_CONFIRMED}" Answer what they say next. Nothing is done until the caller hears the action's details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it. They said: 'no' ${NOT_A_CLEAR_YES_WORDS}` }]);
     const r = h.traces.at(-1)!;
     expect(r.replies).toEqual([NOT_CONFIRMED]);
     expect(r.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed' }]);
@@ -856,6 +864,21 @@ describe('converseTurn: a read-back turned down with nothing to change (lines.no
       expect(lastMessage(h)).toContain('The caller did not confirm.');
       expect(lastMessage(h)).not.toContain('the line asked them');
     }
+  });
+
+  it('tells the model, after the caller\'s words, that an answer not read as a clear yes leaves the change not in, and that their words say what to take up (a simulated call, 2026-11-26: "Thanks for confirming" to a yes with a doubt in it)', async () => {
+    const h = harness([...lookupThenBook, [text('Which date did you have in mind?'), done()]], { reading: { yes: 0.6, no: 0.3, change: 0.4 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes, but I\'m not sure about the date' });
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Which date did you have in mind?' }] });
+    const result = s.messages.at(-2)!;
+    expect(result.content).toEqual([{ type: 'tool_result', id: 'c2', content: `Read back to the caller: "${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK_WORDS} They said: 'yes, but I'm not sure about the date' ${NOT_A_CLEAR_YES_WORDS}` }]);
+    // The same context where the business's notConfirmed line asked what to change.
+    const asked = harness(lookupThenBook, { edit: withNotConfirmed, reading: { yes: 0.05, no: 0.95, change: 0.05 } });
+    let t = await upToReadBack(asked);
+    t = await asked.run(t, { kind: 'text', text: 'no' });
+    expect(JSON.stringify(t.messages.at(-2))).toContain(`They said: 'no' ${NOT_A_CLEAR_YES_WORDS}`);
   });
 
   it('on the web chat says the line\'s chat wording, kept as the line\'s own', async () => {
@@ -2879,6 +2902,7 @@ describe('converseTurn: stopped from outside', () => {
     const last = lastMessage(h);
     expect(last).toContain('The caller went on speaking after their answer, so it is not confirmed. They said: \\"yes\\"');
     expect(last).toContain('and make it Monday');
+    expect(last).toContain(NOT_IN_WORDS);
     expect(h.calendar.bookings).toHaveLength(0);
   });
 
@@ -3683,6 +3707,7 @@ describe('converseTurn: what the caller heard', () => {
     expect(lastMessage(h)).toContain('The caller spoke over the read-back before it finished, so it is not confirmed. They said: \\"yes\\"');
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
     expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'book', outcome: 'notConfirmed' })]);
+    expect(lastMessage(h)).toContain(`${ONLY_THE_READ_BACK_WORDS} ${NOT_IN_WORDS}`.replace(/"/g, '\\"'));
   });
 
   it('a yes over the read-back\'s last words confirms', async () => {
