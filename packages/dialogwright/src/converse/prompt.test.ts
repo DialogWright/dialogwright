@@ -41,6 +41,23 @@ describe('an app with no journeys', () => {
   });
 });
 
+describe('a change\'s description', () => {
+  const SHORT = '    readBackChange:\n      en:\n        say: "Got it, {changes}. Is everything else right?"\n        params:\n          name: "the name {name}"\n';
+  const READ_BACK = '      en: "A visit {window} for {name}, on {phone}. Is that right?"\n';
+  const CHANGE = 'Book a visit into a free window. It changes something: the caller hears its details read back and it runs only after their yes.';
+  const SHORT_WORDS = ' Called again after the caller turned its read-back down with a correction, only the changed details are read back, in words that already say the corrected value back to them: say nothing of the value yourself before calling it. Called again with the same values, the whole read-back is said again, for a caller who asks to hear it all.';
+  it('says it is read back and runs on the yes, and nothing of a short read-back where the action has none', () => {
+    expect(toolsOf(plain).find((t) => t.name === 'book')!.description).toBe(CHANGE);
+  });
+  it('where the action has readBackChange, says a correction is read back by its changed details alone, and the same values in full', () => {
+    expect(base).toContain(READ_BACK);
+    const { value, problems } = agentBusinessProblems(base.replace(READ_BACK, `${READ_BACK}${SHORT}`));
+    expect(problems).toEqual([]);
+    expect(toolsOf(value!).find((t) => t.name === 'book')!.description).toBe(`${CHANGE}${SHORT_WORDS}`);
+    expect(toolsOf(value!).find((t) => t.name === 'availability')!.description).toBe('List the windows still free on a day.');
+  });
+});
+
 describe('in a working journey', () => {
   const s = at({ ...root, active: 'visit' });
   const prompt = systemPrompt(withJourneys, s, NOW);

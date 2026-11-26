@@ -72,6 +72,17 @@ describe('converseChatRuntime: a saved state', () => {
     }
   });
 
+  it('loads a state saved before the heard read-back was kept (none), keeps one that was, and drops one not in its shape', () => {
+    const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-16', channel: 'chat' }))) as unknown;
+    expect(stateOf(before)!.heardReadBack).toBeUndefined();
+    const heard = { action: 'book', params: { window: '2030-01-15:morning', name: 'Sam Example', phone: '' } };
+    const kept = { ...newConverseState({ appId: 'visits', callId: 'chat-17', channel: 'chat' }), heardReadBack: heard };
+    expect(stateOf(JSON.parse(JSON.stringify(kept)))!.heardReadBack).toEqual(heard);
+    for (const odd of ['book', null, {}, { action: 'book' }, { action: '', params: {} }, { action: 7, params: {} }, { action: 'book', params: [] }, { action: 'book', params: { name: 7 } }, { action: 'book', params: null }]) {
+      expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-18', channel: 'chat' }), heardReadBack: odd })!.heardReadBack).toBeUndefined();
+    }
+  });
+
   it('a saved state without journey loads as none', () => {
     const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-10', channel: 'chat' }))) as unknown;
     expect(stateOf(before)).not.toBeNull();

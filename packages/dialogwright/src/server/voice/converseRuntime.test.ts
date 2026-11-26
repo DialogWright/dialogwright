@@ -3,13 +3,14 @@ import type { AuditDraft } from '../../audit/types';
 import type { AuditSink } from '../../audit/sink';
 import type { AnswerMap, JevClient, JevRequest } from '../../jev/types';
 import type { InboundFrame, OutboundFrame, TextFrame } from '../../channel/relay/frames';
+import type { AgentBusiness } from '../../converse/business/schema';
 import type { ConverseModel, ModelEvent, ModelRequest } from '../../converse/model/types';
 import { policyOf } from '../../converse/policy';
 import { newConverseState } from '../../converse/state';
 import { BRIDGE_AFTER_MS, CUT_IN_NOTE, UNHEARD_NOTE, type ConverseDeps } from '../../converse/turn';
 import type { ConverseTraceRecord } from '../../converse/trace';
 import { converseFixture } from '../../testing/converse/app';
-import { BOOKING, call, DAY, done, text } from '../../testing/converse/chat';
+import { BOOKING, call, DAY, done, SLOT, text } from '../../testing/converse/chat';
 import type { ConverseCallEntry } from '../sessions';
 import type { PlaybackEvent } from './provider';
 import type { VoiceIo } from './io';
@@ -130,7 +131,7 @@ function fakeIo(entry: ConverseCallEntry) {
   return { io, sent, records, saves, published, kept, finished: () => finished };
 }
 
-function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?: JevClient; before?: Record<string, () => Promise<void>>; hooks?: Pick<Parameters<typeof converseVoiceRuntime>[0], 'onTurnEnd' | 'onClaimsRead'>; appending?: (d: AuditDraft, rows: readonly AuditDraft[]) => void }) {
+function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?: JevClient; before?: Record<string, () => Promise<void>>; hooks?: Pick<Parameters<typeof converseVoiceRuntime>[0], 'onTurnEnd' | 'onClaimsRead'>; appending?: (d: AuditDraft, rows: readonly AuditDraft[]) => void; business?: (b: AgentBusiness) => AgentBusiness }) {
   const { app, calendar, booked } = converseFixture();
   const rows: AuditDraft[] = [];
   const audit: AuditSink = {
@@ -164,7 +165,7 @@ function harness(o: { model: ConverseModel; provider?: 'twilio' | 'telnyx'; jev?
   const rt = converseVoiceRuntime({
     apps: new Map([[app.id, app]]),
     converseDeps: (a) => ({
-      business: a.business, model: o.model, jev, policy: policyOf(a.business), audit, tools: withBefore(a.tools, o.before ?? {}), texts: null,
+      business: o.business?.(a.business) ?? a.business, model: o.model, jev, policy: policyOf(a.business), audit, tools: withBefore(a.tools, o.before ?? {}), texts: null,
       now: () => new Date(), trace: () => {}, jevTimeoutMs: 1000,
     }),
     now: () => Date.now(),
@@ -342,6 +343,35 @@ describe('the converse voice runtime: a confirmed change', () => {
     expect(c.booked).toHaveLength(1);
     expect(c.said().at(-1)!.token).toBe('You are booked for Tuesday morning.');
     expect(c.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail.action)).toEqual(['book']);
+  });
+});
+
+describe('the converse voice runtime: a correction read back by its changed values alone', () => {
+  it('the short read-back is sent speakable and, heard in full, a yes confirms the change with every value', async () => {
+    const SHORT_SAID = 'Got it, on the number you\'re calling from, ending in 0 1 2 3. Is everything else right?';
+    const model = gatedModel([
+      BOOKING[0]!,
+      BOOKING[1]!,
+      [call('c2', 'book', { window: SLOT, name: 'Sam Example', phone: '5555550177' }), done('tool')],
+      [call('c3', 'book', { window: SLOT, name: 'Sam Example', phone: 'caller' }), done('tool')],
+      [text('You are booked for Tuesday morning.'), done()],
+    ]);
+    const short = (b: AgentBusiness): AgentBusiness => ({
+      ...b,
+      actions: { ...b.actions, book: { ...b.actions.book!, readBackChange: { en: { say: 'Got it, {changes}. Is everything else right?', and: 'and', params: { name: 'the name {name}', phone: 'on {phone}' } } } } },
+    });
+    const h = harness({ model, business: short });
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: 'twilio' }, h.io);
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    expect(h.said().at(-1)!.token).toContain('on 555 555 0177. Is that right?');
+    await h.prompt('no, call the number I am calling from');
+    expect(h.said().at(-1)!.token).toBe(SHORT_SAID);
+    expect(h.entry.session.pending).toMatchObject({ text: SHORT_SAID, changes: ['phone'] });
+    await h.prompt('yes');
+    expect(h.booked).toEqual([expect.objectContaining({ window: SLOT, name: 'Sam Example', phone: '+15555550123' })]);
+    expect(h.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail)).toEqual([expect.objectContaining({ action: 'book', short: true, changes: ['phone'] })]);
+    expect(h.said().at(-1)!.token).toBe('You are booked for Tuesday morning.');
   });
 });
 

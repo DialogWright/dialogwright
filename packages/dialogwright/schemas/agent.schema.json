@@ -896,6 +896,49 @@
             "additionalProperties": false,
             "description": "The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter, an optional one in a part in square brackets said only when it has a value (\"[, {details}]\"); required for a change, per language."
           },
+          "readBackChange": {
+            "description": "Only on a change: the read-back said after the caller heard the full read-back and turned it down with a correction, saying only the changed details, each in its phrase, joined by commas and the last two by `and`. A call again with the same values, or a change to a param with no phrase or to no value, is read back in full. The yes confirms every value, as on the full read-back.",
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "object",
+                "properties": {
+                  "say": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The frame, with {changes} once where the changed details are said and no other placeholder (for example \"Got it, {changes}. Is everything else right?\")."
+                  },
+                  "and": {
+                    "description": "The word that joins the last two phrases (\"and\"). Absent: every phrase is joined by a comma.",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "params": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "A phrase per param the short read-back may say, each with its own param as its one {placeholder} (\"your {vehicle}\"). A param with no phrase changed is read back in full."
+                  }
+                },
+                "required": [
+                  "say",
+                  "params"
+                ],
+                "additionalProperties": false,
+                "description": "The short read-back, in English."
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
           "then": {
             "description": "Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.",
             "type": "array",

@@ -739,6 +739,16 @@ describe('converseTurn: ending the call', () => {
 
 const HANDOFF_YAML = '  handoff: { en: "Let me get a person to call you back." }\n';
 const NOT_CONFIRMED = 'No problem. What would you like to change, or would you rather cancel?';
+
+/** The test business's book read-back, and its short read-back of a correction (readBackChange) with a phrase for each of `phrases`. */
+const BOOK_READ_BACK_YAML = '      en: "A visit {slot}, for the {item}. Is that right?"\n';
+const SHORT_FRAME = 'Got it, {changes}. Is everything else right?';
+const BOOK_PHRASES = { slot: '{slot}', item: 'the {item}' };
+const withShortBook = (phrases: Record<string, string> = BOOK_PHRASES) => (t: string): string => {
+  if (!t.includes(BOOK_READ_BACK_YAML)) throw new Error('the test business changed: update withShortBook');
+  const lines = Object.entries(phrases).map(([k, v]) => `          ${k}: "${v}"\n`).join('');
+  return t.replace(BOOK_READ_BACK_YAML, `${BOOK_READ_BACK_YAML}    readBackChange:\n      en:\n        say: "${SHORT_FRAME}"\n        and: "and"\n        params:\n${lines}`);
+};
 /** The test business with lines.notConfirmed. */
 const withNotConfirmed = (t: string): string => {
   if (!t.includes(HANDOFF_YAML)) throw new Error('the test business changed: update withNotConfirmed');
@@ -2023,6 +2033,17 @@ describe('journeys', () => {
     expect(h.rows.filter((r) => r.type === 'converse_refused')).toEqual([]);
   });
 
+  it('the read-back kept for a short read-back is let go when the journey moves off the journey that offers it', async () => {
+    const h = harness([DROPPED, ...lookupThenBook, DROPPED, [text('I can leave a note for a call back.'), done()]], {
+      edit: (t) => withJourneys(withShortBook()(t)),
+      jev: routeJev([{ task: VISIT }, { task: NOTE, drops: 0.2 }], { yes: 0.05, no: 0.9 }),
+    });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, actually, just have someone call me' });
+    expect(s.journey?.active).toBe('note');
+    expect(s.heardReadBack).toBeUndefined();
+  });
+
   it('while a change is kept unsent, a routed turn asks in the routing request whether the caller no longer wants it, and a clear yes lets it go', async () => {
     const h = harness([DROPPED, ...lookupThenBook, [text('Anything else?'), done()], [text('Okay, forgotten. Goodbye!'), call('c9', 'end_call', {}), done('tool')]], {
       edit: withJourneys,
@@ -2916,6 +2937,212 @@ describe('converseTurn: stopped from outside', () => {
     expect(s).toEqual(kept);
     expect(h.traces[0]!.interrupted).toBeUndefined();
     expect(h.said).toEqual([['Hello there.', true]]);
+  });
+});
+
+describe('converseTurn: a correction read back by its changed values alone (readBackChange)', () => {
+  const OFF = 'checks:\n  claims: { mode: off }\n';
+  const AFTERNOON = `${FRIDAY}:afternoon`;
+  const shortBook = (phrases?: Record<string, string>) => (t: string): string => `${withShortBook(phrases)(t)}${OFF}`;
+  /** A decision model that reads a yes where the caller says "yes", and a no with a change otherwise. */
+  const yesWhereSaid = (): Harness['jev'] => {
+    const asked: JevRequest[] = [];
+    return {
+      asked,
+      async ask(req) {
+        asked.push(req);
+        const yes = /\byes\b/.test(String((req.state as { said?: unknown }).said ?? '').toLowerCase());
+        return { answers: { confirmsYes: { type: 'noul', noul: yes ? 0.95 : 0.05 }, confirmsNo: { type: 'noul', noul: yes ? 0.05 : 0.9 }, saysChange: { type: 'noul', noul: yes ? 0.05 : 0.9 } }, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
+      },
+    };
+  };
+  const again = (id: string, args: Record<string, string>): ModelEvent[] => [call(id, 'book', args), done('tool')];
+  const readBacks = (h: Harness): string[] => h.traces.flatMap((r) => (r.readBack !== undefined && r.readBack.confirmed === undefined ? [r.readBack.text] : []));
+
+  it('a heard read-back turned down, called again with one value changed: only that value is read back, and the yes runs it with every value, its hash over all', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' }), [text('Booked.'), done()]], { edit: shortBook(), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, it is the kettle' });
+    expect(s.heardReadBack).toEqual({ action: 'book', params: { slot: SLOT, item: 'lamp' } });
+    expect(h.said.at(-1)).toEqual(['Got it, the kettle. Is everything else right?', true]);
+    expect(s.pending).toMatchObject({ action: 'book', params: { slot: SLOT, item: 'kettle' }, text: 'Got it, the kettle. Is everything else right?', changes: ['item'] });
+    const spec = h.deps.business.actions.book!;
+    expect(s.pending!.hash).toBe(confirmationHash({ slot: SLOT, item: 'kettle' }, confirmedFields(spec)));
+    expect(h.traces.at(-1)!.readBack).toEqual({ text: 'Got it, the kettle. Is everything else right?', changes: ['item'] });
+    // The decision model reads the answer against the words said.
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(confirmAsks(h).at(-1)!.state).toMatchObject({ readBack: 'Got it, the kettle. Is everything else right?', said: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(h.calendar.bookings[0]!.key).toBe(idempotencyKey('call-1', 'book', { slot: SLOT, item: 'kettle' }));
+    expect(h.notified).toEqual([{ item: 'kettle' }]);
+    const confirmed = h.rows.find((r) => r.type === 'confirmed' && r.detail.action === 'book')!;
+    expect(confirmed.detail).toMatchObject({ action: 'book', hash: confirmationHash({ slot: SLOT, item: 'kettle' }, confirmedFields(spec)), short: true, changes: ['item'] });
+    expect(h.traces.at(-1)!.readBack).toMatchObject({ text: 'Got it, the kettle. Is everything else right?', changes: ['item'], confirmed: true });
+    // Confirmed: nothing is kept to read a correction against.
+    expect(s.heardReadBack).toBeUndefined();
+  });
+
+  it('two values changed: both phrases, in the action\'s param order, the last two joined by its word', async () => {
+    const h = harness([...lookupThenBook, again('c3', { item: 'kettle', slot: AFTERNOON })], { edit: shortBook(), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, the kettle, and the afternoon' });
+    expect(h.said.at(-1)).toEqual(['Got it, Friday, November 13, by five and the kettle. Is everything else right?', true]);
+    expect(s.pending!.changes).toEqual(['slot', 'item']);
+  });
+
+  it('three values changed: commas between them and the word before the last; a value given where there was none is said too', async () => {
+    const REQUEST = `  request:
+    about: Send the counter a request.
+    kind: change
+    params:
+      name: { type: text, about: The name. }
+      item: { type: choice, options: [lamp, kettle, clock], about: The item. }
+      phone: { type: phone, about: The number. }
+      note: { type: text, optional: true, about: A note. }
+    readBack:
+      en: "A request for {name}, the {item}, on {phone}[, saying {note}]. Is that right?"
+    readBackChange:
+      en:
+        say: "${SHORT_FRAME}"
+        and: "and"
+        params:
+          name: "the name {name}"
+          item: "the {item}"
+          phone: "the number {phone}"
+          note: "the note {note}"
+    audit: { name: keep, item: keep, phone: last4, note: keep }
+`;
+    const ask = (id: string, args: Record<string, string>): ModelEvent[] => [call(id, 'request', args), done('tool')];
+    const h = harness([
+      ask('r1', { name: 'Ann Example', item: 'lamp', phone: 'caller' }),
+      ask('r2', { name: 'Anne Example', item: 'kettle', phone: '5555550177' }),
+      ask('r3', { name: 'Anne Example', item: 'kettle', phone: '5555550177', note: 'fragile' }),
+    ], { edit: (t) => `${t}${REQUEST}${OFF}`, jev: yesWhereSaid(), tools: { request: async () => 'sent' } });
+    let s = await h.run(fresh(), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'Send a request for my lamp' });
+    expect(h.said.at(-1)![0]).toBe('A request for Ann Example, the lamp, on the number you\'re calling from, ending in 0 1 4 2. Is that right?');
+    s = await h.run(s, { kind: 'text', text: 'no, Anne with an e, the kettle, and call 555 555 0177' });
+    expect(h.said.at(-1)).toEqual(['Got it, the name Anne Example, the kettle and the number 555 555 0177. Is everything else right?', true]);
+    s = await h.run(s, { kind: 'text', text: 'no, and say it is fragile' });
+    expect(h.said.at(-1)).toEqual(['Got it, the note fragile. Is everything else right?', true]);
+    expect(s.pending!.changes).toEqual(['note']);
+  });
+
+  it('called again with the same values (the caller asked to hear it all): the full read-back', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'lamp' })], { edit: shortBook(), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, can you read it all again?' });
+    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
+    expect(s.pending!.changes).toBeUndefined();
+    // The trace masks the slot (agent.yaml says nothing of it), as on any read-back.
+    expect(h.traces.at(-1)!.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?' });
+  });
+
+  it('a changed value with no phrase, or a value cleared: the full read-back', async () => {
+    const noSlot = harness([...lookupThenBook, again('c3', { slot: AFTERNOON, item: 'kettle' })], { edit: shortBook({ item: 'the {item}' }), jev: yesWhereSaid() });
+    let s = await upToReadBack(noSlot);
+    s = await noSlot.run(s, { kind: 'text', text: 'no, the kettle, in the afternoon' });
+    expect(noSlot.said.at(-1)).toEqual(['A visit Friday, November 13, by five, for the kettle. Is that right?', true]);
+    expect(s.pending!.changes).toBeUndefined();
+
+    const NOTED = `  noted:
+    about: A visit noted.
+    kind: change
+    params:
+      item: { type: choice, options: [lamp, kettle, clock], about: The item. }
+      note: { type: text, optional: true, about: A note. }
+    readBack:
+      en: "The {item}[, noting {note}]. Is that right?"
+    readBackChange:
+      en:
+        say: "${SHORT_FRAME}"
+        params:
+          item: "the {item}"
+          note: "noting {note}"
+`;
+    const ask = (id: string, args: Record<string, string>): ModelEvent[] => [call(id, 'noted', args), done('tool')];
+    const cleared = harness([ask('n1', { item: 'lamp', note: 'fragile' }), ask('n2', { item: 'kettle' })], { edit: (t) => `${t}${NOTED}${OFF}`, jev: yesWhereSaid(), tools: { noted: async () => 'noted' } });
+    s = await cleared.run(fresh(), { kind: 'start' });
+    s = await cleared.run(s, { kind: 'text', text: 'note my lamp, it is fragile' });
+    expect(cleared.said.at(-1)).toEqual(['The lamp, noting fragile. Is that right?', true]);
+    s = await cleared.run(s, { kind: 'text', text: 'no, the kettle, and no note' });
+    expect(cleared.said.at(-1)).toEqual(['The kettle. Is that right?', true]);
+    // That full read-back, heard and turned down, is the one kept now, its note cleared.
+    s = await cleared.run(s, { kind: 'text', text: 'no' });
+    expect(s.heardReadBack).toEqual({ action: 'noted', params: { item: 'kettle', note: '' } });
+  });
+
+  it('with no joining word, phrases are joined by commas alone', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: AFTERNOON, item: 'kettle' })], { edit: (t) => shortBook()(t).replace('        and: "and"\n', ''), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, the kettle, in the afternoon' });
+    expect(h.said.at(-1)).toEqual(['Got it, Friday, November 13, by five, the kettle. Is everything else right?', true]);
+  });
+
+  it('a read-back the caller cut in on early is not the one a correction is read against: the last one heard is', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' }), again('c4', { slot: SLOT, item: 'clock' })], { edit: shortBook(), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, the kettle' });
+    expect(h.said.at(-1)![0]).toBe('Got it, the kettle. Is everything else right?');
+    // Cut in on at its start: not heard, so the lamp's read-back, heard in full, stays the one kept.
+    s = await h.run(s, { kind: 'text', text: 'no wait, the clock', heard: { cutIn: true, text: 'Got it', spokeBefore: false } });
+    expect(s.heardReadBack).toEqual({ action: 'book', params: { slot: SLOT, item: 'lamp' } });
+    expect(h.said.at(-1)).toEqual(['Got it, the clock. Is everything else right?', true]);
+  });
+
+  it('where no read-back was heard, a correction is read back in full', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' })], { edit: shortBook(), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'oh, it is the kettle', heard: { cutIn: false, text: null, spokeBefore: true } });
+    expect(s.heardReadBack).toBeUndefined();
+    expect(h.said.at(-1)).toEqual(['A visit Friday, November 13, by noon, for the kettle. Is that right?', true]);
+  });
+
+  it('a second correction after a short read-back turned down is read against the first correction\'s values', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' }), again('c4', { slot: AFTERNOON, item: 'kettle' })], { edit: shortBook(), jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, the kettle' });
+    s = await h.run(s, { kind: 'text', text: 'no, and the afternoon' });
+    expect(s.heardReadBack).toEqual({ action: 'book', params: { slot: SLOT, item: 'kettle' } });
+    expect(h.said.at(-1)).toEqual(['Got it, Friday, November 13, by five. Is everything else right?', true]);
+    // Each in the trace as said, the slot masked in the short read-back as in the full one.
+    expect(readBacks(h)).toEqual(['A visit •, for the lamp. Is that right?', 'Got it, the kettle. Is everything else right?', 'Got it, •. Is everything else right?']);
+    expect(h.traces.at(-1)!.readBack!.changes).toEqual(['slot']);
+  });
+
+  it('a business with no readBackChange reads every correction back in full, as before', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' })], { edit: (t) => `${t}${OFF}`, jev: yesWhereSaid() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, the kettle' });
+    expect(h.said.at(-1)).toEqual(['A visit Friday, November 13, by noon, for the kettle. Is that right?', true]);
+    expect(s.pending!.changes).toBeUndefined();
+  });
+
+  it('a read-back withdrawn lets go of the one kept: a call again later is read back in full', async () => {
+    const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' }), [text('Okay. Anything else?'), done()], again('c4', { slot: SLOT, item: 'clock' })], {
+      edit: shortBook(),
+      jev: byQuestionJev([{ yes: 0.05, no: 0.9, change: 0.9 }, { yes: 0.02, no: 0.97, change: 0.05, withdraws: 0.95 }, { yes: 0.05, no: 0.9 }]),
+    });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no, the kettle' });
+    expect(s.heardReadBack).toBeDefined();
+    s = await h.run(s, { kind: 'text', text: 'no, cancel it' });
+    expect(s.heardReadBack).toBeUndefined();
+    s = await h.run(s, { kind: 'text', text: 'actually, book the clock' });
+    expect(h.said.at(-1)).toEqual(['A visit Friday, November 13, by noon, for the clock. Is that right?', true]);
+  });
+
+  it('a change kept unsent that the caller says they no longer want lets go of the read-back kept, too', async () => {
+    const h = harness([...lookupThenBook, [text('Okay. Anything else?'), done()], [text('Sure.'), done()]], {
+      edit: shortBook(),
+      jev: byQuestionJev([{ yes: 0.05, no: 0.9, change: 0.9 }], [0.95]),
+    });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(s.heardReadBack).toBeDefined();
+    s = await h.run(s, { kind: 'text', text: 'forget it' });
+    expect(s.unsent).toBeUndefined();
+    expect(s.heardReadBack).toBeUndefined();
   });
 });
 

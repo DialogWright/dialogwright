@@ -149,6 +149,19 @@ describe('an edit to agent.yaml changes the pages', () => {
     expect(card).not.toBe(conversePolicyCardText(app));
   });
 
+  it('a short read-back: the card prints its frame and each phrase beside the full read-back, and when it is said', () => {
+    const READ_BACK = '      en: "A visit {window} for {name}, on {phone}. Is that right?"\n';
+    const short = edited((t) => t.replace(READ_BACK, `${READ_BACK}    readBackChange:\n      en:\n        say: "Got it, {changes}. Is everything else right?"\n        and: "and"\n        params:\n          name: "the name {name}"\n          phone: "on {phone}"\n`));
+    const card = conversePolicyCardText(short);
+    expect(card).toContain('A correction is read back by its changed values alone, after the caller heard the full read-back and did not confirm it, in these words: "Got it, {changes}. Is everything else right?", {changes} the phrase of each param changed, in this order, joined by commas and the last two by "and":');
+    expect(card).toContain('| `name` | "the name {name}" |');
+    expect(card).toContain('| `phone` | "on {phone}" |');
+    expect(card).toContain('Read back in full instead where a param with no phrase here (`window`) changed, a value was cleared, or the values are the same as the last read-back (the caller asked to hear it all). The yes to a short read-back confirms every value, as the yes to the full one does.');
+    expect(card).toContain('- Where a change gives a short read-back (`readBackChange`), a correction after a full read-back the caller heard and did not confirm is read back by its changed values alone, in the business\'s own phrases (shown with each action below): the caller heard every other value in that full read-back, and a yes confirms every value, as the gate\'s `confirmed` rule over all of the change\'s params requires.');
+    expect(conversePolicyCardText(app)).not.toContain('A correction is read back by its changed values alone');
+    expect(conversePolicyCardText(app)).not.toContain('readBackChange');
+  });
+
   it('a follow-on: the card and the map show it, and print no read-back for it', () => {
     const text = (t: string): string => t.replace('    audit: { name: length, phone: last4 }\n', '    audit: { name: length, phone: last4 }\n    then: [tell]\n') + '  tell:\n    about: Tell.\n    kind: change\n    params:\n      name: { type: text, about: n. }\n    readBack:\n      en: "NEVER-SAID {name}."\n';
     const withThen = edited(text);

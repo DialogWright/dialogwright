@@ -56,6 +56,14 @@ export interface ConverseState {
    * before it was kept): none.
    */
   unsent?: UnsentChange;
+  /**
+   * The last read-back of a change the caller heard (readBackHeard) and did not confirm: its action and the values
+   * it was read with, so a call of that action again with a correction is read back by its changed values alone
+   * (agent.yaml's readBackChange; confirm.ts changedParams). A read-back not heard leaves the one kept before it.
+   * Taken out when a read-back of its action is confirmed or withdrawn, when the caller says they no longer want it,
+   * or when the journey no longer offers its action. Absent (as in a state saved before it was kept): none.
+   */
+  heardReadBack?: HeardReadBack;
   /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
   ended?: 'closing' | 'handoff' | 'left';
 }
@@ -77,6 +85,12 @@ export interface JourneyState {
 /** A change read back and not confirmed: its action (its read-back is in the conversation, and holds values the trace masks). */
 export interface UnsentChange {
   action: string;
+}
+
+/** A read-back the caller heard and did not confirm: its action, and its values as the call carried them. */
+export interface HeardReadBack {
+  action: string;
+  params: Record<string, string>;
 }
 
 /** A change that ran on the call: its action, its read-back as said and confirmed, and what it and each follow-on returned (`<action>: <result>`). */

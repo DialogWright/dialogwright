@@ -231,6 +231,13 @@ function paramSchema(p: ParamSpec): Record<string, unknown> {
   }
 }
 
+/**
+ * What a change with a short read-back (agent.yaml's readBackChange) tells the model, as context: a correction is
+ * read back by the changed details alone, in words that already say the value back, so the model need not; the same
+ * values again are read back in full.
+ */
+const SHORT_READ_BACK = ' Called again after the caller turned its read-back down with a correction, only the changed details are read back, in words that already say the corrected value back to them: say nothing of the value yourself before calling it. Called again with the same values, the whole read-back is said again, for a caller who asks to hear it all.';
+
 function toolOf(name: string, spec: ActionSpec): ModelTool {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
@@ -238,7 +245,7 @@ function toolOf(name: string, spec: ActionSpec): ModelTool {
     properties[pname] = paramSchema(p);
     if (p.optional !== true) required.push(pname);
   }
-  const about = spec.kind === 'change' ? `${spec.about} It changes something: the caller hears its details read back and it runs only after their yes.` : spec.about;
+  const about = spec.kind === 'change' ? `${spec.about} It changes something: the caller hears its details read back and it runs only after their yes.${spec.readBackChange === undefined ? '' : SHORT_READ_BACK}` : spec.about;
   return { name, description: about, parameters: { type: 'object', properties, required, additionalProperties: false } };
 }
 

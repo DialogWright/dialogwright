@@ -1,6 +1,6 @@
 import { isNoul, type Answer, type AnswerMap, type JevClient, type JsonValue, type QuestionMap } from '../jev/types';
 import { resultId, type Seen } from './actions';
-import type { AgentBusiness, Lang, ParamSpec } from './business/schema';
+import { CHANGES, type AgentBusiness, type Lang, type ParamSpec } from './business/schema';
 
 /**
  * Confirmation of a change (docs/designs/2026-11-11-agent-runtime.md, "Tools, the gate and
@@ -16,6 +16,8 @@ export interface PendingReadBack {
   hash: string;
   text: string;
   id: string;
+  /** On a short read-back (readBackChange), the params it said, the ones changed. Absent: the full read-back was said. */
+  changes?: string[];
 }
 
 /** The locale each language's dates are said in. */
@@ -83,6 +85,36 @@ export function readBackText(b: AgentBusiness, action: string, params: Record<st
   const given = (name: string): boolean => (params[name] ?? '') !== '';
   const parts = frame.replace(/\[([^[\]]*)\]/g, (_, part: string) => ([...part.matchAll(/\{([^{}]*)\}/g)].every((m) => given(m[1]!)) ? part : ''));
   return parts.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen, callerNumber));
+}
+
+/**
+ * The params of `action` that a short read-back (agent.yaml's readBackChange) would say for `params`, after the
+ * caller heard `before` read back and did not confirm it: those whose value differs from it, in the action's param
+ * order. Null where the full read-back is said instead: the action has no short read-back, no value differs (the
+ * caller asked to hear it all), or a param that differs has no phrase or no value now (one cleared is read in full).
+ */
+export function changedParams(b: AgentBusiness, action: string, params: Readonly<Record<string, string>>, before: Readonly<Record<string, string>>, lang: Lang): string[] | null {
+  const spec = Object.hasOwn(b.actions, action) ? b.actions[action] : undefined;
+  const short = spec?.readBackChange?.[lang];
+  if (spec === undefined || short === undefined) return null;
+  const changed = Object.keys(spec.params).filter((k) => (params[k] ?? '') !== (before[k] ?? ''));
+  if (changed.length === 0) return null;
+  return changed.every((k) => Object.hasOwn(short.params, k) && (params[k] ?? '') !== '') ? changed : null;
+}
+
+/**
+ * The short read-back of `action` in `lang` (agent.yaml's readBackChange): its frame with {changes} the phrase of
+ * each of `changes`, in that order, each value shown as the full read-back shows it (a date as its day, a slot by
+ * its label, a phone as phoneShown), joined by commas and, where the frame gives its word (`and`), the last two by
+ * it. Throws for an action with no short read-back.
+ */
+export function shortReadBackText(b: AgentBusiness, action: string, params: Record<string, string>, changes: readonly string[], lang: Lang, seen: Seen, callerNumber?: string): string {
+  const spec = b.actions[action];
+  const short = spec?.readBackChange?.[lang];
+  if (spec === undefined || short === undefined) throw new Error(`"${action}" has no short read-back in ${lang}`);
+  const phrases = changes.map((k) => (short.params[k] ?? '').replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen, callerNumber)));
+  const joined = short.and !== undefined && phrases.length > 1 ? `${phrases.slice(0, -1).join(', ')} ${short.and} ${phrases.at(-1)!}` : phrases.join(', ');
+  return short.say.replace(`{${CHANGES}}`, () => joined);
 }
 
 /** Each param of `action` as its read-back says it (a date as its day, a slot by its label, a phone as phoneShown), for the trace to mask where it is said. */

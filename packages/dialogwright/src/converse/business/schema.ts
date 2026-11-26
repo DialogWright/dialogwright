@@ -76,6 +76,9 @@ const bar = (what: string, d: number) => z.number().gt(0).max(1).default(d).desc
 /** The runtime's own action, offered to every model: it ends the call, on the model's own goodbye or the closing line. No business action takes its name. */
 export const END_CALL = 'end_call';
 
+/** The one placeholder of a short read-back's frame (readBackChange): where the changed details are said. */
+export const CHANGES = 'changes';
+
 /** Param types the runtime checks a value by. */
 export const PARAM_TYPES = ['date', 'slot', 'choice', 'number', 'text', 'phone'] as const;
 /** The most characters a text param may have where it sets no `max` of its own. */
@@ -110,6 +113,18 @@ const action = z
     kind: z.enum(['lookup', 'change']).describe('lookup: reads and returns a result. change: does something, and so is read back and confirmed by the caller first.'),
     params: z.record(identifier(), param).default({}).describe('The parameters the call carries, by name.'),
     readBack: worded('The read-back said before a change runs, with each parameter as a {placeholder} named as the parameter, an optional one in a part in square brackets said only when it has a value ("[, {details}]"); required for a change').optional(),
+    readBackChange: z
+      .strictObject({
+        en: z
+          .strictObject({
+            say: text().describe(`The frame, with {${CHANGES}} once where the changed details are said and no other placeholder (for example "Got it, {${CHANGES}}. Is everything else right?").`),
+            and: text().optional().describe('The word that joins the last two phrases ("and"). Absent: every phrase is joined by a comma.'),
+            params: z.record(identifier(), text()).describe('A phrase per param the short read-back may say, each with its own param as its one {placeholder} ("your {vehicle}"). A param with no phrase changed is read back in full.'),
+          })
+          .describe('The short read-back, in English.'),
+      })
+      .optional()
+      .describe('Only on a change: the read-back said after the caller heard the full read-back and turned it down with a correction, saying only the changed details, each in its phrase, joined by commas and the last two by `and`. A call again with the same values, or a change to a param with no phrase or to no value, is read back in full. The yes confirms every value, as on the full read-back.'),
     then: z.array(identifier()).optional().describe('Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.'),
     rules: z.array(policyRuleEntry).optional().describe('The gate\'s rules for this action, in the same shape as policy.yaml\'s.'),
     audit: z.record(identifier(), z.enum(AUDIT_MASKS)).optional().describe('How each param that needs it is recorded: last4, mask, length, secret or keep. Default: mask.'),
@@ -156,6 +171,40 @@ export type JourneySpec = z.output<typeof journey>;
 
 const issue = (ctx: z.core.$RefinementCtx, path: (string | number)[], message: string, fix: string): void => ctx.addIssue({ code: 'custom', path, message, params: { fix } });
 const isMap = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The placeholders of a line, in order, each as often as it is written. */
+const placeholders = (line: string): string[] => [...line.matchAll(/\{([^{}]*)\}/g)].map((m) => m[1]!);
+
+/**
+ * A short read-back's checks (readBackChange): only on a change; its frame holds {changes} once and no other
+ * placeholder; each phrase is for a param of the action, and holds that param's placeholder once and no other.
+ */
+function shortReadBackChecks(ctx: z.core.$RefinementCtx, name: string, a: Record<string, unknown>, params: Record<string, unknown>): void {
+  if (a.kind !== 'change') {
+    issue(ctx, ['actions', name, 'readBackChange'], `the ${typeof a.kind === 'string' ? a.kind : 'action'} "${name}" has a short read-back`, 'delete readBackChange: only a change is read back');
+    return;
+  }
+  const short = isMap(a.readBackChange) && isMap(a.readBackChange.en) ? a.readBackChange.en : undefined;
+  if (short === undefined) return;
+  if (typeof short.say === 'string') {
+    const named = placeholders(short.say);
+    if (named.length !== 1 || named[0] !== CHANGES) {
+      issue(ctx, ['actions', name, 'readBackChange', 'en', 'say'], `the short read-back of "${name}" must say {${CHANGES}} once and nothing else in braces`, `write {${CHANGES}} once in the frame, where the changed details are said, and no other placeholder: each param is said in its own phrase under params`);
+    }
+  }
+  if (!isMap(short.params)) return;
+  for (const [pname, phrase] of Object.entries(short.params)) {
+    if (!Object.hasOwn(params, pname)) {
+      issue(ctx, ['actions', name, 'readBackChange', 'en', 'params', pname], `"${pname}" is no param of "${name}"`, `write a phrase only for a param of "${name}" (${Object.keys(params).join(', ') || 'it has none'}), or add the param`);
+      continue;
+    }
+    if (typeof phrase !== 'string') continue;
+    const named = placeholders(phrase);
+    if (named.length !== 1 || named[0] !== pname) {
+      issue(ctx, ['actions', name, 'readBackChange', 'en', 'params', pname], `the phrase for {${pname}} must say {${pname}} once and nothing else in braces`, `write {${pname}} once in its phrase, and no other placeholder: the phrase says that param alone`);
+    }
+  }
+}
 
 /** Cross-field checks of the whole file; they run even when other parts have problems, so one pass says everything. */
 function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
@@ -232,6 +281,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
         }
       }
     }
+    if (a.readBackChange !== undefined) shortReadBackChecks(ctx, name, a, params);
     if (Array.isArray(a.then)) {
       if (a.kind === 'lookup') issue(ctx, ['actions', name, 'then'], `the lookup "${name}" has follow-on actions`, 'delete "then": only a change has follow-on actions');
       a.then.forEach((t, i) => {

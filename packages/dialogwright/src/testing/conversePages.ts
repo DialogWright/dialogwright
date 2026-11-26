@@ -268,6 +268,29 @@ function openCardWords(b: AgentBusiness): string[] {
 }
 
 /** The policy card for an agent app, as Markdown. */
+/**
+ * A change's short read-back (agent.yaml's readBackChange) on the card, beside its full read-back: its frame, the
+ * phrase of each param it may say, and where the full read-back is said instead, so a reviewer sees every fixed
+ * line said before a yes. None where the action has no short read-back.
+ */
+function shortReadBackCard(spec: ActionSpec): string[] {
+  const short = spec.readBackChange?.en;
+  if (short === undefined) return [];
+  const joining = short.and === undefined ? 'joined by commas' : `joined by commas and the last two by "${cell(short.and)}"`;
+  const phrased = Object.keys(spec.params).filter((k) => Object.hasOwn(short.params, k));
+  const without = Object.keys(spec.params).filter((k) => !Object.hasOwn(short.params, k));
+  return [
+    `A correction is read back by its changed values alone, after the caller heard the full read-back and did not confirm it, in these words: "${cell(short.say)}", {changes} the phrase of each param changed, in this order, ${joining}:`,
+    '',
+    '| Param | Phrase |',
+    '| --- | --- |',
+    ...phrased.map((k) => `| ${code(k)} | "${cell(short.params[k]!)}" |`),
+    '',
+    `Read back in full instead where ${without.length > 0 ? `a param with no phrase here (${without.map(code).join(', ')}) changed, ` : ''}a value was cleared, or the values are the same as the last read-back (the caller asked to hear it all). The yes to a short read-back confirms every value, as the yes to the full one does.`,
+    '',
+  ];
+}
+
 export function conversePolicyCardText(app: ConverseApp): string {
   const b = app.business;
   const followOns = followOnsOf(b);
@@ -289,6 +312,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     `- ${identityLine}`,
     '- The rules of an action run in the order shown, and the first one that fails decides.',
     '- Every change is read back in the business\'s fixed words with exactly the values it will run with. The caller\'s answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate\'s `confirmed` rule, over all of the change\'s params, runs last). A lookup is never confirmed.',
+    ...(Object.values(b.actions).some((a) => a.readBackChange !== undefined) ? ['- Where a change gives a short read-back (`readBackChange`), a correction after a full read-back the caller heard and did not confirm is read back by its changed values alone, in the business\'s own phrases (shown with each action below): the caller heard every other value in that full read-back, and a yes confirms every value, as the gate\'s `confirmed` rule over all of the change\'s params requires.'] : []),
     '- One confirmation at a time: a call made while a read-back waits for its answer is not run, and is no refusal of its action (it counts toward no limit below).',
     '- Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.',
     ...(b.lines.notConfirmed === undefined ? [] : [`- A clear no that says nothing of what should be different (read by the decision model) is answered by \`lines.notConfirmed\`, word for word ("${cell(b.lines.notConfirmed.en)}"${inChat(b.lines.notConfirmed)}), and the agent model is told the line asked; it answers what the caller says next.`]),
@@ -324,6 +348,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     if (spec.kind === 'change' && !followOns.has(name)) {
       const frame = spec.readBack?.en ?? '';
       lines.push(`Read back before it runs, in these words: "${frame}"${/\[[^[\]]*\]/.test(frame) ? ' (a part in square brackets is said only when its value is given)' : ''}`, '');
+      lines.push(...shortReadBackCard(spec));
     }
     const written = writtenRules(spec);
     lines.push('Rules, in the order they run:', '');

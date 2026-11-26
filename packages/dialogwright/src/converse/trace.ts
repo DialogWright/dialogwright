@@ -53,9 +53,10 @@ export interface ConverseTraceRecord {
   /**
    * The read-back said, or answered, this turn: the decision model's reading of the answer (its yes, its no, and where
    * each was read, `change`: whether the caller said what should be different, and `withdraws`: whether they withdrew
-   * it) and whether it confirmed.
+   * it) and whether it confirmed. `changes`: on a short read-back (agent.yaml's readBackChange), the params it said,
+   * the ones the correction changed; absent on the full read-back.
    */
-  readBack?: { text: string; yes?: number; no?: number; change?: number; withdraws?: number; confirmed?: boolean };
+  readBack?: { text: string; changes?: string[]; yes?: number; no?: number; change?: number; withdraws?: number; confirmed?: boolean };
   /**
    * A change the caller did not confirm, kept unsent (ConverseState.unsent), as the turn found it or let it go: its action,
    * the decision model's reading of whether the caller no longer wants it (`noLongerWants`: null where it was asked and

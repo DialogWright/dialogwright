@@ -226,6 +226,56 @@ describe('what is refused', () => {
   });
 });
 
+/** The book's read-back line in the fixture, and a short read-back of a correction after it (readBackChange). */
+const BOOK_READ_BACK = '      en: "A visit on {day}, {window}, for the {item}[ ({details})]. We will call the number {phone}. Is that right?"\n';
+const SHORT = '    readBackChange:\n      en:\n        say: "Got it, {changes}. Is everything else right?"\n        and: "and"\n        params:\n          day: "the {day}"\n          window: "{window}"\n          phone: "the number {phone}"\n';
+const withShort = (short: string = SHORT): string => changed(BOOK_READ_BACK, `${BOOK_READ_BACK}${short}`);
+
+describe('readBackChange: a correction read back by its changed values alone', () => {
+  it('a change with a short read-back loads it, its frame, its joining word and a phrase per param', () => {
+    const { value, problems } = agentBusinessProblems(withShort());
+    expect(problems).toEqual([]);
+    expect(value!.actions.book!.readBackChange).toEqual({ en: { say: 'Got it, {changes}. Is everything else right?', and: 'and', params: { day: 'the {day}', window: '{window}', phone: 'the number {phone}' } } });
+    // The joining word is optional.
+    expect(problemsOf(withShort(SHORT.replace('        and: "and"\n', '')))).toEqual([]);
+  });
+
+  it('a lookup with one', () => {
+    const lookup = changed('      day: { type: date, about: The day to look at. }\n', `      day: { type: date, about: The day to look at. }\n${SHORT.replace('          window: "{window}"\n          phone: "the number {phone}"\n', '')}`);
+    const [p, ...rest] = problemsOf(lookup);
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.availability.readBackChange' });
+    expect(p!.message).toBe('the lookup "availability" has a short read-back');
+    expect(p!.fix).toBe('delete readBackChange: only a change is read back');
+  });
+
+  it('a frame without {changes}, with it twice, or with any other placeholder', () => {
+    for (const say of ['Got it. Is everything else right?', 'Got it, {changes} and {changes}. Right?', 'Got it, {changes} on {day}. Right?']) {
+      const [p, ...rest] = problemsOf(withShort(SHORT.replace('Got it, {changes}. Is everything else right?', say)));
+      expect(rest).toEqual([]);
+      expect(p).toMatchObject({ path: 'actions.book.readBackChange.en.say' });
+      expect(p!.fix).toBe('write {changes} once in the frame, where the changed details are said, and no other placeholder: each param is said in its own phrase under params');
+    }
+  });
+
+  it('a phrase for a param the action does not have', () => {
+    const [p, ...rest] = problemsOf(withShort(`${SHORT}          when: "on {when}"\n`));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.book.readBackChange.en.params.when' });
+    expect(p!.message).toBe('"when" is no param of "book"');
+    expect(p!.fix).toBe('write a phrase only for a param of "book" (day, window, item, details, phone), or add the param');
+  });
+
+  it('a phrase without its own placeholder, with it twice, or with another param\'s', () => {
+    for (const phrase of ['the day', '{day}, {day}', 'the {day} at {window}', '{changes}']) {
+      const [p, ...rest] = problemsOf(withShort(SHORT.replace('day: "the {day}"', `day: "${phrase}"`)));
+      expect(rest).toEqual([]);
+      expect(p).toMatchObject({ path: 'actions.book.readBackChange.en.params.day' });
+      expect(p!.fix).toBe('write {day} once in its phrase, and no other placeholder: the phrase says that param alone');
+    }
+  });
+});
+
 describe('businessText', () => {
   const b = loadAgentBusiness(FIXTURE, { OFFICE_LINE: '+15555550199' });
   const text = businessText(b);

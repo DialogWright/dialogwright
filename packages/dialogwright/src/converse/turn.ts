@@ -11,7 +11,7 @@ import { speakableOn } from './speakable';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, lineOn, type ActionSpec, type AgentBusiness } from './business/schema';
 import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
-import { askWithin, askWithinWhy, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackText, readYesNo, shownParams, WITHDRAWN_AT, type PendingReadBack, type ReadBackReading } from './confirm';
+import { askWithin, askWithinWhy, changedParams, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackText, readYesNo, shortReadBackText, shownParams, WITHDRAWN_AT, type PendingReadBack, type ReadBackReading } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
@@ -33,6 +33,9 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   the line, in the business's own words filled with exactly the call's values, and the turn ends there;
  *   the caller's answer is read by the decision model, and only a clear yes runs it (with its follow-on
  *   actions, each through the gate). Anything else goes back to the model with what the caller said;
+ * - a change called again after the caller heard its read-back and did not confirm it, with values changed, is read back
+ *   by its changed values alone where the business words that (agent.yaml's readBackChange; ConverseState.heardReadBack),
+ *   the yes to it confirming every value; called again with the same values, it is read back in full;
  * - a clear no to a read-back that says nothing of what should be different is answered by the business's line for it
  *   (lines.notConfirmed), word for word, where it has one, and the model is told the line asked (answered);
  * - the model ends the call with the runtime's own action, end_call: its own words written with it are the goodbye, and
@@ -609,10 +612,15 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     const d = await gate(t, spec, call, confirmedHashFor(call, t.st.pending));
     if (spec !== undefined && spec.kind === 'change' && awaitsConfirmation(d)) {
       // As the channel says it (speakable on a call): the text waiting for the yes is the text the caller hears, so
-      // what the carrier reports played is compared with it as it was sent (readBackHeard).
-      const text = speakableOn(t.st, readBackText(b, c.name, params, 'en', t.st.seen, t.st.caller.number));
-      t.st.pending = { action: c.name, params, hash: confirmationHash(params, confirmedFields(spec)), text, id: c.id };
-      t.readBack = { text };
+      // what the carrier reports played is compared with it as it was sent (readBackHeard). A correction of a read-back
+      // the caller heard and did not confirm is read back by its changed values alone, where the business words it
+      // (readBackChange); the yes to it confirms every value, its hash over all of them, as on the full read-back.
+      const kept = t.st.heardReadBack;
+      const changes = kept?.action === c.name ? changedParams(b, c.name, params, kept.params, 'en') : null;
+      const words = changes === null ? readBackText(b, c.name, params, 'en', t.st.seen, t.st.caller.number) : shortReadBackText(b, c.name, params, changes, 'en', t.st.seen, t.st.caller.number);
+      const text = speakableOn(t.st, words);
+      t.st.pending = { action: c.name, params, hash: confirmationHash(params, confirmedFields(spec)), text, id: c.id, ...(changes !== null ? { changes } : {}) };
+      t.readBack = { text, ...(changes !== null ? { changes } : {}) };
       traceTool(t, spec, c.name, params, 'readBack');
       readBack = text;
       continue;
@@ -1164,6 +1172,18 @@ function keepUnsent(t: Turn, p: PendingReadBack): void {
   t.st.unsent = { action: p.action };
 }
 
+/**
+ * A read-back the caller heard and did not confirm is kept (ConverseState.heardReadBack), replacing any kept before
+ * it, short or full alike, with the values it was read with: a correction called next is read against them. Only
+ * where the caller heard it: one they spoke before or over leaves the one kept before it.
+ */
+function keepHeard(t: Turn, p: PendingReadBack): void {
+  t.st.heardReadBack = { action: p.action, params: { ...p.params } };
+}
+
+/** A short read-back's changed params, as the trace keeps them beside its text. */
+const changesOf = (p: PendingReadBack): { changes?: string[] } => (p.changes !== undefined ? { changes: p.changes } : {});
+
 /** What a change kept unsent is for, in the business's own words (its action's `about`), as the decision model is sent it: never its values. */
 function unsentAbout(t: Turn, action: string): string {
   const spec = Object.hasOwn(t.deps.business.actions, action) ? t.deps.business.actions[action] : undefined;
@@ -1180,6 +1200,7 @@ function noteWithdrawal(t: Turn, action: string, reading: number | null): void {
   if (reading !== null && reading >= WITHDRAWN_AT && t.st.unsent?.action === action) {
     delete t.st.unsent;
     t.unsent.cleared = 'withdrawn';
+    if (t.st.heardReadBack?.action === action) delete t.st.heardReadBack;
   }
 }
 
@@ -1197,9 +1218,13 @@ async function settleWithdrawal(t: Turn): Promise<void> {
  */
 function leaveOffJourney(t: Turn): void {
   const b = t.deps.business;
+  if (!hasJourneys(b) || t.st.journey === undefined) return;
+  const offered = offeredActions(b, t.st.journey);
+  // The read-back kept for a correction goes with it: its action can no longer be called again to be read back.
+  const kept = t.st.heardReadBack;
+  if (kept !== undefined && !offered.includes(kept.action)) delete t.st.heardReadBack;
   const u = t.st.unsent;
-  if (u === undefined || !hasJourneys(b) || t.st.journey === undefined) return;
-  if (offeredActions(b, t.st.journey).includes(u.action)) return;
+  if (u === undefined || offered.includes(u.action)) return;
   delete t.st.unsent;
   t.unsent = { ...t.unsent, action: u.action, cleared: 'journey' };
 }
@@ -1235,7 +1260,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
   // The caller's words as the model is sent them: the note's mark rewritten wherever they wrote it.
   const words = neutralised(said);
   if (!readBackHeard(p.text, heard)) {
-    t.readBack = { text: p.text, confirmed: false };
+    t.readBack = { text: p.text, ...changesOf(p), confirmed: false };
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke over the read-back');
     keepUnsent(t, p);
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) }]);
@@ -1248,11 +1273,12 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
   // and the next turn has both (the read-back's result carries this answer).
   if (cut(t)) return wentOn(t, p, words, reading);
   const yes = isConfirmed(reading);
-  t.readBack = { text: p.text, ...(reading !== null ? readingOf(reading) : {}), confirmed: yes };
+  t.readBack = { text: p.text, ...changesOf(p), ...(reading !== null ? readingOf(reading) : {}), confirmed: yes };
   if (reading === null) {
     // The decision model timed out or failed: what the caller meant is not known, and nothing runs.
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
     keepUnsent(t, p);
+    keepHeard(t, p);
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return 'notRun';
   }
@@ -1260,12 +1286,14 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     // The caller wants none of it: nothing is kept unsent, and no line asks what to change.
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller withdrew it');
     if (t.st.unsent?.action === p.action) delete t.st.unsent;
+    if (t.st.heardReadBack?.action === p.action) delete t.st.heardReadBack;
     add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller withdrew it: they do not want it at all, so do not ask them about it again unless they bring it up. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return 'notRun';
   }
   if (!yes) {
     traceTool(t, spec, p.action, p.params, 'notConfirmed');
     keepUnsent(t, p);
+    keepHeard(t, p);
     const notConfirmed = b.lines.notConfirmed;
     if (notConfirmed !== undefined && isDeclinedWithoutChange(reading)) {
       // A clear no with nothing said of what should be different: the business's line asks, word for word.
@@ -1280,7 +1308,8 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
   }
   // A yes to a read-back of the change kept unsent lets it go, whatever then comes of running it.
   if (t.st.unsent?.action === p.action) delete t.st.unsent;
-  await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no } });
+  if (t.st.heardReadBack?.action === p.action) delete t.st.heardReadBack;
+  await record(t, { type: 'confirmed', detail: { action: p.action, hash: p.hash, yes: reading!.yes, no: reading!.no, ...(p.changes !== undefined ? { short: true, changes: p.changes } : {}) } });
   const parent = await runConfirmed(t, p.action, p.params, p.hash);
   traceTool(t, spec, p.action, p.params, parent.outcome === 'ran' ? 'confirmed' : parent.outcome, parent.why);
   const done = [`${p.action}: ${parent.text}`];
@@ -1342,9 +1371,10 @@ function carriedOf(spec: ActionSpec, params: Readonly<Record<string, string>>): 
  */
 function wentOn(t: Turn, p: PendingReadBack, words: string, reading?: ReadBackReading | null): 'notRun' {
   const spec = Object.hasOwn(t.deps.business.actions, p.action) ? t.deps.business.actions[p.action] : undefined;
-  t.readBack = { text: p.text, ...(reading != null ? readingOf(reading) : {}), confirmed: false };
+  t.readBack = { text: p.text, ...changesOf(p), ...(reading != null ? readingOf(reading) : {}), confirmed: false };
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller went on speaking');
   keepUnsent(t, p);
+  keepHeard(t, p);
   const content = `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller went on speaking after their answer, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`;
   // A yes lost to the words that followed it (or an answer stopped before it was read) counts as a read-back not
   // heard; an answer read as anything but a yes (a no, a correction, or one that could not be read) is the
