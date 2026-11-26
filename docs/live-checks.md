@@ -320,6 +320,21 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log; any gap between `expectedMs` and the playback heard, and anything that differed, in the design's As built ([2026-11-08](designs/2026-11-08-speech-over-a-line.md)).
 
+## 19. A correction at an agent app's read-back, on the phone
+
+**Why.** An agent app's change with `readBackChange` ([the guide's 18.5](guide/18-agent-mode.md#185-the-read-back)) reads a correction back by its changed values alone, after the caller heard the full read-back and turned it down (the maintainer's decision, 2026-11-25, after a caller sat through the whole read-back again after each correction). The tests hold it on scripted models; whether the model leaves the corrected value to the short read-back, and how the short read-back sounds, is a call's to say.
+
+**Set.** The wheel shop on the converse runtime (`apps/wheelshop-agent`), on Twilio and on Telnyx, a number on no dealership account.
+
+**Do and look for.**
+
+1. **A correction.** Set up a repair request and, at the read-back, say no and correct one detail ("It's a 2022 Toyota Tacoma"). The line says only the changed detail ("Got it, your 2022 Toyota Tacoma. Is everything else right?"), and the model says nothing of the value before it. Say yes: the request is sent with every value, the corrected one among them. The console's call view shows the short read-back; the trace's `readBack` has `changes: ["vehicle"]` and the audit's `confirmed` row `short: true`.
+2. **A second correction.** At the short read-back, correct another detail (the window): only that one is said.
+3. **Hear it all.** At a short read-back, ask to hear the whole request again: the full read-back is said.
+4. **Cut in.** Speak over the full read-back early with a correction: the read-back after it is the full one (nothing heard to compare with).
+
+**Record.** One row per carrier and step in the results log, and anything the model said of the value before the short read-back.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

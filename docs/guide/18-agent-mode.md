@@ -113,6 +113,7 @@ A number in agent.yaml may name a setting instead, `env.<NAME>`, for a number th
 
   A value that fails its check goes back to the model as the action's result, with a reason it can act on.
 - `readBack` (required on a change, refused on a lookup): the business's words, each param as `{name}`, an optional one in a part in square brackets said only when it has a value (`[ We'll also pass on: {notes}.]`). `pnpm check` holds it to saying every param: the yes never confirms a value the caller did not hear.
+- `readBackChange` (a change only, optional): the short read-back of a correction, a frame with `{changes}` and a phrase per param (18.5).
 - `then` (a change only): follow-ons, run after the caller's yes with no read-back of their own, each through the gate with its own hash and an audit row naming the yes. A follow-on takes only params of its parent's, of the same type (a text's `max` no shorter), and runs with the values the caller confirmed. It is never offered to the model.
 - `rules`: the gate's rules for the action, in policy.yaml's shape ([3](03-policy-and-identity.md)), run in the order written: the built-in rules (`oneOf`, `noneOf`, `dateInRange`, `limit`, `callerNumber`, `fields`). Every change gets a `confirmed` rule over all its params, run last, so agent.yaml lists none; and a rule of the app's own (`defineRule`) has no code to run in an agent app, so `pnpm check` refuses both.
 - `audit`: how each param is recorded in the trace and the audit, `last4`, `mask`, `length`, `secret` or `keep`; a param it does not name is masked.
@@ -120,7 +121,7 @@ A number in agent.yaml may name a setting instead, `env.<NAME>`, for a number th
 ```yaml
 # agent.yaml (from apps/wheelshop-agent, shortened)
 sources:
-  calendar: { kind: fake, days: [monday, tuesday, wednesday, thursday, friday], windows: [{ name: morning, label: "morning, by 8", capacity: 3, until: "08:00" }] }
+  calendar: { kind: fake, days: [monday, tuesday, wednesday, thursday, friday], windows: [{ name: morning, label: "morning window, dropped off by 8 AM", capacity: 3, until: "08:00" }] }
 actions:
   check_availability:
     about: The drop-off windows on a day. The only source of what is free.
@@ -137,7 +138,7 @@ actions:
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to be texted at that number. }
     readBack:
-      en: "So that's a request for {name}, dropping off {slot}. We'll reach you on {callbackNumber}, and you said {textOk} to texts there. Did I get that right?"
+      en: "So that's a request for {name}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there. Did I get that right?"
     then: [send_photo_request]
     audit: { name: mask, slot: keep, callbackNumber: last4, textOk: keep }
   send_photo_request:
@@ -163,6 +164,20 @@ When the model calls a change, the line says its `readBack`, filled with exactly
 
 - **The caller's answer** is read by the decision model, a yes and a no: a yes at 0.7 or more with a no under 0.3 (`CONFIRM_YES_AT`, `CONFIRM_NO_BELOW`) confirms. The change then runs through the gate with the confirmation's hash of exactly those values, then its follow-ons, and the model is told what each returned.
 - **Anything else** (a no, a correction, a question, an answer the decision model could not read) runs nothing, and goes back to the model with what the caller said, or that the answer could not be read. The model handles a correction in the conversation and calls the action again with the new values, which brings a fresh read-back, in the same turn: a turn that answers a read-back keeps the journey's actions and is never unclear (18.7). The runtime runs no correction flow of its own, and a yes to a question of the model's own ("Shall I book that?") confirms nothing.
+- **A correction, read back short.** Where the change gives `readBackChange`, a correction is read back by its changed values alone. Once the caller has heard a full read-back and not confirmed it, and the model calls the same change again with values changed, the line says the short read-back's frame with `{changes}` the phrase of each changed param, in the action's param order, each value shown as the full read-back shows it, joined by commas and the last two by `and` where it is given. The caller heard every other value in the full read-back, so their yes to the short one confirms the whole change, its hash over all its params as ever. The model is told, in the action's description, that the corrected value is said back for it. The full read-back is said instead where the values are the same as the one heard (the caller asked to hear it all), where a param with no phrase changed, or where a value was cleared. The read-back a correction is compared with is the last one the caller heard and did not confirm (a short one among them, so a second correction is read against the first's values); one they spoke before or over does not replace it. It is let go on a yes, a withdrawal, or the journey moving off its action. The trace's `readBack` names the params changed (`changes`), and so does the audit's `confirmed` row (`short: true`). The policy card lists the frame and each phrase beside the full read-back. Decided by the maintainer on 2026-11-25, after a live call whose caller sat through the whole read-back again after each correction.
+
+  ```yaml
+  # agent.yaml (from apps/wheelshop-agent, shortened): "Got it, your 2022 Toyota Tacoma. Is everything else right?"
+  send_request:
+    readBackChange:
+      en:
+        say: "Got it, {changes}. Is everything else right?"   # the frame: {changes} once, no other placeholder
+        and: "and"                                            # optional: the word before the last phrase
+        params:                                               # each phrase holds its own param once, and no other
+          vehicle: "your {vehicle}"
+          slot: "{slot}"
+          callbackNumber: "we'll reach you on {callbackNumber}"
+  ```
 - **A bare no.** In the same request the decision model is also asked whether the caller says what should be different (a change, a correction or a new detail), and whether they withdraw it (they want none of it: "cancel it", "never mind"). A clear withdrawal (0.7 or more, `WITHDRAWN_AT`) goes to the model as withdrawn, with no line and nothing kept unsent (below). Where the app has `lines.notConfirmed`, a clear no (0.7 or more, `DECLINED_AT`, with no yes) that says nothing of what should be different (under 0.3, `CHANGE_BELOW`) is answered by that line, word for word, and the model is not asked on that turn: it is told the line asked what to change or whether to cancel, and answers what the caller says next. A correction, a no less clear, or an app with no such line goes to the model as above.
 - **Never left unsent.** The change whose read-back the caller last did not confirm (turned down, spoken over, or not read) is kept on the call. While it is, the model's first `end_call` is refused (`converse_refused`, `unsent-change`, counting toward no refusal) and the call goes on. Replies stream as always, so a goodbye written with it has been said; the model is told so, that the change was never done, and to ask whether the caller still wants it (as a person would: "before you go, did you still want me to send that?"), unless they have said they do not. Any later `end_call` in that turn is refused too (`unsent-asked`): one ask per refusal, and the caller's next turn decides, where the next `end_call` ends the call. A yes to a read-back of that action lets it go, and so does the caller withdrawing it: while it is kept, each caller turn asks the decision model whether they no longer want it (in the routing request where the app has journeys, else its own, within the decision model's time; late or failed, nothing changes), and a clear yes (`WITHDRAWN_AT`) lets it go. So does the journey moving off the one that offers its action (a drop, a switch, or the journey done). The trace's `unsent` says when it was read and why it was let go.
 - **One at a time.** An action called while a read-back waits for its answer is not run (`converse_refused`, `one-confirmation-at-a-time`): the model is told to call it again after the answer, and it counts toward no refusal.
