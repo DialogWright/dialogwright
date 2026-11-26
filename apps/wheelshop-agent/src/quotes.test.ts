@@ -26,7 +26,7 @@ const SHOP = '+15555550190';
 const REQUEST = { name: 'Jordan Lee', vehicle: '2020 BMW 3 Series', wheels: 'one', damage: 'curb rash', finish: 'diamond cut', slot: '2026-11-12:morning', callbackNumber: '+15555550177', textOk: 'yes' };
 /** The page's forms, as a test draws them. */
 const FORMS = { action: '/wheelshop-agent/shop/quote', withdraw: '/wheelshop-agent/shop/withdraw', token: () => 't' };
-const QUOTE_TEXT = 'Example Wheel Works: your quote for the wheel on your 2020 BMW 3 Series is $180. We can take it Thursday, Nov 12, morning, by 8. Reply CONFIRM to book it.';
+const QUOTE_TEXT = 'Example Wheel Works: your quote for the wheel on your 2020 BMW 3 Series is $180. We can take it Thursday, Nov 12, morning window, dropped off by 8 AM. Reply CONFIRM to book it.';
 
 const dirs: string[] = [];
 let running: RunningServer | null = null;
@@ -185,7 +185,7 @@ describe('the customer\'s reply', () => {
     // The model was asked the app's typed questions, with the quote and the word it asked for.
     expect(m.asked).toEqual([{ questions: QUOTE_QUESTIONS, about: { quote: QUOTE_TEXT, replyWord: 'CONFIRM' } }]);
     expect(sent.slice(1).map((t) => [t.to, t.body])).toEqual([
-      ['+15555550177', "You're booked with Example Wheel Works for Thursday, Nov 12, morning, by 8. Thanks, see you then."],
+      ['+15555550177', "You're booked with Example Wheel Works for Thursday, Nov 12, morning window, dropped off by 8 AM. Thanks, see you then."],
       [SHOP, 'Booked from quote Q101: Jordan Lee, ...0177, 2020 BMW 3 Series, Thursday, Nov 12, morning, $180 (B101).'],
     ]);
     expect(sys.bookings).toMatchObject([{ ref: 'B101', quote: 'Q101', request: 'R101', cars: 'one', vehicles: '2020 BMW 3 Series', day: '2026-11-12', window: 'morning', price: '18000' }]);
@@ -309,7 +309,7 @@ describe('the customer\'s reply', () => {
     await onText(message('CONFIRM'), ctx(sys, texts, model(0.97, 0.02).decide, T0 + HOUR));
     expect(sys.bookings).toHaveLength(1);
     expect(sent.slice(1)).toEqual([
-      { to: '+15555550177', body: "You're booked with Example Wheel Works for Thursday, Nov 12, morning, by 8. Thanks, see you then." },
+      { to: '+15555550177', body: "You're booked with Example Wheel Works for Thursday, Nov 12, morning window, dropped off by 8 AM. Thanks, see you then." },
       { to: SHOP, body: 'Booked from quote Q101: Jordan Lee, ...0177, 2020 BMW 3 Series, Thursday, Nov 12, morning, $180 (B101). Customer not texted (limited): call them.' },
     ]);
   });

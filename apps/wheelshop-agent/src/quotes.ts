@@ -129,7 +129,7 @@ export function shortDay(day: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'short', day: 'numeric' }).format(Date.UTC(y, m - 1, d));
 }
 
-/** A window as a customer's text says it: agent.yaml's label for it ("afternoon, by noon"). */
+/** A window as a customer's text says it: agent.yaml's label for it ("afternoon window, dropped off by 12 PM"). */
 export function windowSays(sys: Systems, window: string): string {
   return sys.windowSays(window);
 }

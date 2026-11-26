@@ -224,8 +224,10 @@ sources:
     kind: fake # the shop's stand-in calendar (src/shop.ts), from these days and windows
     days: [monday, tuesday, wednesday, thursday, friday] # assumption: the owner corrects these
     windows: # assumption: the owner corrects these (each holds up to three cars; `until` is the last time a car may be dropped off in it, in the shop's time zone, so today's window is not offered after it)
-      - { name: morning, label: "morning, by 8", capacity: 3, until: "08:00" }
-      - { name: afternoon, label: "afternoon, by noon", capacity: 3, until: "12:00" }
+      # Each label as said in a read-back and a text ("You've picked Friday, November 13, morning window, dropped off by 8 AM"):
+      # "morning, by 8" read as a time of its own on a live call (2026-11-25).
+      - { name: morning, label: "morning window, dropped off by 8 AM", capacity: 3, until: "08:00" }
+      - { name: afternoon, label: "afternoon window, dropped off by 12 PM", capacity: 3, until: "12:00" }
   accounts: # regular dealership accounts, recognised by the number they call from
     - name: Rivergate Motors
       # env.DEALER_TEST_LINE: a tester's own phone, set privately in the app's settings (never this file), so
@@ -255,8 +257,8 @@ actions:
     about: >-
       Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a
       dealership account. Ask whether we may text them at their number before calling it. Call it as soon as
-      you have every detail: the line then reads the request back to the customer and sends it on their yes,
-      so it is not in until this is called and confirmed.
+      you have every detail: the request is then read back to the customer and sent on their yes, so it is
+      not in until this is called and confirmed.
     kind: change
     params:
       name: { type: text, about: "The customer's name, as they gave it." }
@@ -271,7 +273,24 @@ actions:
     readBack:
       # Said as a person would on the phone, every value in it: as a form's labels ("damage: ..., finish: ...") it read
       # stilted on a live call (2026-11-25), though it looked fine in the chat.
-      en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You're dropping it off {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
+      en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
+    # A correction after the full read-back, said by the changed details alone (a live call, 2026-11-25: a caller who
+    # corrected the car sat through the whole read-back again, twice). Every param has a phrase; a call again with the
+    # same values (the caller asked to hear it all) is read back in full.
+    readBackChange:
+      en:
+        say: "Got it, {changes}. Is everything else right?"
+        and: "and"
+        params:
+          name: "the name {name}"
+          vehicle: "your {vehicle}"
+          wheels: "work on {wheels} of its wheels"
+          damage: "{damage}"
+          finish: "the finish, {finish}"
+          slot: "{slot}"
+          callbackNumber: "we'll reach you on {callbackNumber}"
+          textOk: "{textOk} to texts there"
+          notes: "we'll also pass on: {notes}"
     then: [send_photo_request, notify_shop_request]
     audit: { name: mask, vehicle: keep, wheels: keep, damage: keep, finish: keep, slot: keep, callbackNumber: last4, textOk: keep, notes: keep }
   send_photo_request:
@@ -313,7 +332,7 @@ actions:
       vehicles: { type: text, max: 240, about: "The cars and which wheels need work, as the caller gives them (makes, models or stock numbers)." }
       slot: { type: slot, from: check_availability, about: "The drop-off window they picked from check_availability's results, with room for all the cars." }
     readBack:
-      en: "So that's {account}, {cars} in all: {vehicles}, dropping off {slot}. Shall we book it?"
+      en: "So that's {account}, {cars} in all: {vehicles}, for {slot}. Shall we book it?"
     then: [notify_shop_booking]
     audit: { account: keep, cars: keep, vehicles: keep, slot: keep }
   notify_shop_booking:

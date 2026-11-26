@@ -89,7 +89,7 @@ describe('send_request', () => {
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
-      'So that\'s a request for Dana Example: your 2019 Honda Civic, with curb rash on one of its wheels, and for the finish, painted. You\'re dropping it off Tuesday, November 17, morning, by 8, we\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
+      'So that\'s a request for Dana Example: your 2019 Honda Civic, with curb rash on one of its wheels, and for the finish, painted. You\'ve picked Tuesday, November 17, morning window, dropped off by 8 AM, we\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
     ]);
     expect(sys.requests).toEqual([]);
     expect(provider.sent).toEqual([]);
@@ -127,6 +127,28 @@ describe('send_request', () => {
     ]);
   });
 
+  it('a correction after the read-back is read back by the changed details alone, and the yes sends the request with them', async () => {
+    const provider = fakeTextProvider();
+    const { app, sys } = wheelshop({ now: () => NOW });
+    const script: ConverseModelEvent[][] = [
+      ...dropped(),
+      [call('c1', 'check_availability', { day: TUESDAY }), done('tool')],
+      [call('c2', 'send_request', { ...REQUEST, textOk: 'no' }), done('tool')],
+      [call('c3', 'send_request', { ...REQUEST, vehicle: '2022 Toyota Tacoma', textOk: 'no' }), done('tool')],
+      [call('c4', 'send_request', { ...REQUEST, vehicle: '2022 Toyota Tacoma', wheels: 'two', slot: `${TUESDAY}:afternoon`, textOk: 'no' }), done('tool')],
+      [text('Thanks, it is in.'), done()],
+    ];
+    const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
+    await c.start();
+    const [full] = await c.say('Tuesday morning please for my Civic');
+    expect(full).toContain('your 2019 Honda Civic');
+    expect(await c.say("no, it's a 2022 Toyota Tacoma")).toEqual(['Got it, your 2022 Toyota Tacoma. Is everything else right?']);
+    expect(await c.say('no, two wheels, and the afternoon')).toEqual(['Got it, work on two of its wheels and Tuesday, November 17, afternoon window, dropped off by 12 PM. Is everything else right?']);
+    expect(await c.say('yes')).toEqual(['Thanks, it is in.']);
+    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2022 Toyota Tacoma', wheels: 'two', damage: 'curb rash', finish: 'painted', day: TUESDAY, window: 'afternoon', callbackNumber: '5555550111', textOk: 'no' }]);
+    expect(c.audit.filter((r) => r.type === 'confirmed' && r.detail.action === 'send_request').map((r) => r.detail)).toEqual([expect.objectContaining({ short: true, changes: ['wheels', 'slot'] })]);
+  });
+
   it('offers the model no follow-on: the photo text and the shop\'s summary run only after the request\'s yes', async () => {
     const model = fakeConverseModel([...dropped(), [text('Hello.'), done()]]);
     const { app } = wheelshop({ now: () => NOW });
@@ -162,8 +184,8 @@ describe('send_request', () => {
     expect(sys.free('2026-11-13').map((s) => s.id)).toEqual(['2026-11-13:afternoon']);
     expect(sys.free('2026-11-10')).toEqual([]);
     expect(sys.free(TUESDAY)).toEqual([
-      { id: `${TUESDAY}:morning`, label: 'Tuesday, November 17, morning, by 8', room: 3 },
-      { id: `${TUESDAY}:afternoon`, label: 'Tuesday, November 17, afternoon, by noon', room: 3 },
+      { id: `${TUESDAY}:morning`, label: 'Tuesday, November 17, morning window, dropped off by 8 AM', room: 3 },
+      { id: `${TUESDAY}:afternoon`, label: 'Tuesday, November 17, afternoon window, dropped off by 12 PM', room: 3 },
     ]);
   });
 });
@@ -173,13 +195,13 @@ describe('check_availability', () => {
     // Today, Thursday at 1 pm: both of today's windows have passed their drop-off times.
     const { sys } = wheelshop({ now: () => Date.parse('2026-11-12T18:00:00Z') });
     expect(sys.availability('2026-11-12')).toEqual([
-      { window: 'Thursday, November 12, morning, by 8', offered: false, why: 'its drop-off time has passed today (the window is not full)' },
-      { window: 'Thursday, November 12, afternoon, by noon', offered: false, why: 'its drop-off time has passed today (the window is not full)' },
+      { window: 'Thursday, November 12, morning window, dropped off by 8 AM', offered: false, why: 'its drop-off time has passed today (the window is not full)' },
+      { window: 'Thursday, November 12, afternoon window, dropped off by 12 PM', offered: false, why: 'its drop-off time has passed today (the window is not full)' },
     ]);
     // Friday morning is taken by the standing drop-off: full, never "passed".
     expect(sys.availability('2026-11-13')).toEqual([
-      { window: 'Friday, November 13, morning, by 8', offered: false, why: 'full' },
-      { id: '2026-11-13:afternoon', label: 'Friday, November 13, afternoon, by noon', room: 3 },
+      { window: 'Friday, November 13, morning window, dropped off by 8 AM', offered: false, why: 'full' },
+      { id: '2026-11-13:afternoon', label: 'Friday, November 13, afternoon window, dropped off by 12 PM', room: 3 },
     ]);
     expect(sys.availability('2026-11-14')).toEqual([{ day: 'Saturday, November 14', offered: false, why: 'the shop is closed that day; it takes cars on monday, tuesday, wednesday, thursday, friday' }]);
     expect(sys.availability('2026-11-10')).toEqual([{ day: 'Tuesday, November 10', offered: false, why: 'that day has passed' }]);
@@ -200,7 +222,7 @@ describe('book_dealer', () => {
     const c = converseTestCall(app, { model: fakeConverseModel(dealerScript()), jev: routingJev(), callerNumber: DEALER, channel: 'voice', now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
     await c.start();
     expect(c.state.caller.account).toBe('Rivergate Motors');
-    expect(await c.say('Rivergate Motors, three trade-ins tomorrow morning')).toEqual([`So that's Rivergate Motors, three in all: ${VEHICLES}, dropping off Thursday, November 12, morning, by 8. Shall we book it?`]);
+    expect(await c.say('Rivergate Motors, three trade-ins tomorrow morning')).toEqual([`So that's Rivergate Motors, three in all: ${VEHICLES}, for Thursday, November 12, morning window, dropped off by 8 AM. Shall we book it?`]);
     expect(await c.say('yes')).toEqual(['You are booked in.']);
     expect(sys.bookings).toMatchObject([{ ref: 'B101', account: 'Rivergate Motors', cars: 'three', vehicles: VEHICLES, day: THURSDAY, window: 'morning' }]);
     expect(sys.roomIn(THURSDAY, 'morning')).toBe(0);

@@ -236,7 +236,7 @@ export class Systems {
     return this.config.windows.find((w) => w.name === window)?.capacity ?? 0;
   }
 
-  /** A window as a customer reads it: agent.yaml's label for it ("morning, by 8"). */
+  /** A window as a customer reads it: agent.yaml's label for it ("morning window, dropped off by 8 AM"). */
   windowSays(window: string): string {
     return this.config.windows.find((w) => w.name === window)?.label ?? window;
   }

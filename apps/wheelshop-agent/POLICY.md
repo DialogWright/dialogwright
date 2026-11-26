@@ -9,6 +9,7 @@
 - Every action is open to a caller nobody has proven (level 0): this app has no identity. The number a caller calls from may recognise a known account; it is never proof of who is speaking.
 - The rules of an action run in the order shown, and the first one that fails decides.
 - Every change is read back in the business's fixed words with exactly the values it will run with. The caller's answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate's `confirmed` rule, over all of the change's params, runs last). A lookup is never confirmed.
+- Where a change gives a short read-back (`readBackChange`), a correction after a full read-back the caller heard and did not confirm is read back by its changed values alone, in the business's own phrases (shown with each action below): the caller heard every other value in that full read-back, and a yes confirms every value, as the gate's `confirmed` rule over all of the change's params requires.
 - One confirmation at a time: a call made while a read-back waits for its answer is not run, and is no refusal of its action (it counts toward no limit below).
 - Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.
 - A clear no that says nothing of what should be different (read by the decision model) is answered by `lines.notConfirmed`, word for word ("No problem. What would you like to change, or would you rather cancel the request?"), and the agent model is told the line asked; it answers what the caller says next.
@@ -90,9 +91,25 @@ Rules, in the order they run:
 
 ### `send_request`: a change
 
-Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a dealership account. Ask whether we may text them at their number before calling it. Call it as soon as you have every detail: the line then reads the request back to the customer and sends it on their yes, so it is not in until this is called and confirmed.
+Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a dealership account. Ask whether we may text them at their number before calling it. Call it as soon as you have every detail: the request is then read back to the customer and sent on their yes, so it is not in until this is called and confirmed.
 
-Read back before it runs, in these words: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You're dropping it off {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?" (a part in square brackets is said only when its value is given)
+Read back before it runs, in these words: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?" (a part in square brackets is said only when its value is given)
+
+A correction is read back by its changed values alone, after the caller heard the full read-back and did not confirm it, in these words: "Got it, {changes}. Is everything else right?", {changes} the phrase of each param changed, in this order, joined by commas and the last two by "and":
+
+| Param | Phrase |
+| --- | --- |
+| `name` | "the name {name}" |
+| `vehicle` | "your {vehicle}" |
+| `wheels` | "work on {wheels} of its wheels" |
+| `damage` | "{damage}" |
+| `finish` | "the finish, {finish}" |
+| `slot` | "{slot}" |
+| `callbackNumber` | "we'll reach you on {callbackNumber}" |
+| `textOk` | "{textOk} to texts there" |
+| `notes` | "we'll also pass on: {notes}" |
+
+Read back in full instead where a value was cleared, or the values are the same as the last read-back (the caller asked to hear it all). The yes to a short read-back confirms every value, as the yes to the full one does.
 
 Rules, in the order they run:
 
@@ -154,7 +171,7 @@ Rules, in the order they run:
 
 Book a dealership account's cars straight into a drop-off window, only for the account the caller's number is on file for; anyone else sends a request instead.
 
-Read back before it runs, in these words: "So that's {account}, {cars} in all: {vehicles}, dropping off {slot}. Shall we book it?"
+Read back before it runs, in these words: "So that's {account}, {cars} in all: {vehicles}, for {slot}. Shall we book it?"
 
 Rules, in the order they run:
 
