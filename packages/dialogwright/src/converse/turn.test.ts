@@ -3260,24 +3260,23 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
     expect(h.held).toEqual([READ_BACK]);
   });
 
-  it('held once: a held read-back turned down is followed by the normal one, which can be talked over, until the change is let go', async () => {
+  it('every later read-back of the change is held once one was cut: the second, third and fourth, until the change is let go', async () => {
     const h = harness([...lookupThenBook, again('c3', LAMP), again('c4', LAMP), again('c5', LAMP)], { edit: (t) => off(withBrief(t)), jev: answers() });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'text', text: 'yes', heard: CUT });
     expect(h.held).toEqual([BRIEF]);
     s = await h.run(s, { kind: 'text', text: 'no' });
-    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
-    expect(h.held).toEqual([BRIEF]);
-    expect(s.pending!.held).toBeUndefined();
-    expect(s.unheardReadBacks).toEqual({ book: { params: LAMP, held: true } });
-    // That one cut in on too: still not held again.
-    s = await h.run(s, { kind: 'text', text: 'yes', heard: CUT });
-    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
-    expect(h.held).toEqual([BRIEF]);
+    expect(h.said.at(-1)).toEqual([BRIEF, true]);
+    expect(h.held).toEqual([BRIEF, BRIEF]);
+    expect(s.pending).toMatchObject({ held: true, brief: true });
+    // One answered with a cut too: still held.
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: { cutIn: true, text: 'Friday', spokeBefore: false } });
+    expect(h.said.at(-1)).toEqual([BRIEF, true]);
+    expect(h.held).toEqual([BRIEF, BRIEF, BRIEF]);
     expect(s.unheardReadBacks).toEqual({ book: { params: LAMP, held: true } });
   });
 
-  it('a held read-back heard and turned down with a correction: the short read-back of the change follows, and can be talked over', async () => {
+  it('a held read-back heard and turned down with a correction: the short read-back of the change follows, held too', async () => {
     const h = harness([...lookupThenBook, again('c3', LAMP), again('c4', { slot: SLOT, item: 'kettle' })], { edit: (t) => off(withShortBook()(t)), jev: answers() });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'text', text: 'yes', heard: CUT });
@@ -3285,18 +3284,38 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
     s = await h.run(s, { kind: 'text', text: 'no, the kettle' });
     expect(s.heardReadBack).toEqual({ action: 'book', params: LAMP });
     expect(h.said.at(-1)).toEqual(['Got it, the kettle. Is everything else right?', true]);
-    expect(h.held).toEqual([READ_BACK]);
-    expect(s.pending).toMatchObject({ changes: ['item'] });
-    expect(s.pending!.held).toBeUndefined();
+    expect(h.held).toEqual([READ_BACK, 'Got it, the kettle. Is everything else right?']);
+    expect(s.pending).toMatchObject({ changes: ['item'], held: true });
+    expect(s.pending!.brief).toBeUndefined();
   });
 
-  it('a correction cutting in (the change called again with other values) is read back on the normal path', async () => {
+  it('a correction cutting in (the change called again with other values) is read back held, as every later one is', async () => {
     const h = harness([...lookupThenBook, again('c3', { slot: SLOT, item: 'kettle' })], { edit: off, jev: answers() });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'text', text: 'no, the kettle', heard: CUT });
     expect(h.said.at(-1)).toEqual(['A visit Friday, November 13, by noon, for the kettle. Is that right?', true]);
-    expect(h.held).toEqual([]);
-    expect(s.pending!.held).toBeUndefined();
+    expect(h.held).toEqual(['A visit Friday, November 13, by noon, for the kettle. Is that right?']);
+    expect(s.pending!.held).toBe(true);
+  });
+
+  it('a change confirmed, or withdrawn, lets the hold go: its next first read-back can be talked over again', async () => {
+    const h = harness([...lookupThenBook, again('c3', LAMP), [text('Booked.'), done()], again('c4', { slot: `${FRIDAY}:afternoon`, item: 'clock' }), again('c5', { slot: `${FRIDAY}:afternoon`, item: 'clock' }), [text('Okay.'), done()], again('c6', { slot: `${FRIDAY}:afternoon`, item: 'clock' })], { edit: off, jev: answers() });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: CUT });
+    expect(h.held).toHaveLength(1);
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    // A second visit after the first was booked: its first read-back can be talked over.
+    s = await h.run(s, { kind: 'text', text: 'and the clock in the afternoon' });
+    expect(h.said.at(-1)![0]).toContain('for the clock');
+    expect(h.held).toHaveLength(1);
+    s = await h.run(s, { kind: 'text', text: 'hm', heard: { cutIn: true, text: 'A visit', spokeBefore: false } });
+    expect(h.held).toHaveLength(2);
+    s = await h.run(s, { kind: 'text', text: 'no, cancel it' });
+    expect(s.unheardReadBacks?.book).toBeUndefined();
+    s = await h.run(s, { kind: 'text', text: 'actually, the clock after all' });
+    expect(h.said.at(-1)![0]).toContain('for the clock');
+    expect(h.held).toHaveLength(2);
   });
 
   it('a held read-back withdrawn lets the hold go', async () => {
@@ -3372,7 +3391,7 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
     expect(gates[1]!.detail).toMatchObject({ held: true, brief: true });
   });
 
-  it('two changes interleaved: each keeps its own read-back not heard, and each is held once', async () => {
+  it('two changes interleaved: each keeps its own read-back not heard; another change\'s first read-back is not held; each is held from its cut on', async () => {
     const NOTE = { note: 'call after three' };
     const h = harness([
       ...lookupThenBook,
@@ -3382,21 +3401,22 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
       again('c4', LAMP),
     ], { edit: off, jev: answers() });
     let s = await upToReadBack(h);
-    // The visit's read-back cut in on; the caller asks for a note instead, whose read-back is cut in on too.
+    // The visit's read-back cut in on; the caller asks for a note instead: the note's first read-back is not held.
     s = await h.run(s, { kind: 'text', text: 'leave a note', heard: CUT });
     const noteReadBack = 'A note saying call after three. Is that right?';
     expect(h.said.at(-1)).toEqual([noteReadBack, true]);
+    expect(h.held).toEqual([]);
     const noteCut: Heard = { cutIn: true, text: noteReadBack.slice(0, 8), spokeBefore: false };
     s = await h.run(s, { kind: 'text', text: 'the visit first', heard: noteCut });
-    // The visit, called again with its values: held, though another change was read back in between.
+    // The visit, called again: held, though another change was read back in between.
     expect(h.held).toEqual([READ_BACK]);
     expect(s.unheardReadBacks).toEqual({ book: { params: LAMP, held: true }, leave_note: { params: NOTE } });
     s = await h.run(s, { kind: 'text', text: 'no' });
     expect(h.held).toEqual([READ_BACK, noteReadBack]);
-    // The visit's hold is spent: called again, it can be talked over.
+    // And the visit again: held still, every later read-back of it is.
     s = await h.run(s, { kind: 'text', text: 'no', heard: { cutIn: true, text: 'A note', spokeBefore: false } });
     expect(h.said.at(-1)).toEqual([READ_BACK, true]);
-    expect(h.held).toEqual([READ_BACK, noteReadBack]);
+    expect(h.held).toEqual([READ_BACK, noteReadBack, READ_BACK]);
   });
 
   /** A model answering with scripted rounds, where a round's `wait` holds it there until the test lets it go (or the request is aborted). */
@@ -3421,20 +3441,25 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
     };
   }
 
-  it('only the turn after a read-back not heard holds back its words: a later turn on something else streams at once', async () => {
+  it('a turn that may read the change back held holds its words back to its calls, then says them before a lookup runs', async () => {
     let go!: () => void;
     const wait = new Promise<void>((r) => (go = r));
+    let saidAtLookup: string[] = [];
     const model = waitingModel([...lookupThenBook, [text('Shall I read it again?'), done()], [text('Fridays are quiet. '), text('Let me look'), { wait }, call('c5', 'check_availability', { day: FRIDAY }), done('tool')], [text('Friday is open.'), done()]]);
-    const h = harness([], { edit: off, jev: answers(), model });
+    const h = harness([], { edit: off, jev: answers(), model, tools: { check_availability: async (p) => ((saidAtLookup = h.said.map(([t]) => t.trim())), h.calendar.free(p.day!)) } });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'text', text: 'yes', heard: CUT });
     expect(h.said.at(-1)).toEqual(['Shall I read it again?', true]);
-    // The hold stays for the visit, but this turn on something else streams as it is written.
     expect(s.unheardReadBacks).toEqual({ book: { params: LAMP } });
+    // The visit could be called again this turn, so its words wait for the round's calls.
     const turn = h.run(s, { kind: 'text', text: 'actually, is Friday busy?' });
-    await vi.waitFor(() => expect(h.said.map(([t]) => t.trim())).toContain('Fridays are quiet.'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(h.said.map(([t]) => t.trim())).not.toContain('Fridays are quiet.');
     go();
     s = await turn;
+    // No call of the visit came: said as usual, before the lookup ran.
+    expect(saidAtLookup).toContain('Fridays are quiet.');
+    expect(h.held).toEqual([]);
     expect(h.said.at(-1)).toEqual(['Friday is open.', true]);
   });
 

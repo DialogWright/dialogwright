@@ -66,10 +66,9 @@ export interface ConverseState {
   heardReadBack?: HeardReadBack;
   /**
    * On a call, by action, the last read-back of each change the caller did not hear (they cut in before
-   * READ_BACK_HEARD_AT of it, or spoke as it began), with the values it was read with: a call of that action again with
-   * the same values is read back held (agent.yaml's readBacks.holdAfterCut). `held`: a held read-back of it has been
-   * said, so no other is held for it (once per change, kept apart for each change, so two changes interleaved keep
-   * theirs). Kept only where the setting is on. An action's entry is taken out when a read-back of it is confirmed or
+   * READ_BACK_HEARD_AT of it, or spoke as it began), with the values it was read with: every later read-back of that
+   * action is read back held (agent.yaml's readBacks.holdAfterCut), kept apart for each change, so two changes
+   * interleaved keep theirs. `held`: a held read-back of it has been said. Kept only where the setting is on. An action's entry is taken out when a read-back of it is confirmed or
    * withdrawn, when the caller says they no longer want it, or when the journey no longer offers it. Absent (as in a
    * state saved before it was kept): none.
    */

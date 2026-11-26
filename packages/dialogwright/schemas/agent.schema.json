@@ -651,7 +651,7 @@
       "properties": {
         "holdAfterCut": {
           "default": true,
-          "description": "On a call: where the caller spoke over a read-back before hearing it (cut in before 85% of it, or spoke as it began) and the agent model calls the same change again with the same values, the read-back is said again held: whole and not interruptible, any speech that began while it played ignored (recorded by its length only), and its brief version (an action's readBackBrief) said where the action gives one. Once per change: a held read-back not confirmed is followed by the normal, interruptible one, until the change is confirmed, withdrawn or its journey no longer offers it. A chat is unchanged. Default: true (the maintainer's decision, 2026-11-26); false: every read-back can be talked over, as before.",
+          "description": "On a call: once the caller has spoken over a read-back of a change before hearing it (cut in before 85% of it, or spoke as it began), every later read-back of that change is said held, until the change is confirmed, withdrawn or its journey no longer offers it: whole and not interruptible, any speech that began while it played ignored (recorded by its length only), its brief version (an action's readBackBrief) said where the action gives one, and a correction's short read-back held too. Its first read-back can always be talked over. A chat is unchanged. Default: true (the maintainer's decision, 2026-11-26); false: every read-back can be talked over, as before.",
           "type": "boolean"
         }
       },

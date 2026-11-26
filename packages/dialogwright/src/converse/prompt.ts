@@ -247,7 +247,7 @@ const SHORT_READ_BACK = ' Called again after the caller turned its read-back dow
  * (agent.yaml's readBacks.holdAfterCut), as context: the line says it again whole, so the model need not lead into it.
  * No words telling the caller to listen to it all (the maintainer, 2026-11-26: it reads as a scolding).
  */
-const HELD_READ_BACK = ' Called again after the caller spoke over its read-back before hearing it, its details are read back again whole and cannot be talked over: write nothing of your own before calling it.';
+const HELD_READ_BACK = ' Once the caller has spoken over its read-back before hearing it, every later read-back of it is said whole and cannot be talked over: write nothing of your own before calling it.';
 
 function toolOf(name: string, spec: ActionSpec, held: boolean): ModelTool {
   const properties: Record<string, unknown> = {};

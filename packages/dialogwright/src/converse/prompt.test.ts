@@ -56,7 +56,7 @@ describe('a change\'s description', () => {
     expect(toolsOf(value!).find((t) => t.name === 'book')!.description).toBe(`${CHANGE}${SHORT_WORDS}`);
     expect(toolsOf(value!).find((t) => t.name === 'availability')!.description).toBe('List the windows still free on a day.');
   });
-  const HELD_WORDS = ' Called again after the caller spoke over its read-back before hearing it, its details are read back again whole and cannot be talked over: write nothing of your own before calling it.';
+  const HELD_WORDS = ' Once the caller has spoken over its read-back before hearing it, every later read-back of it is said whole and cannot be talked over: write nothing of your own before calling it.';
   it('on a call, where a read-back the caller spoke over is said again held (readBacks.holdAfterCut, on by default), says so', () => {
     expect(toolsOf(plain, undefined, 'voice').find((t) => t.name === 'book')!.description).toBe(`${CHANGE}${HELD_WORDS}`);
     expect(toolsOf(plain, undefined, 'voice').find((t) => t.name === 'availability')!.description).toBe('List the windows still free on a day.');
