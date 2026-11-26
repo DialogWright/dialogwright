@@ -274,6 +274,10 @@ actions:
       # Said as a person would on the phone, every value in it: as a form's labels ("damage: ..., finish: ...") it read
       # stilted on a live call (2026-11-25), though it looked fine in the chat.
       en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
+    # Said in its place where a read-back the caller talked over is said again held (readBacks.holdAfterCut): every value
+    # still in it, a yes to it confirming them all, in about half the words.
+    readBackBrief:
+      en: "That's {name}, your {vehicle}, {damage} on {wheels} of its wheels, the finish {finish}, {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
     # A correction after the full read-back, said by the changed details alone (a live call, 2026-11-25: a caller who
     # corrected the car sat through the whole read-back again, twice). Every param has a phrase; a call again with the
     # same values (the caller asked to hear it all) is read back in full.

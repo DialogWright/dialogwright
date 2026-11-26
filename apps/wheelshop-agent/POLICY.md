@@ -113,6 +113,8 @@ A correction is read back by its changed values alone, after the caller heard th
 
 Read back in full instead where a value was cleared, or the values are the same as the last read-back (the caller asked to hear it all). The yes to a short read-back confirms every value, as the yes to the full one does.
 
+Said again held, after the caller spoke over it before hearing it, in these words: "That's {name}, your {vehicle}, {damage} on {wheels} of its wheels, the finish {finish}, {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
+
 Rules, in the order they run:
 
 - the caller's yes to a read-back of name, vehicle, wheels, damage, finish, slot, callbackNumber, textOk, notes
