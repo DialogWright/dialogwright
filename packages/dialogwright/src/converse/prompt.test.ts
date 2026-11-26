@@ -45,7 +45,7 @@ describe('a change\'s description', () => {
   const SHORT = '    readBackChange:\n      en:\n        say: "Got it, {changes}. Is everything else right?"\n        params:\n          name: "the name {name}"\n';
   const READ_BACK = '      en: "A visit {window} for {name}, on {phone}. Is that right?"\n';
   const CHANGE = 'Book a visit into a free window. It changes something: the caller hears its details read back and it runs only after their yes.';
-  const SHORT_WORDS = ' Called again after the caller turned its read-back down with a correction, only the changed details are read back, in words that already say the corrected value back to them: say nothing of the value yourself before calling it. Called again with the same values, the whole read-back is said again, for a caller who asks to hear it all.';
+  const SHORT_WORDS = ' Called again after the caller turned its read-back down with a correction, only the changed details are read back, in words that already acknowledge the correction and say the corrected value back to them: write nothing of your own before calling it, or a word at most (such as "Sure."), and never that you will update it or send it again. Called again with the same values, the whole read-back is said again, for a caller who asks to hear it all.';
   it('says it is read back and runs on the yes, and nothing of a short read-back where the action has none', () => {
     expect(toolsOf(plain).find((t) => t.name === 'book')!.description).toBe(CHANGE);
   });

@@ -265,7 +265,7 @@ actions:
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
       damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
-      finish: { type: choice, options: [diamond cut, painted, not sure], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Bright metal, or a combination, is diamond cut; painted all over is painted; not sure where they cannot say." }
+      finish: { type: choice, options: [diamond cut, painted, not sure], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Bright metal, or a combination, is diamond cut; painted all over is painted; not sure where they cannot say. Those are the shop's own names: acknowledge the caller's answer in their words, never telling them which name it is." }
       slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
