@@ -108,7 +108,7 @@ journeys:
   # direction, 2026-11-13; DESIGN.md, "How the facts were split").
   request:
     # assumption: the owner corrects these (what the line takes from a caller on no account: a repair request, or a callback note)
-    when: The caller wants a wheel repaired, a price, to bring a car in, or someone from the shop to call them.
+    when: The caller wants a wheel repaired (they describe damage to their wheels, or ask whether it can be fixed), a price, to bring a car in, or someone from the shop to call them.
     for: { account: none }
     # assumption: the owner corrects these (the goal and the limits: what a callback note carries, no callback times, no dealership rates)
     goal: "Send the shop the caller's request: a repair request with a drop-off window, or, where the caller wants a call rather than a drop-off, a callback note; read back and confirmed by the caller."

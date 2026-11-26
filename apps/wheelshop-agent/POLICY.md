@@ -44,7 +44,7 @@
 
 ### `request`
 
-- Trigger: The caller wants a wheel repaired, a price, to bring a car in, or someone from the shop to call them.
+- Trigger: The caller wants a wheel repaired (they describe damage to their wheels, or ask whether it can be fixed), a price, to bring a car in, or someone from the shop to call them.
 - Open only where the number calling is on no account.
 - Actions: `check_availability`, `send_request` and `leave_callback`
 - Never done: no action ends it, so it stays in progress after each change runs on the caller's yes.

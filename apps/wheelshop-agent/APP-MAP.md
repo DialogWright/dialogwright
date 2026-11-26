@@ -55,7 +55,7 @@ Each caller turn, the decision model reads which journey the caller wants; the a
 flowchart LR
   root(["Root"])
   subgraph journeys["Journeys"]
-    j_request["request<br/>The caller wants a wheel repaired, a price, to bring a car in, or someone from the shop to call them."]
+    j_request["request<br/>The caller wants a wheel repaired (they describe damage to their wheels, or ask whether it can be fixed), a price, to bring a car in, or someone from the shop to call them."]
     j_dealer_booking["dealer_booking<br/>The caller wants to book cars in for repair, or someone from the shop to call them."]
   end
   a_recognise_caller["recognise_caller"]
