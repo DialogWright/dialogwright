@@ -11,7 +11,7 @@ import { speakableOn } from './speakable';
 import { checkArgs, idempotencyKey } from './actions';
 import { END_CALL, lineOn, type ActionSpec, type AgentBusiness } from './business/schema';
 import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
-import { askWithin, askWithinWhy, changedParams, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackBriefText, readBackText, readYesNo, shortReadBackText, shownParams, WITHDRAWN_AT, type PendingReadBack, type ReadBackReading } from './confirm';
+import { askWithin, askWithinWhy, changedParams, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackBriefText, readBackText, readYesNo, shortReadBackText, shownParams, WITHDRAWN_AT, WRAPPING_UP, WRAPPING_UP_AT, type PendingReadBack, type ReadBackReading } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
@@ -44,9 +44,13 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   (lines.notConfirmed), word for word, where it has one, and the model is told the line asked (answered);
  * - the model ends the call with the runtime's own action, end_call: its own words written with it are the goodbye, and
  *   the line says the closing line where it wrote none. But a change whose read-back the caller did not confirm is kept
- *   (ConverseState.unsent), and the first end_call while it is kept is refused: the goodbye written with it has been
- *   said (never as the turn's last piece), the call goes on, and the model asks whether the caller still wants it; the
- *   next end_call ends the call;
+ *   (ConverseState.unsent), and the first end_call while it is kept is refused: the call goes on, and the model asks
+ *   whether the caller still wants it; the next end_call ends the call. A goodbye written with it that streamed has been
+ *   said (never as the turn's last piece); but on a turn that began with a change kept unsent or a read-back waiting, where
+ *   the decision model reads the caller as wrapping up the call (WRAPPING_UP, or its reading fails or is late), each
+ *   round's words are held to its end while the change could still be left unsent (holdsWords): a refused end_call's
+ *   goodbye is then never said, and any other held round's words are said whole at its end (the maintainer's decision,
+ *   2026-11-26);
  * - a model that errs or says nothing is asked once more while half its time is left, and one that has
  *   not begun to answer within half its time is stopped and asked once more; else the line says the
  *   recovery line (the done line instead, where an action the caller confirmed has just run), and once
@@ -311,10 +315,43 @@ interface Turn {
   withdrawal?: { action: string; reading: Promise<number | null>; settled: boolean };
   /** The change kept unsent as the turn read or let go of it, for the trace. */
   unsent?: ConverseTraceRecord['unsent'];
+  /**
+   * A change could be left unsent as the turn began (one kept unsent, or a read-back waiting whose answer may keep it):
+   * the decision model's reading of whether the caller is wrapping up the call (`known` once it is in; `reading` null
+   * where it failed or was late), the request asked on its own where there is no routing (`asked`, settled once the
+   * reading is kept), whether a round's words were held for it, and the characters of held words never said.
+   */
+  wrapUp?: { reading: number | null; known: boolean; asked?: Promise<void>; held?: true; dropped?: number };
+  /** The round whose calls are running wrote words that are held, not yet said: a refused end_call's result says so. */
+  roundHeld: boolean;
+  /** How many end_calls the unsent rule has refused this turn (unsent-change and unsent-asked). */
+  unsentEnds: number;
 }
 
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
 const cut = (t: Turn): boolean => t.signal?.aborted === true;
+
+/**
+ * Whether a round's words are held to its end rather than streamed (the maintainer's decision, 2026-11-26): only while a
+ * change could be left unsent (one kept unsent, or one whose end_call this turn the unsent rule refused) on a turn that
+ * began with one kept or a read-back waiting (Turn.wrapUp), and the decision model reads the caller as wrapping up the
+ * call (WRAPPING_UP_AT or above). A reading that failed or was late holds (fail closed); one not yet in is `unknown`,
+ * and the round holds until it is. Held, a goodbye written with an end_call the unsent rule refuses is never said
+ * (converse); any other round's held words are said at its end, whole, in the order streaming would have said them.
+ */
+function holdsWords(t: Turn): 'hold' | 'stream' | 'unknown' {
+  const w = t.wrapUp;
+  if (w === undefined || (t.st.unsent === undefined && t.unsentRefused === undefined)) return 'stream';
+  if (!w.known) return 'unknown';
+  return w.reading === null || w.reading >= WRAPPING_UP_AT ? 'hold' : 'stream';
+}
+
+/** The decision model's reading of the caller wrapping up, kept once it is in (null: it failed or was late). */
+function wrapUpRead(t: Turn, reading: number | null): void {
+  if (t.wrapUp === undefined || t.wrapUp.known) return;
+  t.wrapUp.reading = reading;
+  t.wrapUp.known = true;
+}
 
 function clearBridge(t: Turn): void {
   if (t.bridgeTimer !== undefined) clearTimeout(t.bridgeTimer);
@@ -390,6 +427,11 @@ class Speaker {
     this.kept = null;
     this.heldText = false;
     this.sentences.rest();
+  }
+
+  /** Whether sentences are being kept rather than said (hold, until release or discard). */
+  get holding(): boolean {
+    return this.kept !== null;
   }
 
   /** Whether the current round has said anything yet. */
@@ -545,6 +587,9 @@ function offeredNow(t: Turn): string[] {
   return t.unclear === undefined ? offered : offered.filter((n) => b.actions[n]?.kind === 'lookup');
 }
 
+/** What a refused end_call's result says of the words held with it, never said (holdsWords). */
+const NOT_SAID = 'what you wrote with it was not said to the caller';
+
 /**
  * One round's calls, in order: each checked, put to the gate and run, or read back. Returns the results
  * the model is sent and the read-back said, if a change was read back. A call after a read-back in the
@@ -583,7 +628,8 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     if (c.name === END_CALL && t.unsentRefused !== undefined) {
       // One ask per refusal: the caller's next turn says whether they still want it, so no end_call of this turn ends the call.
       const action = t.unsentRefused;
-      const why = `Not run: the caller has not yet answered whether they still want "${action}": ask them if you have not, wait for their answer, and end the call after it if they do not want it.`;
+      t.unsentEnds += 1;
+      const why = `Not run: ${t.roundHeld ? `${NOT_SAID}, and ` : ''}the caller has not yet answered whether they still want "${action}": ask them if you have not, wait for their answer, and end the call after it if they do not want it.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-asked', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
@@ -592,12 +638,14 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     if (c.name === END_CALL && t.st.unsent !== undefined) {
       // A change the caller turned down or cut into was never sent: the first end_call after it is refused, so the model
       // asks whether they still want it; the change is let go here, so the next end_call ends the call. Counted toward
-      // no refusal: nothing about ending the call was wrong. The goodbye written with it streamed as it came, so it has
-      // been said, and the model is told so (a person would add "before you go..."): context, never a script.
+      // no refusal: nothing about ending the call was wrong. A goodbye written with it that streamed as it came has been
+      // said, and the model is told so (a person would add "before you go..."): context, never a script. One held while the
+      // caller read as wrapping up (holdsWords) is never said, and the model is told that instead.
       const { action } = t.st.unsent;
       delete t.st.unsent;
       t.unsentRefused = action;
-      const lead = t.roundSpoke ? 'Not run: you have said goodbye, but ' : 'Not run: ';
+      t.unsentEnds += 1;
+      const lead = t.roundSpoke ? 'Not run: you have said goodbye, but ' : t.roundHeld ? `Not run: ${NOT_SAID}, and ` : 'Not run: ';
       const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, end the call.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-change', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
@@ -827,6 +875,25 @@ async function sleep(ms: number, stop?: AbortSignal): Promise<void> {
  * of a turn stopped from outside (Turn.signal), which is asked nothing more.
  */
 async function round(t: Turn, sp: Speaker, emptyOk = false, routeStop?: AbortSignal): Promise<Round> {
+  // Words held while the caller may be wrapping up with a change unsent (holdsWords); a routed first round is held already,
+  // and its route decides. A reading not yet in holds the round, and once in, a low one lets its words go on streaming.
+  let over = false;
+  if (!sp.holding && holdsWords(t) !== 'stream') {
+    const unknown = holdsWords(t) === 'unknown';
+    sp.hold();
+    if (unknown) void t.wrapUp?.asked?.then(() => {
+      if (!over && sp.holding && holdsWords(t) === 'stream') sp.release();
+    });
+  }
+  try {
+    return await roundAsked(t, sp, emptyOk, routeStop);
+  } finally {
+    over = true;
+  }
+}
+
+/** round's requests, once its words are held or not. */
+async function roundAsked(t: Turn, sp: Speaker, emptyOk: boolean, routeStop: AbortSignal | undefined): Promise<Round> {
   const stop = routeStop !== undefined && t.signal !== undefined ? AbortSignal.any([routeStop, t.signal]) : routeStop ?? t.signal;
   const b = t.deps.business;
   const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
@@ -904,12 +971,14 @@ async function routedRound(t: Turn, sp: Speaker, emptyOk: boolean, routing: Prom
     t.st.journey = routed.next;
     t.route = routed.route;
     if (routed.noLongerWants !== undefined) noteWithdrawal(t, routed.noLongerWants.action, routed.noLongerWants.reading);
+    if (routed.wrappingUp !== undefined) wrapUpRead(t, routed.wrappingUp);
     leaveOffJourney(t);
     const count = routed.route.unclear;
     if (count !== undefined && t.said !== null) t.unclear = { count, said: t.said };
     if (t.unclear === undefined && routed.next.active === j.active && routed.next.phase === j.phase) {
       if (cut(t) || (settled.round !== undefined && !settled.round.ok)) sp.discard();
-      else sp.release();
+      // Held to the round's end while the caller may be wrapping up with a change unsent (holdsWords): converse says or drops it.
+      else if (holdsWords(t) === 'stream') sp.release();
       return await first;
     }
     stop.abort();
@@ -1042,7 +1111,33 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     // and the next round's words end the turn. Whether the caller withdrew it is read first, where it is being read.
     if (t.st.unsent !== undefined && r.calls.some((c) => c.name === END_CALL)) await settleWithdrawal(t);
     const goodbye = !final && t.st.pending === null && t.st.unsent === undefined && t.unsentRefused === undefined && r.calls.every((c) => c.name === END_CALL);
-    const said = sp.endRound(final || goodbye);
+    // Words held to the round's end (holdsWords). Where the round calls end_call they wait for its calls, as the unsent rule
+    // may refuse it: refused, they are never said, nor kept in the conversation as said (only their length is traced);
+    // otherwise (and in every round with no end_call) they are said now, whole, before what the calls bring.
+    const held = sp.holding;
+    const wrote = r.text.trim();
+    if (held && wrote !== '' && t.wrapUp !== undefined) t.wrapUp.held = true;
+    let ran: Awaited<ReturnType<typeof runCalls>> | undefined;
+    let dropped = false;
+    if (held && r.calls.some((c) => c.name === END_CALL)) {
+      const refusedBefore = t.unsentEnds;
+      t.roundSpoke = false;
+      t.roundHeld = wrote !== '';
+      try {
+        ran = await runCalls(t, r.calls);
+      } finally {
+        t.roundHeld = false;
+      }
+      dropped = t.unsentEnds > refusedBefore;
+    }
+    let said = '';
+    if (dropped) {
+      sp.discard();
+      if (wrote !== '' && t.wrapUp !== undefined) t.wrapUp.dropped = (t.wrapUp.dropped ?? 0) + wrote.length;
+    } else {
+      if (held) sp.release();
+      said = sp.endRound(final || goodbye);
+    }
     t.roundSpoke = said !== '';
     add(t.st, 'assistant', [...(said !== '' ? [{ type: 'text' as const, text: said }] : []), ...r.calls.map((c) => ({ type: 'tool_call' as const, id: c.id, name: c.name, args: c.args }))]);
     // The caller has heard a reply after the action they confirmed.
@@ -1052,7 +1147,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       t.own.push(said);
     }
     if (final) return { ok: true };
-    const { results, readBack } = await runCalls(t, r.calls);
+    const { results, readBack } = ran ?? (await runCalls(t, r.calls));
     add(t.st, 'user', results);
     if (cut(t)) {
       // A read-back the caller never heard waits for no answer: nothing is done, and the model may call it again.
@@ -1507,6 +1602,8 @@ interface Routed {
   route: NonNullable<Turn['route']>;
   /** Where the routing request also asked whether the caller no longer wants the change kept unsent: its action and the reading (null: none). */
   noLongerWants?: { action: string; reading: number | null };
+  /** Where the routing request also asked whether the caller is wrapping up the call (Turn.wrapUp): the reading (null: none). */
+  wrappingUp?: number | null;
 }
 
 /**
@@ -1522,14 +1619,18 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
   const started = Date.now();
   // While a change is kept unsent, the same request asks whether the caller no longer wants it (a read-back's answer reads its own).
   const unsent = t.st.unsent !== undefined && t.answersReadBack !== true ? t.st.unsent.action : null;
+  // While a change could be left unsent (Turn.wrapUp), the same request asks whether the caller is wrapping up the call.
+  const wrapUp = t.wrapUp !== undefined && t.wrapUp.asked === undefined;
   try {
     const state = unsent === null ? routeState(b, j, said, lastReply) : { ...(routeState(b, j, said, lastReply) as { [key: string]: JsonValue }), unsentRequest: unsentAbout(t, unsent) };
-    const asked = await askWithinWhy(t.deps.jev, state, unsent === null ? routeQuestions(b, j, t.st.caller, lastReply) : { ...routeQuestions(b, j, t.st.caller, lastReply), ...NO_LONGER_WANTS }, b.routing.timeoutMs);
+    const questions = { ...routeQuestions(b, j, t.st.caller, lastReply), ...(unsent === null ? {} : NO_LONGER_WANTS), ...(wrapUp ? WRAPPING_UP : {}) };
+    const asked = await askWithinWhy(t.deps.jev, state, questions, b.routing.timeoutMs);
     const ms = Date.now() - started;
     const reading = readRoute(asked.answers);
     const route = decideRoute(b, j, reading, openJourneys(b, t.st.caller), { answersReadBack: t.answersReadBack === true });
     return {
       ...(unsent === null ? {} : { noLongerWants: { action: unsent, reading: probabilityOf(asked.answers?.noLongerWants) } }),
+      ...(wrapUp ? { wrappingUp: probabilityOf(asked.answers?.wrappingUp) } : {}),
       next: route.next,
       route: {
         from: j.active,
@@ -1548,7 +1649,7 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
     };
   } catch {
     // Whatever throws here (an answer in no shape the code can read, a client that breaks): the journey as it was.
-    return { ...(unsent === null ? {} : { noLongerWants: { action: unsent, reading: null } }), next: j, route: { from: j.active, to: j.active, outcome: 'carry', task: null, ms: Date.now() - started } };
+    return { ...(unsent === null ? {} : { noLongerWants: { action: unsent, reading: null } }), ...(wrapUp ? { wrappingUp: null } : {}), next: j, route: { from: j.active, to: j.active, outcome: 'carry', task: null, ms: Date.now() - started } };
   }
 }
 
@@ -1613,6 +1714,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     ...(signal !== undefined ? { signal } : {}),
     bridged: false,
     roundSpoke: false,
+    roundHeld: false,
+    unsentEnds: 0,
   };
   const sp = new Speaker(t);
   // The bridge: on a call, where the channel can say one, once if nothing of a caller turn's reply is said by its wait (bridgeAfterMs).
@@ -1710,6 +1813,7 @@ function traceRecordOf(t: Turn, input: Input, now: Date): { record: ConverseTrac
     ...(t.route !== undefined ? { route: t.route } : {}),
     ...(t.journeyEnded !== undefined ? { journeyEnded: t.journeyEnded } : {}),
     ...(t.unsent !== undefined ? { unsent: t.unsent } : {}),
+    ...(t.wrapUp !== undefined ? { wrapUp: { reading: t.wrapUp.known ? t.wrapUp.reading : null, ...(t.wrapUp.held === true ? { held: true as const } : {}), ...(t.wrapUp.dropped !== undefined ? { dropped: { chars: t.wrapUp.dropped } } : {}) } } : {}),
     ...(t.ended !== undefined ? { ended: t.ended } : {}),
     ...(openNow !== undefined ? { open: openNow } : {}),
     ...(interruptedNow ? { interrupted: true as const } : {}),
@@ -1814,12 +1918,19 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
     // What the caller heard of the last reply, before their words (and before routing reads that reply).
     if (input.heard !== undefined) applyHeard(st, input.heard);
     const lastReply = routed ? lastReplyOf(st) : null;
-    if (!routed && st.pending === null && st.unsent !== undefined) {
-      // A change kept unsent, and no routing request this turn to ask in: whether the caller no longer wants it is asked
-      // on its own, alongside the model, and read where an end_call depends on it (settleWithdrawal); late or failed, nothing changes.
-      const action = st.unsent.action;
-      const reading = askWithin(deps.jev, { said: input.text, lastReply: lastReplyOf(st), unsentRequest: unsentAbout(t, action) }, NO_LONGER_WANTS, deps.jevTimeoutMs).then((a) => probabilityOf(a?.noLongerWants));
-      t.withdrawal = { action, reading, settled: false };
+    // A change could be left unsent this turn (one kept unsent, or a read-back waiting whose answer may keep it): whether the
+    // caller is wrapping up the call is read, in the routing request where there is one, so a goodbye written with an
+    // end_call the unsent rule refuses is held and never said (holdsWords).
+    if (st.pending !== null || st.unsent !== undefined) t.wrapUp = { reading: null, known: false };
+    if (!routed && t.wrapUp !== undefined) {
+      // No routing request this turn to ask in: asked on its own, alongside the read-back's reading and the model. With a
+      // change kept unsent (and no read-back waiting), the same request asks whether the caller no longer wants it, read
+      // where an end_call depends on it (settleWithdrawal); late or failed, nothing changes.
+      const withdrawal = st.pending === null && st.unsent !== undefined ? st.unsent.action : null;
+      const state = { said: input.text, lastReply: lastReplyOf(st), ...(withdrawal !== null ? { unsentRequest: unsentAbout(t, withdrawal) } : {}) };
+      const asked = askWithin(deps.jev, state, { ...(withdrawal !== null ? NO_LONGER_WANTS : {}), ...WRAPPING_UP }, deps.jevTimeoutMs);
+      if (withdrawal !== null) t.withdrawal = { action: withdrawal, reading: asked.then((a) => probabilityOf(a?.noLongerWants)), settled: false };
+      t.wrapUp.asked = asked.then((a) => wrapUpRead(t, probabilityOf(a?.wrappingUp)));
     }
     let answer: ReadBackAnswer | null = null;
     if (st.pending !== null) {
@@ -1832,6 +1943,14 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
       // A yes that ran its action is not routed: the caller answered the read-back, and the journey moved on by it.
       // Any other answer to a read-back is routed on the same words, alongside the model's first round.
       const routing = routed && answer !== 'ran' ? routeOf(t, st.journey!, input.text, lastReply) : undefined;
+      if (routed && routing === undefined && t.wrapUp !== undefined) {
+        // A yes that ran is not routed: where a change is still kept unsent (another action's), whether the caller is
+        // wrapping up is asked on its own; else nothing could be left unsent, and it is not asked.
+        if (st.unsent !== undefined) {
+          const w = t.wrapUp;
+          w.asked = askWithin(deps.jev, { said: input.text, lastReply }, WRAPPING_UP, deps.jevTimeoutMs).then((a) => wrapUpRead(t, probabilityOf(a?.wrappingUp)));
+        } else delete t.wrapUp;
+      }
       const carried = st.carriedNote;
       if (carried !== undefined) {
         // The check after speaking's note carried from a turn that ended on a read-back: after this message's
@@ -1843,8 +1962,10 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
       await converse(t, sp, false, carried, routing);
       // A reply the caller cut in on is not read: they did not hear it through, and the next turn answers them.
       if (!cut(t)) await checkAfterSpeaking(t, sp);
-    }
+    } else if (routed) delete t.wrapUp;
     await settleWithdrawal(t);
+    // The reading asked on its own is in the turn's record: it is in by the decision model's time.
+    await t.wrapUp?.asked;
   }
   // A turn on a silence stopped before it said anything (the caller spoke first) is as if it never ran: no record, and
   // the state as it was (converseTurn returns it).

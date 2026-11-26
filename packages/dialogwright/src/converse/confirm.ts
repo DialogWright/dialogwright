@@ -186,6 +186,15 @@ export function isDeclinedWithoutChange(r: ReadBackReading | null): boolean {
  */
 export const WITHDRAWN_AT = CONFIRM_YES_AT;
 
+/**
+ * At or above this, the caller reads as wrapping up the call (WRAPPING_UP), so while a change could be left unsent a
+ * round's words are held to its end rather than streamed (turn.ts `holdsWords`): a goodbye the unsent rule refuses is
+ * then never said. Holding costs only the wait for the round's end (held words are still said, whole, unless that
+ * end_call is refused), so the bar is an even reading, and a reading that fails or is late holds too (the maintainer's
+ * decision, 2026-11-26).
+ */
+export const WRAPPING_UP_AT = 0.5;
+
 /** Whether the reading is a clear withdrawal: not a yes, and `withdraws` read at WITHDRAWN_AT or above. No reading, or none of it, is not. */
 export function isWithdrawn(r: ReadBackReading | null): boolean {
   return r !== null && !isConfirmed(r) && r.withdraws !== undefined && r.withdraws >= WITHDRAWN_AT;
@@ -252,6 +261,23 @@ export const NO_LONGER_WANTS: QuestionMap = {
     criteria: {
       true: 'The caller withdraws it: they cancel it, say never mind or forget it, or say they no longer need it',
       false: 'The caller wants it, wants something in it changed, talks of something else, or says nothing of whether they still want it',
+    },
+  },
+};
+
+/**
+ * The question asked on a caller turn while a change could be left unsent (one kept unsent, or a read-back waiting whose
+ * answer may keep it): whether the caller is wrapping up the call. Its state is what the caller said and the line's last
+ * words before them. Read high (WRAPPING_UP_AT), a round's words are held to its end, so a goodbye written with an
+ * end_call the unsent rule refuses is never said (turn.ts).
+ */
+export const WRAPPING_UP: QuestionMap = {
+  wrappingUp: {
+    type: 'noul',
+    instructions: 'Read said, with lastReply for context. Is the caller wrapping up the call: done with it and about to go?',
+    criteria: {
+      true: 'The caller is finishing the call, however they say it: they need nothing more, say that is everything, thank the line to close, or say goodbye, even where they also answer or say something else first',
+      false: 'The caller goes on with the call: they ask for something, want something more, or answer or give a detail with nothing said of finishing',
     },
   },
 };

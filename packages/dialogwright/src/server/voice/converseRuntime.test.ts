@@ -349,6 +349,33 @@ describe('the converse voice runtime: a confirmed change', () => {
   });
 });
 
+describe('the converse voice runtime: a goodbye held while a change could be left unsent', () => {
+  it('a read-back answered with no clear yes, the caller wrapping up: the goodbye written with the refused end_call sends no frame, and the question after it is the turn\'s final frame', async () => {
+    const ASKED = 'Before you go, did you still want that visit booked?';
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Thanks for confirming. '), text('Goodbye.'), call('c3', 'end_call', {}), done('tool')], [text(ASKED), done()]]);
+    // The decision model reads no yes in this answer (jevOf's yes needs "yes"), and the caller as wrapping up.
+    const yesOnly = jevOf();
+    const jev: JevClient = {
+      async ask(req) {
+        const res = await yesOnly.ask(req);
+        return Object.hasOwn(req.questions, 'wrappingUp') ? { ...res, answers: { ...res.answers, wrappingUp: { type: 'noul', noul: 0.9 } } } : res;
+      },
+    };
+    const h = harness({ model, jev });
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: 'twilio' }, h.io);
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    expect(h.said().at(-1)!.token).toContain('Is that right?');
+    const before = h.said().length;
+    await h.prompt('I think so, though I am not sure of the date. Thanks, that is everything.');
+    expect(h.said().slice(before).map((f) => [f.token, f.last])).toEqual([[ASKED, true]]);
+    expect(h.said().some((f) => f.token.includes('Goodbye'))).toBe(false);
+    expect(h.fio.sent.some((f) => f.type === 'end')).toBe(false);
+    expect(h.booked).toEqual([]);
+    expect(h.entry.session.ended).toBeUndefined();
+  });
+});
+
 describe('the converse voice runtime: a correction read back by its changed values alone', () => {
   it('the short read-back is sent speakable and, heard in full, a yes confirms the change with every value', async () => {
     const SHORT_SAID = 'Got it, on the number you\'re calling from, ending in 0 1 2 3. Is everything else right?';

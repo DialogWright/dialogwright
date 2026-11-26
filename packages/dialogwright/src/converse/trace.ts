@@ -67,6 +67,14 @@ export interface ConverseTraceRecord {
    */
   unsent?: { action: string; noLongerWants?: number | null; cleared?: 'withdrawn' | 'journey' };
   /**
+   * The turn began with a change that could be left unsent (one kept unsent, or a read-back waiting whose answer may keep
+   * it), so the decision model was asked whether the caller is wrapping up the call (confirm.ts WRAPPING_UP): its reading
+   * (`reading`, null where it failed, was late or never came in), `held` where a round's words were held to its end rather
+   * than streamed for it (turn.ts holdsWords), and `dropped` where held words were never said, an end_call written with
+   * them refused by the unsent rule: their length in characters, never the words. Absent: the question was not asked.
+   */
+  wrapUp?: { reading: number | null; held?: true; dropped?: { chars: number } };
+  /**
    * The check after speaking (docs/designs/2026-11-11-claims-check.md), where the turn's reply was read: the
    * decision model's readings (null each where the check was unread: the model failed or was late), the
    * readings at or over their bars (agent.yaml `checks.claims`), the reading's time, whether the model was
