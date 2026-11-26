@@ -349,6 +349,22 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log, with each turn's `task` and `answers` readings from the trace.
 
+## 21. A read-back said again held, on the phone
+
+**Why.** On an agent app with `readBacks.holdAfterCut` on (the default; [the guide's 18.5](guide/18-agent-mode.md#185-the-read-back)), a read-back the caller spoke over before hearing it is said again whole and not interruptible when the model calls the same change again, the brief read-back (`readBackBrief`) where the action has one, and speech that began while it played is ignored, not held (the maintainer's decision, 2026-11-26: simulated callers who talk over every long reply never got a change confirmed, each read-back cut and read again until the turn limit). The tests hold it on scripted models and carriers; how each carrier treats a text frame sent `interruptible: false` (undocumented on Telnyx, [telnyx.ts](../packages/dialogwright/src/server/voice/telnyx.ts) note 7), and whether the line's estimate of the held line's end fits the voice (on Twilio, which reports nothing of a line's playback, the line counts it played at 85% of its estimate), is a call's to say.
+
+**Set.** The wheel shop on the converse runtime (`apps/wheelshop-agent`), on Twilio and on Telnyx, a number on no dealership account.
+
+**Do and look for.**
+
+1. **Cut in, then talk over the second.** Set up a repair request and speak over its read-back early with "wait, what?". The model calls the request again: the brief read-back is said ("That's ..., your ..., ... Is that right?"). Talk over it: it plays on to its end, and nothing you said over it is answered. The frame log has `{ "ignoredOverHeld": <chars> }` for each utterance, and the console's call view shows "speech over a held line ignored (N chars)" on the next turn.
+2. **The question follows, then a yes.** After it has played, say "yes": the request is sent. The trace's `readBack` has `held: true` and `brief: true`, and the audit's `confirmed` row `held: true`.
+3. **Begin near the end.** Again, start speaking just before the held read-back ends and go on after it: the whole utterance is ignored (its speech began while it played), and the next thing you say is taken.
+4. **A voice faster than the estimate (Twilio).** Wait for the held read-back's very end and say "yes" at once: it is taken. Note in the results log if it was ignored (the estimate's end fell after the voice's).
+5. **Once.** Say "no" to the held read-back: the one after it can be talked over again.
+
+**Record.** One row per carrier and step in the results log, with whether the carrier played the held line on over speech (on Telnyx, whether `interruptible: false` on a text frame held), and how long after its real end the first answer was taken on Twilio.
+
 ## Results log
 
 One row per check run. Keep earlier rows.
