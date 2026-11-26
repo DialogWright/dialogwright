@@ -2589,14 +2589,15 @@ describe('journeys', () => {
       expect(h.said.at(-1)).toEqual(['I just need the day you would like the visit.', true]);
     });
 
-    it('the second unclear turn in a row: the goal says plainly the line can only help with what it asks for, with the business\'s reason', async () => {
+    it('the second unclear turn in a row: the goal is to help kindly, saying what the line can do, with the business\'s reason', async () => {
       const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), done()], DROPPED, [text('This line books visits; say "visit" or "call back".'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }, { task: NONE }]) });
       let s = await h.run(fresh(), { kind: 'start' });
       s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
       s = await h.run(s, { kind: 'text', text: 'like I said, Thursday' });
       const system = h.model.requests.at(-1)!.system;
       expect(system).toMatch(/two turns in a row/);
-      expect(system).toMatch(/can only help when they give what it asks for/);
+      expect(system).toMatch(/what the line can do for them/);
+      expect(system).not.toMatch(/can only help when/);
       expect(system).toContain(LINE);
       expect(system).not.toContain('like I said, Thursday');
       expect(h.traces.at(-1)!.route).toMatchObject({ unclear: 2, restarted: true });

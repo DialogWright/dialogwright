@@ -159,8 +159,10 @@ export interface UnclearTurn {
  * What the model is told on an unclear turn (docs/designs/2026-11-12-journeys.md, "Amendment (2026-11-13)"): that the
  * caller's turn was unclear, their words, and the goal for its reply, never words for it. The first: direction for
  * what the line needs now (at the root, what it can help with; in a task, what it needs from them for it). The
- * second in a row: said plainly that the line can only help when the caller gives what it asks for, with the
- * business's reason for the line where it gives one (business.line), and exactly what to say.
+ * second in a row: help kindly, as a person who wants to help would, never blaming the caller: what the line can do
+ * for them, with the business's reason for the line where it gives one (business.line), and exactly what to say
+ * (until 2026-11-25 it said plainly that the line could only help when the caller gave what it asked for, and a live
+ * caller answering the line's own question was told so).
  */
 function unclearWords(b: AgentBusiness, s: ConverseState, u: UnclearTurn): string {
   const inTask = s.journey?.active !== null && s.journey?.active !== undefined;
@@ -176,8 +178,8 @@ function unclearWords(b: AgentBusiness, s: ConverseState, u: UnclearTurn): strin
   const why = b.business.line === undefined ? '' : ` The business's reason for the line, which they are to hear: ${b.business.line}`;
   const say = inTask ? 'to give what you need from them now' : 'to ask for one of the things this line can help with';
   return [
-    `The caller's last two turns in a row were unclear: they are not giving what the line asks for. ${words}`,
-    `Your goal for this reply: tell them plainly that the line can only help when they give what it asks for.${why} Tell them exactly what to say ${say}. Never a guess at what they meant.`,
+    `The caller's last two turns in a row were unclear: the line still cannot tell what they want, so it does not yet have what it needs to help them. ${words}`,
+    `Your goal for this reply: help them, as a person who wants to help would: say what the line can do for them.${why} Tell them exactly what to say ${say}. Never blame them or tell them they have not given what was asked. Never a guess at what they meant.`,
   ].join('\n');
 }
 

@@ -70,7 +70,7 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   started in a journey with a greeting of its own opens with that greeting in place of lines.greeting;
  * - with journeys, a caller turn the line could not follow (unclear: journeys.ts `decideRoute`, the design's
  *   "Amendment (2026-11-13)") is answered by the model given the goal of guiding the caller (the turn's words,
- *   and on the second in a row, that the line can only help when the caller gives what it asks for, with the
+ *   and on the second in a row, to help kindly with what the line can do and exactly what to say, with the
  *   business's reason for the line), offered the turn's lookups only, so no change is acted on: a change it calls
  *   anyway is refused as not offered. A turn that answers a read-back is never unclear (the caller is following the
  *   line), so it keeps the journey's actions and a correction is read back again in the same turn; nor, at the root, is

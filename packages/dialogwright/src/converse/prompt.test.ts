@@ -216,18 +216,25 @@ describe('an unclear turn', () => {
     expect(after).toMatch(/what you need from them now/);
     expect(after).not.toMatch(/what this line can help with/);
   });
-  it('the second: said plainly that the line can only help with what it asks for, the business\'s reason, and exactly what to say', () => {
+  it('the second: kindly, what the line can do, the business\'s reason, and exactly what to say, never blaming the caller', () => {
     const after = block(systemPrompt(withLine, at({ ...root, unclear: 2 }), NOW, { count: 2, said: SAID }));
     expect(after).not.toContain(SAID);
     expect(after).toMatch(/two turns in a row/);
-    expect(after).toMatch(/can only help when they give what it asks for/);
+    expect(after).toMatch(/as a person who wants to help would/);
+    expect(after).toMatch(/what the line can do for them/);
+    // Never that the caller has not given what was asked (live calls, 2026-11-25: said to a caller answering the line's question).
+    expect(after).not.toMatch(/can only help when/);
+    expect(after).not.toMatch(/(are|is) not giving what/);
+    expect(after).not.toMatch(/plainly/);
+    expect(after).toMatch(/Never blame them or tell them they have not given what was asked/);
     expect(after).toContain(LINE);
     expect(after).toMatch(/exactly what to say/);
     expect(after).toMatch(/never a guess at what they meant/i);
   });
   it('the second, with no line in the business: no reason given', () => {
     const after = block(systemPrompt(withJourneys, at({ ...root, active: 'visit', unclear: 2 }), NOW, { count: 2, said: SAID }));
-    expect(after).toMatch(/can only help when they give what it asks for/);
+    expect(after).toMatch(/what the line can do for them/);
+    expect(after).not.toMatch(/can only help when/);
     expect(after).not.toMatch(/reason/);
     expect(after).toMatch(/what you need from them now/);
   });

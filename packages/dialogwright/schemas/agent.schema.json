@@ -64,7 +64,7 @@
           "additionalProperties": false
         },
         "line": {
-          "description": "The business's reason for the line, said to a caller who is not giving what it asks for (for example \"This line is how we price repairs and set up drop-offs while we are busy in the shop\"). Used only with journeys.",
+          "description": "The business's reason for the line, said on the second unclear turn in a row, with what the line can do (for example \"This line is how we price repairs and set up drop-offs while we are busy in the shop\"). Used only with journeys.",
           "type": "string",
           "minLength": 1
         }

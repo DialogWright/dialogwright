@@ -396,7 +396,7 @@ export const agentBusinessSchema = z
           })
           .optional()
           .describe('The business\'s opening hours, as the line can read them (in the business\'s time zone). With them the line tells the model whether the business is open now, and until when or when it next opens, and lines.greetingAfterHours is said when a call starts while it is closed. `hours` stays the text the agent may say; this is what the line itself works from.'),
-        line: text().optional().describe('The business\'s reason for the line, said to a caller who is not giving what it asks for (for example "This line is how we price repairs and set up drop-offs while we are busy in the shop"). Used only with journeys.'),
+        line: text().optional().describe('The business\'s reason for the line, said on the second unclear turn in a row, with what the line can do (for example "This line is how we price repairs and set up drop-offs while we are busy in the shop"). Used only with journeys.'),
       })
       .describe('Who the business is.'),
     services: z

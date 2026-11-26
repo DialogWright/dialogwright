@@ -20,7 +20,7 @@ business:
   open:
     weekly:
       mon-fri: ["07:30-17:30"]
-  # assumption: the owner corrects this (the reason for the line, said to a caller who is not giving what it asks for)
+  # assumption: the owner corrects this (the reason for the line, said on the second unclear turn in a row)
   line: This line is how we price repairs and set up drop-offs while we're busy in the shop fixing wheels.
 
 # The ballpark prices are assumptions for the owner to correct; the caveat below is said with any of them.
