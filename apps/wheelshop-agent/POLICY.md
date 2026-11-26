@@ -94,9 +94,9 @@ Rules, in the order they run:
 
 ### `send_request`: a change
 
-Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a dealership account. Ask whether we may text them at their number before calling it. Call it as soon as you have every detail: the request is then read back to the customer and sent on their yes, so it is not in until this is called and confirmed.
+Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a dealership account. Ask whether we may text them at their number before calling it. Call it as soon as you have every detail, the drop-off window among them once the customer has heard its day, date and drop-off time from you and accepted it: the request is then read back to the customer and sent on their yes, so it is not in until this is called and confirmed.
 
-Read back before it runs, in these words: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?" (a part in square brackets is said only when its value is given)
+Read back before it runs, in these words: "So that's a request for {name}: your {vehicle}, with {finish}, and work on {wheels} of its wheels for {damage}. That's for {slot}. We'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?" (a part in square brackets is said only when its value is given)
 
 A correction is read back by its changed values alone, after the caller heard the full read-back and did not confirm it, in these words: "Got it, {changes}. Is everything else right?", {changes} the phrase of each param changed, in this order, joined by commas and the last two by "and":
 
@@ -114,7 +114,7 @@ A correction is read back by its changed values alone, after the caller heard th
 
 Read back in full instead where a value was cleared, or the values are the same as the last read-back (the caller asked to hear it all). The yes to a short read-back confirms every value, as the yes to the full one does.
 
-Said again held, after the caller spoke over it before hearing it, in these words: "That's {name}, your {vehicle}, {damage} on {wheels} of its wheels, {finish}, {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
+Said again held, after the caller spoke over it before hearing it, in these words: "That's {name}, your {vehicle}, {finish}, work on {wheels} of its wheels for {damage}, for {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?" (a part in square brackets is said only when its value is given)
 
 Rules, in the order they run:
 

@@ -114,7 +114,10 @@ journeys:
     goal: "Send the shop the caller's request: a repair request with a drop-off window, or, where the caller wants a call rather than a drop-off, a callback note; read back and confirmed by the caller."
     instructions: >-
       Collect what send_request needs, in whatever order the caller gives it, and look the day up before offering
-      a window. Where the caller wants someone from the shop to call them instead, or can't or won't set up a
+      a window. The read-back holds nothing new to the caller: before send_request is called, they have heard from
+      you the window's day, its date and its drop-off time, and accepted it. Where they named a day and a time of
+      day that match exactly one window, tell them which window that is and ask whether it works, rather than
+      leaving them to hear it first in the read-back. Where the caller wants someone from the shop to call them instead, or can't or won't set up a
       drop-off, leave_callback carries it: their name, the number to call back, what it is about and any notes
       for the shop, and nothing else. Never say when someone will call back. Don't discuss dealership accounts
       or their rates. A request already sent on this call is not sent again; a change to it goes in a callback note
@@ -170,7 +173,8 @@ journeys:
     # assumption: the owner corrects these (a callback note for a dealership)
     instructions: >-
       Recognise the account before booking. Look the day up before offering a window, and book only into one
-      with room for every car. A callback note for the dealership is fine when the caller wants one. Never say
+      with room for every car. The read-back holds nothing new to the caller: before book_dealer is called, they
+      have heard from you the window's day, its date and its drop-off time, and accepted it. A callback note for the dealership is fine when the caller wants one. Never say
       when someone will call back.
     facts: # assumption: the owner corrects these
     - Dealership accounts are recognised by the number they call from and booked straight into a drop-off window, up to three cars in one window. # assumption: the owner corrects these
@@ -228,7 +232,7 @@ sources:
     kind: fake # the shop's stand-in calendar (src/shop.ts), from these days and windows
     days: [monday, tuesday, wednesday, thursday, friday] # assumption: the owner corrects these
     windows: # assumption: the owner corrects these (each holds up to three cars; `until` is the last time a car may be dropped off in it, in the shop's time zone, so today's window is not offered after it)
-      # Each label as said in a read-back and a text ("You've picked Friday, November 13, morning window, dropped off by 8 AM"):
+      # Each label as said in a read-back and a text ("That's for Friday, November 13, morning window, dropped off by 8 AM"):
       # "morning, by 8" read as a time of its own on a live call (2026-11-25).
       - { name: morning, label: "morning window, dropped off by 8 AM", capacity: 3, until: "08:00" }
       - { name: afternoon, label: "afternoon window, dropped off by 12 PM", capacity: 3, until: "12:00" }
@@ -261,27 +265,32 @@ actions:
     about: >-
       Send the shop a customer's repair request with the drop-off window they picked, for anyone who is not a
       dealership account. Ask whether we may text them at their number before calling it. Call it as soon as
-      you have every detail: the request is then read back to the customer and sent on their yes, so it is
-      not in until this is called and confirmed.
+      you have every detail, the drop-off window among them once the customer has heard its day, date and
+      drop-off time from you and accepted it: the request is then read back to the customer and sent on their
+      yes, so it is not in until this is called and confirmed.
     kind: change
     params:
       name: { type: text, about: "The customer's name, as they gave it." }
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
-      damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
+      # The read-back says it after "work on one of its wheels for": a value with where in it ("curb rash on front right
+      # wheel") read "with curb rash on front right wheel on one of its wheels" before (a simulated call, 2026-11-26).
+      damage: { type: text, about: "The kind of damage, with where it is when the customer says (which wheel, or where on it), short and in their own terms: a phrase the read-back says after the word for (for example: curb rash, curb rash on the front right, a deep scratch on the face), never a sentence, and never how many wheels, which wheels holds." }
       finish: { type: choice, options: [the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Pick from what the caller says: shiny, machined or bright metal is the bright metal finish; painted is the painted finish; a mix of both is the mixed metal finish; not sure, or they cannot say, is a finish the shop will check. The read-back says the option as it is. Whether it is diamond cut is the shop's to work out from it, never the caller's to hear." }
-      slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
+      slot: { type: slot, from: check_availability, about: "The drop-off window the customer accepted, from check_availability's results, after hearing its day, date and drop-off time from you." }
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
       notes: { type: text, optional: true, about: "Anything else the caller wants the shop to know, in short (for example: can't send a photo, call instead; or best reached after 3). Leave it out when there is nothing." }
     readBack:
       # Said as a person would on the phone, every value in it: as a form's labels ("damage: ..., finish: ...") it read
       # stilted on a live call (2026-11-25), though it looked fine in the chat.
-      en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
+      # "That's for {slot}" (the maintainer's choice, 2026-11-26): "You've picked" a date and a drop-off time the caller had
+      # never heard had them object to it, on a simulated call. The finish before the work, so the damage ends its phrase.
+      en: "So that's a request for {name}: your {vehicle}, with {finish}, and work on {wheels} of its wheels for {damage}. That's for {slot}. We'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
     # Said in its place where a read-back the caller talked over is said again held (readBacks.holdAfterCut): every value
     # still in it, a yes to it confirming them all, in about half the words.
     readBackBrief:
-      en: "That's {name}, your {vehicle}, {damage} on {wheels} of its wheels, {finish}, {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
+      en: "That's {name}, your {vehicle}, {finish}, work on {wheels} of its wheels for {damage}, for {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
     # A correction after the full read-back, said by the changed details alone (a live call, 2026-11-25: a caller who
     # corrected the car sat through the whole read-back again, twice). Every param has a phrase; a call again with the
     # same values (the caller asked to hear it all) is read back in full.
@@ -338,7 +347,7 @@ actions:
       cars: { type: choice, options: [one, two, three], about: "How many cars they are dropping off: a window holds three at most, so more go in another window as a booking of their own." }
       # Up to three cars, each with which wheels need work: longer than one car's description, so a bound of its own.
       vehicles: { type: text, max: 240, about: "The cars and which wheels need work, as the caller gives them (makes, models or stock numbers)." }
-      slot: { type: slot, from: check_availability, about: "The drop-off window they picked from check_availability's results, with room for all the cars." }
+      slot: { type: slot, from: check_availability, about: "The drop-off window the caller accepted, from check_availability's results, after hearing its day, date and drop-off time from you: one with room for all the cars." }
     readBack:
       en: "So that's {account}, {cars} in all: {vehicles}, for {slot}. Shall we book it?"
     then: [notify_shop_booking]

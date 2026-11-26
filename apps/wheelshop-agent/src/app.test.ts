@@ -89,7 +89,7 @@ describe('send_request', () => {
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
-      'So that\'s a request for Dana Example: your 2019 Honda Civic, with curb rash on one of its wheels, and the painted finish. You\'ve picked Tuesday, November 17, morning window, dropped off by 8 AM, we\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
+      'So that\'s a request for Dana Example: your 2019 Honda Civic, with the painted finish, and work on one of its wheels for curb rash. That\'s for Tuesday, November 17, morning window, dropped off by 8 AM. We\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
     ]);
     expect(sys.requests).toEqual([]);
     expect(provider.sent).toEqual([]);
@@ -141,11 +141,31 @@ describe('send_request', () => {
       const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
       await c.start();
       const [readBack] = await c.say('Tuesday morning please');
-      expect(readBack).toContain(`with curb rash on one of its wheels, and ${finish}. `);
+      expect(readBack).toContain(`your 2019 Honda Civic, with ${finish}, and work on one of its wheels for curb rash. `);
       expect(readBack).not.toContain('diamond cut');
       await c.say('yes');
       expect(sys.requests).toMatchObject([{ ref: 'R101', finish, diamondCut }]);
       expect(provider.sent.map((t) => t.body)).toEqual([`New request from Dana Example (5555550111): 2019 Honda Civic, curb rash, one wheel${summary}. Drop-off: Tuesday, November 17, morning.`]);
+    }
+  });
+
+  it('reads a damage with where it is in it as a person would, whatever the count of wheels (a simulated call, 2026-11-26: "with curb rash on front right wheel on one of its wheels")', async () => {
+    for (const [wheels, damage, said] of [
+      ['one', 'curb rash on the front right', 'work on one of its wheels for curb rash on the front right. '],
+      ['one', 'a scratch', 'work on one of its wheels for a scratch. '],
+      ['two', 'scuffs on the rim', 'work on two of its wheels for scuffs on the rim. '],
+      ['four', 'curb rash', 'work on four of its wheels for curb rash. '],
+    ] as const) {
+      const { app } = wheelshop({ now: () => NOW });
+      const script: ConverseModelEvent[][] = [
+        ...dropped(),
+        [call('c1', 'check_availability', { day: TUESDAY }), done('tool')],
+        [call('c2', 'send_request', { ...REQUEST, wheels, damage, textOk: 'no' }), done('tool')],
+      ];
+      const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), now: () => new Date(NOW), texts: fakeTextProvider(), env: { SHOP_PHONE } });
+      await c.start();
+      const [readBack] = await c.say('Tuesday morning please');
+      expect(readBack).toBe(`So that's a request for Dana Example: your 2019 Honda Civic, with the painted finish, and ${said}That's for Tuesday, November 17, morning window, dropped off by 8 AM. We'll reach you on 555 555 0111, and you said no to texts there. Did I get that right?`);
     }
   });
 
