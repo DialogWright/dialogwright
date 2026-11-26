@@ -37,7 +37,7 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   by its changed values alone where the business words that (agent.yaml's readBackChange; ConverseState.heardReadBack),
  *   the yes to it confirming every value; called again with the same values, it is read back in full;
  * - on a call, a change called again with the same values after the caller spoke over its read-back before hearing it is
- *   read back held (agent.yaml's readBacks.holdAfterCut; ConverseState.unheardReadBack): said whole and not interruptible
+ *   read back held (agent.yaml's readBacks.holdAfterCut; ConverseState.unheardReadBacks): said whole and not interruptible
  *   (Out.say's `held`), its brief version (readBackBrief) where the action gives one; once per change, so one not confirmed
  *   is followed by the usual read-back, until the change is confirmed, withdrawn or its journey no longer offers it;
  * - a clear no to a read-back that says nothing of what should be different is answered by the business's line for it
@@ -295,6 +295,8 @@ interface Turn {
   withdrawal?: { action: string; reading: Promise<number | null>; settled: boolean };
   /** The change kept unsent as the turn read or let go of it, for the trace. */
   unsent?: ConverseTraceRecord['unsent'];
+  /** The caller's words answered a read-back they did not hear, kept to be held: the model may call it again in this turn, so its words wait for its calls. */
+  heldMayFollow?: true;
 }
 
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
@@ -324,6 +326,8 @@ class Speaker {
    * is held goes held from its first word and nothing that can be talked over plays ahead of it; null when not deferred.
    */
   private deferred: { piece: string; final: boolean }[] | null = null;
+  /** The round's text as endRound kept it (in the turn's replies, the conversation and the model's own words) while its pieces were deferred. */
+  private deferredReply: string | null = null;
 
   constructor(private readonly t: Turn) {}
 
@@ -353,16 +357,52 @@ class Speaker {
     this.deferred ??= [];
   }
 
-  /** The pieces kept are sent, held or not, in order, and the deferral ends; where the turn was stopped they are never sent. */
-  flush(held: boolean): void {
+  /**
+   * The pieces kept are sent, held or not, in order, and the deferral ends. Where the turn was stopped they are never
+   * sent, and are taken back (takeBack): the result says whether any were.
+   */
+  flush(held: boolean): boolean {
     const kept = this.deferred;
     this.deferred = null;
-    if (kept === null || kept.length === 0 || cut(this.t)) return;
+    if (kept === null || kept.length === 0) {
+      this.deferredReply = null;
+      return false;
+    }
+    if (cut(this.t)) {
+      this.takeBack();
+      return true;
+    }
+    this.deferredReply = null;
     clearBridge(this.t);
     for (const k of kept) {
       if (held) this.t.out.say(k.piece, k.final, true);
       else this.t.out.say(k.piece, k.final);
     }
+    return false;
+  }
+
+  /** Whether pieces are kept and not yet sent: a turn that throws takes them back (takeBack). */
+  get unsent(): boolean {
+    return this.deferred !== null && this.deferred.length > 0;
+  }
+
+  /**
+   * Pieces deferred and never sent taken back: what the round had said so far (all of it kept, as the round was deferred
+   * from its start) and its text where endRound kept it, out of the turn's replies, the model's own words and the
+   * conversation, so neither the model nor the console is told of a line the caller never heard.
+   */
+  takeBack(): void {
+    this.deferred = null;
+    this.said = '';
+    this.sentences.rest();
+    const reply = this.deferredReply;
+    this.deferredReply = null;
+    if (reply === null) return;
+    const at = this.t.replies.lastIndexOf(reply);
+    if (at >= 0) this.t.replies.splice(at, 1);
+    const own = this.t.own.lastIndexOf(reply);
+    if (own >= 0) this.t.own.splice(own, 1);
+    unsay(this.t.st, reply);
   }
 
   delta(d: string): void {
@@ -420,6 +460,7 @@ class Speaker {
     const all = (this.said + (saidRest ?? '')).trim();
     this.said = '';
     if (all !== '') this.t.replies.push(all);
+    if (this.deferred !== null && all !== '') this.deferredReply = all;
     return all;
   }
 
@@ -454,6 +495,19 @@ function add(st: ConverseState, role: ModelMessage['role'], content: ModelConten
   const last = st.messages.at(-1);
   if (last?.role === role) last.content.push(...content);
   else st.messages.push({ role, content });
+}
+
+/** A text of the line's taken out of the conversation: the latest of its messages holding it, dropped where nothing is left of it. */
+function unsay(st: ConverseState, text: string): void {
+  for (let m = st.messages.length - 1; m >= 0; m--) {
+    const msg = st.messages[m]!;
+    if (msg.role !== 'assistant') continue;
+    const at = msg.content.findIndex((c) => c.type === 'text' && c.text === text);
+    if (at < 0) continue;
+    msg.content.splice(at, 1);
+    if (msg.content.length === 0) st.messages.splice(m, 1);
+    return;
+  }
 }
 
 async function record(t: Turn, d: AuditDraft): Promise<void> {
@@ -1251,7 +1305,7 @@ function keepHeard(t: Turn, p: PendingReadBack): void {
 }
 
 /**
- * A read-back the caller did not hear is kept (ConverseState.unheardReadBack), on a call with agent.yaml's
+ * A read-back the caller did not hear is kept by its action (ConverseState.unheardReadBacks), on a call with agent.yaml's
  * readBacks.holdAfterCut on, so a call of its action again with the same values is read back held. A held one said for
  * its action stays said (once per change), whatever values the later one had.
  */
@@ -1260,6 +1314,7 @@ function keepUnheard(t: Turn, p: PendingReadBack): void {
   const before = t.st.unheardReadBacks?.[p.action];
   const held = p.held === true || before?.held === true;
   t.st.unheardReadBacks = { ...t.st.unheardReadBacks, [p.action]: { params: { ...p.params }, ...(held ? { held: true as const } : {}) } };
+  if (!held) t.heldMayFollow = true;
 }
 
 /** Whether read-backs are held on this call: a call, with agent.yaml's readBacks.holdAfterCut on. */
@@ -1277,7 +1332,7 @@ function holdsNow(t: Turn, action: string, params: Readonly<Record<string, strin
 }
 
 /** Whether a round may read a change back held: some change's read-back was not heard and none has been held for it yet. */
-const holdDue = (t: Turn): boolean => holding(t) && t.st.pending === null && Object.values(t.st.unheardReadBacks ?? {}).some((u) => u.held !== true);
+const holdDue = (t: Turn): boolean => t.heldMayFollow === true && holding(t) && t.st.pending === null && Object.values(t.st.unheardReadBacks ?? {}).some((u) => u.held !== true);
 
 /** The not-heard read-back of `action` let go, its entry taken out (and the record with its last entry). */
 function letGoUnheard(t: Turn, action: string): void {
@@ -1644,6 +1699,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   try {
     return await turnBody(t, sp, input, now);
   } catch (e) {
+    // Words held back for a read-back that may have been held, never sent: not the line's (the caller never heard them).
+    if (sp.unsent) sp.takeBack();
     let record: ConverseTraceRecord | null = null;
     try {
       record = { ...traceRecordOf(t, input, now).record, failed: 'internal' };
@@ -1739,6 +1796,8 @@ export function lineSaid(st: ConverseState, text: string): void {
 /** The turn's work once its clock, speaker and bridge are set up: converseTurn's, which clears the bridge after it. */
 async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<ConverseState> {
   const { st, deps, out } = t;
+  // A read-back not heard kept for an action the business no longer has (a state saved before it changed) is let go.
+  for (const action of Object.keys(st.unheardReadBacks ?? {})) if (!Object.hasOwn(deps.business.actions, action)) letGoUnheard(t, action);
   if (input.kind === 'start') {
     if (hasJourneys(deps.business)) {
       st.journey = initialJourney(deps.business, st.caller);

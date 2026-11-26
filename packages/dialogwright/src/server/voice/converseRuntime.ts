@@ -191,10 +191,8 @@ interface Live {
   ignored: number[];
   /** The run of speech signs since the caller's last final words (a partial, an interrupt, the caller heard speaking); null: none. */
   run: Run | null;
-  /** The run before it, where no final words came between them: speech that may have gone on over a held line's end. */
+  /** The run before it, where no final words came between them. */
   prevRun: Run | null;
-  /** When the last final words ignored over the held read-back came: words that go straight on from them are ignored too. */
-  droppedAt: number | null;
   /** Telnyx reports the caller speaking now (clientSpeaking on, not yet off). */
   callerSpeaking: boolean;
   /** The lines sent, oldest first, each with its reply (a few kept): a carrier's report of a line played is the first of them with its words. */
@@ -212,10 +210,9 @@ const SENT_LINES_KEPT = 32;
 export const SPEECH_RUN_GAP_MS = 1000;
 
 /**
- * A report of the held read-back's own words played, coming once at least this share of its estimate has passed since it
- * began, is its own even where the order of the reports gives it to an earlier line with the same words (a held
- * read-back with no brief one says the first one's words): Telnyx may not report a line cut short, and no voice plays a
- * line in half its estimate. A report sooner than that is a late one of the earlier line.
+ * No report that a held read-back has played ends its hold sooner than this share of its estimate after it began: no
+ * voice plays a line in half its estimate, so an earlier report is a late one of another line (a held read-back with no
+ * brief one says the first one's words) or a report out of turn, and the hold goes on.
  */
 const HELD_REPORT_AT = 0.5;
 
@@ -329,7 +326,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   const liveOf = (e: ConverseCallEntry): Live => {
     let l = lives.get(e.callSid);
     if (l === undefined) {
-      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [], ignored: [], run: null, prevRun: null, droppedAt: null, callerSpeaking: false, sentLines: [] };
+      l = { io: null, running: null, reply: null, speechAt: null, agentSpeaking: false, reports: false, unmasked: false, correction: null, generation: 0, scrubs: [], ignored: [], run: null, prevRun: null, callerSpeaking: false, sentLines: [] };
       lives.set(e.callSid, l);
     }
     return l;
@@ -407,8 +404,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
 
   /**
    * When the last reply's held read-back counts as played, or null where it holds none: with the carrier's playback reports
-   * (Telnyx), its report that the line played, else (not yet reported) twice its estimate and two seconds from when it
-   * began, a ceiling, as a correction waits; with none (Twilio, which reports nothing of a line's playback), when
+   * (Telnyx), its report that the line played (heldReported), else (not yet reported) one and a half times its estimate
+   * and two seconds from when it began, a ceiling; with none (Twilio, which reports nothing of a line's playback), when
    * READ_BACK_HEARD_AT of its estimate has played (the maintainer's ruling, 2026-11-26: a line 85% heard already counts
    * as heard, READ_BACK_HEARD_AT, so a caller who begins past that point has heard what a yes needs heard; an estimate a
    * little long would otherwise ignore a caller who waited for the end of a voice faster than it). It begins once the
@@ -420,7 +417,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     if (r.heldPlayedAt !== null) return r.heldPlayedAt;
     const start = heldStart(r) ?? r.held.at;
     const estimate = textEstimateMs(r.held.text);
-    return l.reports ? start + estimate * 2 + 2000 : start + READ_BACK_HEARD_AT * estimate;
+    return l.reports ? start + estimate * 1.5 + 2000 : start + READ_BACK_HEARD_AT * estimate;
   };
 
   /** When a run's last sign came; a run still going (Telnyx's caller heard speaking, not yet stopped), now. */
@@ -468,19 +465,6 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const over = last < estimated - SPEECH_RUN_GAP_MS;
     const fits = run.start >= estimated - SPEECH_START_SLACK_MS || last >= arrival - SPEECH_RUN_GAP_MS;
     return !stray && !over && fits ? run.start : estimated;
-  };
-
-  /**
-   * Whether final words that began at `began`, after a held read-back's end, go straight on from speech over it, and are
-   * ignored too: they began within a run's pause of final words ignored over it, or of the end of a run of signs that
-   * began before the line's end and went on past it.
-   */
-  const goesOn = (l: Live, began: number, end: number): boolean => {
-    if (l.droppedAt !== null && began - l.droppedAt <= SPEECH_RUN_GAP_MS) return true;
-    const prev = l.prevRun;
-    if (prev === null) return false;
-    const last = runLast(prev);
-    return prev.start < end && last >= end && began - Math.max(end, last) <= SPEECH_RUN_GAP_MS;
   };
 
   /** Whether a held read-back plays now: speech over it is no cut-in, and stops nothing. */
@@ -537,21 +521,19 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /**
-   * Whether a carrier's report of `text` played (`reported`, the line it was matched to by the order sent) is the held
-   * read-back's own: that line is it, or, where the order gives it to an earlier line with the same words, it came at
-   * least HELD_REPORT_AT of the read-back's estimate after it began.
+   * Whether a carrier's report ends the hold of the reply's held read-back (Telnyx): never sooner than HELD_REPORT_AT of its
+   * estimate after it began; then the report of its own line, matched by the order the lines were sent (`reported`); or,
+   * where no line sent matches the report, one whose words end with the held read-back's (the reply's lines joined,
+   * playedOut); or the voice stopping (agentSpeaking off, `reported` undefined). A report matched to an earlier line (a
+   * late one of the first read-back's same words) never ends it.
    */
-  const reportsHeld = (l: Live, r: Reply, text: string, reported: { line: Sent } | null): boolean => {
+  const heldReported = (r: Reply, reported: { line: Sent } | null | undefined): boolean => {
     const held = r.held;
-    if (held === null) return false;
-    if (reported !== null && reported.line === held) return true;
-    if (folded(text) !== folded(held.text)) return false;
-    const late = now() >= (heldStart(r) ?? held.at) + HELD_REPORT_AT * textEstimateMs(held.text);
-    if (late) {
-      const own = l.sentLines.findIndex((s) => s.line === held);
-      if (own >= 0) l.sentLines.splice(0, own + 1);
-    }
-    return late;
+    if (held === null || r.heldPlayedAt !== null) return false;
+    if (now() < (heldStart(r) ?? held.at) + HELD_REPORT_AT * textEstimateMs(held.text)) return false;
+    if (reported === undefined) return true;
+    if (reported !== null) return reported.line === held;
+    return playedOut(r);
   };
 
   /** Sends a waiting correction once the reply before it has played, unless the caller has begun to speak or a turn has begun. */
@@ -616,7 +598,6 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     // (Stopped before the turn begins, the turn still runs, at once stopped: the caller's words are kept.)
     const reply = newReply();
     l.reply = reply;
-    l.droppedAt = null;
     l.running = running;
     // Words the caller went on from before this turn began (a later final prompt): it runs already stopped,
     // so its words are kept in the conversation and the latest turn answers them all at once.
@@ -790,18 +771,18 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const end = heldEnd(l);
     if (end !== null) {
       const began = speechBegan(l, text);
-      const over = began < end || goesOn(l, began, end);
-      signsSaid(l);
-      if (over) {
+      if (began < end) {
+        // The run of signs is kept: more of the same speech (signs within a run's pause, Telnyx's caller still heard
+        // speaking) begins before the line's end too, and is ignored with it. A new run is new speech.
+        l.prevRun = null;
         l.speechAt = null;
-        l.droppedAt = now();
         l.ignored.push(text.length);
         io.record('log', { ignoredOverHeld: text.length });
         return Promise.resolve();
       }
       // Taken after a held read-back: what the caller heard of it is read from when these words began (any sign before
       // them was of other speech, or of speech over the line, which is ignored, and never these words' start).
-      l.droppedAt = null;
+      signsSaid(l);
       l.speechAt = began;
     } else signsSaid(l);
     // A correction still waiting was not heard: dropped first, so the turn is told so.
@@ -882,7 +863,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         l.speechAt ??= now();
         // Fail closed on the events' order: speech while a reply's last line is not reported played is a cut-in,
         // whether or not agentSpeaking on came first (Telnyx has sent clientSpeaking 24 ms after a reply, before it).
-        if (l.agentSpeaking || unplayed(r)) cutIn(l);
+        // A held read-back whose hold has ended (its report, the voice stopping, or the ceiling) has played: speech after it is no cut-in.
+        const heldOver = r !== null && r.held !== null && (heldEnd(l) ?? Infinity) <= now();
+        if (l.agentSpeaking || (unplayed(r) && !heldOver)) cutIn(l);
         else dropCorrection(l);
         return;
       }
@@ -891,18 +874,21 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       if (ev.state === 'started') {
         l.agentSpeaking = true;
         if (r !== null && r.frames.length > 0 && (l.speechAt === null || holds)) r.began = true;
-      } else if (ev.text === undefined) l.agentSpeaking = false;
-      else {
+      } else if (ev.text === undefined) {
+        l.agentSpeaking = false;
+        // The voice stopped: the held read-back has played, where it is not too soon (heldReported).
+        if (holds && heldReported(r, undefined)) r.heldPlayedAt = now();
+      } else {
         const reported = takeReported(l, ev.text);
-        // The held read-back's end is its own report, matched by the order the lines were sent, never a late one of the
-        // earlier read-back's same words; a cut one ends too, as reported (the cut is kept: its yes confirms nothing).
-        if (holds && r.heldPlayedAt === null && reportsHeld(l, r, ev.text, reported)) r.heldPlayedAt = now();
         // What played is what the carrier reported before the caller began to speak: Telnyx reports the text it
         // handed to its voice, a whole line at once even when the audio stopped on the caller's barge-in.
         if (r !== null && (l.speechAt === null || holds) && !r.cutIn && folded(ev.text) !== r.bridge) {
           r.played = joined(r.played, ev.text);
           if (r.frames.length > 0) r.began = true;
         }
+        // The held read-back's end is its own report, matched by the order the lines were sent, never a late one of the
+        // earlier read-back's same words; a cut one ends too, as reported (the cut is kept: its yes confirms nothing).
+        if (holds && heldReported(r, reported)) r.heldPlayedAt = now();
       }
       const c = l.correction;
       if (c !== null && playedOut(c.after)) sayCorrection(l, c);

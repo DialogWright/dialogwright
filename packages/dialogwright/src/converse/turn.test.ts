@@ -3399,6 +3399,68 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
     expect(h.held).toEqual([READ_BACK, noteReadBack]);
   });
 
+  /** A model answering with scripted rounds, where a round's `wait` holds it there until the test lets it go (or the request is aborted). */
+  function waitingModel(rounds: (ModelEvent | { wait: Promise<void> })[][]): ConverseModel {
+    let next = 0;
+    return {
+      id: 'fake',
+      async *stream(_req, signal) {
+        const round = rounds[next++] ?? [];
+        for (const step of round) {
+          if ('wait' in step) {
+            const stopped = await Promise.race([step.wait.then(() => false), new Promise<boolean>((r) => (signal.aborted ? r(true) : signal.addEventListener('abort', () => r(true), { once: true })))]);
+            if (stopped) {
+              yield { type: 'error', kind: 'timeout', detail: 'aborted' };
+              return;
+            }
+            continue;
+          }
+          yield step;
+        }
+      },
+    };
+  }
+
+  it('only the turn after a read-back not heard holds back its words: a later turn on something else streams at once', async () => {
+    let go!: () => void;
+    const wait = new Promise<void>((r) => (go = r));
+    const model = waitingModel([...lookupThenBook, [text('Shall I read it again?'), done()], [text('Fridays are quiet. '), text('Let me look'), { wait }, call('c5', 'check_availability', { day: FRIDAY }), done('tool')], [text('Friday is open.'), done()]]);
+    const h = harness([], { edit: off, jev: answers(), model });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'yes', heard: CUT });
+    expect(h.said.at(-1)).toEqual(['Shall I read it again?', true]);
+    // The hold stays for the visit, but this turn on something else streams as it is written.
+    expect(s.unheardReadBacks).toEqual({ book: { params: LAMP } });
+    const turn = h.run(s, { kind: 'text', text: 'actually, is Friday busy?' });
+    await vi.waitFor(() => expect(h.said.map(([t]) => t.trim())).toContain('Fridays are quiet.'));
+    go();
+    s = await turn;
+    expect(h.said.at(-1)).toEqual(['Friday is open.', true]);
+  });
+
+  it('words held back and never sent (the turn stopped) are in neither the turn\'s replies, its record nor the conversation', async () => {
+    let go!: () => void;
+    const wait = new Promise<void>((r) => (go = r));
+    const model = waitingModel([...lookupThenBook, [text('Sure. '), text('Let me read'), { wait }, call('c3', 'book', LAMP), done('tool')]]);
+    const h = harness([], { edit: off, jev: answers(), model });
+    let s = await upToReadBack(h);
+    const ac = new AbortController();
+    const turn = converseTurn(s, { kind: 'text', text: 'yes', heard: CUT }, h.deps, h.out, ac.signal);
+    await new Promise((r) => setTimeout(r, 20));
+    ac.abort();
+    s = await turn;
+    void go;
+    expect(h.said.map(([t]) => t)).not.toContain('Sure.');
+    expect(h.traces.at(-1)!.replies).toEqual([]);
+    expect(JSON.stringify(s.messages)).not.toContain('Sure.');
+  });
+
+  it('a read-back not heard kept for an action the business no longer has is let go', async () => {
+    const h = harness([[text('Hello.'), done()]], { edit: off, jev: answers() });
+    const s = await h.run({ ...fresh(), unheardReadBacks: { gone: { params: { x: 'y' } }, book: { params: LAMP } } }, { kind: 'text', text: 'hi' });
+    expect(s.unheardReadBacks).toEqual({ book: { params: LAMP } });
+  });
+
   it('the speech over a held line the channel ignored is in the next turn\'s record by its length', async () => {
     const h = harness([...lookupThenBook, again('c3', LAMP), [text('Booked.'), done()]], { edit: off, jev: answers() });
     let s = await upToReadBack(h);

@@ -362,8 +362,9 @@ Say `I need to move my appointment to next week`, then quit.
 3. **Begin near the end.** Again, start speaking just before the held read-back ends and go on after it: the whole utterance is ignored (its speech began while it played), and the next thing you say is taken.
 4. **A voice faster than the estimate (Twilio).** Wait for the held read-back's very end and say "yes" at once: it is taken. Note in the results log if it was ignored (the estimate's end fell after the voice's).
 5. **Once.** Say "no" to the held read-back: the one after it can be talked over again.
+6. **The carrier's own handling (Telnyx).** Talk over the held read-back and read the frame log: whether Telnyx sends an `interrupt` over a line sent `interruptible: false`, and whether it stops the audio (you hear the line stop). Either way nothing is acted on, and where it sends an `interrupt` with you heard speaking, the trace's next `heard` says `cutIn: true` and a yes confirms nothing. Note both in the results log: if Telnyx stops the audio, a caller who talks over the held line hears it cut and must be asked again.
 
-**Record.** One row per carrier and step in the results log, with whether the carrier played the held line on over speech (on Telnyx, whether `interruptible: false` on a text frame held), and how long after its real end the first answer was taken on Twilio.
+**Record.** One row per carrier and step in the results log, with whether the carrier played the held line on over speech (on Telnyx, whether `interruptible: false` on a text frame held, whether it sent `interrupt` over it, and whether it stopped the audio), and how long after its real end the first answer was taken on Twilio.
 
 ## Results log
 
