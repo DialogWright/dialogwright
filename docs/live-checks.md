@@ -366,6 +366,21 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log, with whether the carrier played the held line on over speech (on Telnyx, whether `interruptible: false` on a text frame held, whether it sent `interrupt` over it, and whether it stopped the audio), and how long after its real end the first answer was taken on Twilio.
 
+## 22. A silence on an agent app's call
+
+**Why.** On a call, an agent app answers a caller who says nothing for `silence.afterMs` (default 9 s) once its reply has played, and ends the call with `lines.silenceEnd` after `silence.reprompts` (default 1) such answers and one more silence ([the guide's 18.9](guide/18-agent-mode.md#189-on-the-phone); the maintainer's decision, 2026-11-26). The tests hold it on a fake clock; when a real voice's reply ends, and how the model answers a silence, is a call's to say.
+
+**Set.** The wheel shop on the converse runtime (`apps/wheelshop-agent`), on Twilio and on Telnyx.
+
+**Do and look for.**
+
+1. **A re-prompt.** After the line asks you a question, say nothing. About 9 s after its words end, the line answers the silence in a short reply (the model's own words; `lines.silence` only where the model failed). The console's call view shows "no reply for 9 s (1 in a row)".
+2. **The goodbye.** Stay quiet again: about 9 s after that reply ends, the line says its `silenceEnd` line and the call ends. The audit's `call_ended` row says `silence`.
+3. **Thinking aloud.** Say "um" just before the 9 s, then nothing: the wait starts again from your "um" (no re-prompt 9 s after the line's words).
+4. **After a held read-back.** At a held read-back, say nothing: the re-prompt comes about 9 s after the held line ends, and nothing was confirmed.
+
+**Record.** One row per carrier and step in the results log, with how long after the line's words ended the re-prompt came (on Twilio its estimate decides; note a voice slower than the estimate, which makes the wait shorter than 9 s).
+
 ## Results log
 
 One row per check run. Keep earlier rows.
