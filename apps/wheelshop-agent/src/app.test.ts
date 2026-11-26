@@ -66,7 +66,7 @@ function routingJev(): JevClient & { asked: JevRequest[] } {
 const routeAsks = (j: { asked: JevRequest[] }): JevRequest[] => j.asked.filter((r) => Object.hasOwn(r.questions, 'task'));
 const toolNames = (m: { requests: readonly unknown[] }, i = -1): string[] => (m.requests.at(i) as { tools: { name: string }[] }).tools.map((t) => t.name);
 
-const REQUEST = { name: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', finish: 'painted', slot: `${TUESDAY}:morning`, callbackNumber: '555 555 0111' };
+const REQUEST = { name: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', finish: 'the painted finish', slot: `${TUESDAY}:morning`, callbackNumber: '555 555 0111' };
 
 /** The model's side of a request: a lookup, the request called, then a reply after the caller's answer. */
 const requestScript = (textOk: string): ConverseModelEvent[][] => [
@@ -89,13 +89,13 @@ describe('send_request', () => {
     const room = sys.roomIn(TUESDAY, 'morning');
     expect(await c.say('I curbed my Civic, can I bring it in Tuesday morning?')).toEqual([
       'Let me check Tuesday. ',
-      'So that\'s a request for Dana Example: your 2019 Honda Civic, with curb rash on one of its wheels, and for the finish, painted. You\'ve picked Tuesday, November 17, morning window, dropped off by 8 AM, we\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
+      'So that\'s a request for Dana Example: your 2019 Honda Civic, with curb rash on one of its wheels, and the painted finish. You\'ve picked Tuesday, November 17, morning window, dropped off by 8 AM, we\'ll reach you on 555 555 0111, and you said yes to texts there. Did I get that right?',
     ]);
     expect(sys.requests).toEqual([]);
     expect(provider.sent).toEqual([]);
 
     expect(await c.say('yes, that is right')).toEqual(['Thanks, it is in.']);
-    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', diamondCut: 'no', finish: 'painted', day: TUESDAY, window: 'morning', callbackNumber: '5555550111', textOk: 'yes' }]);
+    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2019 Honda Civic', wheels: 'one', damage: 'curb rash', diamondCut: 'no', finish: 'the painted finish', day: TUESDAY, window: 'morning', callbackNumber: '5555550111', textOk: 'yes' }]);
     expect(sys.roomIn(TUESDAY, 'morning')).toBe(room - 1);
     expect(provider.sent.map((t) => [t.to, t.body])).toEqual([
       [RETAIL, 'Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we\'ll send you a price. Reply STOP to opt out.'],
@@ -127,9 +127,9 @@ describe('send_request', () => {
     ]);
   });
 
-  it('reads the finish back in the caller\'s own words, and the shop sees from them whether it is diamond cut', async () => {
+  it('reads the finish back as the caller\'s finish, never the shop\'s name for it, and the shop sees from it whether it is diamond cut', async () => {
     // A live call (2026-11-25): the caller said "a mix of both" and the read-back said "diamond cut", the shop's name for it.
-    for (const [finish, diamondCut, summary] of [['a mix of both', 'yes', ', diamond cut'], ['bright metal', 'yes', ', diamond cut'], ['not sure', 'not sure', ', not sure if diamond cut']] as const) {
+    for (const [finish, diamondCut, summary] of [['the mixed metal finish', 'yes', ', diamond cut'], ['the bright metal finish', 'yes', ', diamond cut'], ['the painted finish', 'no', ''], ['a finish the shop will check', 'not sure', ', not sure if diamond cut']] as const) {
       const provider = fakeTextProvider();
       const { app, sys } = wheelshop({ now: () => NOW });
       const script: ConverseModelEvent[][] = [
@@ -141,7 +141,7 @@ describe('send_request', () => {
       const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
       await c.start();
       const [readBack] = await c.say('Tuesday morning please');
-      expect(readBack).toContain(`and for the finish, ${finish}. `);
+      expect(readBack).toContain(`with curb rash on one of its wheels, and ${finish}. `);
       expect(readBack).not.toContain('diamond cut');
       await c.say('yes');
       expect(sys.requests).toMatchObject([{ ref: 'R101', finish, diamondCut }]);
@@ -167,7 +167,7 @@ describe('send_request', () => {
     expect(await c.say("no, it's a 2022 Toyota Tacoma")).toEqual(['Got it, your 2022 Toyota Tacoma. Is everything else right?']);
     expect(await c.say('no, two wheels, and the afternoon')).toEqual(['Got it, work on two of its wheels and Tuesday, November 17, afternoon window, dropped off by 12 PM. Is everything else right?']);
     expect(await c.say('yes')).toEqual(['Thanks, it is in.']);
-    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2022 Toyota Tacoma', wheels: 'two', damage: 'curb rash', finish: 'painted', day: TUESDAY, window: 'afternoon', callbackNumber: '5555550111', textOk: 'no' }]);
+    expect(sys.requests).toMatchObject([{ ref: 'R101', callerName: 'Dana Example', vehicle: '2022 Toyota Tacoma', wheels: 'two', damage: 'curb rash', finish: 'the painted finish', day: TUESDAY, window: 'afternoon', callbackNumber: '5555550111', textOk: 'no' }]);
     expect(c.audit.filter((r) => r.type === 'confirmed' && r.detail.action === 'send_request').map((r) => r.detail)).toEqual([expect.objectContaining({ short: true, changes: ['wheels', 'slot'] })]);
   });
 

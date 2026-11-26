@@ -265,7 +265,7 @@ actions:
       vehicle: { type: text, about: "The car as the customer names it (a make alone is enough), with its model and year where they give them." }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels need work. }
       damage: { type: text, about: "What the damage is and where, short and in the customer's own terms (a name for the damage, not a sentence)." }
-      finish: { type: choice, options: [bright metal, painted, a mix of both, not sure], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Each option is the caller's own answer, so the read-back says what they said: bright metal all over, painted all over, a mix of both, or not sure where they cannot say. Whether it is diamond cut is the shop's to work out from it, never the caller's to hear." }
+      finish: { type: choice, options: [the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check], about: "The wheel's face, asked plainly: is it bright metal coloured, painted (such as grey or black), or a combination of both? Pick from what the caller says: shiny, machined or bright metal is the bright metal finish; painted is the painted finish; a mix of both is the mixed metal finish; not sure, or they cannot say, is a finish the shop will check. The read-back says the option as it is. Whether it is diamond cut is the shop's to work out from it, never the caller's to hear." }
       slot: { type: slot, from: check_availability, about: The drop-off window they picked from check_availability's results. }
       callbackNumber: { type: phone, about: The best number to reach them on. }
       textOk: { type: choice, options: ["yes", "no"], about: "Whether they agreed to be texted at that number, as they answered when asked." }
@@ -273,11 +273,11 @@ actions:
     readBack:
       # Said as a person would on the phone, every value in it: as a form's labels ("damage: ..., finish: ...") it read
       # stilted on a live call (2026-11-25), though it looked fine in the chat.
-      en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and for the finish, {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
+      en: "So that's a request for {name}: your {vehicle}, with {damage} on {wheels} of its wheels, and {finish}. You've picked {slot}, we'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
     # Said in its place where a read-back the caller talked over is said again held (readBacks.holdAfterCut): every value
     # still in it, a yes to it confirming them all, in about half the words.
     readBackBrief:
-      en: "That's {name}, your {vehicle}, {damage} on {wheels} of its wheels, the finish {finish}, {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
+      en: "That's {name}, your {vehicle}, {damage} on {wheels} of its wheels, {finish}, {slot}, on {callbackNumber}, and {textOk} to texts.[ And the note: {notes}.] Is that right?"
     # A correction after the full read-back, said by the changed details alone (a live call, 2026-11-25: a caller who
     # corrected the car sat through the whole read-back again, twice). Every param has a phrase; a call again with the
     # same values (the caller asked to hear it all) is read back in full.
@@ -290,7 +290,7 @@ actions:
           vehicle: "your {vehicle}"
           wheels: "work on {wheels} of its wheels"
           damage: "{damage}"
-          finish: "the finish, {finish}"
+          finish: "{finish}"
           slot: "{slot}"
           callbackNumber: "we'll reach you on {callbackNumber}"
           textOk: "{textOk} to texts there"
@@ -316,7 +316,7 @@ actions:
       vehicle: { type: text, about: The car. }
       wheels: { type: choice, options: [one, two, three, four], about: How many wheels. }
       damage: { type: text, about: The damage. }
-      finish: { type: choice, options: [bright metal, painted, a mix of both, not sure], about: "The wheel's face, as the caller described it." }
+      finish: { type: choice, options: [the bright metal finish, the painted finish, the mixed metal finish, a finish the shop will check], about: "The wheel's face, as the caller described it." }
       slot: { type: slot, from: check_availability, about: The drop-off window. }
       callbackNumber: { type: phone, about: The customer's number. }
       textOk: { type: choice, options: ["yes", "no"], about: Whether they agreed to texts. }

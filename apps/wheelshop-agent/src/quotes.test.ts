@@ -23,7 +23,7 @@ const HOUR = 60 * 60 * 1000;
 /** Monday, November 9, 2026, 8:05 in the morning in Los Angeles. */
 const T0 = Date.parse('2026-11-09T16:05:00Z');
 const SHOP = '+15555550190';
-const REQUEST = { name: 'Jordan Lee', vehicle: '2020 BMW 3 Series', wheels: 'one', damage: 'curb rash', finish: 'a mix of both', slot: '2026-11-12:morning', callbackNumber: '+15555550177', textOk: 'yes' };
+const REQUEST = { name: 'Jordan Lee', vehicle: '2020 BMW 3 Series', wheels: 'one', damage: 'curb rash', finish: 'the mixed metal finish', slot: '2026-11-12:morning', callbackNumber: '+15555550177', textOk: 'yes' };
 /** The page's forms, as a test draws them. */
 const FORMS = { action: '/wheelshop-agent/shop/quote', withdraw: '/wheelshop-agent/shop/withdraw', token: () => 't' };
 const QUOTE_TEXT = 'Example Wheel Works: your quote for the wheel on your 2020 BMW 3 Series is $180. We can take it Thursday, Nov 12, morning window, dropped off by 8 AM. Reply CONFIRM to book it.';

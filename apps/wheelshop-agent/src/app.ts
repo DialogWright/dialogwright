@@ -39,11 +39,11 @@ export const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 const APP_ID = 'wheelshop-agent';
 
 /**
- * Whether a request's wheel is diamond cut, as the shop page and its summary say it: worked out from the finish in the
- * caller's own words (bright metal, or a mix of bright metal and paint, is diamond cut), so the read-back says what
- * they said and never the shop's name for it (a live call, 2026-11-25).
+ * Whether a request's wheel is diamond cut, as the shop page and its summary say it: worked out from the finish as the
+ * caller is read it back (bright metal, or mixed metal and paint, is diamond cut), so the read-back says the caller's
+ * finish and never the shop's name for it (a live call, 2026-11-25); the shop's words are its own.
  */
-const DIAMOND_CUT: Readonly<Record<string, string>> = { 'bright metal': 'yes', 'a mix of both': 'yes', painted: 'no', 'not sure': 'not sure' };
+const DIAMOND_CUT: Readonly<Record<string, string>> = { 'the bright metal finish': 'yes', 'the mixed metal finish': 'yes', 'the painted finish': 'no', 'a finish the shop will check': 'not sure' };
 
 /** The details of a request, for the shop's summary. */
 function requestDetails(p: Readonly<Record<string, string>>): string {
