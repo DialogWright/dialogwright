@@ -188,6 +188,15 @@ interface Live {
   ignored: number[];
 }
 
+/**
+ * How much earlier than its estimate a sign of speech may be and still be the start of the words its final prompt
+ * brings, when a held read-back decides whether those words began over it. Real speech runs slower than
+ * textEstimateMs's 2.5 words a second, with pauses, and the recognizer's final comes some time after the words end;
+ * a sign earlier than that is taken to be a stray one (a noise partial, Telnyx's caller heard speaking with no
+ * transcript after it) that never became words, and is not the start of these.
+ */
+export const SPEECH_START_SLACK_MS = 3000;
+
 /** The turns' maskings kept for a carrier's reports of what played. */
 const SCRUBS_KEPT = 8;
 
@@ -363,6 +372,15 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     const start = heldStart(r) ?? r.held.at;
     const estimate = textEstimateMs(r.held.text);
     return l.reports ? start + estimate * 2 + 2000 : start + READ_BACK_HEARD_AT * estimate;
+  };
+
+  /** When the speech of the final words `text` began, for the held read-back's decision (finalWords): its sign where it fits them, else their estimated start. */
+  const speechBegan = (l: Live, text: string): number => {
+    const estimated = now() - textEstimateMs(text);
+    const sign = l.speechAt;
+    const sentAt = l.reply?.held?.at;
+    const fits = sign !== null && sign >= estimated - SPEECH_START_SLACK_MS && (sentAt === undefined || sign >= sentAt);
+    return fits ? sign : estimated;
   };
 
   /** Whether a held read-back plays now: speech over it is no cut-in, and stops nothing. */
@@ -605,16 +623,24 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
    * that kept coming behind a line that could not be interrupted were acted on stale): no turn, nothing stopped, their
    * length kept for the next turn's record and in the frame log. When the speech began is the first sign of it the
    * carrier gave (a partial prompt on Twilio, the caller heard speaking on Telnyx, an interrupt: Live.speechAt), else,
-   * with none, the final words' arrival less their estimated length (a short answer's sign may be the final alone).
+   * with none, the final words' arrival less their estimated length (a short answer's sign may be the final alone). A
+   * sign that does not fit these words is stale and taken as none: one from before the held read-back was sent, or one
+   * earlier than their estimated start by more than SPEECH_START_SLACK_MS (a stray sign that became no words, so a
+   * caller's real answer after the line is never dropped for it: the converse line has no no-input wait to recover it).
    */
   const finalWords = (e: ConverseCallEntry, l: Live, text: string, io: VoiceIo): Promise<void> => {
     const end = heldEnd(l);
-    const began = l.speechAt ?? now() - textEstimateMs(text);
-    if (end !== null && began < end) {
-      l.speechAt = null;
-      l.ignored.push(text.length);
-      io.record('log', { ignoredOverHeld: text.length });
-      return Promise.resolve();
+    if (end !== null) {
+      const began = speechBegan(l, text);
+      if (began < end) {
+        l.speechAt = null;
+        l.ignored.push(text.length);
+        io.record('log', { ignoredOverHeld: text.length });
+        return Promise.resolve();
+      }
+      // Taken after a held read-back: a stale sign is not these words' start either, so what they heard of the line is
+      // read from when they began (a stale one, from before the line was sent, would make it "spoken before").
+      if (l.speechAt !== null && l.speechAt !== began) l.speechAt = null;
     }
     // A correction still waiting was not heard: dropped first, so the turn is told so.
     dropCorrection(l);

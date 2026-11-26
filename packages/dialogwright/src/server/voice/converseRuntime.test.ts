@@ -541,6 +541,107 @@ describe('the converse voice runtime: a read-back said again held', () => {
   });
 });
 
+describe('the converse voice runtime: a held read-back and a stale sign of speech', () => {
+  /** The booking, the held read-back's round waiting on `wait` where given (so a sign of speech can come before it is sent). */
+  const rounds = (wait?: { gate: Promise<void> }): Step[][] => [BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [...(wait !== undefined ? [wait] : []), call('c3', 'book', { window: SLOT, name: 'Sam Example', phone: 'caller' }), done('tool')], [text('You are booked for Tuesday morning.'), done()]];
+  /** The call up to the held read-back's turn begun: the first read-back cut in on, the caller's words over it. */
+  async function toHeldTurn(h: ReturnType<typeof harness>): Promise<{ turn: Promise<void> }> {
+    const telnyx = h.entry.provider === 'telnyx';
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: h.entry.provider as 'twilio' | 'telnyx' }, h.io);
+    if (telnyx) {
+      h.event({ kind: 'playback', state: 'started' });
+      h.event({ kind: 'playback', state: 'finished', text: GREETING });
+      h.event({ kind: 'playback', state: 'finished' });
+    }
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    const first = h.said().at(-1)!;
+    if (telnyx) {
+      h.event({ kind: 'playback', state: 'started' });
+      h.event({ kind: 'caller', speaking: true });
+    } else await h.frame({ type: 'interrupt', utteranceUntilInterrupt: first.token.slice(0, 12), durationUntilInterruptMs: 600 });
+    const turn = h.prompt('wait, what was that?');
+    await h.settle();
+    // Wrapped: an async function's promise of a promise would wait for the turn itself.
+    return { turn };
+  }
+  /** A sign of speech (a Twilio partial, Telnyx's caller heard speaking) that no transcript follows. */
+  const noise = async (h: ReturnType<typeof harness>): Promise<void> => {
+    if (h.entry.provider === 'telnyx') h.event({ kind: 'caller', speaking: true });
+    else await h.prompt('mm', false);
+  };
+  /** The caller's yes as each carrier brings it: its sign, then its words. */
+  const yes = async (h: ReturnType<typeof harness>): Promise<void> => {
+    await noise(h);
+    await h.prompt('yes');
+  };
+  /** Waits until the held line has played: Telnyx reports it, Twilio's estimate passes. */
+  const played = async (h: ReturnType<typeof harness>, held: TextFrame, afterMs: number): Promise<void> => {
+    if (h.entry.provider === 'telnyx') {
+      h.event({ kind: 'playback', state: 'started' });
+      await h.settle(textEstimateMs(held.token));
+      h.event({ kind: 'playback', state: 'finished', text: held.token });
+      h.event({ kind: 'playback', state: 'finished' });
+    } else await h.settle(Math.ceil(READ_BACK_HEARD_AT * textEstimateMs(held.token)));
+    await h.settle(afterMs);
+  };
+
+  for (const provider of ['twilio', 'telnyx'] as const) {
+    it(`${provider}: a sign of speech over the held line that no words follow does not drop a short yes begun after it`, async () => {
+      const h = harness({ model: gatedModel(rounds()), provider });
+      await toHeldTurn(h);
+      const held = h.said().at(-1)!;
+      expect(held.interruptible).toBe(false);
+      await h.settle(1000);
+      await noise(h);
+      await played(h, held, 1000);
+      await yes(h);
+      expect(h.booked).toHaveLength(1);
+      expect(h.fio.records.filter((r) => r.dir === 'log' && Object.hasOwn(r.msg as object, 'ignoredOverHeld'))).toEqual([]);
+    });
+
+    it(`${provider}: speech begun near the held line's end, its words coming after it, is still ignored`, async () => {
+      const model = gatedModel(rounds());
+      const h = harness({ model, provider });
+      await toHeldTurn(h);
+      const held = h.said().at(-1)!;
+      const asked = model.requests.length;
+      if (provider === 'telnyx') {
+        h.event({ kind: 'playback', state: 'started' });
+        await h.settle(textEstimateMs(held.token) - 300);
+        await noise(h);
+        await h.settle(300);
+        h.event({ kind: 'playback', state: 'finished', text: held.token });
+      } else {
+        await h.settle(Math.ceil(READ_BACK_HEARD_AT * textEstimateMs(held.token)) - 300);
+        await noise(h);
+      }
+      await h.settle(2500);
+      await h.prompt('no wait I meant something else entirely');
+      expect(model.requests).toHaveLength(asked);
+      expect(h.booked).toEqual([]);
+    });
+
+    it(`${provider}: a sign of speech from before the held line was sent is not taken for its words`, async () => {
+      const g = gate();
+      const h = harness({ model: gatedModel(rounds(g)), provider });
+      const { turn } = await toHeldTurn(h);
+      // The line no longer playing (Telnyx's report), then a sign of speech while the held read-back is still being made.
+      if (provider === 'telnyx') h.event({ kind: 'playback', state: 'finished' });
+      await h.settle(200);
+      await noise(h);
+      await h.settle(200);
+      g.open();
+      await turn;
+      const held = h.said().at(-1)!;
+      expect(held.interruptible).toBe(false);
+      await played(h, held, 1000);
+      await yes(h);
+      expect(h.booked).toHaveLength(1);
+    });
+  }
+});
+
 describe('the converse voice runtime: fix round 1', () => {
   /** The call up to the booking's read-back. */
   async function upToReadBack(h: ReturnType<typeof harness>): Promise<string> {
