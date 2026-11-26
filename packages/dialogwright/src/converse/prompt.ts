@@ -126,9 +126,10 @@ const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most wh
  * for your yes", the runtime's own words for its read-back, and an answer acknowledged twice ("Painted all over,
  * thanks", then on the next turn "Painted black, noted"). And another (2026-11-25) heard its item misheard by the
  * recognizer acknowledged with a bare "Thanks.", and first heard the mistake in the read-back a minute later: a value
- * said back as understood is caught on the turn it is given.
+ * said back as understood is caught on the turn it is given. Said back on every acknowledgement, a caller's full name came
+ * in six replies of a later call (2026-11-25): once, when given, and after it the first name now and then.
  */
-const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When you acknowledge a name, a number, a product or anything else easily misheard, say back the value as you understood it, so a mishearing is caught at once.';
+const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When the caller gives a name, a number, a product or anything else easily misheard, say it back once, as you understood it, when they give it, so a mishearing is caught at once; after that, call the caller by their first name now and then, as a person on the phone would: never their full name, and never in every reply.';
 
 /**
  * What a call adds: the caller cannot see the questions, and a voice reads a screen's marks badly (a range
