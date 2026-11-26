@@ -452,6 +452,8 @@ export interface ConverseTurnView {
   ignored?: number[];
   /** The bridge was said this turn (lines.bridge), the model being slow to begin. */
   bridge?: true;
+  /** A goodbye held and never said (the trace's `wrapUp.dropped`): its end_call refused for a change still unsent; its length in characters. */
+  goodbyeDropped?: number;
   /** The turn was stopped by the caller speaking: what it had not said was dropped. */
   interrupted?: true;
   /** The turn threw in the line (the trace's `failed`): what it said and ran as far as it reached, the line said after it last. */

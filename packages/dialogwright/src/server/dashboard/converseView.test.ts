@@ -182,4 +182,13 @@ describe('a converse phone call in the console', () => {
     // A read-back not held is as it was.
     expect(converseCall(CALL).turns.every((t) => t.readBack === null || !Object.hasOwn(t.readBack, 'held'))).toBe(true);
   });
+
+  it('shows a goodbye held and never said, its end_call refused for a change still unsent, by its length', () => {
+    const turns = converseCall([
+      { v: 3, kind: 'converse', sessionId: 'CA-3', turnIndex: 0, ts: ts(0), said: 'that is all', replies: ['Did you still want it booked?'], tools: [{ name: 'end_call', args: {}, outcome: 'refused' }], wrapUp: { reading: 0.9, held: true, dropped: { chars: 42 } }, model: model(300, 0.0001) },
+      { v: 3, kind: 'converse', sessionId: 'CA-3', turnIndex: 1, ts: ts(9), said: 'no thanks', replies: ['Goodbye.'], tools: [], wrapUp: { reading: 0.9, held: true }, model: model(300, 0.0001) },
+    ]).turns;
+    expect(turns[0]).toMatchObject({ goodbyeDropped: 42 });
+    expect(turns[1]).not.toHaveProperty('goodbyeDropped');
+  });
 });

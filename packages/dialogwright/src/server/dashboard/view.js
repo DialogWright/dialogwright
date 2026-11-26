@@ -2066,7 +2066,9 @@ export function converseRow(records, frames) {
  * before it began, and its first `chars` characters of the line as the trace keeps it), the bridge said
  * while the model was slow to begin (`bridge`), the turn stopped by the caller speaking (`interrupted`), a read-back said
  * again held after the caller spoke over it (its `held`, and `brief` where its brief version was said), and the speech
- * over a held read-back that was ignored before the turn (`ignored`, each utterance by its length).
+ * over a held read-back that was ignored before the turn (`ignored`, each utterance by its length). On a chat or a call:
+ * a goodbye never said (`goodbyeDropped`, its length in characters), held while a change could be left unsent and the
+ * caller read as wrapping up, its end_call refused because the change was still unsent (the trace's `wrapUp.dropped`).
  * A turn that threw in the line, on a chat or a call (`failed`): what it said and ran as far as it reached, with
  * the line said after it. Plain text, for the page to escape.
  */
@@ -2095,6 +2097,8 @@ export function converseCall(records) {
     if (r.ended === 'silence') callView.endedBy = 'silence';
     // The caller's speech over a held read-back, ignored before this turn: each utterance by its length.
     if (Array.isArray(r.ignored) && r.ignored.length > 0) callView.ignored = r.ignored.filter((n) => typeof n === 'number');
+    // A goodbye held and never said, its end_call refused for a change still unsent: by its length, never its words.
+    if (r.wrapUp != null && typeof r.wrapUp.dropped?.chars === 'number') callView.goodbyeDropped = r.wrapUp.dropped.chars;
     // The turn threw in the line (an audit row or a trace that could not be written): a chat's turn too.
     if (r.failed === 'internal') callView.failed = true;
     const m = r.model ?? null;
