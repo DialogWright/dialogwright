@@ -1749,14 +1749,15 @@ async function silenceTurn(t: Turn, sp: Speaker, input: Extract<Input, { kind: '
   }
   // A read-back waiting is let go: the line's words now follow it, so a yes would be to them (a silence turn stopped
   // before it says anything changes nothing: the channel keeps the state from before it). Not confirmed, no refusal
-  // counted, not marked unheard; still the read-back heard (a correction's base), and kept unsent.
+  // counted, not marked unheard, and kept unsent. Nor kept as the one heard: a caller silent after it may not have been
+  // listening, so a correction then is read back whole, never by its changed values alone.
   if (p !== null) {
     st.pending = null;
     const spec = Object.hasOwn(deps.business.actions, p.action) ? deps.business.actions[p.action] : undefined;
     t.readBack = { text: p.text, ...changesOf(p), confirmed: false };
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller said nothing');
     keepUnsent(t, p);
-    keepHeard(t, p);
+    if (st.heardReadBack?.action === p.action) delete st.heardReadBack;
     add(st, 'user', [{ type: 'tool_result', id: p.id, content: `Read back to the caller as said: "${p.text}" Not done: nothing was changed, booked or sent. The caller said nothing after it.` }]);
   }
   add(st, 'user', [{ type: 'text', text: silenceNote(input.ms, p !== null) }]);

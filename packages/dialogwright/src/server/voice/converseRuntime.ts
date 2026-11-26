@@ -861,8 +861,8 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
         await io.save();
         return;
       }
-      // A turn on a silence stopped by the caller's speech before it said anything: as if it never ran (its trace record,
-      // stopped with nothing said, stands), and the silence wait starts again.
+      // A turn on a silence stopped by the caller's speech before it said anything: as if it never ran (it writes no trace
+      // record), and the silence wait starts again.
       if (running.silence && running.ac.signal.aborted && !running.spoke) {
         e.session = { ...before, turnIndex: state.turnIndex };
         await io.save();

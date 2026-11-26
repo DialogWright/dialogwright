@@ -3482,14 +3482,14 @@ describe('converseTurn: a silence on a call', () => {
     expect(h.ended).toEqual([]);
   });
 
-  it('a silence answered with words lets a waiting read-back go: not confirmed, nothing counted, still the one heard; a yes then runs nothing, and the read-back said again is confirmed', async () => {
+  it('a silence answered with words lets a waiting read-back go: not confirmed, nothing counted, no longer the one heard; a yes then runs nothing, and the read-back said again is confirmed', async () => {
     const h = harness([...lookupThenBook, [text('Take your time.'), done()], [call('c4', 'book', LAMP), done('tool')], [text('Booked.'), done()]], { edit: (t) => `${t}${OFF}` });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
     expect(s.pending).toBeNull();
     expect(s.refusals).toEqual({});
     expect(s.unheardReadBacks).toBeUndefined();
-    expect(s.heardReadBack).toEqual({ action: 'book', params: LAMP });
+    expect(s.heardReadBack).toBeUndefined();
     expect(s.unsent).toEqual({ action: 'book' });
     const sent = JSON.stringify(h.model.requests.at(-1)!.messages);
     expect(sent).toContain('[The caller has said nothing for 9 seconds since your last reply; the read-back no longer waits for their answer, so their yes needs the action called again. Help them go on, as a person on the phone would when the other side goes quiet, in a short reply.]');
