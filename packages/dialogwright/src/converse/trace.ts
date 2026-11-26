@@ -54,9 +54,11 @@ export interface ConverseTraceRecord {
    * The read-back said, or answered, this turn: the decision model's reading of the answer (its yes, its no, and where
    * each was read, `change`: whether the caller said what should be different, and `withdraws`: whether they withdrew
    * it) and whether it confirmed. `changes`: on a short read-back (agent.yaml's readBackChange), the params it said,
-   * the ones the correction changed; absent on the full read-back.
+   * the ones the correction changed; absent on the full read-back. `held`: on a call, said again after the caller spoke
+   * over it before hearing it, whole and not interruptible (agent.yaml's readBacks.holdAfterCut), and `brief` where it was
+   * the action's brief read-back (readBackBrief).
    */
-  readBack?: { text: string; changes?: string[]; yes?: number; no?: number; change?: number; withdraws?: number; confirmed?: boolean };
+  readBack?: { text: string; changes?: string[]; held?: true; brief?: true; yes?: number; no?: number; change?: number; withdraws?: number; confirmed?: boolean };
   /**
    * A change the caller did not confirm, kept unsent (ConverseState.unsent), as the turn found it or let it go: its action,
    * the decision model's reading of whether the caller no longer wants it (`noLongerWants`: null where it was asked and
@@ -134,6 +136,11 @@ export interface ConverseTraceRecord {
    * the words themselves.
    */
   heard?: { cutIn: boolean; spokeBefore: boolean; chars: number | null };
+  /**
+   * On a call: the caller's speech the channel ignored before this turn because it began while a held read-back played,
+   * each utterance by its length in characters. Never the words themselves.
+   */
+  ignored?: number[];
 }
 
 /** An action as the shared recording reads it: no slots, and each param recorded as its `audit` says (mask by default). */

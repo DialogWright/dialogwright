@@ -56,6 +56,19 @@ describe('a change\'s description', () => {
     expect(toolsOf(value!).find((t) => t.name === 'book')!.description).toBe(`${CHANGE}${SHORT_WORDS}`);
     expect(toolsOf(value!).find((t) => t.name === 'availability')!.description).toBe('List the windows still free on a day.');
   });
+  const HELD_WORDS = ' Called again after the caller spoke over its read-back before hearing it, its details are read back again whole and cannot be talked over: write nothing of your own before calling it.';
+  it('on a call, where a read-back the caller spoke over is said again held (readBacks.holdAfterCut, on by default), says so', () => {
+    expect(toolsOf(plain, undefined, 'voice').find((t) => t.name === 'book')!.description).toBe(`${CHANGE}${HELD_WORDS}`);
+    expect(toolsOf(plain, undefined, 'voice').find((t) => t.name === 'availability')!.description).toBe('List the windows still free on a day.');
+    const { value } = agentBusinessProblems(base.replace(READ_BACK, `${READ_BACK}${SHORT}`));
+    expect(toolsOf(value!, undefined, 'voice').find((t) => t.name === 'book')!.description).toBe(`${CHANGE}${SHORT_WORDS}${HELD_WORDS}`);
+  });
+  it('says nothing of it in a chat, or where the app turns it off', () => {
+    expect(toolsOf(plain, undefined, 'chat').find((t) => t.name === 'book')!.description).toBe(CHANGE);
+    const { value, problems } = agentBusinessProblems(`${base}readBacks: { holdAfterCut: false }\n`);
+    expect(problems).toEqual([]);
+    expect(toolsOf(value!, undefined, 'voice').find((t) => t.name === 'book')!.description).toBe(CHANGE);
+  });
 });
 
 describe('in a working journey', () => {

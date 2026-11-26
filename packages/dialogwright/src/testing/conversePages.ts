@@ -314,6 +314,9 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '- The rules of an action run in the order shown, and the first one that fails decides.',
     '- Every change is read back in the business\'s fixed words with exactly the values it will run with. The caller\'s answer is read as a yes or a no by the decision model (not the agent model), and the change runs only on a clear yes (the gate\'s `confirmed` rule, over all of the change\'s params, runs last). A lookup is never confirmed.',
     ...(Object.values(b.actions).some((a) => a.readBackChange !== undefined) ? ['- Where a change gives a short read-back (`readBackChange`), a correction after a full read-back the caller heard and did not confirm is read back by its changed values alone, in the business\'s own phrases (shown with each action below): the caller heard every other value in that full read-back, and a yes confirms every value, as the gate\'s `confirmed` rule over all of the change\'s params requires.'] : []),
+    b.readBacks.holdAfterCut
+      ? '- On a call (`readBacks.holdAfterCut`: on), where the caller spoke over a read-back before hearing it (cut in before 85% of it, or spoke as it began) and the agent model calls the same change again with the same values, the read-back is said again whole and cannot be talked over: speech that began before it finished playing is ignored, recorded by its length only, never its words. Once per change: a held read-back not confirmed is followed by the usual one, which can be talked over, until the change is confirmed, withdrawn or its journey no longer offers it. Where a change gives a brief read-back (`readBackBrief`, shown with each action below), the held read-back says it, naming every value the full one names; the yes to it confirms them all. A chat is unchanged.'
+      : '- On a call (`readBacks.holdAfterCut`: off), every read-back can be talked over, as on any line: one the caller spoke over before hearing it is read back again, as the agent model calls its change again.',
     '- One confirmation at a time: a call made while a read-back waits for its answer is not run, and is no refusal of its action (it counts toward no limit below).',
     '- Anything but a clear yes runs nothing: the agent model is told that nothing was changed and what the caller said.',
     ...(b.lines.notConfirmed === undefined ? [] : [`- A clear no that says nothing of what should be different (read by the decision model) is answered by \`lines.notConfirmed\`, word for word ("${cell(b.lines.notConfirmed.en)}"${inChat(b.lines.notConfirmed)}), and the agent model is told the line asked; it answers what the caller says next.`]),
@@ -350,6 +353,8 @@ export function conversePolicyCardText(app: ConverseApp): string {
       const frame = spec.readBack?.en ?? '';
       lines.push(`Read back before it runs, in these words: "${frame}"${/\[[^[\]]*\]/.test(frame) ? ' (a part in square brackets is said only when its value is given)' : ''}`, '');
       lines.push(...shortReadBackCard(spec));
+      const brief = spec.readBackBrief?.en;
+      if (brief !== undefined) lines.push(`Said again held, after the caller spoke over it before hearing it, in these words: "${cell(brief)}"${/\[[^[\]]*\]/.test(brief) ? ' (a part in square brackets is said only when its value is given)' : ''}`, '');
     }
     const written = writtenRules(spec);
     lines.push('Rules, in the order they run:', '');

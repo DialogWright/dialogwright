@@ -7,7 +7,8 @@ import type { AgentBusiness } from '../../converse/business/schema';
 import type { ConverseModel, ModelEvent, ModelRequest } from '../../converse/model/types';
 import { policyOf } from '../../converse/policy';
 import { newConverseState } from '../../converse/state';
-import { BRIDGE_AFTER_MS, CUT_IN_NOTE, UNHEARD_NOTE, type ConverseDeps } from '../../converse/turn';
+import { BRIDGE_AFTER_MS, CUT_IN_NOTE, READ_BACK_HEARD_AT, UNHEARD_NOTE, type ConverseDeps } from '../../converse/turn';
+import { textEstimateMs } from '../../channel/playbackEstimate';
 import type { ConverseTraceRecord } from '../../converse/trace';
 import { converseFixture } from '../../testing/converse/app';
 import { BOOKING, call, DAY, done, SLOT, text } from '../../testing/converse/chat';
@@ -372,6 +373,171 @@ describe('the converse voice runtime: a correction read back by its changed valu
     expect(h.booked).toEqual([expect.objectContaining({ window: SLOT, name: 'Sam Example', phone: '+15555550123' })]);
     expect(h.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail)).toEqual([expect.objectContaining({ action: 'book', short: true, changes: ['phone'] })]);
     expect(h.said().at(-1)!.token).toBe('You are booked for Tuesday morning.');
+  });
+});
+
+describe('the converse voice runtime: a read-back said again held', () => {
+  /** The booking: the read-back cut in on, the model calling the same change again (held), then the reply after the yes. */
+  const rounds = (): Step[][] => [BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [call('c3', 'book', { window: SLOT, name: 'Sam Example', phone: 'caller' }), done('tool')], [text('You are booked for Tuesday morning.'), done()]];
+  /** The call up to the held read-back: the first one cut in on at its start, the caller's words over it, the same change called again. */
+  async function upToHeld(h: ReturnType<typeof harness>): Promise<TextFrame> {
+    const telnyx = h.entry.provider === 'telnyx';
+    await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: h.entry.provider as 'twilio' | 'telnyx' }, h.io);
+    if (telnyx) {
+      h.event({ kind: 'playback', state: 'started' });
+      h.event({ kind: 'playback', state: 'finished', text: GREETING });
+      h.event({ kind: 'playback', state: 'finished' });
+    }
+    await h.prompt('I need a visit on Tuesday');
+    await h.prompt('the morning, for Sam Example');
+    const first = h.said().at(-1)!;
+    expect(first).toMatchObject({ interruptible: true });
+    if (telnyx) {
+      h.event({ kind: 'playback', state: 'started' });
+      h.event({ kind: 'caller', speaking: true });
+    } else await h.frame({ type: 'interrupt', utteranceUntilInterrupt: first.token.slice(0, 12), durationUntilInterruptMs: 600 });
+    await h.prompt('wait, what was that?');
+    const held = h.said().at(-1)!;
+    expect(held.token).toBe(first.token);
+    return held;
+  }
+  /** When the held line counts as played on Twilio, from when it was sent: READ_BACK_HEARD_AT of its estimate. */
+  const twilioEndMs = (held: TextFrame): number => Math.ceil(READ_BACK_HEARD_AT * textEstimateMs(held.token));
+  const ignoredLogged = (h: ReturnType<typeof harness>): unknown[] => h.fio.records.filter((r) => r.dir === 'log' && typeof (r.msg as { ignoredOverHeld?: unknown }).ignoredOverHeld === 'number').map((r) => r.msg);
+
+  it('the read-back said again goes whole, not interruptible, as the turn\'s final frame', async () => {
+    const h = harness({ model: gatedModel(rounds()) });
+    const held = await upToHeld(h);
+    expect(held).toMatchObject({ last: true, interruptible: false });
+    expect(h.entry.session.pending).toMatchObject({ held: true, text: held.token });
+    expect(h.traces.at(-1)!.readBack).toMatchObject({ held: true });
+  });
+
+  it('Twilio: speech that began while it played is ignored, recorded by its length; speech after it is the caller\'s answer', async () => {
+    const model = gatedModel(rounds());
+    const h = harness({ model });
+    const held = await upToHeld(h);
+    const asked = model.requests.length;
+    const records = h.traces.length;
+    await h.settle(1000);
+    await h.prompt('yes', false);
+    await h.settle(500);
+    await h.prompt('yes yes');
+    // Nothing is acted on: no turn, no model asked, the turn running not stopped.
+    expect(model.requests).toHaveLength(asked);
+    expect(h.traces).toHaveLength(records);
+    expect(h.booked).toEqual([]);
+    expect(h.entry.session.pending).not.toBeNull();
+    expect(ignoredLogged(h)).toEqual([{ ignoredOverHeld: 7 }]);
+    // After the line has played: the caller's answer is taken, and the record of its turn holds what was ignored.
+    await h.settle(twilioEndMs(held));
+    await h.prompt('yes', false);
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+    expect(h.rows.filter((r) => r.type === 'confirmed').map((r) => r.detail)).toEqual([expect.objectContaining({ action: 'book', held: true })]);
+    expect(h.traces.at(-1)!.ignored).toEqual([7]);
+    expect(h.traces.at(-1)!.heard).toMatchObject({ cutIn: false, spokeBefore: false });
+    expect(h.said().at(-1)!.token).toBe('You are booked for Tuesday morning.');
+  });
+
+  it('Twilio: speech that began near its end, its final words coming after the line has played, is ignored too (by its first partial)', async () => {
+    const model = gatedModel(rounds());
+    const h = harness({ model });
+    const held = await upToHeld(h);
+    const asked = model.requests.length;
+    await h.settle(twilioEndMs(held) - 200);
+    await h.prompt('no', false);
+    await h.settle(3000);
+    await h.prompt('no wait I meant something else entirely');
+    expect(model.requests).toHaveLength(asked);
+    expect(ignoredLogged(h)).toHaveLength(1);
+  });
+
+  it('Twilio: with no partial, speech is taken to have begun its estimate before its final words came', async () => {
+    const model = gatedModel(rounds());
+    const h = harness({ model });
+    const held = await upToHeld(h);
+    const asked = model.requests.length;
+    // Eight words, about 3.2 s of speech, ending just after the line has played: begun while it played.
+    await h.settle(twilioEndMs(held) + 100);
+    await h.prompt('yes that is all right thank you very much');
+    expect(model.requests).toHaveLength(asked);
+    expect(ignoredLogged(h)).toHaveLength(1);
+    // A short one coming well after it: taken.
+    await h.settle(2000);
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+  });
+
+  it('Twilio: an interrupt over the held line stops nothing and cuts in on nothing', async () => {
+    const model = gatedModel(rounds());
+    const h = harness({ model });
+    const held = await upToHeld(h);
+    await h.settle(500);
+    await h.frame({ type: 'interrupt', utteranceUntilInterrupt: held.token.slice(0, 8), durationUntilInterruptMs: 400 });
+    await h.prompt('hm');
+    await h.settle(twilioEndMs(held));
+    await h.prompt('yes', false);
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+    expect(h.traces.at(-1)!.heard).toMatchObject({ cutIn: false });
+  });
+
+  it('Telnyx: the caller heard speaking over it is no cut-in, and their words are ignored until it is reported played', async () => {
+    const model = gatedModel(rounds());
+    const h = harness({ model, provider: 'telnyx' });
+    const held = await upToHeld(h);
+    const asked = model.requests.length;
+    h.event({ kind: 'playback', state: 'started' });
+    await h.settle(800);
+    h.event({ kind: 'caller', speaking: true });
+    await h.prompt('yes');
+    expect(model.requests).toHaveLength(asked);
+    expect(ignoredLogged(h)).toHaveLength(1);
+    h.event({ kind: 'playback', state: 'finished', text: held.token });
+    h.event({ kind: 'playback', state: 'finished' });
+    await h.settle(400);
+    h.event({ kind: 'caller', speaking: true });
+    await h.prompt('yes');
+    expect(h.booked).toHaveLength(1);
+    expect(h.traces.at(-1)!.heard).toMatchObject({ cutIn: false, spokeBefore: false });
+    expect(h.traces.at(-1)!.ignored).toEqual([3]);
+  });
+
+  it('Telnyx: speech begun while it played whose final words come after it was reported played is ignored', async () => {
+    const model = gatedModel(rounds());
+    const h = harness({ model, provider: 'telnyx' });
+    const held = await upToHeld(h);
+    const asked = model.requests.length;
+    h.event({ kind: 'playback', state: 'started' });
+    await h.settle(800);
+    h.event({ kind: 'caller', speaking: true });
+    await h.settle(1000);
+    h.event({ kind: 'playback', state: 'finished', text: held.token });
+    await h.settle(1500);
+    await h.prompt('sorry, go on');
+    expect(model.requests).toHaveLength(asked);
+    expect(ignoredLogged(h)).toHaveLength(1);
+  });
+
+  it('with readBacks.holdAfterCut false, the read-back said again can be talked over, as before', async () => {
+    const h = harness({ model: gatedModel(rounds()), business: (b) => ({ ...b, readBacks: { holdAfterCut: false } }) });
+    const held = await upToHeld(h);
+    expect(held).toMatchObject({ interruptible: true });
+    await h.settle(500);
+    await h.prompt('yes');
+    // Taken at once, as any answer is: no speech is ignored, and the yes (with no cut-in reported) confirms.
+    expect(ignoredLogged(h)).toEqual([]);
+    expect(h.booked).toHaveLength(1);
+  });
+
+  it('a hangup after speech over the held line records it on the leaving turn', async () => {
+    const h = harness({ model: gatedModel(rounds()) });
+    await upToHeld(h);
+    await h.settle(500);
+    await h.prompt('hello?');
+    await h.rt.hangup(h.entry);
+    expect(h.traces.at(-1)!.ignored).toEqual([6]);
   });
 });
 

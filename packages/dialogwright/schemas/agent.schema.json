@@ -642,6 +642,21 @@
       },
       "additionalProperties": false
     },
+    "readBacks": {
+      "default": {
+        "holdAfterCut": true
+      },
+      "description": "How a change's read-back is said on a call.",
+      "type": "object",
+      "properties": {
+        "holdAfterCut": {
+          "default": true,
+          "description": "On a call: where the caller spoke over a read-back before hearing it (cut in before 85% of it, or spoke as it began) and the agent model calls the same change again with the same values, the read-back is said again held: whole and not interruptible, any speech that began while it played ignored (recorded by its length only), and its brief version (an action's readBackBrief) said where the action gives one. Once per change: a held read-back not confirmed is followed by the normal, interruptible one, until the change is confirmed, withdrawn or its journey no longer offers it. A chat is unchanged. Default: true (the maintainer's decision, 2026-11-26); false: every read-back can be talked over, as before.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "checks": {
       "default": {
         "claims": {
@@ -938,6 +953,21 @@
               "en"
             ],
             "additionalProperties": false
+          },
+          "readBackBrief": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Only on a change: the read-back said, on a call, where it is said again held (readBacks.holdAfterCut) after the caller spoke over it before hearing it: a compact version of readBack, with every param readBack says as a {placeholder} (an optional one in a part in square brackets, as there), since the yes to it confirms them all. Absent: the full read-back is said held, in English."
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false,
+            "description": "Only on a change: the read-back said, on a call, where it is said again held (readBacks.holdAfterCut) after the caller spoke over it before hearing it: a compact version of readBack, with every param readBack says as a {placeholder} (an optional one in a part in square brackets, as there), since the yes to it confirms them all. Absent: the full read-back is said held, per language."
           },
           "then": {
             "description": "Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.",

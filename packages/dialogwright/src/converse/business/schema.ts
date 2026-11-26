@@ -76,6 +76,9 @@ const bar = (what: string, d: number) => z.number().gt(0).max(1).default(d).desc
 /** The runtime's own action, offered to every model: it ends the call, on the model's own goodbye or the closing line. No business action takes its name. */
 export const END_CALL = 'end_call';
 
+/** How read-backs are said on a call by default (agent.yaml `readBacks`): one the caller spoke over is said again held (the maintainer's decision, 2026-11-26). */
+export const READ_BACK_DEFAULTS = { holdAfterCut: true } as const;
+
 /** The one placeholder of a short read-back's frame (readBackChange): where the changed details are said. */
 export const CHANGES = 'changes';
 
@@ -125,6 +128,7 @@ const action = z
       })
       .optional()
       .describe('Only on a change: the read-back said after the caller heard the full read-back and turned it down with a correction, saying only the changed details, each in its phrase, joined by commas and the last two by `and`. A call again with the same values, or a change to a param with no phrase or to no value, is read back in full. The yes confirms every value, as on the full read-back.'),
+    readBackBrief: worded('Only on a change: the read-back said, on a call, where it is said again held (readBacks.holdAfterCut) after the caller spoke over it before hearing it: a compact version of readBack, with every param readBack says as a {placeholder} (an optional one in a part in square brackets, as there), since the yes to it confirms them all. Absent: the full read-back is said held').optional(),
     then: z.array(identifier()).optional().describe('Actions that run after the confirmed yes with no read-back of their own, each still through the gate. Only on a change.'),
     rules: z.array(policyRuleEntry).optional().describe('The gate\'s rules for this action, in the same shape as policy.yaml\'s.'),
     audit: z.record(identifier(), z.enum(AUDIT_MASKS)).optional().describe('How each param that needs it is recorded: last4, mask, length, secret or keep. Default: mask.'),
@@ -206,6 +210,32 @@ function shortReadBackChecks(ctx: z.core.$RefinementCtx, name: string, a: Record
   }
 }
 
+/**
+ * A brief read-back's checks (readBackBrief): only on a change; each placeholder a param of the action; and every
+ * param its full read-back says said in it too, a required one outside square brackets and an optional one in a
+ * part in them, as the full read-back's own check holds: the caller's yes to it confirms every value.
+ */
+function briefReadBackChecks(ctx: z.core.$RefinementCtx, name: string, a: Record<string, unknown>, params: Record<string, unknown>): void {
+  if (a.kind !== 'change') {
+    issue(ctx, ['actions', name, 'readBackBrief'], `the ${typeof a.kind === 'string' ? a.kind : 'action'} "${name}" has a brief read-back`, 'delete readBackBrief: only a change is read back');
+    return;
+  }
+  const brief = isMap(a.readBackBrief) && typeof a.readBackBrief.en === 'string' ? a.readBackBrief.en : undefined;
+  if (brief === undefined) return;
+  const path = ['actions', name, 'readBackBrief', 'en'];
+  const named = new Set(placeholders(brief));
+  for (const key of named) {
+    if (!Object.hasOwn(params, key)) issue(ctx, path, `the placeholder {${key}} is no param of "${name}"`, `write one of its params (${Object.keys(params).join(', ') || 'it has none'}) in the braces, or add the param`);
+  }
+  const full = isMap(a.readBack) && typeof a.readBack.en === 'string' ? new Set(placeholders(a.readBack.en)) : new Set<string>();
+  const inParts = new Set([...brief.matchAll(/\[([^[\]]*)\]/g)].flatMap((m) => placeholders(m[1]!)));
+  for (const [pname, p] of Object.entries(params)) {
+    if (!isMap(p) || !full.has(pname)) continue;
+    if (p.optional !== true && inParts.has(pname)) issue(ctx, path, `the brief read-back of "${name}" says the required {${pname}} in a part in square brackets, said only when it has a value`, `write {${pname}} outside the square brackets`);
+    else if (!named.has(pname)) issue(ctx, path, `the brief read-back of "${name}" does not say {${pname}}, which its full read-back says, so the caller's yes would confirm it unheard`, p.optional === true ? `write {${pname}} in a part in square brackets, said only when it has a value ("[, {${pname}}]")` : `write {${pname}} in the brief read-back, as the full read-back says it`);
+  }
+}
+
 /** Cross-field checks of the whole file; they run even when other parts have problems, so one pass says everything. */
 function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   if (!isMap(value)) return;
@@ -282,6 +312,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
       }
     }
     if (a.readBackChange !== undefined) shortReadBackChecks(ctx, name, a, params);
+    if (a.readBackBrief !== undefined) briefReadBackChecks(ctx, name, a, params);
     if (Array.isArray(a.then)) {
       if (a.kind === 'lookup') issue(ctx, ['actions', name, 'then'], `the lookup "${name}" has follow-on actions`, 'delete "then": only a change has follow-on actions');
       a.then.forEach((t, i) => {
@@ -449,6 +480,12 @@ export const agentBusinessSchema = z
       })
       .default({ failuresPerCall: 4, refusalsPerAction: 3 })
       .describe('When to stop trying and offer a person.'),
+    readBacks: z
+      .strictObject({
+        holdAfterCut: z.boolean().default(READ_BACK_DEFAULTS.holdAfterCut).describe('On a call: where the caller spoke over a read-back before hearing it (cut in before 85% of it, or spoke as it began) and the agent model calls the same change again with the same values, the read-back is said again held: whole and not interruptible, any speech that began while it played ignored (recorded by its length only), and its brief version (an action\'s readBackBrief) said where the action gives one. Once per change: a held read-back not confirmed is followed by the normal, interruptible one, until the change is confirmed, withdrawn or its journey no longer offers it. A chat is unchanged. Default: true (the maintainer\'s decision, 2026-11-26); false: every read-back can be talked over, as before.'),
+      })
+      .default({ ...READ_BACK_DEFAULTS })
+      .describe('How a change\'s read-back is said on a call.'),
     checks: z
       .strictObject({
         claims: z

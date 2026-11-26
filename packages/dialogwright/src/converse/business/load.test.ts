@@ -276,6 +276,64 @@ describe('readBackChange: a correction read back by its changed values alone', (
   });
 });
 
+/** A brief read-back of the book (readBackBrief), said where a read-back is said again held. */
+const BRIEF = '    readBackBrief:\n      en: "{day}, {window}, the {item}[ ({details})], on {phone}. Right?"\n';
+const withBrief = (brief: string = BRIEF): string => changed(BOOK_READ_BACK, `${BOOK_READ_BACK}${brief}`);
+
+describe('readBackBrief: the read-back said again held', () => {
+  it('a change with a brief read-back loads it', () => {
+    const { value, problems } = agentBusinessProblems(withBrief());
+    expect(problems).toEqual([]);
+    expect(value!.actions.book!.readBackBrief).toEqual({ en: '{day}, {window}, the {item}[ ({details})], on {phone}. Right?' });
+  });
+
+  it('a lookup with one', () => {
+    const lookup = changed('      day: { type: date, about: The day to look at. }\n', '      day: { type: date, about: The day to look at. }\n    readBackBrief:\n      en: "{day}?"\n');
+    const [p, ...rest] = problemsOf(lookup);
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.availability.readBackBrief' });
+    expect(p!.message).toBe('the lookup "availability" has a brief read-back');
+    expect(p!.fix).toBe('delete readBackBrief: only a change is read back');
+  });
+
+  it('a placeholder that is no param', () => {
+    const [p, ...rest] = problemsOf(withBrief(BRIEF.replace('on {phone}', 'on {phone} at {when}')));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.book.readBackBrief.en' });
+    expect(p!.message).toBe('the placeholder {when} is no param of "book"');
+    expect(p!.fix).toBe('write one of its params (day, window, item, details, phone) in the braces, or add the param');
+  });
+
+  it('a param the full read-back says and the brief one does not: a yes to it confirms every value', () => {
+    const [p, ...rest] = problemsOf(withBrief(BRIEF.replace(', on {phone}', '')));
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ path: 'actions.book.readBackBrief.en' });
+    expect(p!.message).toBe('the brief read-back of "book" does not say {phone}, which its full read-back says, so the caller\'s yes would confirm it unheard');
+    expect(p!.fix).toBe('write {phone} in the brief read-back, as the full read-back says it');
+    // An optional one too, in a part in square brackets as the full read-back has it.
+    const [q, ...more] = problemsOf(withBrief(BRIEF.replace('[ ({details})]', '')));
+    expect(more).toEqual([]);
+    expect(q!.message).toBe('the brief read-back of "book" does not say {details}, which its full read-back says, so the caller\'s yes would confirm it unheard');
+    expect(q!.fix).toBe('write {details} in a part in square brackets, said only when it has a value ("[, {details}]")');
+  });
+
+  it('a required param in a part in square brackets', () => {
+    const [p, ...rest] = problemsOf(withBrief(BRIEF.replace('on {phone}', '[on {phone}]')));
+    expect(rest).toEqual([]);
+    expect(p!.message).toBe('the brief read-back of "book" says the required {phone} in a part in square brackets, said only when it has a value');
+    expect(p!.fix).toBe('write {phone} outside the square brackets');
+  });
+});
+
+describe('readBacks: whether a read-back the caller spoke over is said again held', () => {
+  it('holds by default, and an app may turn it off', () => {
+    expect(agentBusinessProblems(source).value!.readBacks).toEqual({ holdAfterCut: true });
+    const { value, problems } = agentBusinessProblems(`${source}readBacks: { holdAfterCut: false }\n`);
+    expect(problems).toEqual([]);
+    expect(value!.readBacks).toEqual({ holdAfterCut: false });
+  });
+});
+
 describe('businessText', () => {
   const b = loadAgentBusiness(FIXTURE, { OFFICE_LINE: '+15555550199' });
   const text = businessText(b);

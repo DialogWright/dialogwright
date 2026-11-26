@@ -110,10 +110,13 @@ const isHeardReadBack = (h: unknown): boolean => {
   return typeof v.action === 'string' && v.action !== '' && typeof params === 'object' && params !== null && !Array.isArray(params) && Object.values(params).every((x) => typeof x === 'string');
 };
 
+/** An unheard read-back in its shape (UnheardReadBack): a heard read-back's, and `held` absent or true. */
+const isUnheardReadBack = (h: unknown): boolean => isHeardReadBack(h) && (!Object.hasOwn(h as object, 'held') || (h as { held?: unknown }).held === true);
+
 /**
  * A saved converse state as it was written (newConverseState's shape), or null. A state saved before a field
  * was kept loads as it is: a carried note absent is none (and one that is not text is dropped); a journey absent or not in its shape, none;
- * an unsent change absent or not in its shape, none; a heard read-back absent or not in its shape, none.
+ * an unsent change absent or not in its shape, none; a heard read-back absent or not in its shape, none; an unheard read-back absent or not in its shape, none.
  */
 export function stateOf(session: unknown): ConverseState | null {
   const s = session as Partial<ConverseState> | null;
@@ -126,6 +129,8 @@ export function stateOf(session: unknown): ConverseState | null {
   if (Object.hasOwn(s, 'unsent') && !(typeof s.unsent === 'object' && s.unsent !== null && typeof s.unsent.action === 'string' && s.unsent.action !== '')) delete s.unsent;
   // The read-back heard and not confirmed, a correction's base: one not an action's name with its values as text loads as none.
   if (Object.hasOwn(s, 'heardReadBack') && !isHeardReadBack(s.heardReadBack)) delete s.heardReadBack;
+  // The read-back the caller did not hear, a hold's base: one not in its shape loads as none (the next read-back is not held).
+  if (Object.hasOwn(s, 'unheardReadBack') && !isUnheardReadBack(s.unheardReadBack)) delete s.unheardReadBack;
   // Where the call is among the journeys: one not in its shape loads as none (the turn starts it again, initialJourney).
   if (Object.hasOwn(s, 'journey') && !isJourneyState(s.journey)) delete s.journey;
   // The unclear turns in a row: a count that is not a whole number of turns is none.

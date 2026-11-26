@@ -1,6 +1,6 @@
 import { isNoul, type Answer, type AnswerMap, type JevClient, type JsonValue, type QuestionMap } from '../jev/types';
 import { resultId, type Seen } from './actions';
-import { CHANGES, type AgentBusiness, type Lang, type ParamSpec } from './business/schema';
+import { CHANGES, type ActionSpec, type AgentBusiness, type Lang, type ParamSpec } from './business/schema';
 
 /**
  * Confirmation of a change (docs/designs/2026-11-11-agent-runtime.md, "Tools, the gate and
@@ -18,6 +18,13 @@ export interface PendingReadBack {
   id: string;
   /** On a short read-back (readBackChange), the params it said, the ones changed. Absent: the full read-back was said. */
   changes?: string[];
+  /**
+   * Said held, on a call: again after the caller spoke over its read-back before hearing it, whole and not
+   * interruptible (agent.yaml's readBacks.holdAfterCut). Absent: it could be talked over.
+   */
+  held?: true;
+  /** Held, the action's brief read-back (readBackBrief) was said. Absent: the full one (or the short one). */
+  brief?: true;
 }
 
 /** The locale each language's dates are said in. */
@@ -82,6 +89,22 @@ export function readBackText(b: AgentBusiness, action: string, params: Record<st
   const spec = b.actions[action];
   const frame = spec?.readBack?.[lang];
   if (spec === undefined || frame === undefined) throw new Error(`"${action}" has no read-back in ${lang}`);
+  return filled(b, spec, frame, params, lang, seen, callerNumber);
+}
+
+/**
+ * The brief read-back of `action` in `lang` (agent.yaml's readBackBrief), said where a read-back is said again held:
+ * filled as the full read-back is (readBackText), each value shown as it shows it. Throws for an action with none.
+ */
+export function readBackBriefText(b: AgentBusiness, action: string, params: Record<string, string>, lang: Lang, seen: Seen, callerNumber?: string): string {
+  const spec = b.actions[action];
+  const frame = spec?.readBackBrief?.[lang];
+  if (spec === undefined || frame === undefined) throw new Error(`"${action}" has no brief read-back in ${lang}`);
+  return filled(b, spec, frame, params, lang, seen, callerNumber);
+}
+
+/** A read-back's frame filled: each {placeholder} its param as the type displays it, a part in square brackets said only when every param it names has a value. */
+function filled(b: AgentBusiness, spec: ActionSpec, frame: string, params: Record<string, string>, lang: Lang, seen: Seen, callerNumber: string | undefined): string {
   const given = (name: string): boolean => (params[name] ?? '') !== '';
   const parts = frame.replace(/\[([^[\]]*)\]/g, (_, part: string) => ([...part.matchAll(/\{([^{}]*)\}/g)].every((m) => given(m[1]!)) ? part : ''));
   return parts.replace(/\{([^{}]*)\}/g, (_, name: string) => shown(b, spec.params[name], params[name] ?? '', lang, seen, callerNumber));

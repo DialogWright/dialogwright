@@ -1,13 +1,16 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { WebSocketServer } from 'ws';
 import { fakeModel } from '../converse/model/fake';
 import type { ConverseModel, ModelEvent, ModelRequest } from '../converse/model/types';
 import { BRIDGE_AFTER_MS, CUT_IN_NOTE } from '../converse/turn';
 import { converseFixture } from '../testing/converse/app';
 import { BOOKING, CALLER, DAY, done, text, yesJev } from '../testing/converse/chat';
-import type { SimTurn } from './chatDriver';
+import type { SimTurn, TurnEnds } from './chatDriver';
 import { actionsOfCall, modelUseOfCall } from './judge';
 import type { Persona } from './personas';
 import { startEvalServer, type EvalServer } from './server';
@@ -171,5 +174,91 @@ describe('driveVoice', () => {
     expect(last).toContain(first);
     expect(last).toContain(second);
     expect(call.firstWordMs).toHaveLength(1);
+  }, 20_000);
+});
+
+/**
+ * A carrier's far end of its own, in place of the eval server: it answers the call, takes the relay's socket and says
+ * the replies a test gives it, one per turn (the greeting first), each a text frame with its `interruptible`, then tells
+ * the turn's end; it keeps every message the driver sent, with when it came.
+ */
+async function farEnd(replies: { token: string; interruptible: boolean }[]): Promise<{ http: string; ws: string; turnEnds: TurnEnds; got: { msg: Record<string, unknown>; at: number }[]; sentAt: number[]; close: () => Promise<void> }> {
+  const got: { msg: Record<string, unknown>; at: number }[] = [];
+  const sentAt: number[] = [];
+  const watchers = new Map<string, () => void>();
+  const ended = new Map<string, number>();
+  const server = createServer((req, res) => {
+    const host = req.headers.host ?? '';
+    res.writeHead(200, { 'content-type': 'text/xml' });
+    res.end(req.url === '/voice/twilio' ? `<Response><Connect><ConversationRelay url="ws://${host}/relay?t=1"/></Connect></Response>` : '');
+  });
+  const wss = new WebSocketServer({ server });
+  wss.on('connection', (socket) => {
+    let callSid = '';
+    let turn = 0;
+    const say = (): void => {
+      const r = replies[turn++];
+      if (r === undefined) return;
+      sentAt.push(Date.now());
+      socket.send(JSON.stringify({ type: 'text', token: r.token, last: true, lang: 'en-US', interruptible: r.interruptible, preemptible: false }));
+      ended.set(callSid, (ended.get(callSid) ?? 0) + 1);
+      watchers.get(callSid)?.();
+    };
+    socket.on('message', (d) => {
+      const msg = JSON.parse(d.toString()) as Record<string, unknown>;
+      got.push({ msg, at: Date.now() });
+      if (msg.type === 'setup') {
+        callSid = String(msg.callSid);
+        say();
+      } else if (msg.type === 'prompt' && msg.last === true) say();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  const turnEnds: TurnEnds = {
+    watch(id, fn) {
+      watchers.set(id, fn);
+      for (let i = 0; i < (ended.get(id) ?? 0); i++) fn();
+      return () => void watchers.delete(id);
+    },
+  };
+  return {
+    http: `http://127.0.0.1:${port}`, ws: `ws://127.0.0.1:${port}`, turnEnds, got, sentAt,
+    close: () => new Promise<void>((resolve) => {
+      for (const c of wss.clients) c.terminate();
+      wss.close();
+      server.close(() => resolve());
+    }),
+  };
+}
+
+describe('driveVoice: a line the caller cannot interrupt', () => {
+  const HELD = 'So that is a visit on Tuesday, January fifteenth, in the morning window from nine to twelve, for Sam Example, and we will reach you on the number you are calling from, ending in zero one two three, with a text the day before. Is that right?';
+
+  it('an interrupting caller plays it to its end, never cuts in, and answers after it with a partial then their words', async () => {
+    expect(words(HELD).length).toBeGreaterThan(30);
+    const far = await farEnd([{ token: 'Example Visits, how can I help?', interruptible: true }, { token: HELD, interruptible: false }, { token: 'You are booked.', interruptible: true }]);
+    try {
+      const c = scripted(['A visit Tuesday morning, please.', 'yes']);
+      const call = await driveVoice({ url: far.ws, serverHttp: far.http, persona: persona({ interrupts: true, fragments: false }), caller: c.caller, maxTurns: 6, timeoutMs: 5000, turnEnds: far.turnEnds, timeScale: SCALE });
+      expect(call.cutIns).toBe(0);
+      expect(far.got.map((g) => g.msg.type)).not.toContain('interrupt');
+      // Heard whole, with no cut mark, and answered: the persona's next turn reached the line.
+      expect(call.turns.map((t) => t.who)).toEqual(['line', 'caller', 'line', 'caller', 'line']);
+      expect(call.turns[2]).toEqual(expect.objectContaining({ who: 'line', text: HELD }));
+      expect(call.turns[2]).not.toHaveProperty('cut');
+      expect(c.seen[1]!.at(-1)).toMatchObject({ who: 'line', text: HELD });
+      expect(call.turns[4]!.text).toBe('You are booked.');
+      // The answer went after the line had played: a partial first, as Twilio sends with partial prompts on, then the words.
+      const prompts = far.got.filter((g) => g.msg.type === 'prompt');
+      expect(prompts.map((g) => [g.msg.voicePrompt, g.msg.last])).toEqual([['A', false], ['A visit Tuesday morning, please.', true], ['yes', false], ['yes', true]]);
+      const playedMs = words(HELD).length * (1000 / SPEAKING_WORDS_PER_S) * SCALE;
+      expect(prompts[2]!.at - far.sentAt[1]!).toBeGreaterThanOrEqual(playedMs - 5);
+      // A held line is the reply's own: neither the bridge nor a reply never begun.
+      expect(call.bridged).toBe(0);
+      expect(call.replyFirstMs![0]).toBeLessThan(1000);
+    } finally {
+      await far.close();
+    }
   }, 20_000);
 });

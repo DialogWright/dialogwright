@@ -1489,9 +1489,10 @@
     box.innerHTML = head + view.turns.map((turn) => '<div class="cturn">'
       + journeyLine(turn)
       + heardLine(turn)
+      + (turn.ignored ? turn.ignored.map((n) => `<div class="aside mono">speech over a held line ignored (${esc(String(n))} chars)</div>`).join('') : '')
       + (turn.said !== null ? `<div><b class="who caller">Caller</b> ${esc(turn.said)}</div>` : '')
       + turn.tools.map((x) => `<div class="mono tool">${esc(x.name)}(${esc(x.args)}) · ${esc(x.outcome)}${x.reason !== null ? ` · ${esc(x.reason)}` : ''}</div>`).join('')
-      + (turn.readBack !== null ? `<div><b class="who">Read-back</b> ${esc(turn.readBack.text)} <span class="aside">${esc(turn.readBack.answer)}</span></div>` : '')
+      + (turn.readBack !== null ? `<div><b class="who">Read-back</b> ${esc(turn.readBack.text)} <span class="aside">${turn.readBack.held ? `said again held${turn.readBack.brief ? ', brief' : ''} · ` : ''}${esc(turn.readBack.answer)}</span></div>` : '')
       + (turn.bridge ? '<div class="aside mono">bridge said: the model was slow to begin</div>' : '')
       + (turn.line !== '' ? `<div><b class="who sys">Line</b> ${esc(turn.line)}</div>` : '')
       + (turn.interrupted ? '<div class="aside mono">stopped: the caller spoke</div>' : '')

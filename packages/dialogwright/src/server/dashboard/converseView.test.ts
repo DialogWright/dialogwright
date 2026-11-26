@@ -157,4 +157,16 @@ describe('a converse phone call in the console', () => {
     expect(turns[2]).not.toHaveProperty('bridge');
     expect(turns[3]).toMatchObject({ interrupted: true, heard: { cutIn: false, spokeBefore: true, chars: null, text: null } });
   });
+
+  it('shows a read-back said again held (and brief), and the speech over it that was ignored, by its length', () => {
+    const turns = converseCall([
+      { v: 3, kind: 'converse', sessionId: 'CA-2', turnIndex: 0, ts: ts(0), said: 'wait, what?', replies: ['Tuesday morning, on ending in 0123. Right?'], tools: [{ name: 'book', args: {}, outcome: 'readBack' }], readBack: { text: 'Tuesday morning, on ending in 0123. Right?', held: true, brief: true }, model: model(300, 0.0001) },
+      { v: 3, kind: 'converse', sessionId: 'CA-2', turnIndex: 1, ts: ts(9), said: 'yes', replies: ['Booked.'], tools: [], readBack: { text: 'Tuesday morning, on ending in 0123. Right?', held: true, brief: true, yes: 0.95, no: 0.05, confirmed: true }, model: model(300, 0.0001), ignored: [12, 3] },
+    ]).turns;
+    expect(turns[0]!.readBack).toEqual({ text: 'Tuesday morning, on ending in 0123. Right?', answer: 'waiting for the answer', held: true, brief: true });
+    expect(turns[0]).not.toHaveProperty('ignored');
+    expect(turns[1]).toMatchObject({ ignored: [12, 3] });
+    // A read-back not held is as it was.
+    expect(converseCall(CALL).turns.every((t) => t.readBack === null || !Object.hasOwn(t.readBack, 'held'))).toBe(true);
+  });
 });

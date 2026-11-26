@@ -20,6 +20,11 @@ import type { Persona } from './personas';
  *   call's line turn holds only them, marked `cut` (the judge is shown the mark), with the words not heard kept
  *   as `unheard` for the author. A reply still streaming is never cut in on: the cut waits for its final frame, and
  *   where that came after the 40% point, the caller cuts in at the words played by then.
+ * - A line the caller cannot interrupt (a frame with `interruptible: false` that is the reply's last: a read-back said
+ *   again held after the caller spoke over it) is played to its end and never cut in on, as the bridge is, but is the
+ *   reply's own (its first frame for `replyFirstMs`, never counted as the bridge); the caller answers once it has played.
+ * - Speech begins with a partial prompt (its first word, `last: false`), then the final, as Twilio sends them with
+ *   partial prompts on: the line reads when the caller began to speak from it.
  * - Fragments (the persona's `voice.fragments`). A caller turn of more than FRAGMENT_OVER_WORDS words is sent as
  *   two final prompts split at its middle word, FRAGMENT_GAP_MS apart, as a recognizer that ended the turn early.
  * - Timing. `firstWordMs` is from the caller's (last) final prompt to the first text frame heard (the bridge
@@ -215,6 +220,8 @@ export async function driveVoice(o: {
     let over = false;
     let lastAt = Date.now();
     let cut: { words: number } | null = null;
+    /** The last frame so far is one the caller cannot interrupt, marked last. */
+    let heldFinal = false;
     for (;;) {
       const now = Date.now();
       const playEnd = schedule(frames, msPerWord).at(-1)?.end ?? now;
@@ -255,6 +262,7 @@ export async function driveVoice(o: {
         const words = wordsOf(m.token);
         if (words.length === 0) continue;
         const bridge = m.interruptible === false;
+        heldFinal = bridge && m.last === true;
         frames.push({ words, bridge, at: m.at });
         first ??= m.at - sentAt;
         if (!bridge) replyFirst ??= m.at - sentAt;
@@ -263,6 +271,12 @@ export async function driveVoice(o: {
         lineEnd = m;
         over = true;
       }
+    }
+    // A last frame the caller cannot interrupt is a held line, the reply's own, not the bridge (which is followed by the reply).
+    const lastFrame = frames.at(-1);
+    if (lastFrame !== undefined && lastFrame.bridge && heldFinal) {
+      frames[frames.length - 1] = { ...lastFrame, bridge: false };
+      replyFirst ??= lastFrame.at - sentAt;
     }
     // What the caller heard: every frame, or on a cut-in the bridge and the words played before it.
     let heard: string[];
@@ -305,6 +319,11 @@ export async function driveVoice(o: {
   /** The call as the caller knows it: each turn's words as heard, never the words they did not hear nor the mark. */
   const heardSoFar = (): SimTurn[] => call.turns.map((t) => ({ who: t.who, text: t.text, atMs: t.atMs }));
   const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms * scale));
+  /** The caller's words as the recognizer sends them: a partial with the first word as they begin, then the final. */
+  const speak = (said: string): void => {
+    socket.send(JSON.stringify({ type: 'prompt', voicePrompt: wordsOf(said)[0] ?? said, lang: 'en-US', last: false }));
+    socket.send(JSON.stringify({ type: 'prompt', voicePrompt: said, lang: 'en-US', last: true }));
+  };
   try {
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
@@ -357,15 +376,15 @@ export async function driveVoice(o: {
       if (fragmenting && words.length > FRAGMENT_OVER_WORDS) {
         // The recognizer ends the turn early: its first half, then the rest.
         const half = Math.floor(words.length / 2);
-        socket.send(JSON.stringify({ type: 'prompt', voicePrompt: words.slice(0, half).join(' '), lang: 'en-US', last: true }));
+        speak(words.slice(0, half).join(' '));
         turn += 1;
         await pause(FRAGMENT_GAP_MS);
         sentAt = Date.now();
-        socket.send(JSON.stringify({ type: 'prompt', voicePrompt: words.slice(half).join(' '), lang: 'en-US', last: true }));
+        speak(words.slice(half).join(' '));
         call.fragments! += 1;
       } else {
         sentAt = Date.now();
-        socket.send(JSON.stringify({ type: 'prompt', voicePrompt: line.slice(0, 500), lang: 'en-US', last: true }));
+        speak(line.slice(0, 500));
       }
       turn += 1;
       r = await reply(turn, sentAt);

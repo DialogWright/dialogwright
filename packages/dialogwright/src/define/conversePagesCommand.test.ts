@@ -162,6 +162,19 @@ describe('an edit to agent.yaml changes the pages', () => {
     expect(conversePolicyCardText(app)).not.toContain('readBackChange');
   });
 
+  it('the hold of a read-back said again: the card says the setting, and prints a brief read-back beside the full one', () => {
+    const READ_BACK = '      en: "A visit {window} for {name}, on {phone}. Is that right?"\n';
+    const HOLD = '- On a call (`readBacks.holdAfterCut`: on), where the caller spoke over a read-back before hearing it (cut in before 85% of it, or spoke as it began) and the agent model calls the same change again with the same values, the read-back is said again whole and cannot be talked over: speech that began before it finished playing is ignored, recorded by its length only, never its words. Once per change: a held read-back not confirmed is followed by the usual one, which can be talked over, until the change is confirmed, withdrawn or its journey no longer offers it. Where a change gives a brief read-back (`readBackBrief`, shown with each action below), the held read-back says it, naming every value the full one names; the yes to it confirms them all. A chat is unchanged.';
+    const card = conversePolicyCardText(app);
+    expect(card).toContain(HOLD);
+    expect(card).not.toContain('Said again held');
+    const brief = conversePolicyCardText(edited((t) => t.replace(READ_BACK, `${READ_BACK}    readBackBrief:\n      en: "{window}, {name}, on {phone}. Right?"\n`)));
+    expect(brief).toContain('Said again held, after the caller spoke over it before hearing it, in these words: "{window}, {name}, on {phone}. Right?"');
+    const off = conversePolicyCardText(edited((t) => `${t}readBacks: { holdAfterCut: false }\n`));
+    expect(off).not.toContain(HOLD);
+    expect(off).toContain('- On a call (`readBacks.holdAfterCut`: off), every read-back can be talked over, as on any line: one the caller spoke over before hearing it is read back again, as the agent model calls its change again.');
+  });
+
   it('a follow-on: the card and the map show it, and print no read-back for it', () => {
     const text = (t: string): string => t.replace('    audit: { name: length, phone: last4 }\n', '    audit: { name: length, phone: last4 }\n    then: [tell]\n') + '  tell:\n    about: Tell.\n    kind: change\n    params:\n      name: { type: text, about: n. }\n    readBack:\n      en: "NEVER-SAID {name}."\n';
     const withThen = edited(text);

@@ -434,7 +434,8 @@ export interface ConverseTurnView {
   said: string | null;
   line: string;
   tools: { name: string; outcome: string; args: string; reason: string | null }[];
-  readBack: { text: string; answer: string } | null;
+  /** `held`: said again whole after the caller spoke over it, not interruptible; `brief`: its brief version was said. */
+  readBack: { text: string; answer: string; held?: true; brief?: true } | null;
   model: { id: string; ms: number; firstTextMs: number | null; tokens: string; costUsd: number | null; error: string | null; retried: boolean } | null;
   /** On a call with journeys only: the journey the turn is in (null: the root), how the turn was routed (null: it was not), and the journey a confirmed action ended on it. */
   journey?: string | null;
@@ -445,6 +446,8 @@ export interface ConverseTurnView {
   endedBy?: 'unclear' | null;
   /** On a phone call, where the turn says so: what the caller heard of the line before (its first `chars` characters as the trace keeps the line; null: unknown) and whether they cut in on it or spoke before it began. */
   heard?: { cutIn: boolean; spokeBefore: boolean; chars: number | null; text: string | null };
+  /** On a phone call: the caller's speech over a held read-back that was ignored before this turn, each utterance by its length in characters. */
+  ignored?: number[];
   /** The bridge was said this turn (lines.bridge), the model being slow to begin. */
   bridge?: true;
   /** The turn was stopped by the caller speaking: what it had not said was dropped. */

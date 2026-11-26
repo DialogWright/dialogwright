@@ -2063,7 +2063,9 @@ export function converseRow(records, frames) {
  * time, first text, tokens and cost (null on a turn that asked no model). On a phone call, where the turn
  * says so: what the caller heard of the line before as they spoke (`heard`: whether they cut in, spoke
  * before it began, and its first `chars` characters of the line as the trace keeps it), the bridge said
- * while the model was slow to begin (`bridge`), and the turn stopped by the caller speaking (`interrupted`).
+ * while the model was slow to begin (`bridge`), the turn stopped by the caller speaking (`interrupted`), a read-back said
+ * again held after the caller spoke over it (its `held`, and `brief` where its brief version was said), and the speech
+ * over a held read-back that was ignored before the turn (`ignored`, each utterance by its length).
  * A turn that threw in the line, on a chat or a call (`failed`): what it said and ran as far as it reached, with
  * the line said after it. Plain text, for the page to escape.
  */
@@ -2087,6 +2089,8 @@ export function converseCall(records) {
     }
     if (r.bridge === true) callView.bridge = true;
     if (r.interrupted === true) callView.interrupted = true;
+    // The caller's speech over a held read-back, ignored before this turn: each utterance by its length.
+    if (Array.isArray(r.ignored) && r.ignored.length > 0) callView.ignored = r.ignored.filter((n) => typeof n === 'number');
     // The turn threw in the line (an audit row or a trace that could not be written): a chat's turn too.
     if (r.failed === 'internal') callView.failed = true;
     const m = r.model ?? null;
@@ -2117,7 +2121,7 @@ export function converseCall(records) {
         args: Object.entries(t.args ?? {}).map(([k, v]) => `${k}=${v}`).join(', '),
         reason: typeof t.reason === 'string' ? t.reason : null,
       })),
-      readBack: rb === null ? null : { text: String(rb.text ?? ''), answer },
+      readBack: rb === null ? null : { text: String(rb.text ?? ''), answer, ...(rb.held === true ? { held: true } : {}), ...(rb.brief === true ? { brief: true } : {}) },
       model: asked
         ? { id: String(m.id), ms: m.ms, firstTextMs: m.firstTextMs ?? null, tokens: `${m.usage?.inputTokens ?? 0} in, ${m.usage?.outputTokens ?? 0} out`, costUsd: typeof m.costUsd === 'number' ? m.costUsd : null, error: typeof m.error === 'string' ? m.error : null, retried: m.retried === true }
         : null,

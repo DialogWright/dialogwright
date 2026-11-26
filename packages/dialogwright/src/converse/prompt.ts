@@ -242,14 +242,21 @@ function paramSchema(p: ParamSpec): Record<string, unknown> {
  */
 const SHORT_READ_BACK = ' Called again after the caller turned its read-back down with a correction, only the changed details are read back, in words that already acknowledge the correction and say the corrected value back to them: write nothing of your own before calling it, or a word at most (such as "Sure."), and never that you will update it or send it again. Called again with the same values, the whole read-back is said again, for a caller who asks to hear it all.';
 
-function toolOf(name: string, spec: ActionSpec): ModelTool {
+/**
+ * What a change tells the model on a call where a read-back the caller spoke over before hearing it is said again held
+ * (agent.yaml's readBacks.holdAfterCut), as context: the line says it again whole, so the model need not lead into it.
+ * No words telling the caller to listen to it all (the maintainer, 2026-11-26: it reads as a scolding).
+ */
+const HELD_READ_BACK = ' Called again after the caller spoke over its read-back before hearing it, its details are read back again whole and cannot be talked over: write nothing of your own before calling it.';
+
+function toolOf(name: string, spec: ActionSpec, held: boolean): ModelTool {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
   for (const [pname, p] of Object.entries(spec.params)) {
     properties[pname] = paramSchema(p);
     if (p.optional !== true) required.push(pname);
   }
-  const about = spec.kind === 'change' ? `${spec.about} It changes something: the caller hears its details read back and it runs only after their yes.${spec.readBackChange === undefined ? '' : SHORT_READ_BACK}` : spec.about;
+  const about = spec.kind === 'change' ? `${spec.about} It changes something: the caller hears its details read back and it runs only after their yes.${spec.readBackChange === undefined ? '' : SHORT_READ_BACK}${held ? HELD_READ_BACK : ''}` : spec.about;
   return { name, description: about, parameters: { type: 'object', properties, required, additionalProperties: false } };
 }
 
@@ -270,9 +277,12 @@ export function followOnsOf(b: AgentBusiness): Map<string, string> {
 /**
  * The business's actions as the model's tools, each with its params' JSON Schema, and the runtime's end_call.
  * A follow-on is not offered: it runs only after the action it follows. `offered` (the journey's actions, from
- * `offeredActions`) narrows them; absent, every action is offered.
+ * `offeredActions`) narrows them; absent, every action is offered. `channel`: on a call (`voice`) with
+ * readBacks.holdAfterCut on, a change says its read-back is said again held after the caller spoke over it; absent
+ * or a chat, it says nothing of it.
  */
-export function toolsOf(b: AgentBusiness, offered?: readonly string[]): ModelTool[] {
+export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel']): ModelTool[] {
   const followOns = followOnsOf(b);
-  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec)), END_CALL_TOOL];
+  const held = channel === 'voice' && b.readBacks.holdAfterCut;
+  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec, held)), END_CALL_TOOL];
 }
