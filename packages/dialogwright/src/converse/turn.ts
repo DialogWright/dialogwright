@@ -563,7 +563,7 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       delete t.st.unsent;
       t.unsentRefused = action;
       const lead = t.roundSpoke ? 'Not run: you have said goodbye, but ' : 'Not run: ';
-      const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and the line reads it back. Otherwise, end the call.`;
+      const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, end the call.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-change', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
@@ -1056,7 +1056,7 @@ function unheardReadBack(t: Turn): void {
   // In the trace beside the call's read-back, so the console shows why it waits for no answer.
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke before the line read it back');
   keepUnsent(t, p);
-  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, 'Not read back: the caller spoke before the line read it back, so nothing was done. Call it again to have it read back.'), isError: true }]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, 'Not read back: the caller spoke before it was read back, so nothing was done. Call it again to have it read back.'), isError: true }]);
 }
 
 /**
@@ -1146,13 +1146,15 @@ async function runConfirmed(t: Turn, name: string, params: Record<string, string
 }
 
 /** How the result of a read-back's call opens once the caller has answered it: the caller's words are in it (applyHeard's turn boundary). */
-const READ_BACK_ANSWER = 'The line read back: "';
+const READ_BACK_ANSWER = 'Read back to the caller: "';
+/** How that result opened before 2026-11-25, in a conversation saved then: still the caller's words. */
+const READ_BACK_ANSWER_BEFORE = 'The line read back: "';
 
 /**
  * What a read-back the caller did not confirm leaves the model to know: the goal (a yes to the read-back) and
  * what a yes elsewhere is worth, never words for it to say.
  */
-const ONLY_THE_READ_BACK = 'Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them.';
+const ONLY_THE_READ_BACK = 'Nothing is done until the caller hears the action\'s details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it.';
 
 /**
  * A change the caller did not confirm is kept as unsent (ConverseState.unsent), replacing any kept before it, so the
@@ -1268,7 +1270,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     if (notConfirmed !== undefined && isDeclinedWithoutChange(reading)) {
       // A clear no with nothing said of what should be different: the business's line asks, word for word.
       const line = lineFor(t, notConfirmed);
-      add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm, and the line asked them what they would like to change or whether to cancel: "${line}" Answer what they say next. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
+      add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${line}" Answer what they say next. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
       sp.line(line);
       add(t.st, 'assistant', [{ type: 'text', text: line }]);
       return 'asked';
@@ -1419,7 +1421,7 @@ async function routeOf(t: Turn, j: JourneyState, said: string, lastReply: string
  * after speaking's note), or the result of a read-back they answered, which carries what they said.
  */
 const callersOwn = (c: ModelContent): boolean =>
-  (c.type === 'text' && !c.text.startsWith(CHECK_NOTE_MARK)) || (c.type === 'tool_result' && c.content.startsWith(READ_BACK_ANSWER));
+  (c.type === 'text' && !c.text.startsWith(CHECK_NOTE_MARK)) || (c.type === 'tool_result' && (c.content.startsWith(READ_BACK_ANSWER) || c.content.startsWith(READ_BACK_ANSWER_BEFORE)));
 
 /**
  * What the caller heard of the line's last reply, written into the conversation before their words: the last
@@ -1532,7 +1534,7 @@ export class ConverseTurnError extends Error {
 function reached(t: Turn): ConverseState {
   const st = structuredClone(t.st);
   if (st.pending !== null && t.readBackSaid !== true) {
-    add(st, 'user', [{ type: 'tool_result', id: st.pending.id, content: 'Not read back: the line failed before it read it back, so nothing was done. Call it again to have it read back.', isError: true }]);
+    add(st, 'user', [{ type: 'tool_result', id: st.pending.id, content: 'Not read back: something failed before it was read back, so nothing was done. Call it again to have it read back.', isError: true }]);
     st.pending = null;
   }
   const answered = new Set(st.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : []))));

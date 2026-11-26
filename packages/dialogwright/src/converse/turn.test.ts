@@ -420,7 +420,7 @@ describe('converseTurn: a booking', () => {
     expect(lastMessage(h)).toContain('Not done: nothing was changed, booked or sent. The caller did not confirm');
     expect(lastMessage(h)).toContain('yes but make it the afternoon');
     // What a yes confirms: only a yes to the line's read-back, never one to a question of the model's own.
-    expect(lastMessage(h)).toContain('Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them.');
+    expect(lastMessage(h)).toContain('Nothing is done until the caller hears the action\'s details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it.');
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed' }]);
     expect(h.traces.at(-1)!.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?', yes: 0.9, no: 0.6, confirmed: false });
@@ -433,7 +433,7 @@ describe('converseTurn: a booking', () => {
     s = await h.run(s, { kind: 'text', text: 'yes please' });
     expect(h.calendar.bookings).toHaveLength(0);
     expect(s.pending).toBeNull();
-    expect(lastMessage(h)).toContain('Not done: nothing was changed, booked or sent. The caller\'s answer could not be read, so it is not known whether they confirmed. Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them.');
+    expect(lastMessage(h)).toContain('Not done: nothing was changed, booked or sent. The caller\'s answer could not be read, so it is not known whether they confirmed. Nothing is done until the caller hears the action\'s details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it.');
     expect(lastMessage(h)).not.toContain('did not confirm');
     expect(lastMessage(h)).toContain('yes please');
     expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
@@ -807,7 +807,7 @@ describe('converseTurn: a read-back turned down with nothing to change (lines.no
     expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: NOT_CONFIRMED }] });
     const result = s.messages.at(-2)!;
     expect(result.role).toBe('user');
-    expect(result.content).toEqual([{ type: 'tool_result', id: 'c2', content: `The line read back: "${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm, and the line asked them what they would like to change or whether to cancel: "${NOT_CONFIRMED}" Answer what they say next. Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them. They said: 'no'` }]);
+    expect(result.content).toEqual([{ type: 'tool_result', id: 'c2', content: `Read back to the caller: "${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${NOT_CONFIRMED}" Answer what they say next. Nothing is done until the caller hears the action's details read back and says yes to that read-back: a yes to a question of your own confirms nothing. As soon as you have what they want, a correction or a new detail they give included, call the action again with it in that same reply, and it is read back to them: never wait for them to ask for it. They said: 'no'` }]);
     const r = h.traces.at(-1)!;
     expect(r.replies).toEqual([NOT_CONFIRMED]);
     expect(r.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed' }]);
@@ -963,7 +963,7 @@ describe('converseTurn: a change turned down and never sent', () => {
     expect(s.ended).toBeUndefined();
     // The goodbye was said as it streamed, never as the turn's last piece: the question from the model's next round is.
     expect(h.said.slice(before)).toEqual([['Alright. ', false], ['Thanks for calling, goodbye!', false], [ASKED, true]]);
-    const WHY = 'Not run: you have said goodbye, but "book" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "book" again and the line reads it back. Otherwise, end the call.';
+    const WHY = 'Not run: you have said goodbye, but "book" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "book" again and it is read back to them. Otherwise, end the call.';
     expect(h.traces.at(-1)!.tools).toEqual([{ name: 'end_call', args: {}, outcome: 'refused', reason: WHY }]);
     expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'end_call', reason: 'unsent-change', unsent: 'book' }]);
     expect(h.rows.some((r) => r.type === 'converse_end')).toBe(false);
@@ -2070,7 +2070,7 @@ describe('journeys', () => {
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'note', outcome: 'switch', task: NOTE, drops: 0.2 });
     expect(s.journey).toEqual({ active: 'note', phase: 'working', paused: 'visit', done: [] });
     expect(toolNames(h)).toEqual(['callback', 'leave_note', 'end_call']);
-    expect(lastMessage(h)).toContain(`The line read back: \\"${READ_BACK}\\"`);
+    expect(lastMessage(h)).toContain(`Read back to the caller: \\"${READ_BACK}\\"`);
     expect(lastMessage(h)).toContain('The caller did not confirm');
     expect(h.said.at(-1)).toEqual(['I can leave a note for a call back.', true]);
     expect(neverSaid(h)).toBe(true);
@@ -2863,7 +2863,7 @@ describe('converseTurn: stopped from outside', () => {
     const calls = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_call' ? [c.id] : [])));
     const results = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : [])));
     expect(results.sort()).toEqual(calls.sort());
-    expect(JSON.stringify(s.messages.at(-1))).toContain('Not read back: the line failed before it read it back');
+    expect(JSON.stringify(s.messages.at(-1))).toContain('Not read back: something failed before it was read back');
   });
 
   it('a turn that throws carries its trace record, for the channel to write: what was said, the tools as far as they ran, failed and nothing of the error', async () => {
@@ -2939,6 +2939,20 @@ describe('converseTurn: what the caller heard', () => {
     expect((await overReply({ cutIn: false, text: null, spokeBefore: true })).messages[2]).toEqual({ role: 'assistant', content: [{ type: 'text', text: '[The caller spoke before hearing this.]' }] });
     // Neither: the reply stands as it was.
     expect((await overReply({ cutIn: false, text: REPLY, spokeBefore: false })).messages[2]).toEqual({ role: 'assistant', content: [{ type: 'text', text: REPLY }] });
+  });
+
+  it('a read-back\'s answered result holds the caller\'s words, opened as now or as in a conversation saved before 2026-11-25', async () => {
+    for (const opens of ['Read back to the caller: "', 'The line read back: "']) {
+      const h = harness([[text('Go on.'), done()]]);
+      const s = fresh();
+      s.messages = [
+        { role: 'assistant', content: [{ type: 'text', text: 'Earlier.' }, { type: 'tool_call', id: 'c1', name: 'book', args: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', id: 'c1', content: `${opens}${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm. They said: 'no'` }] },
+      ];
+      const after = await h.run(s, { kind: 'text', text: 'wait', heard: { cutIn: true, text: 'Ear', spokeBefore: false } });
+      // The reply before the caller's answer was heard in its turn: what they heard of the turn after it changes nothing.
+      expect(after.messages[0]!.content[0]).toEqual({ type: 'text', text: 'Earlier.' });
+    }
   });
 
   it('keeps the tool calls of the message whose text it replaces', async () => {
