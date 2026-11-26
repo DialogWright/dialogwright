@@ -38,12 +38,17 @@ export const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 /** The app's id, as app.yaml names it: its pages are mounted under /<id>. */
 const APP_ID = 'wheelshop-agent';
 
-/** Whether a request's wheel is diamond cut, as the shop page and its summary say it: from the finish the caller described. */
-const DIAMOND_CUT: Readonly<Record<string, string>> = { 'diamond cut': 'yes', painted: 'no', 'not sure': 'not sure' };
+/**
+ * Whether a request's wheel is diamond cut, as the shop page and its summary say it: worked out from the finish in the
+ * caller's own words (bright metal, or a mix of bright metal and paint, is diamond cut), so the read-back says what
+ * they said and never the shop's name for it (a live call, 2026-11-25).
+ */
+const DIAMOND_CUT: Readonly<Record<string, string>> = { 'bright metal': 'yes', 'a mix of both': 'yes', painted: 'no', 'not sure': 'not sure' };
 
 /** The details of a request, for the shop's summary. */
 function requestDetails(p: Readonly<Record<string, string>>): string {
-  const diamond = p.finish === 'diamond cut' ? ', diamond cut' : p.finish === 'not sure' ? ', not sure if diamond cut' : '';
+  const cut = DIAMOND_CUT[p.finish ?? ''];
+  const diamond = cut === 'yes' ? ', diamond cut' : cut === 'not sure' ? ', not sure if diamond cut' : '';
   return `${p.vehicle ?? ''}, ${p.damage ?? ''}, ${p.wheels ?? ''} wheel${p.wheels === 'one' ? '' : 's'}${diamond}${(p.notes ?? '') === '' ? '' : `; note: ${p.notes}`}`;
 }
 

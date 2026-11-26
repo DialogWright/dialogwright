@@ -35,7 +35,7 @@ function scratch(): string {
 const T0 = Date.parse('2026-11-09T16:05:00Z');
 const MIN = 60_000;
 const PHOTO = 'https://api.twilio.com/2010-04-01/Accounts/AC0/Messages/MM0/Media/ME0';
-const REQUEST = { name: 'Jordan Lee', vehicle: '2020 BMW 3 Series', wheels: 'one', damage: 'curb rash', finish: 'diamond cut', slot: '2026-11-12:morning', callbackNumber: '+15555550177', textOk: 'yes' };
+const REQUEST = { name: 'Jordan Lee', vehicle: '2020 BMW 3 Series', wheels: 'one', damage: 'curb rash', finish: 'a mix of both', slot: '2026-11-12:morning', callbackNumber: '+15555550177', textOk: 'yes' };
 const LATER = { ...REQUEST, name: 'Casey Morgan', vehicle: '2018 Audi A4', wheels: 'two', finish: 'not sure', slot: '2026-11-13:afternoon', callbackNumber: '+15555550188', textOk: 'no' };
 const BOOKING = { account: 'Rivergate Motors', cars: 'three', slot: '2026-11-11:morning' };
 const message = (from: string, body: string, media: string[] = []): IncomingText => ({ id: 'SM0', from, to: '+15555550100', body, media: media.map((url) => ({ url, contentType: 'image/jpeg' })), provider: 'twilio' });

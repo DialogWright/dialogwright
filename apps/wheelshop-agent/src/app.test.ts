@@ -127,6 +127,28 @@ describe('send_request', () => {
     ]);
   });
 
+  it('reads the finish back in the caller\'s own words, and the shop sees from them whether it is diamond cut', async () => {
+    // A live call (2026-11-25): the caller said "a mix of both" and the read-back said "diamond cut", the shop's name for it.
+    for (const [finish, diamondCut, summary] of [['a mix of both', 'yes', ', diamond cut'], ['bright metal', 'yes', ', diamond cut'], ['not sure', 'not sure', ', not sure if diamond cut']] as const) {
+      const provider = fakeTextProvider();
+      const { app, sys } = wheelshop({ now: () => NOW });
+      const script: ConverseModelEvent[][] = [
+        ...dropped(),
+        [call('c1', 'check_availability', { day: TUESDAY }), done('tool')],
+        [call('c2', 'send_request', { ...REQUEST, finish, textOk: 'no' }), done('tool')],
+        [text('Thanks, it is in.'), done()],
+      ];
+      const c = converseTestCall(app, { model: fakeConverseModel(script), jev: routingJev(), now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
+      await c.start();
+      const [readBack] = await c.say('Tuesday morning please');
+      expect(readBack).toContain(`and for the finish, ${finish}. `);
+      expect(readBack).not.toContain('diamond cut');
+      await c.say('yes');
+      expect(sys.requests).toMatchObject([{ ref: 'R101', finish, diamondCut }]);
+      expect(provider.sent.map((t) => t.body)).toEqual([`New request from Dana Example (5555550111): 2019 Honda Civic, curb rash, one wheel${summary}. Drop-off: Tuesday, November 17, morning.`]);
+    }
+  });
+
   it('a correction after the read-back is read back by the changed details alone, and the yes sends the request with them', async () => {
     const provider = fakeTextProvider();
     const { app, sys } = wheelshop({ now: () => NOW });

@@ -123,7 +123,7 @@ After the caller's yes it is followed by `send_photo_request` and `notify_shop_r
 | `vehicle` | text (one line, at most 120 characters) | as it is |
 | `wheels` | choice (one, two, three, four) | as it is |
 | `damage` | text (one line, at most 120 characters) | as it is |
-| `finish` | choice (diamond cut, painted, not sure) | as it is |
+| `finish` | choice (bright metal, painted, a mix of both, not sure) | as it is |
 | `slot` | slot from `check_availability` | as it is |
 | `callbackNumber` | phone | by its last four |
 | `textOk` | choice (yes, no) | as it is |
@@ -161,7 +161,7 @@ Rules, in the order they run:
 | `vehicle` | text (one line, at most 120 characters) | as it is |
 | `wheels` | choice (one, two, three, four) | as it is |
 | `damage` | text (one line, at most 120 characters) | as it is |
-| `finish` | choice (diamond cut, painted, not sure) | as it is |
+| `finish` | choice (bright metal, painted, a mix of both, not sure) | as it is |
 | `slot` | slot from `check_availability` | as it is |
 | `callbackNumber` | phone | by its last four |
 | `textOk` | choice (yes, no) | as it is |
