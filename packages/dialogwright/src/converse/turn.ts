@@ -289,6 +289,8 @@ interface Turn {
   ended?: ConverseTraceRecord['ended'];
   /** The turn answers a silence of the caller's (its count in a row): a failure says lines.silence where the app has it. */
   silence?: number;
+  /** A turn on a silence stopped before it said anything: it leaves no record and changes nothing. */
+  unsaid?: true;
   /** The journey the turn's confirmed action completed. */
   journeyEnded?: ConverseTraceRecord['journeyEnded'];
   /** The signal that stops the turn from outside (the caller spoke on a call); absent, nothing does. */
@@ -1109,7 +1111,7 @@ function unheardReadBack(t: Turn): void {
   // In the trace beside the call's read-back, so the console shows why it waits for no answer.
   traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke before the line read it back');
   keepUnsent(t, p);
-  add(t.st, 'user', [resultOf(p, { content: refused(t, p.action, 'Not read back: the caller spoke before it was read back, so nothing was done. Call it again to have it read back.'), isError: true })]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, 'Not read back: the caller spoke before it was read back, so nothing was done. Call it again to have it read back.'), isError: true }]);
 }
 
 /**
@@ -1263,14 +1265,6 @@ function letGoReadBacks(t: Turn, action: string): void {
   letGoUnheard(t, action);
 }
 
-/**
- * The result of a read-back's call as the model is sent it: its tool result, or, where a silence already gave the call
- * its result while the read-back went on waiting (PendingReadBack.resulted), the same words as the line's own text.
- */
-function resultOf(p: PendingReadBack, r: { content: string; isError?: true }): ModelContent {
-  return p.resulted === true ? { type: 'text', text: r.content } : { type: 'tool_result', id: p.id, ...r };
-}
-
 /** How a read-back was said (short, held, brief), as the trace keeps it beside its text. */
 const changesOf = (p: PendingReadBack): Pick<PendingReadBack, 'changes' | 'held' | 'brief'> => ({
   ...(p.changes !== undefined ? { changes: p.changes } : {}),
@@ -1359,7 +1353,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller spoke over the read-back');
     keepUnsent(t, p);
     keepUnheard(t, p);
-    add(t.st, 'user', [resultOf(p, { content: refused(t, p.action, `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) })]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: refused(t, p.action, `${readLine} Not done: nothing was changed, booked or sent. The caller spoke over the read-back before it finished, so it is not confirmed. They said: "${words}" ${ONLY_THE_READ_BACK}`) }]);
     return 'notRun';
   }
   // Stopped before the decision model is asked: the caller went on speaking, and nothing runs.
@@ -1375,7 +1369,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the answer could not be read');
     keepUnsent(t, p);
     keepHeard(t, p);
-    add(t.st, 'user', [resultOf(p, { content: `${readLine} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` })]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller's answer could not be read, so it is not known whether they confirmed. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return 'notRun';
   }
   if (!yes && isWithdrawn(reading)) {
@@ -1383,7 +1377,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller withdrew it');
     if (t.st.unsent?.action === p.action) delete t.st.unsent;
     letGoReadBacks(t, p.action);
-    add(t.st, 'user', [resultOf(p, { content: `${readLine} Not done: nothing was changed, booked or sent. The caller withdrew it: they do not want it at all, so do not ask them about it again unless they bring it up. ${ONLY_THE_READ_BACK} They said: '${words}'` })]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller withdrew it: they do not want it at all, so do not ask them about it again unless they bring it up. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return 'notRun';
   }
   if (!yes) {
@@ -1394,12 +1388,12 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     if (notConfirmed !== undefined && isDeclinedWithoutChange(reading)) {
       // A clear no with nothing said of what should be different: the business's line asks, word for word.
       const line = lineFor(t, notConfirmed);
-      add(t.st, 'user', [resultOf(p, { content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${line}" Answer what they say next. ${ONLY_THE_READ_BACK} They said: '${words}'` })]);
+      add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm, and they were asked, in the business's own words, what they would like to change or whether to cancel: "${line}" Answer what they say next. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
       sp.line(line);
       add(t.st, 'assistant', [{ type: 'text', text: line }]);
       return 'asked';
     }
-    add(t.st, 'user', [resultOf(p, { content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` })]);
+    add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} Not done: nothing was changed, booked or sent. The caller did not confirm. ${ONLY_THE_READ_BACK} They said: '${words}'` }]);
     return 'notRun';
   }
   // A yes to a read-back of the change kept unsent lets it go, whatever then comes of running it.
@@ -1443,7 +1437,7 @@ async function answered(t: Turn, sp: Speaker, said: string, heard: Heard | undef
     traceTool(t, follow, name, checked.params, ran.outcome, ran.why);
     done.push(`${name}: ${ran.text}`);
   }
-  add(t.st, 'user', [resultOf(p, { content: `${readLine} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) })]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: `${readLine} The caller confirmed; done: ${done.join('; ')}. They said: '${words}'`, ...(parent.outcome === 'ran' ? {} : { isError: true }) }]);
   return parent.outcome === 'ran' ? 'ran' : 'notRun';
 }
 
@@ -1476,7 +1470,7 @@ function wentOn(t: Turn, p: PendingReadBack, words: string, reading?: ReadBackRe
   // heard; an answer read as anything but a yes (a no, a correction, or one that could not be read) is the
   // caller's answer, as answered() takes it, and counts nothing.
   const counts = reading === undefined || isConfirmed(reading);
-  add(t.st, 'user', [resultOf(p, { content: counts ? refused(t, p.action, content) : content })]);
+  add(t.st, 'user', [{ type: 'tool_result', id: p.id, content: counts ? refused(t, p.action, content) : content }]);
   return 'notRun';
 }
 
@@ -1608,7 +1602,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   const sp = new Speaker(t);
   // The bridge: on a call, where the channel can say one, once if nothing of a caller turn's reply is said by its wait (bridgeAfterMs).
   const bridge = out.bridge;
-  if ((input.kind === 'text' || (input.kind === 'silence' && input.end !== true)) && st.channel === 'voice' && bridge !== undefined && signal?.aborted !== true) {
+  // Not on a silence turn: after nine seconds of quiet, "One sec." reads oddly; the model's own short reply follows.
+  if (input.kind === 'text' && st.channel === 'voice' && bridge !== undefined && signal?.aborted !== true) {
     t.bridgeTimer = setTimeout(() => {
       delete t.bridgeTimer;
       if (cut(t)) return;
@@ -1619,7 +1614,8 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
   const onAbort = (): void => clearBridge(t);
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
-    return await turnBody(t, sp, input, now);
+    const after = await turnBody(t, sp, input, now);
+    return t.unsaid === true ? s : after;
   } catch (e) {
     let record: ConverseTraceRecord | null = null;
     try {
@@ -1718,7 +1714,8 @@ export function lineSaid(st: ConverseState, text: string): void {
  * What the model is told of a silence, in the conversation where it learns what the caller said: context and the goal
  * (help the caller go on, as a person would), never words for it to say.
  */
-export const silenceNote = (ms: number): string => `[The caller has said nothing for ${Math.round(ms / 1000)} seconds since your last reply. Help them go on, as a person on the phone would when the other side goes quiet, in a short reply.]`;
+export const silenceNote = (ms: number, readBackLetGo = false): string =>
+  `[The caller has said nothing for ${Math.round(ms / 1000)} seconds since your last reply${readBackLetGo ? '; the read-back no longer waits for their answer, so their yes needs the action called again' : ''}. Help them go on, as a person on the phone would when the other side goes quiet, in a short reply.]`;
 
 /**
  * A silence of the caller's on a call (agent.yaml's `silence`). A silence is no answer: a read-back waiting for the yes
@@ -1742,7 +1739,7 @@ async function silenceTurn(t: Turn, sp: Speaker, input: Extract<Input, { kind: '
     st.pending = null;
     if (st.unsent !== undefined) t.unsent = { action: st.unsent.action };
     else if (p !== null) t.unsent = { action: p.action };
-    if (p !== null) add(st, 'user', [resultOf(p, { content: `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller said nothing after it, and the call ended.` })]);
+    if (p !== null) add(st, 'user', [{ type: 'tool_result', id: p.id, content: `${READ_BACK_ANSWER}${p.text}" Not done: nothing was changed, booked or sent. The caller said nothing after it, and the call ended.` }]);
     add(st, 'assistant', [{ type: 'text', text: line }]);
     t.ended = 'silence';
     st.ended = 'closing';
@@ -1750,11 +1747,19 @@ async function silenceTurn(t: Turn, sp: Speaker, input: Extract<Input, { kind: '
     await record(t, { type: 'converse_end', detail: { by: 'silence', ...(p !== null ? { pending: p.action } : {}) } });
     return;
   }
-  if (p !== null && p.resulted !== true) {
-    add(st, 'user', [{ type: 'tool_result', id: p.id, content: `Read back to the caller as said: "${p.text}" It waits for their answer: nothing is done until they say yes to it.` }]);
-    st.pending = { ...p, resulted: true };
+  // A read-back waiting is let go: the line's words now follow it, so a yes would be to them (a silence turn stopped
+  // before it says anything changes nothing: the channel keeps the state from before it). Not confirmed, no refusal
+  // counted, not marked unheard; still the read-back heard (a correction's base), and kept unsent.
+  if (p !== null) {
+    st.pending = null;
+    const spec = Object.hasOwn(deps.business.actions, p.action) ? deps.business.actions[p.action] : undefined;
+    t.readBack = { text: p.text, ...changesOf(p), confirmed: false };
+    traceTool(t, spec, p.action, p.params, 'notConfirmed', 'the caller said nothing');
+    keepUnsent(t, p);
+    keepHeard(t, p);
+    add(st, 'user', [{ type: 'tool_result', id: p.id, content: `Read back to the caller as said: "${p.text}" Not done: nothing was changed, booked or sent. The caller said nothing after it.` }]);
   }
-  add(st, 'user', [{ type: 'text', text: silenceNote(input.ms) }]);
+  add(st, 'user', [{ type: 'text', text: silenceNote(input.ms, p !== null) }]);
   await converse(t, sp);
 }
 
@@ -1824,6 +1829,12 @@ async function turnBody(t: Turn, sp: Speaker, input: Input, now: Date): Promise<
       if (!cut(t)) await checkAfterSpeaking(t, sp);
     }
     await settleWithdrawal(t);
+  }
+  // A turn on a silence stopped before it said anything (the caller spoke first) is as if it never ran: no record, and
+  // the state as it was (converseTurn returns it).
+  if (input.kind === 'silence' && cut(t) && t.replies.length === 0) {
+    t.unsaid = true;
+    return st;
   }
   const traced = traceRecordOf(t, input, now);
   out.scrubbed?.(traced.scrubbed);

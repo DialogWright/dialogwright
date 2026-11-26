@@ -377,7 +377,7 @@ Say `I need to move my appointment to next week`, then quit.
 1. **A re-prompt.** After the line asks you a question, say nothing. About 9 s after its words end, the line answers the silence in a short reply (the model's own words; `lines.silence` only where the model failed). The console's call view shows "no reply for 9 s (1 in a row)".
 2. **The goodbye.** Stay quiet again: about 9 s after that reply ends, the line says its `silenceEnd` line and the call ends. The audit's `call_ended` row says `silence`.
 3. **Thinking aloud.** Say "um" just before the 9 s, then nothing: the wait starts again from your "um" (no re-prompt 9 s after the line's words).
-4. **After a read-back.** At a read-back, say nothing: the re-prompt comes about 9 s after it ends (a held one too). Then say yes: the read-back, still waiting, is confirmed.
+4. **After a read-back.** At a read-back, say nothing: the re-prompt comes about 9 s after it ends (a held one too). Then say yes: nothing runs until the change is read back again, and a yes to that read-back confirms it.
 5. **Speaking as it answers.** Say nothing until about 9 s after a reply, then speak: where you began before the line's answer to the silence was sent, it says nothing of it and answers you.
 
 **Record.** One row per carrier and step in the results log, with how long after the line's words ended the re-prompt came (on Twilio its estimate decides; note a voice slower than the estimate, which makes the wait shorter than 9 s).

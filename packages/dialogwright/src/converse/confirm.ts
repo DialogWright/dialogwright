@@ -25,11 +25,6 @@ export interface PendingReadBack {
   held?: true;
   /** Held, the action's brief read-back (readBackBrief) was said. Absent: the full one (or the short one). */
   brief?: true;
-  /**
-   * A silence turn gave its call a result (that it waits for the caller's answer), so a model could be asked while it
-   * waits: what comes of it later goes to the model as the line's own text. Absent: its call has no result yet.
-   */
-  resulted?: true;
 }
 
 /** The locale each language's dates are said in. */

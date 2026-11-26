@@ -3467,6 +3467,7 @@ describe('converseTurn: a read-back said again held after one not heard (readBac
 });
 
 describe('converseTurn: a silence on a call', () => {
+  const LAMP = { slot: SLOT, item: 'lamp' };
   const OFF = 'checks:\n  claims: { mode: off }\n';
   const LINES = '  silence: { en: "Are you still there? We can carry on whenever you are ready." }\n  silenceEnd: { en: "I will let you go for now. Call back any time." }\n';
   const withLines = (t: string): string => `${t.replace('lines:\n', `lines:\n${LINES}`)}${OFF}`;
@@ -3481,29 +3482,50 @@ describe('converseTurn: a silence on a call', () => {
     expect(h.ended).toEqual([]);
   });
 
-  it('a silence is no answer: a read-back waiting still waits, nothing is counted, and a yes after it confirms it', async () => {
-    const h = harness([...lookupThenBook, [text('Take your time.'), done()], [text('Booked.'), done()]], { edit: (t) => `${t}${OFF}` });
+  it('a silence answered with words lets a waiting read-back go: not confirmed, nothing counted, still the one heard; a yes then runs nothing, and the read-back said again is confirmed', async () => {
+    const h = harness([...lookupThenBook, [text('Take your time.'), done()], [call('c4', 'book', LAMP), done('tool')], [text('Booked.'), done()]], { edit: (t) => `${t}${OFF}` });
     let s = await upToReadBack(h);
     s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
+    expect(s.pending).toBeNull();
+    expect(s.refusals).toEqual({});
+    expect(s.unheardReadBacks).toBeUndefined();
+    expect(s.heardReadBack).toEqual({ action: 'book', params: LAMP });
+    expect(s.unsent).toEqual({ action: 'book' });
+    const sent = JSON.stringify(h.model.requests.at(-1)!.messages);
+    expect(sent).toContain('[The caller has said nothing for 9 seconds since your last reply; the read-back no longer waits for their answer, so their yes needs the action called again. Help them go on, as a person on the phone would when the other side goes quiet, in a short reply.]');
+    // "Yes" to the line's answer to the silence runs nothing: the model calls the change again, read back in full.
+    s = await h.run(s, { kind: 'text', text: 'yes' });
     expect(h.calendar.bookings).toEqual([]);
     expect(confirmAsks(h)).toEqual([]);
-    expect(s.pending).toMatchObject({ action: 'book', text: READ_BACK });
-    expect(s.unsent).toBeUndefined();
-    expect(s.refusals).toEqual({});
-    const sent = JSON.stringify(h.model.requests.at(-1)!.messages);
-    expect(sent).toContain(NOTE);
-    expect(sent).not.toContain('not confirmed');
-    expect(h.traces.at(-1)!.readBack).toBeUndefined();
-    // The caller's yes, after the line's answer to the silence: the read-back they heard is confirmed.
+    expect(h.said.at(-1)).toEqual([READ_BACK, true]);
     s = await h.run(s, { kind: 'text', text: 'yes' });
     expect(h.calendar.bookings).toHaveLength(1);
-    expect(confirmAsks(h).at(-1)!.state).toMatchObject({ readBack: READ_BACK, said: 'yes' });
-    // Every call in the conversation has one result, and the yes's comes as the caller's words.
-    const results = s.messages.flatMap((m) => m.content.flatMap((c) => (c.type === 'tool_result' ? [c.id] : [])));
-    expect(new Set(results).size).toBe(results.length);
   });
 
-  it('a silence turn on a call gets the bridge where the model is slow, as a turn of the caller\'s does', async () => {
+  it('a held read-back let go by a silence answered with words: the read-back said again is held', async () => {
+    const CUT: Heard = { cutIn: true, text: READ_BACK.slice(0, 10), spokeBefore: false };
+    const h = harness([...lookupThenBook, [call('c3', 'book', LAMP), done('tool')], [text('Take your time.'), done()], [call('c4', 'book', LAMP), done('tool')]], { edit: (t) => `${t}${OFF}` });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'what?', heard: CUT });
+    expect(h.held).toEqual([READ_BACK]);
+    s = await h.run(s, { kind: 'silence', ms: 9000, count: 1 });
+    expect(s.pending).toBeNull();
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.held).toEqual([READ_BACK, READ_BACK]);
+    expect(h.calendar.bookings).toEqual([]);
+  });
+
+  it('a silence turn stopped before it said anything writes no record and changes nothing', async () => {
+    const h = harness([], { edit: (t) => `${t}${OFF}` });
+    const s = await h.run(fresh(), { kind: 'start' });
+    const ac = new AbortController();
+    ac.abort();
+    const after = await converseTurn(s, { kind: 'silence', ms: 9000, count: 1 }, h.deps, h.out, ac.signal);
+    expect(after).toEqual(s);
+    expect(h.traces).toHaveLength(1);
+  });
+
+  it('a silence turn on a call says no bridge, however slow the model', async () => {
     let go!: () => void;
     const wait = new Promise<void>((r) => (go = r));
     const model: ConverseModel = {
@@ -3522,7 +3544,7 @@ describe('converseTurn: a silence on a call', () => {
     await new Promise((r) => setTimeout(r, 50));
     go();
     s = await turn;
-    expect(bridged).toEqual(['One sec.']);
+    expect(bridged).toEqual([]);
   });
 
   it('a silence end stopped before its goodbye is said ends nothing: the call goes on', async () => {

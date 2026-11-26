@@ -1164,8 +1164,8 @@ describe('the converse voice runtime: silence', () => {
     expect(model.requests).toHaveLength(asked);
     await h.settle(400);
     expect(model.requests).toHaveLength(asked + 1);
-    // A silence is no answer: the held read-back still waits.
-    expect(h.entry.session.pending).toMatchObject({ held: true });
+    // The line answered the silence: the held read-back no longer waits, and nothing was done.
+    expect(h.entry.session.pending).toBeNull();
     expect(h.booked).toEqual([]);
   });
 
@@ -1221,12 +1221,13 @@ describe('the converse voice runtime: silence, fix round 2', () => {
       await h.settle(10);
       expect(h.said().slice(sent).map((f) => f.token)).toEqual(['You are booked for Tuesday morning.']);
       expect(h.booked).toHaveLength(1);
-      expect(silenceTurns(h).every((r) => r.replies.length === 0)).toBe(true);
+      // The silence turn stopped unsaid left no record.
+      expect(silenceTurns(h)).toEqual([]);
       // Nothing counted: the next silence is answered, not the end.
       expect(h.entry.session.ended).toBeUndefined();
     });
 
-    it(`${provider}: a yes after the line's answer to a silence has played confirms the read-back still waiting`, async () => {
+    it(`${provider}: a yes after the line's answer to a silence has played runs nothing: the read-back no longer waited`, async () => {
       const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Take your time.'), done()], BOOKING[3]!]);
       const h = harness({ model, provider, business: withLines });
       await readBackPlayed(h, provider);
@@ -1241,7 +1242,8 @@ describe('the converse voice runtime: silence, fix round 2', () => {
       } else await h.settle(textEstimateMs(reprompt));
       await sign(h, provider);
       await h.prompt('yes');
-      expect(h.booked).toHaveLength(1);
+      expect(h.booked).toEqual([]);
+      expect(h.entry.session.refusals).toEqual({});
     });
   }
 
@@ -1337,15 +1339,33 @@ describe('the converse voice runtime: silence, fix round 2', () => {
     expect(model.requests).toHaveLength(1);
   });
 
-  it('a silence turn whose model is slow says the bridge', async () => {
+  it('a silence turn whose model is slow says no bridge', async () => {
     const g = gate();
     const model = gatedModel([[g, text('Take your time.'), done()]]);
     const h = harness({ model, business: withLines });
     await h.rt.open(h.entry, { callerNumber: '+15555550123', provider: 'twilio' }, h.io);
     await h.settle(textEstimateMs(GREETING) + 9100);
     await h.settle(BRIDGE_AFTER_MS + 100);
-    expect(h.said().at(-1)).toMatchObject({ token: 'One sec.', interruptible: false });
+    expect(h.said().map((f) => f.token)).not.toContain('One sec.');
     g.open();
+  });
+
+  it('a cut-in over the line\'s answer to a silence counts no refusal and holds no later read-back', async () => {
+    const model = gatedModel([BOOKING[0]!, BOOKING[1]!, BOOKING[2]!, [text('Take your time, there is no rush at all.'), done()], [call('c4', 'book', { window: SLOT, name: 'Sam Example', phone: 'caller' }), done('tool')]]);
+    const h = harness({ model, business: withLines });
+    await readBackPlayed(h, 'twilio');
+    await h.settle(9100);
+    const reprompt = h.said().at(-1)!.token;
+    expect(reprompt).toBe('Take your time, there is no rush at all.');
+    await h.settle(500);
+    await h.frame({ type: 'interrupt', utteranceUntilInterrupt: 'Take your', durationUntilInterruptMs: 500 });
+    await h.prompt('yes', false);
+    await h.prompt('yes');
+    expect(h.booked).toEqual([]);
+    expect(h.entry.session.refusals).toEqual({});
+    expect(h.entry.session.unheardReadBacks).toBeUndefined();
+    expect(h.said().at(-1)).toMatchObject({ interruptible: true });
+    expect(h.said().at(-1)!.token).toContain('Is that right?');
   });
 });
 
