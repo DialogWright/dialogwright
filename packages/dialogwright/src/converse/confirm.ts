@@ -104,9 +104,40 @@ export function isConfirmed(r: { yes: number; no: number } | null): boolean {
 }
 
 /**
+ * At or above this, the caller's answer reads as a clear no: the bar a yes is held to (CONFIRM_YES_AT), so the
+ * business's fixed line for a no (lines.notConfirmed) answers only a no as clear as a yes must be to run anything.
+ */
+export const DECLINED_AT = CONFIRM_YES_AT;
+/**
+ * Below this, the answer says nothing of what should be different: the bar a no must stay under for a yes to
+ * count (CONFIRM_NO_BELOW), so an answer that may hold a correction at all goes to the model, which can take
+ * it, rather than to the fixed line, which would ask for what the caller has just given.
+ */
+export const CHANGE_BELOW = CONFIRM_NO_BELOW;
+
+/**
+ * Whether the reading is a clear no that says nothing of what should be different (a bare "no", "that's not
+ * right"): not a yes, a no at DECLINED_AT or above, and the change read below CHANGE_BELOW. A reading with no
+ * change read, or no reading, is not.
+ */
+export function isDeclinedWithoutChange(r: ReadBackReading | null): boolean {
+  return r !== null && !isConfirmed(r) && r.no >= DECLINED_AT && r.change !== undefined && r.change < CHANGE_BELOW;
+}
+
+/** The decision model's reading of the caller's answer to a read-back: a yes, a no, and (where it was read) whether they say what should be different. */
+export interface ReadBackReading {
+  yes: number;
+  no: number;
+  /** Whether the caller says what should be different (a change, a correction or a new detail). Absent: not read. */
+  change?: number;
+}
+
+/**
  * The questions of the scripted mode's confirmation (core/questions.ts `confirmation`, with its neutral
  * confirmsNo wording), copied, not imported, so the converse runtime stays off the scripted engine; the
- * state they read is the read-back and what the caller said.
+ * state they read is the read-back and what the caller said. And the converse runtime's own, asked in the
+ * same request: whether the caller says what should be different, so a bare no can be met with the
+ * business's line for it (lines.notConfirmed) and a correction left to the model.
  */
 const YES_NO: QuestionMap = {
   confirmsYes: {
@@ -119,6 +150,14 @@ const YES_NO: QuestionMap = {
     criteria: {
       true: 'The caller says no, says something is wrong, or gives a value that replaces or contradicts a detail the system just read back, including a bare correction such as "not the twelfth, the thirteenth" or "Saturday, not Friday", whether or not the system itself named the value they reject',
       false: 'The caller agrees, answers something else, or says nothing about the question',
+    },
+  },
+  saysChange: {
+    type: 'noul',
+    instructions: 'Read said and readBack. Does the caller say what should be different from what was read back?',
+    criteria: {
+      true: 'The caller gives a change, a correction or a new detail: a value that replaces or adds to what was read back, or what they want instead',
+      false: 'The caller only agrees or declines, asks something, or says nothing of what should be different',
     },
   },
 };
@@ -166,15 +205,17 @@ export function probabilityOf(a: Answer | undefined): number | null {
 
 /**
  * The decision model's reading of what the caller said to the read-back, in one request: how much it
- * reads as a yes and as a no. `today`, the business's day in words (dayInWords), is in its state where
+ * reads as a yes and as a no, and whether it says what should be different (`change`, absent where that
+ * answer is missing or no probability: the yes and the no stand without it). `today`, the business's day in words (dayInWords), is in its state where
  * given, so an answer that names a day ("tomorrow", "Thursday") is read against the day the read-back
  * says rather than as a value that replaces it. Null when the model errs, gives no answer to either, or
  * has not answered within `timeoutMs` (the request is then aborted). It never throws.
  */
-export async function readYesNo(jev: JevClient, readBack: string, said: string, timeoutMs: number, today?: string): Promise<{ yes: number; no: number } | null> {
+export async function readYesNo(jev: JevClient, readBack: string, said: string, timeoutMs: number, today?: string): Promise<ReadBackReading | null> {
   const answers = await askWithin(jev, { readBack, said, ...(today !== undefined ? { today } : {}) }, YES_NO, timeoutMs);
   if (answers === null) return null;
   const yes = probabilityOf(answers.confirmsYes);
   const no = probabilityOf(answers.confirmsNo);
-  return yes === null || no === null ? null : { yes, no };
+  const change = probabilityOf(answers.saysChange);
+  return yes === null || no === null ? null : { yes, no, ...(change !== null ? { change } : {}) };
 }

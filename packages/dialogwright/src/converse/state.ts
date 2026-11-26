@@ -49,6 +49,13 @@ export interface ConverseState {
    * before them (a field not in the shape loads as absent).
    */
   journey?: JourneyState;
+  /**
+   * The change whose read-back the caller last turned down, cut into or could not be read on (its `notConfirmed`
+   * outcome), so the call never ends with it unsent unasked: the model's first end_call while it is kept is refused,
+   * and it is let go then. Taken out when the caller confirms a read-back of that action. Absent (as in a state saved
+   * before it was kept): none.
+   */
+  unsent?: UnsentChange;
   /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
   ended?: 'closing' | 'handoff' | 'left';
 }
@@ -65,6 +72,11 @@ export interface JourneyState {
   done: string[];
   /** Turns in a row the line could not follow (docs/designs/2026-11-12-journeys.md, "Amendment (2026-11-13)"). Absent: none. */
   unclear?: number;
+}
+
+/** A change read back and not confirmed: its action (its read-back is in the conversation, and holds values the trace masks). */
+export interface UnsentChange {
+  action: string;
 }
 
 /** A change that ran on the call: its action, its read-back as said and confirmed, and what it and each follow-on returned (`<action>: <result>`). */

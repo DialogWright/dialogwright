@@ -50,8 +50,11 @@ export interface ConverseTraceRecord {
    * (each request's wait is also its `waitedMs`).
    */
   model: { id: string; ms: number; firstTextMs: number | null; usage: { inputTokens: number; outputTokens: number }; costUsd: number | null; error?: string; retried?: boolean; rateLimited?: number; rateLimitedMs?: number; requests?: ModelRequestTime[] };
-  /** The read-back said, or answered, this turn: the decision model's reading of the answer and whether it confirmed. */
-  readBack?: { text: string; yes?: number; no?: number; confirmed?: boolean };
+  /**
+   * The read-back said, or answered, this turn: the decision model's reading of the answer (its yes, its no, and where
+   * it was read, `change`: whether the caller said what should be different) and whether it confirmed.
+   */
+  readBack?: { text: string; yes?: number; no?: number; change?: number; confirmed?: boolean };
   /**
    * The check after speaking (docs/designs/2026-11-11-claims-check.md), where the turn's reply was read: the
    * decision model's readings (null each where the check was unread: the model failed or was late), the

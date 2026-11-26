@@ -236,6 +236,14 @@ describe('unclear turns', () => {
     expect(asked).toEqual({ outcome: 'carry', next: inVisit });
     expect(decideRoute(plain, unclearOf(2), fit({ visit: 0.9, none: 0.1 }, 0.9), open).next).toEqual(inVisit);
   });
+  it('a turn that answers a read-back is never unclear (the caller is following the line), and the count clears; a switch or a drop is as on any turn', () => {
+    expect(decideRoute(plain, unclearOf(1), fit({ visit: 0.9, none: 0.1 }, 0.1), open, { answersReadBack: true })).toEqual({ outcome: 'carry', next: inVisit });
+    expect(decideRoute(plain, { ...root, unclear: 1 }, reading({ task: { none: 0.9, visit: 0.1 } }), open, { answersReadBack: true })).toEqual({ outcome: 'root', next: root });
+    expect(decideRoute(plain, inVisit, fit({ note: 0.7, none: 0.3 }, 0.1), open, { answersReadBack: true }).outcome).toBe('switch');
+    expect(decideRoute(plain, unclearOf(1), fit({ none: 0.9, visit: 0.1 }, 0.1, { drops: 0.9 }), open, { answersReadBack: true })).toEqual({ outcome: 'dropped', next: root });
+    // Without it, the same reading is unclear.
+    expect(isUnclear(decideRoute(plain, unclearOf(1), fit({ visit: 0.9, none: 0.1 }, 0.1), open))).toBe(true);
+  });
   it('in a working journey, a drop is not unclear', () => {
     const r = decideRoute(plain, unclearOf(1), fit({ none: 0.9, visit: 0.1 }, 0.1, { drops: 0.9 }), open);
     expect(r).toEqual({ outcome: 'dropped', next: root });

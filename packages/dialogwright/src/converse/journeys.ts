@@ -159,8 +159,19 @@ const moreUnclear = (j: JourneyState): JourneyState => ({ ...j, unclear: (j.uncl
 /**
  * What the turn does, from the reading and the state (the design's table and its 2026-11-13 amendment). Ignores any option
  * not in `open`. A null reading (the decision model failed) is never unclear and starts the count again, never bringing a call nearer its end; a turn that is not unclear clears the count.
+ * A turn that answers a read-back (`answersReadBack`: one waited for the caller's answer as the turn began, whatever came
+ * of it) is never unclear either: the caller is following the line, whatever the words (a live call, 2026-11-25: "Excuse
+ * me." at a read-back's end was read as unclear, and the correction that followed could not be read back), so it clears
+ * the count; a switch or a drop on it is as on any turn.
  */
-export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[]): Route {
+export function decideRoute(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[], o: { answersReadBack?: boolean } = {}): Route {
+  const route = routeOfReading(b, j, r, open);
+  if (o.answersReadBack !== true || !isUnclear(route)) return route;
+  const { unclear: _unclear, ...clear } = route;
+  return { ...clear, next: calm(route.next) };
+}
+
+function routeOfReading(b: AgentBusiness, j: JourneyState, r: RouteReading, open: string[]): Route {
   const bar = b.routing.switchAt;
   const above = (p: number | null): boolean => p !== null && p >= bar;
   if (r.task === null) return { outcome: 'carry', next: calm(j) };

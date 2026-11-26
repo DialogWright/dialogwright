@@ -115,15 +115,15 @@ const timeout: ModelEvent = { type: 'error', kind: 'timeout', detail: 'no answer
 /** The provider's refusal for its rate limit (HTTP 429), with the wait it asked for where `retryAfterMs` is given. */
 const rateLimited = (retryAfterMs?: number): ModelEvent => ({ type: 'error', kind: 'rate_limited', detail: 'HTTP 429', ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) });
 
-/** A decision model that reads every answer as `reading`, keeping what it was asked. */
-function fakeJev(reading: { yes: number; no: number }): JevClient & { asked: JevRequest[] } {
+/** A decision model that reads every answer as `reading` (its `change`, whether the caller says what should be different, only where given), keeping what it was asked. */
+function fakeJev(reading: { yes: number; no: number; change?: number }): JevClient & { asked: JevRequest[] } {
   const asked: JevRequest[] = [];
   return {
     asked,
     async ask(req) {
       asked.push(req);
       return {
-        answers: { confirmsYes: { type: 'noul', noul: reading.yes }, confirmsNo: { type: 'noul', noul: reading.no } },
+        answers: { confirmsYes: { type: 'noul', noul: reading.yes }, confirmsNo: { type: 'noul', noul: reading.no }, ...(reading.change !== undefined ? { saysChange: { type: 'noul' as const, noul: reading.change } } : {}) },
         model: 'fake',
         usage: { inputTokens: 0, outputTokens: 0, estimated: true },
         latencyMs: 1,
@@ -148,7 +148,7 @@ interface Harness {
   run(s: ConverseState, input: Input): Promise<ConverseState>;
 }
 
-function harness(turns: ModelEvent[][], o: { now?: Date; reading?: { yes: number; no: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number; onClaimsRead?: ConverseDeps['onClaimsRead'] } = {}): Harness {
+function harness(turns: ModelEvent[][], o: { now?: Date; reading?: { yes: number; no: number; change?: number }; edit?: (t: string) => string; model?: ConverseModel; tools?: ConverseDeps['tools']; jev?: Harness['jev']; jevTimeoutMs?: number; onClaimsRead?: ConverseDeps['onClaimsRead'] } = {}): Harness {
   const b = business(o.edit);
   const model = (o.model ?? fakeModel(turns)) as Harness['model'];
   const calendar = fakeCalendar({ days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], windows: [{ name: 'morning', label: 'by noon', capacity: 1 }, { name: 'afternoon', label: 'by five', capacity: 1 }], now: () => o.now ?? NOW, timeZone: businessZone(b) });
@@ -734,6 +734,170 @@ describe('converseTurn: ending the call', () => {
     expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['check_availability:ran', 'book:readBack', 'end_call:refused', 'check_availability:refused']);
     // Only a change counts toward its refusals.
     expect(s.refusals).toEqual({});
+  });
+});
+
+const HANDOFF_YAML = '  handoff: { en: "Let me get a person to call you back." }\n';
+const NOT_CONFIRMED = 'No problem. What would you like to change, or would you rather cancel?';
+/** The test business with lines.notConfirmed. */
+const withNotConfirmed = (t: string): string => {
+  if (!t.includes(HANDOFF_YAML)) throw new Error('the test business changed: update withNotConfirmed');
+  return t.replace(HANDOFF_YAML, `${HANDOFF_YAML}  notConfirmed: { en: "${NOT_CONFIRMED}" }\n`);
+};
+
+/** A decision model that reads each read-back's answer as the next of `readings`, keeping what it was asked. */
+function readingsJev(readings: { yes: number; no: number; change?: number }[]): Harness['jev'] {
+  const asked: JevRequest[] = [];
+  let next = 0;
+  return {
+    asked,
+    async ask(req) {
+      asked.push(req);
+      const r = Object.hasOwn(req.questions, 'confirmsYes') ? (readings[next++] ?? { yes: 0.5, no: 0.5 }) : { yes: 0.5, no: 0.5 };
+      return { answers: { confirmsYes: { type: 'noul', noul: r.yes }, confirmsNo: { type: 'noul', noul: r.no }, ...(r.change !== undefined ? { saysChange: { type: 'noul' as const, noul: r.change } } : {}) }, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
+    },
+  };
+}
+
+describe('converseTurn: a read-back turned down with nothing to change (lines.notConfirmed)', () => {
+  it('says the line word for word where the caller says no and nothing of what should be different: the model is not asked, the line is the line\'s own in the conversation, and the model is told the line asked', async () => {
+    const h = harness(lookupThenBook, { edit: withNotConfirmed, reading: { yes: 0.05, no: 0.95, change: 0.05 } });
+    let s = await upToReadBack(h);
+    const asked = h.model.requests.length;
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.model.requests).toHaveLength(asked);
+    expect(h.said.at(-1)).toEqual([NOT_CONFIRMED, true]);
+    expect(s.pending).toBeNull();
+    expect(h.calendar.bookings).toHaveLength(0);
+    expect(h.rows.map((r) => r.type)).not.toContain('confirmed');
+    // One request to the decision model: the yes, the no and the change together.
+    expect(confirmAsks(h)).toHaveLength(1);
+    expect(Object.keys(confirmAsks(h)[0]!.questions)).toEqual(['confirmsYes', 'confirmsNo', 'saysChange']);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: NOT_CONFIRMED }] });
+    const result = s.messages.at(-2)!;
+    expect(result.role).toBe('user');
+    expect(result.content).toEqual([{ type: 'tool_result', id: 'c2', content: `The line read back: "${READ_BACK}" Not done: nothing was changed, booked or sent. The caller did not confirm, and the line asked them what they would like to change or whether to cancel: "${NOT_CONFIRMED}" Answer what they say next. Nothing is done until the line reads the action back and the caller says yes to that read-back: a yes to a question of your own confirms nothing, so when the caller wants it done, call the action again and the line reads it back to them. They said: 'no'` }]);
+    const r = h.traces.at(-1)!;
+    expect(r.replies).toEqual([NOT_CONFIRMED]);
+    expect(r.tools).toEqual([{ name: 'book', args: { slot: '•', item: 'lamp' }, outcome: 'notConfirmed' }]);
+    expect(r.readBack).toEqual({ text: 'A visit •, for the lamp. Is that right?', yes: 0.05, no: 0.95, change: 0.05, confirmed: false });
+    expect(r.check).toBeUndefined();
+  });
+
+  it('the model answers what the caller says next, with the line in the conversation before their words', async () => {
+    const h = harness([...lookupThenBook, [text('Sure, the afternoon then?'), done()]], { edit: withNotConfirmed, reading: { yes: 0.05, no: 0.95, change: 0.05 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    s = await h.run(s, { kind: 'text', text: 'make it the afternoon' });
+    const messages = h.model.requests.at(-1)!.messages as { role: string; content: { type: string; text?: string }[] }[];
+    expect(messages.at(-2)).toEqual({ role: 'assistant', content: [{ type: 'text', text: NOT_CONFIRMED }] });
+    expect(messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'text', text: 'make it the afternoon' }] });
+    expect(h.said.at(-1)).toEqual(['Sure, the afternoon then?', true]);
+  });
+
+  it('leaves the reply to the model where the caller says what should be different, where the no is not clear, where the change could not be read, and where the app has no line', async () => {
+    const cases: { reading: { yes: number; no: number; change?: number }; edit?: (t: string) => string }[] = [
+      { reading: { yes: 0.05, no: 0.95, change: 0.9 }, edit: withNotConfirmed },
+      { reading: { yes: 0.05, no: 0.6, change: 0.05 }, edit: withNotConfirmed },
+      { reading: { yes: 0.05, no: 0.95 }, edit: withNotConfirmed },
+      { reading: { yes: 0.05, no: 0.95, change: 0.05 } },
+    ];
+    for (const c of cases) {
+      const h = harness([...lookupThenBook, [text('What should I change?'), done()]], { reading: c.reading, ...(c.edit !== undefined ? { edit: c.edit } : {}) });
+      let s = await upToReadBack(h);
+      s = await h.run(s, { kind: 'text', text: 'no, the kettle' });
+      expect(h.said.at(-1)).toEqual(['What should I change?', true]);
+      expect(h.said.map(([t]) => t)).not.toContain(NOT_CONFIRMED);
+      expect(lastMessage(h)).toContain('The caller did not confirm.');
+      expect(lastMessage(h)).not.toContain('the line asked them');
+    }
+  });
+
+  it('on the web chat says the line\'s chat wording, kept as the line\'s own', async () => {
+    const CHAT = 'No problem. What should we change, or shall we cancel it?';
+    const h = harness(lookupThenBook, { edit: (t) => withNotConfirmed(t).replace(`notConfirmed: { en: "${NOT_CONFIRMED}" }`, `notConfirmed: { en: "${NOT_CONFIRMED}", chat: { en: "${CHAT}" } }`), reading: { yes: 0.05, no: 0.95, change: 0.05 } });
+    let s = await h.run(newConverseState({ appId: 'menders', callId: 'chat-1', channel: 'chat' }), { kind: 'start' });
+    s = await h.run(s, { kind: 'text', text: 'Can I bring my lamp in Friday morning?' });
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.said.at(-1)).toEqual([CHAT, true]);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: CHAT }] });
+  });
+});
+
+describe('converseTurn: a change turned down and never sent', () => {
+  const ASKED = 'Before you go, would you still like that visit booked?';
+
+  it('refuses the first end_call after a read-back the caller turned down: nothing of its goodbye is said, the model is told the change was never sent, and a second end_call ends the call', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [text('Sure. Anything else I can help with?'), done()],
+      [text('Alright. Thanks for calling, goodbye!'), call('c3', 'end_call', {}), done('tool')],
+      [text(ASKED), done()],
+      [call('c4', 'end_call', {}), done('tool')],
+    ], { reading: { yes: 0.05, no: 0.9 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'hmm, not right now' });
+    expect(s.unsent).toEqual({ action: 'book' });
+    // A reply held while a change is kept unsent is said whole, in order, once its round is known to end nothing.
+    expect(h.said.slice(-2)).toEqual([['Sure. ', false], ['Anything else I can help with?', true]]);
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.ended).toEqual([]);
+    expect(s.ended).toBeUndefined();
+    expect(h.said.map(([t]) => t).join(' ')).not.toMatch(/Alright|goodbye|Thanks for calling/);
+    expect(h.said.at(-1)).toEqual([ASKED, true]);
+    const WHY = 'Not run: "book" was read back to the caller and not confirmed, so it was never done or sent. Unless the caller has said they no longer want it, ask whether they still want it before ending the call; if they do, call "book" again and the line reads it back. Otherwise, end the call.';
+    expect(h.traces.at(-1)!.tools).toEqual([{ name: 'end_call', args: {}, outcome: 'refused', reason: WHY }]);
+    expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'end_call', reason: 'unsent-change', unsent: 'book' }]);
+    expect(h.rows.some((r) => r.type === 'converse_end')).toBe(false);
+    expect(h.model.requests.at(-1)!.messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'tool_result', id: 'c3', content: WHY, isError: true }] });
+    // The refused round's words are not in the conversation: its call and the refusal are.
+    expect(JSON.stringify(s.messages)).not.toContain('goodbye');
+    expect(s.unsent).toBeUndefined();
+    expect(s.refusals).toEqual({});
+    s = await h.run(s, { kind: 'text', text: 'no thanks' });
+    expect(h.ended).toEqual(['closing']);
+    expect(s.ended).toBe('closing');
+    expect(h.said.at(-1)).toEqual(['Thanks for calling. Goodbye.', true]);
+  });
+
+  it('keeps the change of a read-back the caller spoke over, and of one the line said the line\'s own line for', async () => {
+    const over = harness(lookupThenBook);
+    let s = await upToReadBack(over);
+    s = await over.run(s, { kind: 'text', text: 'Excuse me.', heard: { cutIn: true, text: 'A visit', spokeBefore: false } });
+    expect(s.unsent).toEqual({ action: 'book' });
+    const lined = harness(lookupThenBook, { edit: withNotConfirmed, reading: { yes: 0.05, no: 0.95, change: 0.05 } });
+    s = await upToReadBack(lined);
+    s = await lined.run(s, { kind: 'text', text: 'no' });
+    expect(s.unsent).toEqual({ action: 'book' });
+  });
+
+  it('no longer keeps a change once the caller confirms another read-back of it: end_call then ends the call at once', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [call('c3', 'book', { slot: SLOT, item: 'lamp' }), done('tool')],
+      [text('You are booked.'), done()],
+      [call('c4', 'end_call', {}), done('tool')],
+    ], { jev: readingsJev([{ yes: 0.05, no: 0.9 }, { yes: 0.95, no: 0.05 }]) });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'not quite' });
+    expect(s.unsent?.action).toBe('book');
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(h.calendar.bookings).toHaveLength(1);
+    expect(s.unsent).toBeUndefined();
+    s = await h.run(s, { kind: 'text', text: 'that is all' });
+    expect(h.ended).toEqual(['closing']);
+  });
+
+  it('keeps a change turned down while another change is confirmed', async () => {
+    const h = harness([
+      ...lookupThenBook,
+      [call('c3', 'leave_note', { note: 'fragile' }), done('tool')],
+      [text('Noted.'), done()],
+    ], { jev: readingsJev([{ yes: 0.05, no: 0.9 }, { yes: 0.95, no: 0.05 }]) });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'not now, just leave a note' });
+    s = await h.run(s, { kind: 'text', text: 'yes' });
+    expect(s.unsent).toEqual({ action: 'book' });
   });
 });
 
@@ -1735,6 +1899,31 @@ describe('journeys', () => {
     expect(neverSaid(h)).toBe(true);
   });
 
+  it('a read-back turned down with nothing to change, answered with lines.notConfirmed, is not routed: the journey stays as it was', async () => {
+    const NOT = 'No problem. What would you like to change, or would you rather cancel?';
+    const h = harness([DROPPED, ...lookupThenBook], {
+      edit: (t) => withJourneys(t).replace('  handoff: { en: "Let me get a person to call you back." }\n', `  handoff: { en: "Let me get a person to call you back." }\n  notConfirmed: { en: "${NOT}" }\n`),
+      jev: (() => {
+        const j = routeJev([{ task: VISIT }], { yes: 0.05, no: 0.95 });
+        const ask = j.ask.bind(j);
+        j.ask = async (req) => {
+          const res = await ask(req);
+          return Object.hasOwn(req.questions, 'confirmsYes') ? { ...res, answers: { ...res.answers, saysChange: { type: 'noul', noul: 0.05 } } } : res;
+        };
+        return j;
+      })(),
+    });
+    let s = await upToReadBack(h);
+    const journey = s.journey;
+    const asked = h.model.requests.length;
+    s = await h.run(s, { kind: 'text', text: 'no' });
+    expect(h.said.at(-1)).toEqual([NOT, true]);
+    expect(routeAsks(h)).toHaveLength(1);
+    expect(h.model.requests).toHaveLength(asked);
+    expect(h.traces.at(-1)!.route).toBeUndefined();
+    expect(s.journey).toEqual(journey);
+  });
+
   it('an action from another journey is refused not-offered: audited with the journey, counted toward no refusal, and the turn goes on', async () => {
     const WHY = 'Not run: "leave_note" is not available for what the caller is doing now.';
     const h = harness([
@@ -2248,6 +2437,29 @@ describe('journeys', () => {
       // The call is over: a later turn does nothing.
       const after = await h.run(s, { kind: 'text', text: 'hello?' });
       expect(after).toBe(s);
+    });
+
+    it('a turn that answers a read-back is never unclear, even one the line could not follow: it keeps the journey\'s actions, so a correction is read back again in the same turn', async () => {
+      // The live call of 2026-11-25: the caller cut in at the read-back's end ("Excuse me."), and the model's call of the change again was refused not-offered.
+      const KETTLE = 'A visit Friday, November 13, by noon, for the kettle. Is that right?';
+      const h = harness([
+        DROPPED, ...lookupThenBook,
+        // The first round, asked alongside the routing and never asked again: its call of the change is read back.
+        [text('Sorry about that.'), call('c3', 'book', { slot: SLOT, item: 'kettle' }), done('tool')],
+      ], { edit: withJourneys, jev: routeJev([{ task: VISIT }, { task: VISIT, drops: 0.05, fits: 0.1 }]) });
+      let s = await upToReadBack(h);
+      s = await h.run(s, { kind: 'text', text: 'Excuse me.', heard: { cutIn: true, text: 'A visit Friday', spokeBefore: false } });
+      expect(h.traces.at(-1)!.tools.map((x) => `${x.name}:${x.outcome}`)).toEqual(['book:notConfirmed', 'book:readBack']);
+      expect(h.rows.filter((r) => r.type === 'converse_refused')).toEqual([]);
+      expect(s.pending).toMatchObject({ action: 'book', id: 'c3', params: { slot: SLOT, item: 'kettle' } });
+      expect(h.said.slice(-2)).toEqual([['Sorry about that.', false], [KETTLE, true]]);
+      expect(toolNames(h)).toEqual(['check_availability', 'book', 'end_call']);
+      const route = h.traces.at(-1)!.route!;
+      expect(route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', fits: 0.1 });
+      expect(route.unclear).toBeUndefined();
+      expect(route.restarted).toBeUndefined();
+      expect(s.journey).toEqual({ ...root, active: 'visit' });
+      expect(h.model.requests.at(-1)!.system).not.toMatch(/unclear/);
     });
 
     it('a clear turn in between starts the count again', async () => {

@@ -62,6 +62,16 @@ describe('converseChatRuntime: a saved state', () => {
     expect(dropped.done).toEqual([{ action: 'book', readBack: 'r', results: ['book: ok'] }]);
   });
 
+  it('loads a state saved before the unsent change was kept (none), keeps one that was, and drops one not in its shape', () => {
+    const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-13', channel: 'chat' }))) as unknown;
+    expect(stateOf(before)!.unsent).toBeUndefined();
+    const kept = { ...newConverseState({ appId: 'visits', callId: 'chat-14', channel: 'chat' }), unsent: { action: 'book' } };
+    expect(stateOf(JSON.parse(JSON.stringify(kept)))!.unsent).toEqual({ action: 'book' });
+    for (const odd of ['book', null, {}, { action: 7 }, { action: '' }]) {
+      expect(stateOf({ ...newConverseState({ appId: 'visits', callId: 'chat-15', channel: 'chat' }), unsent: odd })!.unsent).toBeUndefined();
+    }
+  });
+
   it('a saved state without journey loads as none', () => {
     const before = JSON.parse(JSON.stringify(newConverseState({ appId: 'visits', callId: 'chat-10', channel: 'chat' }))) as unknown;
     expect(stateOf(before)).not.toBeNull();

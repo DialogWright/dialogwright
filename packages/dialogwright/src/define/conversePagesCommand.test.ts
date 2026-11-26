@@ -73,6 +73,15 @@ describe('the pages of an agent app', () => {
     expect(conversePolicyCardText(app)).not.toContain('whether the business is open now');
   });
 
+  it('the card: a bare no hears lines.notConfirmed word for word where the app has it; the first end_call after a read-back not confirmed is refused', () => {
+    const base = read(join(CONVERSE_FIXTURE_DIR, 'agent.yaml'), 'utf8');
+    const lined = agentBusinessProblems(base.replace('lines:\n', 'lines:\n  notConfirmed: { en: "What should we change?", chat: { en: "What should we change in the chat?" } }\n')).value!;
+    const card = conversePolicyCardText({ ...app, business: lined });
+    expect(card).toContain('- A clear no that says nothing of what should be different (read by the decision model) is answered by `lines.notConfirmed`, word for word ("What should we change?", and in the web chat "What should we change in the chat?"), and the agent model is told the line asked; it answers what the caller says next.');
+    expect(conversePolicyCardText(app)).not.toContain('lines.notConfirmed');
+    expect(conversePolicyCardText(app)).toContain('The first `end_call` after a read-back the caller did not confirm (turned down, spoken over or not read) is refused, audited, and its goodbye not said');
+  });
+
   it('the card: only the audit records an action\'s result, and only a gate refusal is scrubbed before the model is told it', () => {
     const text = conversePolicyCardText(app);
     expect(text).toContain('Only the audit records an action\'s result');
@@ -83,7 +92,7 @@ describe('the pages of an agent app', () => {
 
   it('the card: what the decision model is sent: each read-back with the caller\'s words in answer, and the business\'s day', () => {
     const text = conversePolicyCardText(app);
-    expect(text).toContain('- The decision model (not the agent model) is sent each read-back as it was said, the caller\'s own words in answer to it and the business\'s day (today\'s date, in words), to read a yes or a no.');
+    expect(text).toContain('- The decision model (not the agent model) is sent each read-back as it was said, the caller\'s own words in answer to it and the business\'s day (today\'s date, in words), to read a yes or a no, and whether the caller says what should be different.');
     expect(text).toContain('it is also sent the business information, the business\'s day, the call\'s actions so far');
     expect(text).toContain('any words of the caller\'s that imitate the note\'s mark are rewritten before the agent model is sent them');
   });
@@ -244,6 +253,7 @@ describe('the pages of an agent app with journeys', () => {
     expect(journeys).toMatch(/`lines\.unclear`/);
     expect(journeys).toMatch(/unclear turn.*change action is withheld|change actions are withheld/);
     expect(journeys).toMatch(/lookups/);
+    expect(journeys).toContain('A turn that answers a read-back is never unclear: the caller is following the line, so the journey\'s actions stay offered and a correction can be read back again.');
     expect(conversePolicyCardText(plain)).not.toContain('unclear');
   });
 

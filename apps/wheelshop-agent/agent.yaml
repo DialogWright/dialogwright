@@ -205,6 +205,8 @@ lines:
   unclear:
     en: "Sorry, this line can only help with a wheel repair or a callback. Call us back any time."
     chat: { en: "Sorry, this chat can only help with a wheel repair or a callback. Get in touch any time." }
+  # assumption: the owner corrects these (said when a caller turns a read-back down without saying what to change)
+  notConfirmed: { en: "No problem. What would you like to change, or would you rather cancel the request?" }
   done: { en: "That's done." }
   stuck: { en: "Let me get someone from the shop to follow up on that." }
 model:

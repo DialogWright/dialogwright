@@ -124,9 +124,11 @@ const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most wh
 /**
  * How the model speaks of what it does, on either channel: a live call (2026-11-25) heard "the line will read it back
  * for your yes", the runtime's own words for its read-back, and an answer acknowledged twice ("Painted all over,
- * thanks", then on the next turn "Painted black, noted").
+ * thanks", then on the next turn "Painted black, noted"). And another (2026-11-25) heard its item misheard by the
+ * recognizer acknowledged with a bare "Thanks.", and first heard the mistake in the read-back a minute later: a value
+ * said back as understood is caught on the turn it is given.
  */
-const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have.';
+const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When you acknowledge a name, a number, a make or model, or anything else easily misheard, say back the value as you understood it, so a mishearing is caught at once.';
 
 /**
  * What a call adds: the caller cannot see the questions, and a voice reads a screen's marks badly (a range

@@ -104,7 +104,8 @@ const isJourneyState = (j: unknown): j is JourneyState => {
 
 /**
  * A saved converse state as it was written (newConverseState's shape), or null. A state saved before a field
- * was kept loads as it is: a carried note absent is none (and one that is not text is dropped); a journey absent or not in its shape, none.
+ * was kept loads as it is: a carried note absent is none (and one that is not text is dropped); a journey absent or not in its shape, none;
+ * an unsent change absent or not in its shape, none.
  */
 export function stateOf(session: unknown): ConverseState | null {
   const s = session as Partial<ConverseState> | null;
@@ -113,6 +114,8 @@ export function stateOf(session: unknown): ConverseState | null {
   if (s.done !== undefined && !(Array.isArray(s.done) && s.done.every((d) => typeof d === 'object' && d !== null && typeof d.action === 'string' && typeof d.readBack === 'string' && Array.isArray(d.results)))) delete s.done;
   // What a change carried: one not a list of text is not told.
   for (const d of s.done ?? []) if (Object.hasOwn(d, 'carried') && !(Array.isArray(d.carried) && d.carried.every((c) => typeof c === 'string'))) delete d.carried;
+  // The change the caller turned down and never sent: one not an action's name loads as none.
+  if (Object.hasOwn(s, 'unsent') && !(typeof s.unsent === 'object' && s.unsent !== null && typeof s.unsent.action === 'string' && s.unsent.action !== '')) delete s.unsent;
   // Where the call is among the journeys: one not in its shape loads as none (the turn starts it again, initialJourney).
   if (Object.hasOwn(s, 'journey') && !isJourneyState(s.journey)) delete s.journey;
   // The unclear turns in a row: a count that is not a whole number of turns is none.
