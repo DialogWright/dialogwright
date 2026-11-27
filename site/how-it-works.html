@@ -76,7 +76,7 @@
       </p>
       <div class="banner">
         <p>This page is the scripted mode, where every line is the app's own. For a line where a model holds the
-          conversation, with the same gate and audit on what is done, see <a href="agent-mode.html">agent mode</a>.</p>
+          conversation, with the same policy gate and audit log on what is done, see <a href="agent-mode.html">agent mode</a>.</p>
       </div>
       <nav class="toc" aria-label="On this page">
         <h2>On this page</h2>
@@ -116,18 +116,21 @@
           <li id="decides">
             <h3><span class="num" aria-hidden="true">2</span> Code decides</h3>
             <p>
-              Deterministic code owns the dialog: which form is active, which slot to ask next, when to read back,
-              when to hand off to a person. The same judgments and state always lead to the same step, and every
-              line the caller hears is an approved line filled with checked values, unless the app has asked for a
-              generated one (<a href="#wording">below</a>).
+              Your app's code runs the conversation: which task the call is on (a form, such as booking an
+              appointment), which detail to ask for next (a slot, such as the date), when to repeat the details back
+              for the caller to confirm, and when to hand off to a person. The same answers always lead to the same
+              step. Every line the caller hears is an approved line filled with checked values, unless the app has
+              asked for a generated one (<a href="#wording">below</a>).
             </p>
           </li>
           <li id="gate">
             <h3><span class="num" aria-hidden="true">3</span> The gate checks every action</h3>
             <p>
-              Before any tool runs, a policy gate checks the caller's identity level, whose record it is, exact
-              confirmation, role and attempt limits. The gate does not read the conversation, so no one can talk
-              past it. Every decision, allowed or refused, goes to a hash-chained audit log.
+              Before any action runs (booking, sending, looking up a record), a policy gate checks how far the caller
+              has proven who they are, whether the record is theirs, that they confirmed exactly these details, their
+              role and how many tries are left. The gate does not read the conversation, so no one can talk past it.
+              Every decision, allowed or refused, goes to an audit log where each entry is sealed with a hash of the
+              one before, so a later edit shows.
             </p>
           </li>
         </ol>
@@ -142,9 +145,10 @@
       <section id="folder" aria-labelledby="folder-title">
         <h2 id="folder-title">An app is a folder</h2>
         <p>
-          YAML for what is data: intents, forms, slots, prompts, policy, identity, locales. TypeScript for what runs:
-          tools, form hooks, rules of your own. <code>defineApp</code> joins the two. Most slots are configuration:
-          name a type from the slot library (<code>digits</code>, <code>choice</code>, <code>date</code>,
+          YAML for what is data: intents (what callers can ask for), forms (the details a task collects), slots (each
+          detail), prompts (the lines), the policy, identity (how callers prove who they are) and locales (languages).
+          TypeScript for what runs: tools (the actions, such as booking), form hooks and rules of your own.
+          <code>defineApp</code> joins the two. Most slots are configuration: name a type from the slot library (<code>digits</code>, <code>choice</code>, <code>date</code>,
           <code>birthdate</code>, <code>name</code>, <code>record</code>, <code>text</code>) and give it a few options.
         </p>
         <div class="code-grid">
@@ -205,10 +209,10 @@ apps/utility: ok</code></pre>
       <section id="tested" aria-labelledby="tested-title">
         <h2 id="tested-title">Tested before a call is taken</h2>
         <ul>
-          <li><strong>Labelled utterances and scripted calls.</strong> Each app keeps what callers say, labelled, and whole calls with the outcome each must reach. The regression runs them against a committed baseline, and a changed outcome is a finding to explain.</li>
-          <li><strong>Recorded calls.</strong> The real model's answers are recorded once into a cassette, so the same calls replay offline, with no key, to the same outcome.</li>
-          <li><strong>The policy matrix.</strong> For every action and every kind of caller, what the gate decides, compared by a test (<a href="#policy">below</a>).</li>
-          <li><strong>The adversarial suite.</strong> Cases generated from the app itself: injections, relationships claimed and not proven, off-scope requests, codes said aloud, hostile replies from every tool. Each is held to properties over its run, never to lines, and a failing case is fixed in the app or the engine.</li>
+          <li><strong>Labelled phrases and scripted calls.</strong> Each app keeps what callers say, labelled with what they meant, and whole calls with the outcome each must reach. A regression run plays them and compares the outcomes with the last approved ones. A changed outcome is a finding to explain.</li>
+          <li><strong>Recorded calls.</strong> The real model's answers are recorded once into a file (a cassette), so the same calls replay offline, with no key, to the same outcome.</li>
+          <li><strong>The policy matrix.</strong> A table of what the gate decides for every action and every kind of caller, compared by a test (<a href="#policy">below</a>).</li>
+          <li><strong>The adversarial suite.</strong> Hostile calls generated from the app itself: attempts to inject instructions, relationships claimed and not proven, requests outside the line's purpose, codes said aloud, hostile replies from every tool. Each is held to rules about what may happen, never to exact lines, and a failing case is fixed in the app or the engine.</li>
         </ul>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#7-testing">Testing in the design</a>
@@ -252,7 +256,7 @@ apps/utility: ok</code></pre>
             a fictional transit agency) and told to use the skill.
           </p>
           <ul class="stats">
-            <li><b>15 and 11 min</b><span>to a working app, by their own count, check and scripted calls green</span></li>
+            <li><b>15 and 11 min</b><span>to a working app, by their own count, with the checks and the test calls passing</span></li>
             <li><b>1 real hole</b><span>found by both in the policy matrix: a code texted to someone else's phone. Now refused for every app</span></li>
             <li><b>Every stumble</b><span>they logged, fixed or recorded with its reason</span></li>
           </ul>
@@ -275,13 +279,13 @@ apps/utility: ok</code></pre>
         <p>
           Each is written by a command and compared by a test, never written by CI.
           <a href="https://github.com/DialogWright/dialogwright/blob/main/.github/CODEOWNERS"><code>CODEOWNERS</code></a>
-          makes a change to the policy files and these pages need compliance's review.
+          requires compliance's review of any change to the policy files and these pages.
         </p>
         <figure>
           <figcaption>
             From <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/policy.matrix">apps/utility/policy.matrix</a>:
-            who may set up a payment arrangement. A customer needs the one-time code (level 2), their own account and
-            an exact read-back; a property manager goes to a person.
+            who may set up a payment arrangement, in the utility example. A customer needs the one-time code (level 2),
+            their own account and to confirm the details read back exactly. A property manager goes to a person.
           </figcaption>
 <pre data-from="apps/utility/policy.matrix"><code>setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(accountId, place, symptom, count, firstDate, total), limit(total), dateInRange(firstDate)
   anonymous           STEP_UP to 2
@@ -325,8 +329,8 @@ apps/utility: ok</code></pre>
             <p>
               Several servers behind a load balancer, with sessions, the audit and the traces in shared stores
               (Postgres and S3-compatible storage). When the server holding a call stops or crashes, another takes the
-              call over from the shared session. Built for Phase 8b's scope; roles, single sign-on for the console and
-              OpenTelemetry are left for later.
+              call over from the shared session. Roles, single sign-on for the console and OpenTelemetry are left for
+              later.
             </p>
             <p><a href="guides/scaling.html">Scaling out</a></p>
           </article>
@@ -342,8 +346,9 @@ apps/utility: ok</code></pre>
       <section id="knowledge" aria-labelledby="knowledge-title">
         <h2 id="knowledge-title">Answers from a knowledge base</h2>
         <p>
-          Callers ask what a document answers. Nothing is said that a person has not approved, and you choose, topic by
-          topic, how much a model may word.
+          Callers ask questions a business's documents answer, such as what a plan covers. Answers come from approved
+          passages (short answers a person checked against their source) or from documents a person approved. Nothing
+          is said that a person has not approved, and you choose, topic by topic, how much a model may reword.
         </p>
         <div class="table-wrap">
           <table class="stack">
@@ -364,7 +369,7 @@ apps/utility: ok</code></pre>
           <li><strong>Judge</strong><span>The decision model reads it two ways: does it say anything new, and how much is its own. An app may also ask about each figure.</span></li>
           <li class="last"><strong>Fall back</strong><span>Refused again: the document's own lines, word for word.</span></li>
         </ol>
-        <h3>Measured on Harbor Mutual's member line</h3>
+        <h3>Measured on the Harbor Mutual example</h3>
         <ul class="stats four">
           <li><b>95.8%</b><span>the right topic found, on 120 questions it never saw</span></li>
           <li><b>97.5%</b><span>the right handbook section offered, on 80 held-out questions</span></li>
@@ -380,12 +385,12 @@ apps/utility: ok</code></pre>
           <li><b>2 of 79</b><span>right answers refused by the judge, where one yes-or-no refused 12</span></li>
           <li><b>44 of 55</b><span>wrong answers caught, 83% of what a top reasoning model catches</span></li>
           <li><b>7 of 120</b><span>answers fell back to the document's own lines, from 13</span></li>
-          <li><b>0.1 s</b><span>to judge an answer; about $0.0003 an answer, every model included</span></li>
+          <li><b>0.1 s</b><span>to judge an answer, and about $0.0003 an answer, every model included</span></li>
         </ul>
         <figure class="chart">
           <svg viewBox="0 0 420 310" role="img" aria-labelledby="judge-chart-title judge-chart-desc">
             <title id="judge-chart-title">The fast models' judge beside a large reasoning model's</title>
-            <desc id="judge-chart-desc">On 134 labelled answers from a benefit booklet: wrong answers caught, 44 of 55 by the fast models and 53 of 55 by Claude Sonnet 5.5 as the judge; right answers refused, 2 of 79 and 3 of 79; seconds to judge an answer, about 0.1 and about 2.8; model cost an answer, about $0.0003 for every model and about $0.005 for Sonnet's judging alone.</desc>
+            <desc id="judge-chart-desc">On 134 labelled answers from a benefit booklet: wrong answers caught, 44 of 55 by the fast models and 53 of 55 by Claude Sonnet 5.5 as the judge. Right answers refused, 2 of 79 and 3 of 79. seconds to judge an answer, about 0.1 and about 2.8. Model cost an answer, about $0.0003 for every model and about $0.005 for Sonnet's judging alone.</desc>
             <rect class="ch-after" x="0" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="18" y="12">Decision model + Mercury 3</text>
             <rect class="ch-before" x="210" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="228" y="12">Claude Sonnet 5.5 as judge</text>
             <text class="ch-label" x="0" y="44">Wrong answers caught, of 55</text>
@@ -401,12 +406,12 @@ apps/utility: ok</code></pre>
             <rect class="ch-after" x="0" y="268" width="18" height="14" rx="2"/><text class="ch-value" x="24" y="279">$0.0003</text>
             <rect class="ch-before" x="0" y="286" width="292" height="14" rx="3"/><text class="ch-value" x="298" y="297">$0.005</text>
           </svg>
-          <figcaption>On 134 labelled answers. The fast models' cost is every model of an answer; Sonnet's is its judging alone.</figcaption>
+          <figcaption>On 134 labelled answers. The fast models' cost is every model of an answer. Sonnet's is its judging alone.</figcaption>
         </figure>
         <ul class="minis">
           <li><strong>Not tuned to one document</strong>Six other insurers' public summaries of benefits import and are questioned the same way. The logic and questions are general.</li>
           <li><strong>Room to tune</strong>Tuning to a document's own content should narrow the gap to large, slow models further, or close it. Left for later.</li>
-          <li><strong>Who pays, compared</strong><code>judge.compareFigures</code> asks an app's own question of each figure, in the answer and the document, read apart.</li>
+          <li><strong>Who pays, compared</strong>An app can ask its own question of each figure, in the answer and in the document, read apart (<code>judge.compareFigures</code>).</li>
         </ul>
         <h3>Follow-up questions</h3>
         <p>
@@ -416,7 +421,7 @@ apps/utility: ok</code></pre>
         <figure class="chart">
           <svg viewBox="0 0 420 232" role="img" aria-labelledby="fu-title fu-desc">
             <title id="fu-title">Follow-up questions, read alone and read with the earlier question</title>
-            <desc id="fu-desc">On a 123-page benefit booklet, against the decision model: follow-ups answered from a right section went from 21 of 42 to 38 of 43; follow-ups that found nothing went from 7 of 42 to none of 43; questions that stand alone were answered right 18 of 24 times either way.</desc>
+            <desc id="fu-desc">On a 123-page benefit booklet, against the decision model: follow-ups answered from a right section went from 21 of 42 to 38 of 43. Follow-ups that found nothing went from 7 of 42 to none of 43. Questions that stand alone were answered right 18 of 24 times either way.</desc>
             <rect class="ch-before" x="0" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="18" y="12">Each question read alone</text>
             <rect class="ch-after" x="190" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="208" y="12">With the earlier one</text>
             <text class="ch-label" x="0" y="44">Follow-ups answered right</text>
@@ -433,7 +438,7 @@ apps/utility: ok</code></pre>
         </figure>
         <ul class="minis">
           <li><strong>Withheld when it changes</strong>A passage whose source changes, or that is edited, waits for a person to approve it again.</li>
-          <li><strong>Depends on who is asking</strong>A passage applies by facts read from the system of record, never from what the caller said.</li>
+          <li><strong>Depends on who is asking</strong>A passage can apply to some callers only, by facts read from the business's own records, never from what the caller said.</li>
           <li><strong>Gaps ranked</strong><code>pnpm kb:gaps</code> ranks what callers asked that nothing answered, with the section that would.</li>
           <li><strong>Runs anywhere, offline too</strong>Where the model's native runtime can't load, it runs on WebAssembly from the local cache.</li>
         </ul>
@@ -487,8 +492,8 @@ approval:
           <ul class="minis">
           <li><strong>A chat page of its own</strong>The app's brand, the conversation front and centre, ways to start, a number to call.</li>
           <li><strong>Or the widget</strong>One script with no dependencies, on any site.</li>
-          <li><strong>Formatted answers</strong>Lists and bold where a chat can show them; values always plain text.</li>
-          <li><strong>Answer buttons</strong>Yes and no, a choice, one of the caller's records. A tap is typed words: it decides nothing.</li>
+          <li><strong>Formatted answers</strong>Lists and bold where a chat can show them, and values always as plain text.</li>
+          <li><strong>Answer buttons</strong>Yes and no, a choice, one of the caller's records. A tap counts as the words typed, and decides nothing on its own.</li>
           <li><strong>Where each answer comes from</strong>The document, the section and the page, under a knowledge answer.</li>
           <li><strong>Chat only</strong>No carrier, no phone number, no carrier's secret: <code>VOICE_PROVIDERS=none</code>.</li>
           <li><strong>Texts</strong>An app can send and receive texts, through Twilio or Telnyx. A text to a caller goes through the gate like any action.</li>
@@ -504,8 +509,8 @@ approval:
         <h2 id="wording-title">Generated wording, where you opt in</h2>
         <p>
           Every line is said word for word unless the app asks for a generated one. The model chooses the words, never
-          the content: the core has decided before any line is worded. A summary of what the caller said is framed: the
-          line is fixed, and only a span of it is generated.
+          the content: your code has decided what happens before any line is worded. A summary of what the caller said
+          sits inside a fixed sentence, and only that part (a span) is generated.
         </p>
         <figure class="wrapped">
           <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/prompts.yaml">apps/secretary/prompts.yaml</a> (excerpt): only <code>{summary}</code> is generated</figcaption>
@@ -520,18 +525,18 @@ approval:
         names: [recipient]</code></pre>
         </figure>
         <ol class="flow four">
-          <li><strong>Opt in, line by line</strong><span><code>mode: generative</code>, or a form at a time. A line marked <code>prescribed</code> never is.</span></li>
+          <li><strong>Opt in, line by line</strong><span><code>mode: generative</code>, or a whole task at a time. A line marked <code>prescribed</code> is never reworded.</span></li>
           <li><strong>Checked by code</strong><span>Every value word for word, no figure it was not given, its word budget.</span></li>
           <li><strong>Judged for meaning</strong><span>The decision model refuses a summary that adds, drops or turns anything around.</span></li>
           <li class="last"><strong>Exact words on failure</strong><span>A failed check, a slow model or an error: the caller's own words, as they said them.</span></li>
         </ol>
         <ul class="stats">
           <li><b>491 ms</b><span>median to word a summary (841 ms at p95), Gemini 3.1 Flash-Lite</span></li>
-          <li><b>900 ms</b><span>a line's budget on a call by default (1500 ms in a chat); past it, the fixed text</span></li>
+          <li><b>900 ms</b><span>a line's time limit on a call by default (1500 ms in a chat). Past it, the fixed text is said</span></li>
           <li><b>~2 cents</b><span>a month of recordings of every generated line, recorded again and again</span></li>
         </ul>
         <p class="note">
-          The model is yours to choose, in the app's <code>style.yaml</code>; <code>pnpm render:bakeoff</code> compares models on
+          The model is yours to choose, in the app's <code>style.yaml</code>, and <code>pnpm render:bakeoff</code> compares models on
           your own lines. The policy card lists every generated and every prescribed line.
         </p>
         <p class="links">
@@ -544,16 +549,16 @@ approval:
       <section id="tuning" aria-labelledby="tuning-title">
         <h2 id="tuning-title">Tuning with live calls</h2>
         <p>
-          An app green on its recordings has been tried on its own words. A live call adds a carrier, a recognizer, a
-          room and a person who does not know the script. Chapter 17 of the guide is the working method that follows,
-          with examples from a day of live calls to the front desk:
+          An app that passes its recorded tests has been tried on its own words. A live call adds a carrier, a speech
+          recognizer, a room and a person who does not know the script. Chapter 17 of the guide is the working method
+          that follows, with examples from a day of live calls to the front desk example:
         </p>
         <ul>
-          <li>trace every call, and read it turn by turn in the console, each question beside its answer;</li>
-          <li>tune on a private copy that keeps the caller's words, when the shipped app keeps none;</li>
-          <li>treat a score near 0.5 as a coin toss, and suspect the question's words before the threshold;</li>
-          <li>change the words, record again, and triage the recording;</li>
-          <li>choose the render model and the judge by measurement, against the call's time budgets.</li>
+          <li>record every call, and read it turn by turn in the console, each question beside its answer,</li>
+          <li>tune on a private copy that keeps the caller's words, when the shipped app keeps none,</li>
+          <li>treat a score near 0.5 as a coin toss, and suspect the question's words before the threshold,</li>
+          <li>change the words, record again, and review what the recording changed,</li>
+          <li>and choose the model that words lines, and the one that judges them, by measurement against the call's time limits.</li>
         </ul>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/17-tuning-with-live-calls.md">Guide, chapter 17: tuning with live calls</a>
