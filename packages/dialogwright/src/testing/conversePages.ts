@@ -1,8 +1,9 @@
-import type { ConverseApp } from '../converse/app';
+import { converseAppPolicy, type ConverseApp } from '../converse/app';
 import type { ActionSpec, AgentBusiness } from '../converse/business/schema';
-import { END_CALL, TEXT_MAX, TRANSFER_CALL, TRANSFER_LINE } from '../converse/business/schema';
+import { END_CALL, LOOK_UP, TEXT_MAX, TRANSFER_CALL, TRANSFER_LINE } from '../converse/business/schema';
+import { LOOK_UP_AT, lookUpSpec, QUESTION_PARAM } from '../converse/knowledge';
 import { hasJourneys } from '../converse/journeys';
-import { confirmedFields, CALLER, NO_LOOKUPS, policyOf } from '../converse/policy';
+import { confirmedFields, CALLER, gatedActions, NO_LOOKUPS } from '../converse/policy';
 import { readRule } from '../define/ruleEntry';
 import type { RuleEntryYaml } from '../define/schema/policy';
 import type { PolicyAction, Rule } from '../gate/compiled';
@@ -108,7 +109,7 @@ function daysFrom(iso: string, days: number): string {
 
 /** policy.matrix's text for an agent app: every action's verdict, with and without the caller's yes, and for the values its rules list. */
 export function conversePolicyMatrixText(app: ConverseApp): string {
-  const policy = policyOf(app.business);
+  const policy = converseAppPolicy(app);
   const out: string[] = [
     `# policy.matrix: what the gate of "${app.id}" decides, for every action.`,
     '# Written by `pnpm policy:matrix` from agent.yaml\'s actions (their rules as written, and, for a change,',
@@ -123,7 +124,7 @@ export function conversePolicyMatrixText(app: ConverseApp): string {
     '#   a param     for a param a rule lists or bounds: every value listed, the value at each bound and one beyond it (a bound a lookup gives is not tried), and another value',
     '# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>',
   ];
-  for (const [name, spec] of Object.entries(app.business.actions)) {
+  for (const [name, spec] of Object.entries(gatedActions(app.business, { lookUp: app.knowledge !== undefined }))) {
     const action: PolicyAction = policy.source.actions[name]!;
     out.push('', `${name} · level ${action.level} · ${action.rules.map(ruleHeader).join(', ') || 'no rules'}`);
     const base = Object.fromEntries(Object.entries(spec.params).map(([p, s]) => [p, sampleValue(s)]));
@@ -256,6 +257,36 @@ function journeyCardLines(b: AgentBusiness): string[] {
   return lines;
 }
 
+/**
+ * The card's Knowledge base section, for an app with a kb/ folder (none otherwise): the runtime's look_up, where it is
+ * offered, what it finds and returns, what the agent model is told of each passage's wording (its instruction alone,
+ * never enforced: the maintainer's named exception, 2026-11-27), what is recorded, and which topics may be worded.
+ */
+function knowledgeCardLines(app: ConverseApp): string[] {
+  const k = app.knowledge;
+  if (k === undefined) return [];
+  const b = app.business;
+  const spec = lookUpSpec(b);
+  const where = hasJourneys(b) && b.knowledge?.journeys !== undefined
+    ? `at the root and in the journeys ${andList(b.knowledge.journeys.map(code))} (\`knowledge.journeys\`)`
+    : 'on every turn, at the root and in every journey';
+  const retrieval = k.kb.settings.retrieval;
+  const how = retrieval.embedder === undefined ? 'by their keywords (kb.yaml names no embedder)' : `by their keywords and their meaning (kb.yaml's embedder, ${code(retrieval.embedder)}${retrieval.floor !== undefined ? `, floor ${retrieval.floor}` : ''})`;
+  const topics = Object.values(k.kb.topics);
+  return [
+    '## Knowledge base',
+    '',
+    `- ${code(LOOK_UP)} is the runtime's own lookup in the app's knowledge base (its \`kb/\` folder), offered to the agent model ${where}, wherever a passage a person approved (\`pnpm kb:approve\`) is there to be found today; with none, it is not offered, and one called anyway is refused as not offered and audited. It is a lookup, open to every caller, with no rules and never confirmed, and it changes nothing. Its one param, ${code(QUESTION_PARAM)}, the caller's question in their words, is recorded ${recordedWords(spec, QUESTION_PARAM)} (\`knowledge.audit\`).`,
+    `- It finds at most ${retrieval.cap} topics for the question ${how}, and the decision model (not the agent model) is asked which of them the question asks about, sent the question and those topics' titles (the scripted topic slot's question); a topic read at ${LOOK_UP_AT} or above answers. Its passage is returned only where a person approved it and nothing it was approved over has changed since: a passage never approved, stale or edited is withheld, exactly as in the scripted mode. Otherwise the agent model is told the business has no approved answer to the question.`,
+    '- The agent model is sent the passage\'s text, its topic\'s title and its wording rule, and words the answer in its own reply, streamed as every reply is: nothing checks or judges that reply before it is said (the maintainer\'s named exception, decided 2026-11-27). A topic marked `risk: low` may be worded for the caller\'s question; every other topic\'s passage is to be given as written, by the agent model\'s instructions only: this is not enforced.',
+    '- The audit records the gate\'s decision, the result as the agent model was sent it, and the passage returned or withheld (`kb_answer`: its id, version and short hashes). The trace records each lookup\'s candidates and their scores, the decision model\'s reading, and the passage returned or why none was.',
+    '',
+    ...(topics.length === 0
+      ? ['`kb/topics.yaml` has no topics yet: a proposed topic and its draft passage wait in `kb/pending`, never read, until a person accepts the topic and approves the draft (`pnpm kb:review`).', '']
+      : ['| Topic | Title | How the agent model may give its passage |', '| --- | --- | --- |', ...topics.map((t) => `| ${code(t.id)} | ${cell(t.title)} | ${t.risk === 'low' ? 'worded for the caller\'s question (`risk: low`)' : 'as written (by instruction only)'} |`), '']),
+  ];
+}
+
 /** A line's own words in the web chat, where it has them (agent.yaml's `chat` on a line), after its words on a call. */
 /**
  * What the card says of the runtime's transfer_call, where agent.yaml names a transfer number (none otherwise): when it is
@@ -328,7 +359,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
   const b = app.business;
   const followOns = followOnsOf(b);
   const parentsOf = (name: string): string[] => Object.entries(b.actions).filter(([, a]) => a.then?.includes(name)).map(([n]) => n);
-  const levels = [...new Set(Object.values(policyOf(b).source.actions).map((a) => a.level))];
+  const levels = [...new Set(Object.values(converseAppPolicy(app).source.actions).map((a) => a.level))];
   const accounts = (b.sources.accounts ?? []).length > 0;
   const identityLine = levels.length === 1 && levels[0] === 0
     ? `Every action is open to a caller nobody has proven (level 0): this app has no identity.${accounts ? ' The number a caller calls from may recognise a known account; it is never proof of who is speaking.' : ''}`
@@ -370,6 +401,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     '- The caller\'s own words, typed or spoken, are kept as they said them in the trace and the frame log, as in the scripted mode.',
     '',
     ...(hasJourneys(b) ? journeyCardLines(b) : []),
+    ...knowledgeCardLines(app),
     '## Actions',
     '',
     hasJourneys(b) ? '| Action | Kind | Offered to the model | Journeys | Rules | Follow-on actions |' : '| Action | Kind | Offered to the model | Rules | Follow-on actions |',
@@ -446,6 +478,7 @@ export function converseAppMapText(app: ConverseApp): string {
   }
   lines.push(`  ${nodeId('a', END_CALL)}(${mermaidLabel(END_CALL, 'ends the call')})`);
   if (b.transfer !== undefined) lines.push(`  ${nodeId('a', TRANSFER_CALL)}(${mermaidLabel(TRANSFER_CALL, 'puts the call through to a person')})`);
+  if (app.knowledge !== undefined) lines.push(`  ${nodeId('a', LOOK_UP)}(${mermaidLabel(LOOK_UP, 'looks a question up in the knowledge base')})`);
   for (const [name, spec] of Object.entries(b.actions)) {
     for (const [p, s] of Object.entries(spec.params)) if (s.type === 'slot' && s.from !== undefined && names.includes(s.from)) lines.push(`  ${nodeId('a', s.from)} -->|${mermaidLabel(p).slice(1, -1)}| ${nodeId('a', name)}`);
     for (const t of spec.then ?? []) lines.push(`  ${nodeId('a', name)} ==>|"then, after the yes"| ${nodeId('a', t)}`);

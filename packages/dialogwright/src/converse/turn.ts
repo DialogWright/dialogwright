@@ -9,7 +9,8 @@ import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { speakableOn } from './speakable';
 import { checkArgs, idempotencyKey } from './actions';
-import { END_CALL, lineOn, TRANSFER_CALL, TRANSFER_LINE, type ActionSpec, type AgentBusiness } from './business/schema';
+import { END_CALL, lineOn, LOOK_UP, TRANSFER_CALL, TRANSFER_LINE, type ActionSpec, type AgentBusiness } from './business/schema';
+import { lookUp, lookUpOffered, lookUpSpec, QUESTION_PARAM, type ConverseKnowledge, type LookUpRecord } from './knowledge';
 import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { askWithin, askWithinWhy, changedParams, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackBriefText, readBackText, readYesNo, shortReadBackText, shownParams, WITHDRAWN_AT, WRAPPING_UP, WRAPPING_UP_AT, type PendingReadBack, type ReadBackReading } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
@@ -132,6 +133,8 @@ export interface ConverseDeps {
   bridgeAfterMs?: number;
   /** The app's settings by name, as its actions' code reads them (ToolImpl's ctx.env); absent, none is set. */
   env?: (name: string) => string | undefined;
+  /** The app's knowledge base (ConverseApp.knowledge), looked up with the runtime's look_up; absent, the app has none. */
+  knowledge?: ConverseKnowledge;
   /**
    * Told, right after a reply is read by the check after speaking, exactly what the decision model was sent
    * (the state of claimsState) and what it read, with the turn's index as the trace records it. Absent on a
@@ -335,6 +338,8 @@ interface Turn {
   roundHeld: boolean;
   /** How many end_calls the unsent rule has refused this turn (unsent-change and unsent-asked). */
   unsentEnds: number;
+  /** Each lookup in the knowledge base this turn (look_up), as the trace records it. */
+  lookUps?: LookUpRecord[];
 }
 
 /** Whether a call is one of the runtime's own that end the call (end_call, transfer_call), which the unsent rule refuses alike. */
@@ -342,6 +347,9 @@ const endsCall = (name: string): boolean => name === END_CALL || name === TRANSF
 
 /** Whether the turn offers the runtime's transfer_call (prompt.ts transferOffered), at the turn's clock. */
 const transferNow = (t: Turn): boolean => transferOffered(t.deps.business, t.st.channel, t.deps.now());
+
+/** Whether the turn offers the runtime's lookup in the knowledge base (knowledge.ts lookUpOffered), in the journey it is in. */
+const lookUpNow = (t: Turn): boolean => lookUpOffered(t.deps.business, t.deps.knowledge, t.st.journey, t.todayIso);
 
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
 const cut = (t: Turn): boolean => t.signal?.aborted === true;
@@ -713,6 +721,10 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       results.push({ type: 'tool_result', id: c.id, content: 'The caller is being put through to a person.' });
       continue;
     }
+    if (c.name === LOOK_UP) {
+      await runLookUp(t, c, results);
+      continue;
+    }
     const follows = followOnsOf(b).get(c.name);
     if (follows !== undefined) {
       // A follow-on runs only after the action it follows, on the caller's yes to that one: never at the model's call.
@@ -784,6 +796,46 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
     results.push({ type: 'tool_result', id: c.id, content: resultText(ran.result) });
   }
   return { results, readBack };
+}
+
+/**
+ * The runtime's lookup in the knowledge base (knowledge.ts): offered where the turn offers it (lookUpNow), else refused as
+ * an action the turn did not offer is, counted toward no refusal; its question checked as a text param; put to the gate
+ * as a lookup (audited with the question as agent.yaml's knowledge.audit records it); then the passage that answers it,
+ * or that none does, sent to the model as its result. The result is audited as an action's is, with the knowledge
+ * record's row (kb_answer) for a passage returned or withheld, and the lookup traced (Turn.lookUps).
+ */
+async function runLookUp(t: Turn, c: Extract<ModelEvent, { type: 'tool_call' }>, results: ModelContent[]): Promise<void> {
+  const b = t.deps.business;
+  const spec = lookUpSpec(b);
+  const error = (content: string): void => void results.push({ type: 'tool_result', id: c.id, content, isError: true });
+  const knowledge = t.deps.knowledge;
+  if (knowledge === undefined || !lookUpNow(t)) {
+    const why = `Not run: "${LOOK_UP}" is not available now: there is no approved answer to look up${t.st.journey?.active ? ' for what the caller is doing now' : ''}.`;
+    await record(t, { type: 'converse_refused', detail: { action: LOOK_UP, reason: 'not-offered', ...(t.st.journey !== undefined ? { journey: t.st.journey.active ?? 'root' } : {}) } });
+    traceTool(t, spec, LOOK_UP, c.args, 'refused', why);
+    return error(why);
+  }
+  const checked = checkArgs(spec, c.args, t.st.seen, t.todayIso, t.st.caller.number);
+  if (!checked.ok) {
+    traceTool(t, spec, LOOK_UP, c.args, 'invalid', checked.reason);
+    return error(checked.reason);
+  }
+  const call: ToolCall = { tool: LOOK_UP, params: checked.params };
+  const d = await gate(t, spec, call, null);
+  if (d.verdict !== 'ALLOW') {
+    const why = gateReason(d, spec, call, []);
+    traceTool(t, spec, LOOK_UP, call.params, 'refused', why);
+    return error(refused(t, LOOK_UP, why));
+  }
+  const question = call.params[QUESTION_PARAM] ?? '';
+  const r = await lookUp(knowledge, t.deps.jev, question, recordedArgs(spec, call.params)[QUESTION_PARAM] ?? '', t.todayIso, t.deps.jevTimeoutMs);
+  const summary = scrubOf(spec, call)(r.content);
+  await record(t, { type: 'tool_result', detail: { tool: LOOK_UP, ok: true, summary: summary.length > RESULT_RECORDED_MAX ? `${summary.slice(0, RESULT_RECORDED_MAX - 1)}…` : summary } });
+  for (const row of r.audit) await record(t, row);
+  traceTool(t, spec, LOOK_UP, call.params, 'ran');
+  (t.lookUps ??= []).push(r.record);
+  results.push({ type: 'tool_result', id: c.id, content: r.content });
 }
 
 /**
@@ -949,7 +1001,8 @@ async function round(t: Turn, sp: Speaker, emptyOk = false, routeStop?: AbortSig
 async function roundAsked(t: Turn, sp: Speaker, emptyOk: boolean, routeStop: AbortSignal | undefined): Promise<Round> {
   const stop = routeStop !== undefined && t.signal !== undefined ? AbortSignal.any([routeStop, t.signal]) : routeStop ?? t.signal;
   const b = t.deps.business;
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
+  const looks = lookUpNow(t);
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear, looks), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t), looks ? lookUpSpec(b) : undefined), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
@@ -1895,6 +1948,7 @@ function traceRecordOf(t: Turn, input: Input, now: Date): { record: ConverseTrac
     ...(input.kind === 'silence' ? { silence: input.count, silenceMs: input.ms } : {}),
     ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
     ...(t.check !== undefined ? { check: t.check } : {}),
+    ...(t.lookUps !== undefined ? { lookUps: t.lookUps } : {}),
     ...(t.carriedNote ? { carriedNote: true as const } : {}),
     ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
     ...(t.route !== undefined ? { route: t.route } : {}),

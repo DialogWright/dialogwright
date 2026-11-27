@@ -1,8 +1,7 @@
 import type { AuditSink } from '../../audit/sink';
 import type { ServerMessage } from '../../channel/chat/protocol';
-import type { ConverseApp } from '../../converse/app';
+import { converseAppPolicy, type ConverseApp } from '../../converse/app';
 import type { ConverseModel } from '../../converse/model/types';
-import { policyOf } from '../../converse/policy';
 import { accountOf } from '../../converse/sources/accounts';
 import { converseTexts } from '../../converse/sources/texts';
 import { newConverseState, type ConverseState, type JourneyState } from '../../converse/state';
@@ -160,7 +159,7 @@ export function stateOf(session: unknown): ConverseState | null {
 
 export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
   const { app, log } = deps;
-  const policy = policyOf(app.business);
+  const policy = converseAppPolicy(app);
   const chats = new Map<string, ConverseChat>();
   /** Each chat's trace, made with its frame log (prepare) and taken when the chat is held. */
   const prepared = new Map<string, TraceSink>();
@@ -212,6 +211,7 @@ export function converseChatRuntime(deps: ConverseChatDeps): ChatRuntime {
     policy,
     audit: deps.audit,
     tools: app.tools,
+    ...(app.knowledge !== undefined ? { knowledge: app.knowledge } : {}),
     texts: converseTexts(deps.texts, (r) => {
       const chained = deps.audit.append(id, 'chat', textAuditRow(r));
       if (chained instanceof Promise) chained.catch((err: unknown) => log(`chat ${id}: a text's audit entry failed: ${describeError(err)}`));

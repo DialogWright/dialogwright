@@ -305,6 +305,11 @@ export async function checkApp(dir: string, options: CheckOptions = {}): Promise
 /** checkApp, and whether the app's code was part of it. */
 export async function checkAppFully(dir: string, options: CheckOptions = {}): Promise<CheckResult> {
   const loaded = loadAppFolder(dir);
+  // An agent app's knowledge base: its approvals, staleness and index held as a scripted app's are (../kb/rules.ts).
+  if (!loaded.config && loaded.converseKnowledge !== undefined) {
+    const problems = sortProblems(kbStateProblems(loaded.converseKnowledge, options.todayIso ?? new Date().toISOString().slice(0, 10), loaded.locate), CODE_FILE);
+    return { problems, codeChecked: false, converse: true };
+  }
   if (!loaded.config) return { problems: loaded.problems, codeChecked: false, ...(loaded.converse === true ? { converse: true } : {}) };
   const { config, locate } = loaded;
 

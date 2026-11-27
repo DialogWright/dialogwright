@@ -1,7 +1,7 @@
 import { closesAt, isOpen, localTime, nextOpening } from '../core/hours';
 import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
-import { END_CALL, TRANSFER_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
+import { END_CALL, LOOK_UP, TRANSFER_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText, journeyText } from './business/text';
 import { offeredActions } from './journeys';
 import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
@@ -184,10 +184,19 @@ function unclearWords(b: AgentBusiness, s: ConverseState, u: UnclearTurn): strin
 }
 
 /**
- * The model's instructions for a request. `unclear`: the turn is one the line could not follow, and the block for it
- * follows the record of the call (absent on every other turn, and for an app with no journeys).
+ * Where the turn offers the runtime's lookup in the knowledge base (converse/knowledge.ts), the business information
+ * says so: its approved answers to further questions are found with it, and are the business's own. Rule 1 (claims only
+ * from the business information and lookups made on the call) covers what a lookup returns; how a passage may be given
+ * rides on its result, never here.
  */
-export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, unclear?: UnclearTurn): string {
+const LOOK_UP_WORDS = `Beyond this information, the business has approved answers to further questions callers ask: ${LOOK_UP} finds the one for a question, and what it returns is the business's own answer, as this information is.`;
+
+/**
+ * The model's instructions for a request. `unclear`: the turn is one the line could not follow, and the block for it
+ * follows the record of the call (absent on every other turn, and for an app with no journeys). `lookUp`: the turn
+ * offers the runtime's lookup in the knowledge base, which the business information says.
+ */
+export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, unclear?: UnclearTurn, lookUp = false): string {
   const zone = businessZone(b);
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
   // A person takes the call over only where the line can put it through now (transferOffered); else one calls them back.
@@ -201,6 +210,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
     '',
     'The business information (the business\'s own words, and the only source of what you say about the business):',
     businessText(b),
+    ...(lookUp ? [LOOK_UP_WORDS] : []),
     '',
     'Five rules hold on every call:',
     `1. Claim nothing that the business information or a lookup made on this call does not support. Prices, services, hours and policies come only from the business information, and any price is given with the business's caveat: "${b.priceCaveat.en}" A service the information gives no price for has none you can give. Times and availability come only from lookups made on this call: a day no lookup on this call has looked at is not known to be full or free, so until a lookup has answered, never say or suggest that a day or time works, is free or is open: say only that you will check, as a person would, such as "Let's see what we have available for Friday." or "OK, Friday, let me check the schedule." When someone from the business will get back to the caller is a time too, and so is tying it to when the business opens: give one only where the business information gives it, and otherwise say they will get back to the caller as soon as they can.`,
@@ -308,9 +318,10 @@ export function followOnsOf(b: AgentBusiness): Map<string, string> {
  * `offeredActions`) narrows them; absent, every action is offered. `channel`: on a call (`voice`) with
  * readBacks.holdAfterCut on, a change says its read-back is said again held after the caller spoke over it; absent
  * or a chat, it says nothing of it. `transfer`: the runtime's transfer_call is offered too (transferOffered says when).
+ * `lookUp`: the runtime's lookup in the knowledge base, as its action (knowledge.ts lookUpSpec), where the turn offers it.
  */
-export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel'], transfer = false): ModelTool[] {
+export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel'], transfer = false, lookUp?: ActionSpec): ModelTool[] {
   const followOns = followOnsOf(b);
   const held = channel === 'voice' && b.readBacks.holdAfterCut;
-  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec, held)), END_CALL_TOOL, ...(transfer ? [TRANSFER_CALL_TOOL] : [])];
+  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec, held)), ...(lookUp !== undefined ? [toolOf(LOOK_UP, lookUp, false)] : []), END_CALL_TOOL, ...(transfer ? [TRANSFER_CALL_TOOL] : [])];
 }

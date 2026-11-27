@@ -155,8 +155,9 @@ const readsHours = (subjects: readonly string[] | undefined): boolean => (subjec
 
 /**
  * What a converse call (records of kind 'converse') adds to Insights: the actions its caller confirmed as
- * its tasks, finished, and the gate's refusals by action. It has no slots, routes or knowledge base, so
- * nothing else; where it stood is "between".
+ * its tasks, finished, and the gate's refusals by action, and its knowledge base's unanswered questions (its
+ * lookups that returned no passage, by kb:gaps' rules). It has no slots or routes, so nothing else; where it
+ * stood is "between".
  */
 export function converseFacts(records: readonly unknown[]): CallFacts {
   const facts: CallFacts = { tasks: {}, asked: {}, stopped: 'between', screenHits: 0, refusals: {}, stepUps: 0, hours: {}, gaps: {}, gapTopics: {} };
@@ -168,7 +169,25 @@ export function converseFacts(records: readonly unknown[]): CallFacts {
       if (t.outcome === 'refused') bump(facts.refusals, t.name);
     }
   }
+  const turns = records.map((r, i) => turnOf(r, '', i + 1)).filter((t): t is Turn => t !== null && t.lookUps !== undefined);
+  if (turns.some((t) => (t.lookUps ?? []).length > 0)) countGaps(facts, collectGaps(turns, CONVERSE_GAPS).gaps);
   return facts;
+}
+
+/** What a converse call's gaps are found with: no topic slots or intents, and no nearest topic by keywords. */
+const CONVERSE_GAPS: CollectContext = { topicSlots: new Set(), informational: new Set(), nearest: () => null };
+
+/** A call's gaps counted into its facts: by kind and by nearest topic (`~` for none), with the hour of the latest. */
+function countGaps(facts: CallFacts, gaps: readonly { kind: GapKind; topic: string | null; ts: string }[]): void {
+  for (const g of gaps) {
+    facts.gaps[g.kind] = (facts.gaps[g.kind] ?? 0) + 1;
+    const key = g.topic ?? '~';
+    const had = facts.gapTopics[key] ?? { n: 0, latest: '' };
+    // The hour it was asked in, as the figures count calls by the hour: no call's own time.
+    const at = msOf(g.ts);
+    const hour = at === null ? '' : new Date(hourOf(at)).toISOString();
+    facts.gapTopics[key] = { n: had.n + 1, latest: hour > had.latest ? hour : had.latest };
+  }
 }
 
 /**
@@ -249,15 +268,7 @@ export function factsOfTrace(records: readonly TraceRecord[], app: App): CallFac
     let ctx = gapContexts.get(app);
     if (!ctx) { ctx = gapContextOf(app); gapContexts.set(app, ctx); }
     const gapTurns = records.map((r, i) => turnOf(r, '', i + 1)).filter((t): t is Turn => t !== null);
-    for (const g of collectGaps(gapTurns, ctx).gaps) {
-      facts.gaps[g.kind] = (facts.gaps[g.kind] ?? 0) + 1;
-      const key = g.topic ?? '~';
-      const had = facts.gapTopics[key] ?? { n: 0, latest: '' };
-      // The hour it was asked in, as the figures count calls by the hour: no call's own time.
-      const at = msOf(g.ts);
-      const hour = at === null ? '' : new Date(hourOf(at)).toISOString();
-      facts.gapTopics[key] = { n: had.n + 1, latest: hour > had.latest ? hour : had.latest };
-    }
+    countGaps(facts, collectGaps(gapTurns, ctx).gaps);
   }
   // Generated wording: the call's group, and what the two groups are compared on (only a call with a render record).
   const render = renderFactsOf(records, Object.values(facts.asked).reduce((n, s) => n + s.reasks, 0));

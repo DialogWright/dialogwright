@@ -392,6 +392,7 @@ export function topicPage(ctx: PageContext, kb: KnowledgeBase, t: ProposedTopic,
     <dt>Title</dt><dd>${esc(t.title)} <span class="muted">(said to callers)</span></dd>
     <dt>Keywords</dt><dd>${t.keywords && t.keywords.length > 0 ? esc(t.keywords.join(', ')) : '<span class="muted">none</span>'}</dd>
     <dt>Callers ask</dt><dd>${t.asks && t.asks.length > 0 ? `<ul class="problems">${t.asks.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '<span class="muted">none</span>'}</dd>
+    <dt>Risk</dt><dd>${t.risk === 'low' ? 'low <span class="muted">(proposed so: its approved passage may be worded for a caller\'s question; accepting the topic accepts this, and kb/topics.yaml can say otherwise after)</span>' : 'regulated <span class="muted">(its approved passage is said, or given, as written)</span>'}</dd>
   </dl>
   <form class="action" method="post" action="/topic/${encodeURIComponent(t.id)}/accept">${tokenField(ctx)}
     <h3>Accept it into topics.yaml</h3>

@@ -83,7 +83,7 @@ export function readProposedTopics(kbDir: string, base: string): Record<string, 
   const parsed = parseKbFile(`${base}/pending/${PENDING_TOPICS_FILE}`, 'kbTopics', readFileSync(path, 'utf8'));
   if (parsed.problems.length > 0) throw new DraftCommandError(`${base}/pending/${PENDING_TOPICS_FILE} does not read as topics`, parsed.problems.map(formatProblem));
   const out: Record<string, ProposedTopic> = {};
-  for (const [id, t] of Object.entries(parsed.data as KbTopicsYaml)) out[id] = { id, title: t.title, ...(t.keywords ? { keywords: t.keywords } : {}), ...(t.asks ? { asks: t.asks } : {}) };
+  for (const [id, t] of Object.entries(parsed.data as KbTopicsYaml)) out[id] = { id, title: t.title, ...(t.keywords ? { keywords: t.keywords } : {}), ...(t.asks ? { asks: t.asks } : {}), ...(t.risk === 'low' ? { risk: 'low' as const } : {}) };
   return out;
 }
 
@@ -153,7 +153,7 @@ export function pendingOf(draft: Draft, id: string, document: string, drafted: {
 
 /** A proposed topic as topics.yaml holds it. */
 export function topicYamlOf(t: ProposedTopic): TopicYaml {
-  return { title: t.title.trim(), ...(t.keywords && t.keywords.length > 0 ? { keywords: [...new Set(t.keywords)] } : {}), ...(t.asks && t.asks.length > 0 ? { asks: [...new Set(t.asks)] } : {}) } as TopicYaml;
+  return { title: t.title.trim(), ...(t.keywords && t.keywords.length > 0 ? { keywords: [...new Set(t.keywords)] } : {}), ...(t.asks && t.asks.length > 0 ? { asks: [...new Set(t.asks)] } : {}), ...(t.risk === 'low' ? { risk: 'low' } : {}) } as TopicYaml;
 }
 
 /** Adds topics to kb/pending/topics.yaml (made with its schema comment when it is not there), keeping what it has. */

@@ -20,6 +20,11 @@ export interface ProposedTopic {
   keywords?: string[];
   /** Example questions a caller asks about it, in their words. */
   asks?: string[];
+  /**
+   * `low` where kb/pending/topics.yaml proposes it so (the author's call, which the reviewer sees and accepts with the
+   * topic): its passage may be worded for a caller's question. Absent: regulated, the default.
+   */
+  risk?: 'low';
 }
 
 /** One drafted passage. */

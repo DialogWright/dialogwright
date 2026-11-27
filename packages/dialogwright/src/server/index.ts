@@ -63,9 +63,8 @@ import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatByApp, chatEndpoint, chatTransport, type ChatEndpoint, type ChatTransportDeps } from './chat/socket';
 import { converseChatRuntime } from './chat/converseRuntime';
 import { converseVoiceRuntime } from './voice/converseRuntime';
-import { policyOf } from '../converse/policy';
 import { converseTexts } from '../converse/sources/texts';
-import { appWithSettings, isConverseApp, type ConverseApp } from '../converse/app';
+import { appWithSettings, converseAppPolicy, isConverseApp, type ConverseApp } from '../converse/app';
 import type { ConverseModel } from '../converse/model/types';
 import { resolveConverseModel } from '../converse/model/resolve';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
@@ -1238,7 +1237,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const a = conversesRun.find((r) => r.id === app.id)!;
       const audit = auditOf(a.id);
       return {
-        business: app.business, model: converseModels.get(a.id)!, jev: clientOf(a.id), policy: policyOf(app.business), audit, tools: app.tools,
+        business: app.business, model: converseModels.get(a.id)!, jev: clientOf(a.id), policy: converseAppPolicy(app), audit, tools: app.tools, ...(app.knowledge !== undefined ? { knowledge: app.knowledge } : {}),
         texts: converseTexts(textsOf(a.id), (r) => whenChained(audit.append(callId, 'voice', textAuditRow(r)), () => {}, (err: unknown) => log(`${callId}: a text's audit entry failed: ${err instanceof Error ? err.message : String(err)}`))),
         now: () => new Date(now()), trace: () => {}, jevTimeoutMs: thresholds.JEV_TIMEOUT_MS,
         ...(config.bridgeAfterMs !== undefined ? { bridgeAfterMs: config.bridgeAfterMs } : {}),

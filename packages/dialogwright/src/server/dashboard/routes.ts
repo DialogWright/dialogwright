@@ -650,7 +650,8 @@ const KNOWLEDGE_DAYS = [7, 30, 90];
 async function knowledgeOf(deps: DashboardDeps, query: URLSearchParams, only: string | null): Promise<{ days: number; apps: KnowledgeApp[] }> {
   const asked = Number(query.get('days'));
   const days = KNOWLEDGE_DAYS.includes(asked) ? asked : 30;
-  const sources = scriptedSources(deps, only);
+  // The scripted apps, and the agent apps with a knowledge base (their lookups' gaps are counted as their figures': figures.ts converseFacts).
+  const sources = callsSources(deps, only).filter((s) => !isConverseApp(s.app) || s.app.knowledge !== undefined) as CallsSource[];
   const to = Date.now();
   const out: KnowledgeApp[] = [];
   for (const s of sources) {

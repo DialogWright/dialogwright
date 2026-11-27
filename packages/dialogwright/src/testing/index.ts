@@ -107,4 +107,7 @@ export type { RoundTripMismatch, RoundTripReport } from './sessionRoundTrip';
 export { converseTestCall } from './converseCall';
 export type { ConverseTestCall, ConverseTestCallOptions } from './converseCall';
 export { fakeModel as fakeConverseModel } from '../converse/model/fake';
+// An agent app's knowledge base as it would run with its pending drafts accepted and approved, in memory only, for a
+// test of its lookup before a person has approved anything (converseKnowledge.ts): never an approval.
+export { withPendingApproved } from './converseKnowledge';
 export type { ConverseModel, ModelEvent as ConverseModelEvent } from '../converse/model/types';

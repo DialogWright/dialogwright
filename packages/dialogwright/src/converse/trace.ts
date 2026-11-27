@@ -3,6 +3,7 @@ import { recordedValue, scrubberFor, type RecordingApp, type Scrub } from '../au
 import type { ToolCall } from '../gate/types';
 import type { ActionSpec } from './business/schema';
 import type { RouteOutcome } from './journeys';
+import type { LookUpRecord } from './knowledge';
 
 /**
  * What a converse call records, turn by turn (docs/designs/2026-11-11-agent-runtime.md, "Settled after
@@ -126,6 +127,12 @@ export interface ConverseTraceRecord {
   silenceMs?: number;
   /** A journey the turn's confirmed action completed: it is in its after phase from this turn on. */
   journeyEnded?: { journey: string; how: 'done' };
+  /**
+   * Each lookup in the knowledge base this turn (the runtime's look_up, converse/knowledge.ts): the question as agent.yaml's
+   * knowledge.audit records it (by its length by default), the retriever's candidates and their scores, the decision
+   * model's reading, and the passage returned (its id and its approval's short hash) or why none was. Absent: none.
+   */
+  lookUps?: LookUpRecord[];
   /** Whether the business was open at the turn (agent.yaml `business.open`); absent where it gives no opening hours. */
   open?: boolean;
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */

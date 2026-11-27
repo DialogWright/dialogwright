@@ -61,6 +61,12 @@ export interface Turn {
   calls: { tool: string; topic: string | null; summary: string | null }[];
   /** The knowledge record of the turn (a passage said, or one withheld). */
   kb: { passageId: string; topic: string; fresh: boolean; document: string | null; section: string | null; locale: string | null } | null;
+  /**
+   * An agent app's turn (a converse record): each lookup in the knowledge base it made (the runtime's look_up), as its
+   * trace records it: the question as recorded, the topics nominated, what came of it, the topic read and the passage
+   * withheld with why. Absent on a scripted app's turn.
+   */
+  lookUps?: { question: string; candidates: string[]; outcome: string; topic: string | null; withheld: { why: string; id: string | null } | null }[];
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -69,8 +75,44 @@ const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 /** The values the trace writer puts in place of an identity slot's value (trace/redact.ts): last four, year only, a length. */
 const MASKED_VALUE = /^(?:\.\.\.\d{4}|••\/••\/(?:\d{4}|••••)|<\d+ chars>)$/;
 
-/** A record as a Turn, or null when it does not read as a v2 record with a session and a turn. */
+/**
+ * An agent app's trace record (v3, kind converse) as a Turn: the caller's words and its lookups in the knowledge base, the
+ * rest empty (it has no slots, questions or gated calls of the scripted kind). Null where it is not one.
+ */
+function converseTurnOf(raw: Record<string, unknown>, file: string, line: number): Turn | null {
+  const sessionId = str(raw.sessionId);
+  const ts = str(raw.ts);
+  if (sessionId === null || ts === null || typeof raw.turnIndex !== 'number') return null;
+  const lookUps = (Array.isArray(raw.lookUps) ? raw.lookUps : []).flatMap((l) => {
+    if (!isObject(l) || typeof l.outcome !== 'string') return [];
+    const candidates = (Array.isArray(l.candidates) ? l.candidates : []).flatMap((c) => (isObject(c) && typeof c.topic === 'string' ? [c.topic] : []));
+    const withheld = isObject(l.withheld) && typeof l.withheld.why === 'string' ? { why: l.withheld.why, id: str(l.withheld.id) } : null;
+    return [{ question: str(l.question) ?? '', candidates, outcome: l.outcome, topic: str(l.topic), withheld }];
+  });
+  return {
+    file, line, sessionId, turnIndex: raw.turnIndex, ts,
+    words: str(raw.said),
+    quarantined: false,
+    locale: null,
+    retrieval: null,
+    sections: [],
+    questions: {},
+    answers: {},
+    intent: null,
+    decision: { kind: '', promptId: null, target: null, acks: [] },
+    promptedFor: null,
+    slotValues: {},
+    masked: [],
+    maskedInDecision: false,
+    calls: [],
+    kb: null,
+    lookUps,
+  };
+}
+
+/** A record as a Turn, or null when it does not read as a v2 record with a session and a turn (or an agent app's, converseTurnOf). */
 export function turnOf(raw: unknown, file: string, line: number): Turn | null {
+  if (isObject(raw) && raw.v === 3 && raw.kind === 'converse' && raw.outlivedHold !== true) return converseTurnOf(raw, file, line);
   // A record a server wrote after it had let the call go (trace/store.ts): the server that took the call ran that turn too.
   if (!isObject(raw) || raw.v !== 2 || raw.outlivedHold === true) return null;
   const sessionId = str(raw.sessionId);
@@ -454,6 +496,42 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
   return null;
 }
 
+/**
+ * The gaps of an agent app's turn: each lookup in the knowledge base that returned no passage (the runtime's look_up). One
+ * nothing was nominated for is `unmatched` (its nearest topic by keywords, where any is near); one whose candidates the
+ * decision model read none of at its bar is `none` (the first candidate its topic); one whose topic's passage was withheld
+ * is `unavailable`, with why. A lookup that could not be made (`unread`) is no gap: it is counted with the retrievals that
+ * failed. The words are the question as the trace recorded it where it kept it (knowledge.audit: keep), else the caller's
+ * words of the turn, as the trace keeps them.
+ */
+function lookUpGaps(t: Turn, nearest: (words: string, locale: string | null) => string | null): { gaps: Gap[]; unread: number } {
+  const gaps: Gap[] = [];
+  let unread = 0;
+  const base = { sessionId: t.sessionId, turnIndex: t.turnIndex, ts: t.ts, locale: t.locale };
+  for (const l of t.lookUps ?? []) {
+    if (l.outcome === 'unread') {
+      unread += 1;
+      continue;
+    }
+    if (l.outcome !== 'none' && l.outcome !== 'withheld') continue;
+    const kept = l.question !== '' && !MASKED_VALUE.test(l.question) && !RECORDED_MASK.test(l.question);
+    const words = kept ? l.question : t.words;
+    if (l.outcome === 'withheld') {
+      const reason = (UNAVAILABLE as readonly string[]).includes(l.withheld?.why ?? '') ? (l.withheld!.why as Unavailable) : 'no-answer';
+      gaps.push({ kind: 'unavailable', topic: l.topic, near: l.topic !== null ? 'passage' : 'none', nominated: l.candidates, words, ...base, reason, ...(l.withheld?.id ? { passage: { id: l.withheld.id, document: null, section: null } } : {}) });
+    } else if (l.candidates.length > 0) {
+      gaps.push({ kind: 'none', topic: l.candidates[0]!, near: 'nominated', nominated: l.candidates, words, ...base });
+    } else {
+      const topic = words !== null ? nearest(words, t.locale) : null;
+      gaps.push({ kind: 'unmatched', topic, near: topic !== null ? 'keyword' : 'none', nominated: [], words, ...base });
+    }
+  }
+  return { gaps, unread };
+}
+
+/** A param recorded hidden or by its length (audit/recording.ts recordedValue): never the caller's words. */
+const RECORDED_MASK = /^(?:•|<\d+ chars>)$/;
+
 /** The gaps in `turns` (the traces of any number of calls, each call's turns in the order written), with what else was counted. */
 export function collectGaps(turns: readonly Turn[], ctx: CollectContext, skipped = 0): { gaps: Gap[]; stats: CollectStats } {
   // The topic slots: the app's, and every slot a topic question was asked for in these traces.
@@ -479,6 +557,16 @@ export function collectGaps(turns: readonly Turn[], ctx: CollectContext, skipped
     if (seen === undefined) {
       seen = { prev: undefined, asked: undefined, askedPrev: undefined };
       calls.set(t.sessionId, seen);
+    }
+    if (t.lookUps !== undefined) {
+      const found = lookUpGaps(t, nearest);
+      stats.retrievalFailed += found.unread;
+      for (const g of found.gaps) {
+        gaps.push(g);
+        if (g.words === null) stats.withheld += 1;
+      }
+      seen.prev = t;
+      continue;
     }
     if (t.retrieval?.failed) stats.retrievalFailed += 1;
     const gap = gapOf(t, seen, ctx, topicSlots, nearest);

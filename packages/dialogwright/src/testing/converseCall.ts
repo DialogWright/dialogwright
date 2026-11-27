@@ -1,8 +1,7 @@
 import type { AuditSink } from '../audit/sink';
 import type { AuditDraft } from '../audit/types';
-import { appWithSettings, type ConverseApp } from '../converse/app';
+import { appWithSettings, converseAppPolicy, type ConverseApp } from '../converse/app';
 import type { ConverseModel } from '../converse/model/types';
-import { policyOf } from '../converse/policy';
 import { accountOf } from '../converse/sources/accounts';
 import { converseTexts } from '../converse/sources/texts';
 import { newConverseState, type ConverseState } from '../converse/state';
@@ -80,7 +79,8 @@ export function converseTestCall(made: ConverseApp, o: ConverseTestCallOptions):
     business: app.business,
     model: o.model,
     jev: o.jev,
-    policy: policyOf(app.business),
+    policy: converseAppPolicy(app),
+    ...(app.knowledge !== undefined ? { knowledge: app.knowledge } : {}),
     audit: sink,
     tools: app.tools,
     texts: o.texts === undefined ? null : converseTexts({ provider: o.texts, from: o.textFrom ?? '+15555550100', keys: new TextKeys() }, (r) => void audit.push(textAuditRow(r))),

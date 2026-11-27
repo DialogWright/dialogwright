@@ -10,7 +10,9 @@ import type { AppRoutes } from '../server/appRoutes';
 import type { Texts } from '../texts/types';
 import { AGENT_FILE, AgentBusinessError, readAgentBusiness, resolveAgentSettings } from './business/load';
 import type { AgentBusiness } from './business/schema';
+import { readConverseKnowledge, type ConverseKnowledge } from './knowledge';
 import { policyOf } from './policy';
+import type { CompiledPolicy } from '../gate/compiled';
 import { envVariableOf } from '../core/app/envReference';
 import { fakeCalendar, type Calendar, type Slot } from './sources/calendar';
 import { GOOGLE_CALENDAR_KEY_FILE, googleCalendar } from './sources/googleCalendar';
@@ -35,6 +37,12 @@ export interface ConverseApp {
   chat: ConverseChatSettings;
   /** The app's name and look on its chat page (app.yaml's `brand`; the logo an absolute path). */
   brand?: AppBrand;
+  /**
+   * The app's knowledge base (its kb/ folder beside agent.yaml) and the retriever kb.yaml names: where it has one, the
+   * runtime's own lookup (look_up, converse/knowledge.ts) is in the gate, and offered wherever an approved passage is
+   * there to be found. Absent: no kb/ folder.
+   */
+  knowledge?: ConverseKnowledge;
   /**
    * The app made again, with state of its own (its systems, its calendar), where its code keeps any: a test
    * harness starts each simulated call on one (pnpm eval), so no call sees what another booked. Absent, the
@@ -146,7 +154,8 @@ export function defineConverseApp(dir: string, code: { tools: Record<string, Too
     if (!Object.hasOwn(business.actions, name)) add('(code)', `the tool "${name}" is no action`, `add "${name}" under actions in ${AGENT_FILE}, or delete it from the code (actions: ${Object.keys(business.actions).join(', ') || 'none'})`);
   }
   if (problems.length > 0) throw new AgentBusinessError(problems);
-  policyOf(business);
+  const knowledge = readConverseKnowledge(dir);
+  policyOf(business, { lookUp: knowledge !== undefined });
   return {
     mode: 'converse',
     id: yaml.id,
@@ -155,6 +164,7 @@ export function defineConverseApp(dir: string, code: { tools: Record<string, Too
     tools: { ...code.tools },
     chat: { callerNumberFromContext: yaml.chat?.callerNumberFromContext === true, ...(yaml.chat?.page !== undefined ? { page: chatPageOf(yaml.chat.page) } : {}) },
     ...(yaml.brand !== undefined ? { brand: { ...(yaml.brand as AppBrand), ...(yaml.brand.logo !== undefined ? { logo: resolve(dir, yaml.brand.logo) } : {}) } } : {}),
+    ...(knowledge !== undefined ? { knowledge } : {}),
     ...(code.pages !== undefined ? { pages: code.pages } : {}),
     ...(code.onText !== undefined ? { onText: code.onText } : {}),
     ...(code.fresh !== undefined ? { fresh: code.fresh } : {}),
@@ -171,6 +181,11 @@ function chatPageOf(page: NonNullable<NonNullable<AppYaml['chat']>['page']>): Ch
     ...(page.about !== undefined ? { about: page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
     ...(page.choose !== undefined ? { choose: chatChoicesOf(page.choose) } : {}),
   };
+}
+
+/** The gate of an agent app: agent.yaml's actions, with the runtime's lookup where the app has a knowledge base. */
+export function converseAppPolicy(app: Pick<ConverseApp, 'business' | 'knowledge'>): CompiledPolicy {
+  return policyOf(app.business, { lookUp: app.knowledge !== undefined });
 }
 
 /** The app with agent.yaml's env.<NAME> references read from `settings`, the app's own (the server does this as it starts). */

@@ -83,6 +83,16 @@ export const END_CALL = 'end_call';
  */
 export const TRANSFER_CALL = 'transfer_call';
 
+/**
+ * The runtime's own lookup in the app's knowledge base (its kb/ folder beside agent.yaml): offered where the folder has a
+ * passage a person approved, its one param the caller's question in their words (converse/knowledge.ts). No business
+ * action takes its name.
+ */
+export const LOOK_UP = 'look_up';
+
+/** How the lookup's question is recorded in the trace and the audit, where agent.yaml's `knowledge.audit` does not say: by its length. */
+export const LOOK_UP_AUDIT_DEFAULT = 'length';
+
 /** What the line does with a caller who asks for a person while the business is closed (agent.yaml transfer.whenClosed). */
 export const TRANSFER_WHEN_CLOSED = ['callback', 'transfer'] as const;
 
@@ -301,6 +311,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   for (const [name, a] of Object.entries(actions)) {
     if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which ends the call`);
     if (name === TRANSFER_CALL) issue(ctx, ['actions', name], `"${TRANSFER_CALL}" is the runtime's own action`, `name the action something else: the runtime offers "${TRANSFER_CALL}", which puts a call through to transfer.number`);
+    if (name === LOOK_UP) issue(ctx, ['actions', name], `"${LOOK_UP}" is the runtime's own action`, `name the action something else: the runtime offers "${LOOK_UP}", which looks the caller's question up in the knowledge base (kb/)`);
     if (!isMap(a)) continue;
     const params = isMap(a.params) ? a.params : {};
     if (a.kind === 'change' && a.readBack === undefined) {
@@ -422,6 +433,16 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
     for (const [name, a] of Object.entries(actions)) {
       if (isMap(a) && a.kind === 'change' && !followed.has(name) && !named.has(name)) issue(ctx, ['actions', name], `the change "${name}" is named by no journey, so it could never be offered`, `add "${name}" to a journey's actions, or delete it`);
     }
+  }
+  // The journeys the knowledge base's lookup is offered in: journeys there are.
+  const knowledge = isMap(root.knowledge) ? root.knowledge : undefined;
+  if (knowledge !== undefined && Array.isArray(knowledge.journeys)) {
+    const ids = isMap(root.journeys) ? Object.keys(root.journeys) : [];
+    knowledge.journeys.forEach((id, i) => {
+      if (typeof id !== 'string') return;
+      if (ids.length === 0) issue(ctx, ['knowledge', 'journeys'], 'knowledge.journeys names journeys, and the business has none', `delete knowledge.journeys: without journeys, "${LOOK_UP}" is offered on every turn`);
+      else if (!ids.includes(id)) issue(ctx, ['knowledge', 'journeys', i], `"${id}" is no journey`, `name one of the journeys (${ids.join(', ')}), or delete it`);
+    });
   }
 }
 
@@ -553,6 +574,13 @@ export const agentBusinessSchema = z
       .default({ ...ROUTING_DEFAULTS })
       .describe('How each caller turn is routed to a journey.'),
     journeys: z.record(identifier(), journey).optional().describe('The tasks the line can take on, by id. Absent: one conversation with every action, as before.'),
+    knowledge: z
+      .strictObject({
+        journeys: z.array(identifier()).optional().describe(`The journeys "${LOOK_UP}" is offered in, beside the root (where no journey is active), which always offers it. Absent: every journey, on every turn, as a question can come at any point.`),
+        audit: z.strictObject({ question: z.enum(AUDIT_MASKS).describe('How the caller\'s question is recorded: last4, mask, length, secret or keep.') }).optional().describe(`How "${LOOK_UP}"'s one param, the caller's question in their words, is recorded in the trace and the audit. Default: by its length (${LOOK_UP_AUDIT_DEFAULT}).`),
+      })
+      .optional()
+      .describe(`The knowledge base, where the app has a kb/ folder beside agent.yaml (chapter 18 of the guide): the runtime's own lookup "${LOOK_UP}" is offered to the agent model wherever a passage a person approved is there to be found, and it returns the passage that answers the caller's question, or that the business has no approved answer to it. Absent: offered on every turn.`),
     transfer: z
       .strictObject({
         number: numberOrEnv().describe('The number to hand a call to: E.164, or env.<NAME>.'),

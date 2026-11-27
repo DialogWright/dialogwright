@@ -5,7 +5,8 @@ import type { RuleEntryYaml } from '../define/schema/policy';
 import { compileGate, TABLE_RULE_ID, type CompiledPolicy, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import type { Anonymous, GateLookups } from '../gate/types';
 import { AGENT_FILE, AgentBusinessError } from './business/load';
-import type { ActionSpec, AgentBusiness } from './business/schema';
+import { LOOK_UP, type ActionSpec, type AgentBusiness } from './business/schema';
+import { lookUpSpec } from './knowledge';
 
 /**
  * The gate of an agent app, from agent.yaml's actions (docs/designs/2026-11-11-agent-runtime.md,
@@ -79,18 +80,28 @@ function problemsOf(b: AgentBusiness): Problem[] {
  * The gate for the business's actions: each its rules, then, for a change, `confirmed` over every
  * param. Refuses (AgentBusinessError, with a path and a fix per problem) a rule that names a param the
  * action does not have, a confirmed or custom rule written in the file, a choice param with no options
- * and options on a param that is no choice.
+ * and options on a param that is no choice. `o.lookUp`: the app has a knowledge base (a kb/ folder), so the
+ * runtime's own lookup (look_up, converse/knowledge.ts) is in the gate too, as a lookup with no rules.
  */
-export function policyOf(b: AgentBusiness): CompiledPolicy {
+export function policyOf(b: AgentBusiness, o: { lookUp?: boolean } = {}): CompiledPolicy {
   const problems = problemsOf(b);
   if (problems.length > 0) throw new AgentBusinessError(problems);
+  return compiledOf(gatedActions(b, o));
+}
+
+/** The business's actions, with the lookup where the app has a knowledge base: what the gate is compiled from. */
+export function gatedActions(b: AgentBusiness, o: { lookUp?: boolean } = {}): Record<string, ActionSpec> {
+  return o.lookUp === true ? { ...b.actions, [LOOK_UP]: lookUpSpec(b) } : { ...b.actions };
+}
+
+function compiledOf(all: Record<string, ActionSpec>): CompiledPolicy {
   const actions: Record<ToolName, PolicyAction> = {};
   const rulesFor: Record<ToolName, readonly string[]> = {};
   const toolLevel: Record<ToolName, 0> = {};
   const serviceFields: Record<ToolName, readonly string[]> = {};
   const subjects: Record<ToolName, SubjectParam> = {};
   const confirmedBy: Record<ToolName, readonly string[]> = {};
-  for (const [name, spec] of Object.entries(b.actions)) {
+  for (const [name, spec] of Object.entries(all)) {
     const written = (spec.rules ?? []).map((entry) => readRule(entry as RuleEntryYaml));
     const rules: Rule[] = spec.kind === 'change' ? [...written, { rule: 'confirmed', fields: Object.freeze(confirmedFields(spec)) }] : written;
     actions[name] = Object.freeze({ say: spec.about, level: 0, rules: Object.freeze(rules.map((r) => Object.freeze(r))) });

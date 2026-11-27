@@ -4,6 +4,7 @@ import { questionParts, questionText, textParts } from '../parts/text';
 import { checkTemplate } from '../parts/template';
 import { checkCriterion, CRITERION_FILTERS, CRITERION_VARS } from './criterion';
 import { alwaysConfirmText } from '../parts/readBack';
+import { DEFAULT_TOPIC_CRITERION, TOPIC_UNANSWERED, TOPIC_UNANSWERED_INSTRUCTIONS, TOPIC_UNANSWERED_NONE } from '../../kb/topicQuestion';
 
 /**
  * The text parts of a `topic` slot: its one question and the criterion of its `none` label. Each
@@ -50,7 +51,7 @@ export const TOPIC_PARTS = textParts('topic', {
   sectionMostly: { template: 'Answers what the caller asks, but for a detail', vars: [], about: 'The score\'s level `mostly`.' },
   sectionCompletely: { template: 'Answers everything the caller asks', vars: [], about: 'The score\'s highest level, `completely`.' },
   unanswered: {
-    template: 'Asks about something none of these answers',
+    template: TOPIC_UNANSWERED,
     vars: [],
     about: 'What the question\'s "unanswered" label means, with `unanswered: retry`: the caller asks a question none of the topics offered answers.',
   },
@@ -61,8 +62,8 @@ export const TOPIC_PARTS = textParts('topic', {
  * none is a turn that asks nothing, and a question asked that no topic answers is `unanswered`.
  */
 export const UNANSWERED_DEFAULTS = {
-  instructions: 'Read asr.text. Which of these topics does the caller ask about? Choose unanswered when they ask about something none of them answers, and none when they say nothing about what they want to know (saying only that they have a question is none).',
-  none: 'Says nothing about what they want to know',
+  instructions: TOPIC_UNANSWERED_INSTRUCTIONS,
+  none: TOPIC_UNANSWERED_NONE,
 } as const;
 
 /** What a question that no topic answers leads to, said on a turn the slot was not asked: its miss line, or its question as before. */
@@ -72,7 +73,7 @@ export const UNANSWERED = ['retry', 'ask'] as const;
 export const TOPIC_QUESTIONS = questionParts({ choice: 'which topic the caller asks about' });
 
 /** What each nominated topic's criterion says, unless `criterion` says otherwise. */
-export const DEFAULT_CRITERION = 'Asks about {title|lower}';
+export const DEFAULT_CRITERION = DEFAULT_TOPIC_CRITERION;
 /** How many nominated topics the question offers when neither `cap` nor the knowledge base says. */
 export const DEFAULT_CAP = 8;
 /** The most topics `cap` may offer. */

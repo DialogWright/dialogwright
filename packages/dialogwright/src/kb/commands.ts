@@ -80,7 +80,9 @@ function findKb(dir: string, label: string, locale: string | undefined): Found {
   }
   if (!existsSync(join(dir, 'kb', 'kb.yaml'))) return { kbDir: dir, label, kb: null, problems: [`${label}: neither a knowledge base folder (kb.yaml) nor an app folder with one (kb/kb.yaml)`] };
   const loaded = loadAppFolder(dir);
-  return { kbDir: join(dir, 'kb'), label: join(label, 'kb'), kb: loaded.config?.knowledge ?? null, problems: loaded.config ? [] : loaded.problems.map((p) => formatProblem({ ...p, file: join(label, p.file) })) };
+  // A scripted app's knowledge base, or an agent app's (read with its folder, converse: true).
+  const kb = loaded.config?.knowledge ?? loaded.converseKnowledge ?? null;
+  return { kbDir: join(dir, 'kb'), label: join(label, 'kb'), kb, problems: kb !== null ? [] : loaded.problems.map((p) => formatProblem({ ...p, file: join(label, p.file) })) };
 }
 
 /** Options of the form `--name value`; the rest are positional. Null when an option lacks its value or is not one of `known`. */

@@ -455,6 +455,8 @@ export interface ConverseTurnView {
   bridge?: true;
   /** A goodbye held and never said (the trace's `wrapUp.dropped`): its end_call refused for a change still unsent; its length in characters. */
   goodbyeDropped?: number;
+  /** Each lookup in the knowledge base (the runtime's look_up), in one line: "looked up: <topic title>", or "no approved answer". */
+  lookUps?: string[];
   /** The turn was stopped by the caller speaking: what it had not said was dropped. */
   interrupted?: true;
   /** The turn threw in the line (the trace's `failed`): what it said and ran as far as it reached, the line said after it last. */

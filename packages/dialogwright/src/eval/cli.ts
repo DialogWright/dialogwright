@@ -233,7 +233,7 @@ export async function runEval(o: EvalRun): Promise<EvalOutcome> {
     if (call.turns.length > 0 && call.turns.every((t) => t.who === 'caller')) failures.push('the line never spoke');
     const callId = call.callId ?? '';
     if (cases !== null && callId !== '') cases.write(callId, p.id, run);
-    const actions = callId === '' ? [] : actionsOfCall(auditDir, callId);
+    const actions = callId === '' ? [] : actionsOfCall(auditDir, callId, isConverseApp(app) ? app.knowledge?.kb : undefined);
     const today = todayWords();
     const judged = call.turns.length === 0 ? failedJudgement('no call was held') : o.judgeModel === null ? notJudged() : await judgeCall(o.judgeModel, spend, businessText, p, call, actions, { today });
     if (judged.notes.startsWith(JUDGE_FAILED)) failures.push(JUDGE_FAILED);

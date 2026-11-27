@@ -84,7 +84,7 @@ function load(place: KbPlace): Loaded {
   const base = basename(place.kbDir);
   if (place.appDir !== null) {
     const loaded = loadAppFolder(place.appDir);
-    return { kb: loaded.config?.knowledge ?? null, problems: loaded.problems, config: loaded.config, locate: loaded.locate, base };
+    return { kb: loaded.config?.knowledge ?? loaded.converseKnowledge ?? null, problems: loaded.problems, config: loaded.config, locate: loaded.locate, base };
   }
   const folder = loadKnowledgeFolder(place.kbDir, DEFAULT_LOCALE);
   return { kb: folder.kb, problems: folder.problems, config: null, locate: folder.locate, base };

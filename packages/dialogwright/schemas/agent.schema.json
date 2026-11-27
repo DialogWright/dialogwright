@@ -1761,6 +1761,42 @@
         "description": "One journey: a task the line can take on, with its own instructions, facts and actions."
       }
     },
+    "knowledge": {
+      "description": "The knowledge base, where the app has a kb/ folder beside agent.yaml (chapter 18 of the guide): the runtime's own lookup \"look_up\" is offered to the agent model wherever a passage a person approved is there to be found, and it returns the passage that answers the caller's question, or that the business has no approved answer to it. Absent: offered on every turn.",
+      "type": "object",
+      "properties": {
+        "journeys": {
+          "description": "The journeys \"look_up\" is offered in, beside the root (where no journey is active), which always offers it. Absent: every journey, on every turn, as a question can come at any point.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        },
+        "audit": {
+          "description": "How \"look_up\"'s one param, the caller's question in their words, is recorded in the trace and the audit. Default: by its length (length).",
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "enum": [
+                "last4",
+                "mask",
+                "length",
+                "secret",
+                "keep"
+              ],
+              "description": "How the caller's question is recorded: last4, mask, length, secret or keep."
+            }
+          },
+          "required": [
+            "question"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "transfer": {
       "description": "Where a call goes when it is handed to a person: on a call, the runtime's own transfer_call puts the caller through on their request (while the business is open, by default), and a call the model has failed past limits.failuresPerCall is handed there after the handoff line. Nothing of the call is passed to the person.",
       "type": "object",

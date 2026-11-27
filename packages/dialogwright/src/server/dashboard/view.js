@@ -2074,6 +2074,14 @@ export function converseRow(records, frames) {
  * A turn that threw in the line, on a chat or a call (`failed`): what it said and ran as far as it reached, with
  * the line said after it. Plain text, for the page to escape.
  */
+/** A lookup in the knowledge base in one line: the topic whose passage it returned, else that none was (and why, where a passage was withheld or the lookup could not be made). */
+function lookUpLine(l) {
+  if (l && l.outcome === 'answered') return `looked up: ${typeof l.title === 'string' ? l.title : String(l.topic ?? '?')}`;
+  if (l && l.outcome === 'withheld') return `no approved answer (${typeof l.title === 'string' ? l.title : String(l.topic ?? '?')}: withheld, ${String(l.withheld?.why ?? 'not fresh')})`;
+  if (l && l.outcome === 'unread') return 'no approved answer (the lookup could not be made)';
+  return 'no approved answer';
+}
+
 export function converseCall(records) {
   const list = converseRecords(records);
   // A call with journeys (a record with a route or an ended journey): each turn's journey is where its route
@@ -2105,6 +2113,8 @@ export function converseCall(records) {
     if (r.wrapUp != null && typeof r.wrapUp.dropped?.chars === 'number') callView.goodbyeDropped = r.wrapUp.dropped.chars;
     // The turn threw in the line (an audit row or a trace that could not be written): a chat's turn too.
     if (r.failed === 'internal') callView.failed = true;
+    // Each lookup in the knowledge base: the topic whose approved passage it returned, or that none answered.
+    if (Array.isArray(r.lookUps) && r.lookUps.length > 0) callView.lookUps = r.lookUps.map(lookUpLine);
     const m = r.model ?? null;
     const asked = m !== null && (m.ms > 0 || (m.usage?.inputTokens ?? 0) > 0 || typeof m.error === 'string');
     const rb = r.readBack ?? null;

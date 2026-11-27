@@ -21,6 +21,7 @@ import { hostSchema, type HostYaml } from './schema/host';
 import { AGENT_FILE, AgentBusinessError, agentSchemaLineProblem } from '../converse/business/load';
 import { agentBusinessSchema, type AgentBusiness } from '../converse/business/schema';
 import { policyOf } from '../converse/policy';
+import { agentKbProblems } from '../converse/knowledge';
 import { personaSchema, type PersonaYaml } from './schema/persona';
 import { personaContentProblems, personasAppProblems } from './personas';
 
@@ -125,6 +126,11 @@ export interface LoadResult {
   document?(file: string): { doc: Document; lines: LineCounter } | null;
   /** An agent app's folder (app.yaml's mode: agent): checked here as YAML, with no scripted config to build. */
   converse?: boolean;
+  /**
+   * An agent app's knowledge base (its kb/ beside agent.yaml), read as a scripted app's is, its content rules passed:
+   * what `pnpm check` holds to its approvals, and what kb:approve, kb:status and kb:review work on. Absent without one.
+   */
+  converseKnowledge?: KnowledgeBase;
 }
 
 /** The locale an app has when it does not say (core/locale.ts). */
@@ -216,7 +222,7 @@ export function loadAppFolder(dir: string): LoadResult {
     return read ? keyPositionOf(read.doc, read.lines, path) : null;
   };
   let config: LoadedConfig | null = null;
-  const seen: { converse?: boolean } = {};
+  const seen: { converse?: boolean; knowledge?: KnowledgeBase } = {};
   try {
     config = load(dir, problems, documents, seen);
   } catch (error) {
@@ -224,10 +230,10 @@ export function loadAppFolder(dir: string): LoadResult {
     problems.push(problemAt('.', WHOLE_FILE, `the app folder could not be loaded (${error instanceof Error ? error.message : String(error)})`, 'check the folder is readable and its files are plain text'));
   }
   const document: LoadResult['document'] = (file) => documents.get(file) ?? null;
-  return { config: problems.length === 0 ? config : null, problems: sortProblems(problems), locate, locateKey, document, ...(seen.converse === true ? { converse: true } : {}) };
+  return { config: problems.length === 0 ? config : null, problems: sortProblems(problems), locate, locateKey, document, ...(seen.converse === true ? { converse: true } : {}), ...(seen.knowledge !== undefined && problems.length === 0 ? { converseKnowledge: seen.knowledge } : {}) };
 }
 
-function load(dir: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>, seen: { converse?: boolean } = {}): LoadedConfig | null {
+function load(dir: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>, seen: { converse?: boolean; knowledge?: KnowledgeBase } = {}): LoadedConfig | null {
   // Each valid file's parsed content, by its path in the folder: what the hashes are taken over.
   const contents: Record<string, unknown> = {};
   const root = resolveRoot(dir);
@@ -312,6 +318,14 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
   if (converse) {
     seen.converse = true;
     if (valid.app?.personas !== undefined) problems.push(inFileOf(documents, 'app.yaml', ['personas'], 'personas reword a scripted app\'s lines (prompts.yaml), and an agent app has none: its lines are its agent.yaml\'s', 'delete "personas"'));
+    // Its knowledge base, read as a scripted app's is, with what agent mode does not support refused (converse/knowledge.ts).
+    if (existsNoFollow(join(root.real, 'kb'))) {
+      const io = kbIo(root.real, problems, documents, contents);
+      const before = problems.length;
+      const kb = readKbFolder({ base: 'kb', folder: join(root.real, 'kb'), defaultLocale: DEFAULT_LOCALE, io, problems });
+      if (kb && problems.length === before) problems.push(...kbContentProblems(kb, io.locate), ...agentKbProblems(kb, io.locate));
+      if (kb && problems.length === before) seen.knowledge = kb;
+    }
     return null;
   }
 

@@ -1493,6 +1493,7 @@
       + (turn.silence ? `<div class="aside mono">no reply${turn.silence.ms !== null ? ` for ${esc(String(Math.round(turn.silence.ms / 1000)))} s` : ''} (${esc(String(turn.silence.count))} in a row)${turn.endedBy === 'silence' ? ' · call ended' : ''}</div>` : '')
       + (turn.said !== null ? `<div><b class="who caller">Caller</b> ${esc(turn.said)}</div>` : '')
       + turn.tools.map((x) => `<div class="mono tool">${esc(x.name)}(${esc(x.args)}) · ${esc(x.outcome)}${x.reason !== null ? ` · ${esc(x.reason)}` : ''}</div>`).join('')
+      + (turn.lookUps ? turn.lookUps.map((l) => `<div class="aside mono">${esc(l)}</div>`).join('') : '')
       + (turn.readBack !== null ? `<div><b class="who">Read-back</b> ${esc(turn.readBack.text)} <span class="aside">${turn.readBack.held ? `said again held${turn.readBack.brief ? ', brief' : ''} · ` : ''}${esc(turn.readBack.answer)}</span></div>` : '')
       + (turn.bridge ? '<div class="aside mono">bridge said: the model was slow to begin</div>' : '')
       + (typeof turn.goodbyeDropped === 'number' ? `<div class="aside mono">goodbye not said: a change was still unsent (${esc(String(turn.goodbyeDropped))} chars)</div>` : '')

@@ -26,7 +26,8 @@ export interface LoadedKb {
 export function loadKb(place: KbPlace): LoadedKb {
   if (place.appDir !== null) {
     const loaded = loadAppFolder(place.appDir);
-    return { kb: loaded.config?.knowledge ?? null, problems: loaded.config ? [] : loaded.problems.map(formatProblem) };
+    const kb = loaded.config?.knowledge ?? loaded.converseKnowledge ?? null;
+    return { kb, problems: kb !== null ? [] : loaded.problems.map(formatProblem) };
   }
   const folder = loadKnowledgeFolder(place.kbDir);
   return { kb: folder.kb, problems: folder.problems.map(formatProblem) };
