@@ -252,10 +252,16 @@ interface Section {
 }
 
 /** The app's default locale: app.yaml's `locale`, else en-US (as the loader has it). */
+/** A language tag (en-US, es, zh-Hant-TW): what appLocale takes from app.yaml. */
+const LANGUAGE_TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
 function appLocale(dir: string): string {
   try {
     const doc = parse(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { locale?: unknown } | null;
-    return typeof doc?.locale === 'string' && doc.locale.trim() !== '' ? doc.locale.trim() : DEFAULT_LOCALE;
+    // Only a language tag is taken: the locale is written into the settings file's comments, so nothing else
+    // (a line break among it) may reach them. pnpm check refuses an app.yaml whose locale is not one.
+    const locale = typeof doc?.locale === 'string' ? doc.locale.trim() : '';
+    return LANGUAGE_TAG.test(locale) ? locale : DEFAULT_LOCALE;
   } catch {
     return DEFAULT_LOCALE;
   }
@@ -686,7 +692,7 @@ function writeSettings(file: string, app: WorkspaceApp, sections: Section[], out
     '# over the file. The regression run reads it too, against a model or its cassette (regress --client record,',
     "# recorded or jev, and the cassette trim), and a shell can source it (set -a && . ./.env && set +a).",
     '# Every other setting, with its default, is in .env.example beside it.',
-    ...sections.flatMap((s) => ['', ...s.comment.map((c) => `# ${c}`), ...s.lines.map((l) => `${l.commented ? '# ' : ''}${envLine(l.name, l.value)}`)]),
+    ...sections.flatMap((s) => ['', ...s.comment.map((c) => `# ${c.replace(/[\r\n]+/g, ' ')}`), ...s.lines.map((l) => `${l.commented ? '# ' : ''}${envLine(l.name, l.value)}`)]),
     '',
   ].join('\n');
   const tmp = `${file}.${process.pid}.tmp`;

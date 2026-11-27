@@ -290,6 +290,17 @@ describe('pnpm configure with flags alone', () => {
     expect(readFileSync(file, 'utf8')).toContain('is es-US, not English');
   });
 
+  it('takes app.yaml\'s locale only as a language tag, so nothing else reaches the settings file', async () => {
+    const w = workspace();
+    writeFileSync(join(w.dir('alpha'), 'app.yaml'), 'id: alpha\nlocale: "es-US\\nEVIL=1"\n');
+    const o = io(w.root, null, { TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    const argv = ['--app', 'alpha', '--mode', 'phone', '--carrier', 'telnyx', '--model', 'none', '--handoff', '+15555550123', '--non-interactive'];
+    expect(await runSetup(argv, o)).toBe(0);
+    const file = join(w.dir('alpha'), '.env');
+    expect(settings(file)).not.toHaveProperty('EVIL');
+    expect(readFileSync(file, 'utf8')).not.toContain('EVIL');
+  });
+
   it('on Twilio writes no Telnyx setting', async () => {
     const w = workspace();
     const o = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
