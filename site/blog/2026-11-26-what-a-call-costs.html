@@ -90,29 +90,27 @@
       <ul class="stats four">
         <li><b>$0.0084</b><span>a call for agent mode's models, at most: Ember measured, the decision model an upper bound</span></li>
         <li><b>$0.002</b><span>a call for scripted mode's decision model, measured on one call</span></li>
-        <li><b>$0.10 to $0.26</b><span>a call for the carrier, recognition and speech, at list prices, the same in both modes</span></li>
-        <li><b>2.3% to 5.9%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
+        <li><b>$0.19 and $0.236</b><span>a call for the carrier, recognition and speech, as billed on Telnyx (the median) and on Twilio, the same in both modes</span></li>
+        <li><b>2.6% to 3.2%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
       </ul>
       <p>
-        At 2,000 calls a month the difference is about $12. It takes about 16,000 calls a month to reach $100. One billed
-        minute on the Twilio path, $0.0785, costs 12.5 times the whole difference in model cost per call.
+        At 2,000 calls a month the difference is about $12. It takes about 16,000 calls a month to reach $100. Telnyx with
+        Krisp is billed $0.060 a minute against Twilio's $0.0785, 23.6% less: on a call of three and a half minutes, about
+        $0.065, about ten times the whole difference in model cost per call.
       </p>
       <div class="table-wrap">
         <table class="stack">
-          <thead><tr><th scope="col">Carrier path</th><th scope="col">Carrier, recognition and speech, a call</th></tr></thead>
+          <thead><tr><th scope="col">Carrier</th><th scope="col">A minute, billed</th><th scope="col">A call, billed</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="Carrier, recognition and speech, a call">$0.262</td></tr>
-            <tr><th scope="row">Telnyx from parts, Deepgram recognition</th><td data-label="Carrier, recognition and speech, a call">$0.099</td></tr>
-            <tr><th scope="row">Telnyx from parts, Telnyx recognition</th><td data-label="Carrier, recognition and speech, a call">$0.135</td></tr>
-            <tr><th scope="row">Telnyx with its Conversation Relay add-on</th><td data-label="Carrier, recognition and speech, a call">$0.196</td></tr>
+            <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="A minute, billed">$0.0785</td><td data-label="A call, billed">$0.236 (9 calls: a median of 147 seconds, billed as 3 minutes)</td></tr>
+            <tr><th scope="row">Telnyx's conversation relay, with Krisp</th><td data-label="A minute, billed">$0.060</td><td data-label="A call, billed">$0.19 at the median, $0.15 to $0.24 (12 calls)</td></tr>
           </tbody>
         </table>
       </div>
       <p class="note">
-        Measured: the models' tokens and cost from the traces of 17 live agent-mode calls and one live scripted call, the
-        call lengths and the characters spoken. List prices: every model, carrier, recognition and speech price, read on
-        2026-11-25. Twilio's pages do not say whether ConversationRelay's price includes recognition and speech, so its
-        figure may be low.
+        Measured: the models' tokens and cost from the traces of 17 live agent-mode calls and one live scripted call, and
+        what each carrier billed for the wheel shop's test calls, read from their own records on 2026-11-26 (on both, the
+        conversation relay's price includes recognition and the voice). List prices: the models' prices.
       </p>
       <p class="links">
         <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">The cost of a call in each mode, in full</a>

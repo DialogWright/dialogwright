@@ -348,26 +348,29 @@ questions: # assumption: the owner corrects these
         <h2 id="cost-title">What a call costs</h2>
         <p>
           The model's share of a call's cost is small in both modes, so the difference between them is a few percent of a
-          call's total. Model costs are measured from the calls' tokens at the models' list prices; the carrier,
-          recognition and speech are list prices read on 2026-11-25.
+          call's total. Model costs are measured from the calls' tokens at the models' list prices; the carriers' are what
+          each billed for the wheel shop's test calls, read from their own records on 2026-11-26. On both, the conversation
+          relay's price includes speech recognition and the voice.
         </p>
         <ul class="stats four wide">
           <li><b>$0.0084</b><span>a call for agent mode's models, at most: the agent model measured, the decision model an upper bound</span></li>
           <li><b>$0.002</b><span>a call for scripted mode's decision model, measured on one call</span></li>
-          <li><b>$0.10 to $0.26</b><span>a call for everything else, the same in both modes: the carrier, recognition and speech</span></li>
-          <li><b>2.3% to 5.9%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
+          <li><b>$0.19 and $0.236</b><span>a call for everything else, as billed on Telnyx (the median) and on Twilio, the same in both modes</span></li>
+          <li><b>2.6% to 3.2%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
         </ul>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th scope="col">Carrier path</th><th scope="col">Shared cost a call, at list prices</th></tr></thead>
+            <thead><tr><th scope="col">Carrier</th><th scope="col">A minute, billed</th><th scope="col">A call, billed</th></tr></thead>
             <tbody>
-              <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="Shared cost a call, at list prices">$0.262</td></tr>
-              <tr><th scope="row">Telnyx from parts, Deepgram recognition</th><td data-label="Shared cost a call, at list prices">$0.099</td></tr>
-              <tr><th scope="row">Telnyx from parts, Telnyx recognition</th><td data-label="Shared cost a call, at list prices">$0.135</td></tr>
-              <tr><th scope="row">Telnyx with its Conversation Relay add-on</th><td data-label="Shared cost a call, at list prices">$0.196</td></tr>
+              <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="A minute, billed">$0.0785</td><td data-label="A call, billed">$0.236 (9 calls: a median of 147 seconds, billed as 3 minutes)</td></tr>
+              <tr><th scope="row">Telnyx's conversation relay, with Krisp</th><td data-label="A minute, billed">$0.060</td><td data-label="A call, billed">$0.19 at the median, $0.15 to $0.24 (12 calls)</td></tr>
             </tbody>
           </table>
         </div>
+        <p>
+          Telnyx with Krisp is billed 23.6% less a minute than Twilio. On a call of three and a half minutes that is about
+          $0.065, about ten times the difference in model cost between the modes.
+        </p>
         <blockquote class="said-by">
           <p>The mode and the model for a line are chosen by what the job needs, not by their price.</p>
           <footer>The maintainer's reading of the cost report, 2026-11-26. The larger saving is in the carrier path.</footer>
