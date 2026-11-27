@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FOLDER, fakeClock, guardedFetch, serveSite, type FixtureSite } from '../__fixtures__/server';
+import { fakeLiteParse, scannedPages } from '../__fixtures__/liteparse';
 import { openLiteParse } from '../extract/liteparse';
 import { ingest } from '../ingest';
 import { findKb } from '../kbPlace';
@@ -192,6 +193,23 @@ describe('the reader a refresh reads a PDF with', () => {
     expect(await main(['kb:refresh', '--reader', 'ours'], back.io)).toBe(0);
     expect(readFileSync(source, 'utf8')).not.toContain('reader:');
     expect(back.out).toContain('  reader    guide: liteparse@2.21.3 to ours');
+  });
+
+  it('reads a page OCR read again in the language its provenance records, unless --ocr-language names another', async () => {
+    const { app } = appWithOutside();
+    mkdirSync(join(app, 'docs'));
+    writeFileSync(join(app, 'docs', 'scan.pdf'), readFileSync(join(FOLDER, 'rights-notice.pdf')));
+    const first = fakeLiteParse(scannedPages, 2);
+    await ingest({ input: join(app, 'docs'), appDir: app, kbDir: join(app, 'kb'), today: '2026-10-03', ocrLanguage: 'spa', liteparse: first.open });
+    expect(readFileSync(join(app, 'kb', 'sources', 'scan.yaml'), 'utf8')).toContain('  reader: liteparse@2.21.3\n  ocrLanguage: spa\n');
+    const again = fakeLiteParse(scannedPages, 2);
+    const io: Io = { out: () => {}, err: () => {}, cwd: app, today: () => '2026-11-01', liteparse: again.open };
+    expect(await main(['kb:refresh'], io)).toBe(0);
+    expect(again.configs.map((c) => c.ocrLanguage)).toEqual(['spa', 'spa']);
+    const other = fakeLiteParse(scannedPages, 2);
+    expect(await main(['kb:refresh', '--ocr-language', 'fra'], { ...io, liteparse: other.open })).toBe(0);
+    expect(other.configs.map((c) => c.ocrLanguage)).toEqual(['fra', 'fra']);
+    expect(readFileSync(join(app, 'kb', 'sources', 'scan.yaml'), 'utf8')).toContain('  ocrLanguage: fra\n');
   });
 
   it('refuses a reader it does not have, in a source\'s provenance or on the command line', async () => {

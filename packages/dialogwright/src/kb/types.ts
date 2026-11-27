@@ -127,6 +127,8 @@ export interface KbSourceDocument {
     readonly crawl?: { readonly start: string; readonly depth: number; readonly include?: readonly string[]; readonly allowHosts?: readonly string[]; readonly maxPages?: number; readonly rateMs?: number };
     /** For a PDF: the reader that read it (`liteparse@<version>`, or `ours`); absent, ours. */
     readonly reader?: string;
+    /** For a PDF with a page read by OCR: the language it was read in. */
+    readonly ocrLanguage?: string;
   };
   /** Its sections by id; a paged document's say the pages they are on, and one with text read by OCR says so (provenance only, never hashed). */
   readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number; readonly ocr?: true; readonly summarize?: false }>>;

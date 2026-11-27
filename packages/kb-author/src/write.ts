@@ -7,7 +7,7 @@ import { distinct, type ExtractedSection } from './sections';
 
 /**
  * Writing what was read into a knowledge base's `kb/sources/<doc>.yaml`, the format dialogwright's
- * loader reads (`{ document, provenance: { url | file, retrieved, reader? }, sections: { <id>: { heading?, text, page?, lastPage?, ocr? } } }`),
+ * loader reads (`{ document, provenance: { url | file, retrieved, reader?, ocrLanguage? }, sections: { <id>: { heading?, text, page?, lastPage?, ocr? } } }`),
  * and saying what changed.
  *
  * - A document's id is kept from run to run: a source file whose provenance (its URL, or its file's
@@ -38,7 +38,7 @@ export interface CrawlProvenance {
 /** A document read, ready to be written. */
 export interface SourceInput {
   /** Where it came from: its URL (and the crawl that read it), or its file's path from the app folder (forward slashes). */
-  provenance: { url: string; crawl?: CrawlProvenance; reader?: string } | { file: string; reader?: string };
+  provenance: { url: string; crawl?: CrawlProvenance; reader?: string; ocrLanguage?: string } | { file: string; reader?: string; ocrLanguage?: string };
   /** Its title. */
   title: string;
   /** Its id when no source file already has its provenance: a slug of its path. */

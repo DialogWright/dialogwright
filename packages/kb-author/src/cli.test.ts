@@ -101,7 +101,8 @@ describe('kb:ingest', () => {
     expect(fake.configs.filter((c) => c.ocrEnabled).map((c) => c.ocrLanguage)).toEqual(['spa', 'spa', 'spa']);
     const yaml = readFileSync(join(s.app, 'kb', 'sources', 'second-notice.yaml'), 'utf8');
     expect(yaml).toContain('  late-fees:\n    heading: Late fees\n    text: Each day late is 25 cents.\n    page: 2\n    ocr: true\n');
-    expect(yaml).toContain('  reader: liteparse@2.21.3\n');
+    // The OCR's language is kept with the reader, for kb:refresh to read the page again in it.
+    expect(yaml).toContain('  reader: liteparse@2.21.3\n  ocrLanguage: spa\n');
   });
 
   it('takes --reader liteparse or ours, and refuses another, and --tables without --reader ours', async () => {

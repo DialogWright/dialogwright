@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ExtractedDocument, ExtractedSection } from '../sections';
 import { isBoldFontName, linesOf, MAX_PDF_PAGES, pdfFacts, readPages, type PageLines, type Run } from './pdf';
 import type { PlacedLine, Span, TableGrid } from './tables/grid';
@@ -38,6 +40,9 @@ import type { Rule } from './tables/rules';
  *   vector lines, pictures, a blank page) is not read, and noted: OCR would make garbled text of it.
  * - The page count is read first by pdf.js (./pdf.ts `pdfFacts`, with its metadata title): a document of
  *   more than 500 pages is refused before LiteParse reads a page.
+ *
+ * - No learned model is ever used: Tesseract is named, no table model is given, and while LiteParse reads,
+ *   the environment names no table model and its model folder is one with nothing in it (`liteParseWith`).
  *
  * LiteParse is loaded only when a PDF is read with it, so ours reads on a machine it does not install on.
  */
@@ -133,29 +138,61 @@ export function liteParseVersion(): string {
 /** The reader as a source's provenance records it. */
 export const liteParseReader = (): string => `liteparse@${liteParseVersion()}`;
 
-/** LiteParse itself, loaded when first used; every parse names Tesseract and asks for what is read here. */
-export const openLiteParse: LiteParseOpen = (config) => ({
-  async parse(bytes) {
-    let mod: typeof import('@llamaindex/liteparse');
-    try {
-      mod = await import('@llamaindex/liteparse');
-    } catch (error) {
-      throw new Error(`LiteParse could not be loaded on this machine (${error instanceof Error ? error.message : String(error)}): read with --reader ours`);
-    }
-    const parser = new mod.LiteParse({
-      ...config,
-      ocrBackend: 'tesseract',
-      extractBlocks: true,
-      emitWordBoxes: true,
-      extractTextMetadata: true,
-      extractVectorGraphics: true,
-      includeComplexity: true,
-      outputFormat: 'json',
-      quiet: true,
-    });
-    return (await parser.parse(Buffer.from(bytes))) as unknown as LpResult;
-  },
-});
+/**
+ * A folder that holds no model: LiteParse is told its models are here while it reads, so a model pulled
+ * on the machine (OCRia-nano, whose table model would read born-digital pages' tables) is never found.
+ */
+export const NO_MODELS_DIR = join(tmpdir(), 'dialogwright-kb-author-no-liteparse-models');
+
+/** What LiteParse's own module gives that is used here. */
+interface LiteParseModule {
+  readonly LiteParse: new (options: Record<string, unknown>) => { parse(input: Buffer): Promise<unknown> };
+}
+
+/**
+ * LiteParse opened from `load` (its own module, or a test's fake). Every parse names Tesseract, asks for
+ * what is read here and gives no table model; and while LiteParse is loaded, made and parses, the environment
+ * names no table model (LITEPARSE_TABLE_MODEL, which LiteParse reads) and points its model folder
+ * (LITEPARSE_MODEL_DIR) at NO_MODELS_DIR, so the reading is its own layout pass whatever the machine has
+ * installed or set. The environment is put back as it was afterwards.
+ */
+export function liteParseWith(load: () => Promise<LiteParseModule>): LiteParseOpen {
+  return (config) => ({
+    async parse(bytes) {
+      const was = { table: process.env.LITEPARSE_TABLE_MODEL, dir: process.env.LITEPARSE_MODEL_DIR };
+      delete process.env.LITEPARSE_TABLE_MODEL;
+      process.env.LITEPARSE_MODEL_DIR = NO_MODELS_DIR;
+      try {
+        let mod: LiteParseModule;
+        try {
+          mod = await load();
+        } catch (error) {
+          throw new Error(`LiteParse could not be loaded on this machine (${error instanceof Error ? error.message : String(error)}): read with --reader ours`);
+        }
+        const parser = new mod.LiteParse({
+          ...config,
+          ocrBackend: 'tesseract',
+          extractBlocks: true,
+          emitWordBoxes: true,
+          extractTextMetadata: true,
+          extractVectorGraphics: true,
+          includeComplexity: true,
+          outputFormat: 'json',
+          quiet: true,
+        });
+        return (await parser.parse(Buffer.from(bytes))) as LpResult;
+      } finally {
+        if (was.table === undefined) delete process.env.LITEPARSE_TABLE_MODEL;
+        else process.env.LITEPARSE_TABLE_MODEL = was.table;
+        if (was.dir === undefined) delete process.env.LITEPARSE_MODEL_DIR;
+        else process.env.LITEPARSE_MODEL_DIR = was.dir;
+      }
+    },
+  });
+}
+
+/** LiteParse itself, loaded when first used (see liteParseWith). */
+export const openLiteParse: LiteParseOpen = liteParseWith(async () => (await import('@llamaindex/liteparse')) as unknown as LiteParseModule);
 
 /** A footnote mark is this much of its neighbour's height or less, and its foot this much of that height above the neighbour's. */
 const MARK_RATIO = 0.8;
@@ -417,7 +454,7 @@ function markOcr(sections: readonly ExtractedSection[], ocrPages: ReadonlySet<nu
 }
 
 /** A PDF's bytes to sections read by LiteParse (see the file's comment), with its page count and the reader as its provenance records it. */
-export async function extractPdfLiteParse(bytes: Uint8Array, options: LiteParseOptions = {}): Promise<ExtractedDocument & { pages: number; reader: string }> {
+export async function extractPdfLiteParse(bytes: Uint8Array, options: LiteParseOptions = {}): Promise<ExtractedDocument & { pages: number; reader: string; ocrLanguage?: string }> {
   const maxPages = options.maxPages ?? MAX_PDF_PAGES;
   const ocrLanguage = options.ocrLanguage ?? DEFAULT_OCR_LANGUAGE;
   const { count, metaTitle } = await pdfFacts(bytes, { maxPages });
@@ -450,5 +487,12 @@ export async function extractPdfLiteParse(bytes: Uint8Array, options: LiteParseO
   const noted = doc.notes === undefined ? undefined : [...new Set(doc.notes)];
   const title = doc.title ?? metaTitle;
   const sections = markOcr(doc.sections, ocrPages);
-  return { ...(title === undefined ? {} : { title }), sections, ...(noted === undefined ? {} : { notes: noted }), pages: count, reader: liteParseReader() };
+  return {
+    ...(title === undefined ? {} : { title }),
+    sections,
+    ...(noted === undefined ? {} : { notes: noted }),
+    pages: count,
+    reader: liteParseReader(),
+    ...(ocrPages.size > 0 ? { ocrLanguage } : {}),
+  };
 }

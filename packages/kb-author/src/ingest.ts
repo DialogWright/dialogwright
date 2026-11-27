@@ -43,8 +43,8 @@ export interface IngestOptions {
    * its source's provenance names it. A model's tables (`tables`) are read by ours only.
    */
   reader?: PdfReaderName | ((source: { file?: string; url?: string }) => PdfReaderName);
-  /** Tesseract's language for a PDF page with no text layer, read by LiteParse's OCR (default `eng`). */
-  ocrLanguage?: string;
+  /** Tesseract's language for a scanned PDF page, read by LiteParse's OCR (default `eng`); for kb:refresh, by where the document came from, as its provenance records it. */
+  ocrLanguage?: string | ((source: { file?: string; url?: string }) => string | undefined);
   /** Told before a document's first OCR (kb:ingest says it once: the first OCR on a machine downloads its language data). */
   onOcr?: (line: string) => void;
   /** LiteParse itself, or a test's fake of it. */
@@ -141,7 +141,7 @@ async function readFiles(input: string, appDir: string, pdfOf: (file: string) =>
       }
       const segments = rel.slice(0, rel.length - ext.length - 1).split('/');
       inputs.push({
-        provenance: { file: posix(relative(appDir, file)), ...(read.reader !== undefined ? { reader: read.reader } : {}) },
+        provenance: { file: posix(relative(appDir, file)), ...(read.reader !== undefined ? { reader: read.reader } : {}), ...(read.ocrLanguage !== undefined ? { ocrLanguage: read.ocrLanguage } : {}) },
         title: read.title ?? titleFromName(name.slice(0, name.length - ext.length - 1)),
         ...idsOfPath(segments, ext, 'document'),
         sections: read.sections,
@@ -187,10 +187,11 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
   const pdfOf = (source: { file?: string; url?: string }): ExtractOptions => {
     const reader = readerFor(source);
     if (reader === 'ours') return { reader, tables: pdfTables };
+    const ocrLanguage = typeof options.ocrLanguage === 'function' ? options.ocrLanguage(source) : options.ocrLanguage;
     return {
       reader,
       liteparse: {
-        ...(options.ocrLanguage !== undefined ? { ocrLanguage: options.ocrLanguage } : {}),
+        ...(ocrLanguage !== undefined ? { ocrLanguage } : {}),
         ...(options.onOcr !== undefined ? { onOcr: options.onOcr } : {}),
         ...(options.liteparse !== undefined ? { open: options.liteparse } : {}),
       },
@@ -224,7 +225,7 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
       }
       const u = new URL(d.url);
       const name = u.pathname.split('/').filter(Boolean).pop() ?? u.host;
-      inputs.push({ provenance: { url: d.url, crawl: crawled, ...(d.document.reader !== undefined ? { reader: d.document.reader } : {}) }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections, ...(d.document.notes === undefined ? {} : { notes: d.document.notes }) });
+      inputs.push({ provenance: { url: d.url, crawl: crawled, ...(d.document.reader !== undefined ? { reader: d.document.reader } : {}), ...(d.document.ocrLanguage !== undefined ? { ocrLanguage: d.document.ocrLanguage } : {}) }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections, ...(d.document.notes === undefined ? {} : { notes: d.document.notes }) });
     }
     report = { input: options.input, kind: 'site', documents: [], skipped, notSeen: [], crawl: { requests: result.requests, robots: result.robots } };
     mine = (p) => {

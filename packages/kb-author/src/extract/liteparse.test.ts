@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FOLDER } from '../__fixtures__/server';
 import { extractPdf } from './pdf';
 import { box, fakeLiteParse, item, mergedRowsPage, scannedPages, tablePage } from '../__fixtures__/liteparse';
-import { extractPdfLiteParse, liteParseVersion, type LiteParseConfig, type LpPage } from './liteparse';
+import { extractPdfLiteParse, liteParseVersion, liteParseWith, NO_MODELS_DIR, type LiteParseConfig, type LpPage } from './liteparse';
 import { readLabels } from './tables/labels';
 import { scorePdf } from './tables/score';
 
@@ -24,6 +24,37 @@ describe('LiteParse as the PDF reader', () => {
       expect(lite.pages).toBe(ours.pages);
       expect(lite.reader).toBe('liteparse@2.21.3');
       expect(lite.notes).toBeUndefined();
+    }
+  });
+
+  it('never lets LiteParse use a learned model: Tesseract named, no table model, and no model folder, whatever the environment says', async () => {
+    const seen: { options: Record<string, unknown>; env: { table?: string; dir?: string } }[] = [];
+    const envNow = () => ({ table: process.env.LITEPARSE_TABLE_MODEL, dir: process.env.LITEPARSE_MODEL_DIR });
+    class FakeLiteParse {
+      constructor(private readonly options: Record<string, unknown>) {
+        seen.push({ options, env: envNow() });
+      }
+      async parse(): Promise<unknown> {
+        seen.push({ options: this.options, env: envNow() });
+        return { totalPages: 0, pages: [] };
+      }
+    }
+    const before = { ...process.env };
+    process.env.LITEPARSE_TABLE_MODEL = '/somewhere/tablenet.bin';
+    process.env.LITEPARSE_MODEL_DIR = '/somewhere/models';
+    try {
+      await liteParseWith(async () => ({ LiteParse: FakeLiteParse }))({ ocrEnabled: false, ocrLanguage: 'eng', maxPages: 500 }).parse(new Uint8Array());
+      // While LiteParse is made and parses, no table model and a model folder with nothing in it.
+      for (const s of seen) {
+        expect(s.env).toEqual({ table: undefined, dir: NO_MODELS_DIR });
+        expect(s.options).toMatchObject({ ocrBackend: 'tesseract', ocrEnabled: false, ocrLanguage: 'eng' });
+        expect(s.options.tableModel).toBeUndefined();
+      }
+      expect(seen).toHaveLength(2);
+      // And the environment as it was afterwards.
+      expect(envNow()).toEqual({ table: '/somewhere/tablenet.bin', dir: '/somewhere/models' });
+    } finally {
+      process.env = before;
     }
   });
 

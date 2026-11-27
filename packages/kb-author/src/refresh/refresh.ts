@@ -25,7 +25,9 @@ import { existingSources, type CrawlProvenance, type DocumentChange } from '../w
  * ingested before LiteParse, is ours), so a source is read as it was and no approved passage goes stale
  * from a change of reader. `reader` (kb:refresh --reader) moves every PDF to the reader it names on
  * purpose: a section that reads differently then withholds the passages citing it until a person
- * approves them again, as any change in a source does, and the report lists each document moved.
+ * approves them again, as any change in a source does, and the report lists each document moved. A page
+ * OCR read is read again in the language its provenance records (`ocrLanguage`), unless `ocrLanguage`
+ * (kb:refresh --ocr-language) names another.
  *
  * It writes nothing but kb/sources. A source written by hand (no provenance) is left as it is; a file
  * that is gone is reported and its source left as it is.
@@ -132,8 +134,9 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
   // The reader each source was read by, by where it came from, and as its provenance says it.
   const readers = new Map<string, PdfReaderName>();
   const recorded = new Map<string, string>();
+  const languages = new Map<string, string>();
   for (const e of existingSources(sourcesDir)) {
-    const p = e.data?.provenance as { file?: unknown; url?: unknown; crawl?: unknown; reader?: unknown } | undefined;
+    const p = e.data?.provenance as { file?: unknown; url?: unknown; crawl?: unknown; reader?: unknown; ocrLanguage?: unknown } | undefined;
     const where = typeof p?.file === 'string' ? `file ${p.file}` : typeof p?.url === 'string' ? `url ${p.url}` : undefined;
     if (where !== undefined) {
       const reader = readerOfProvenance(p?.reader);
@@ -142,6 +145,7 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
         continue;
       }
       readers.set(where, reader);
+      if (typeof p?.ocrLanguage === 'string') languages.set(where, p.ocrLanguage);
       recorded.set(e.id, typeof p?.reader === 'string' ? p.reader : 'ours');
     }
     if (typeof p?.file === 'string') {
@@ -183,8 +187,9 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
     kbDir: place.kbDir,
     today,
     reader: readerFor,
+    // A scanned page read again in the language its provenance records, or --ocr-language's.
+    ocrLanguage: (source: { file?: string; url?: string }) => options.ocrLanguage ?? languages.get(source.file !== undefined ? `file ${source.file}` : `url ${source.url}`),
     ...(options.dryRun ? { dryRun: true } : {}),
-    ...(options.ocrLanguage !== undefined ? { ocrLanguage: options.ocrLanguage } : {}),
     ...(options.onOcr !== undefined ? { onOcr: options.onOcr } : {}),
     ...(options.liteparse !== undefined ? { liteparse: options.liteparse } : {}),
   };

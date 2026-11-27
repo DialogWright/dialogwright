@@ -282,6 +282,9 @@ export const kbSourceSchema = z
         reader: text()
           .optional()
           .describe('For a PDF: the reader that read it, "liteparse@<version>" (LiteParse, kb:ingest\'s default) or "ours" (kb:ingest --reader ours). pnpm kb:refresh reads it again with the same reader, unless --reader moves it to another. Default: ours, as a PDF ingested before LiteParse was read.'),
+        ocrLanguage: text()
+          .optional()
+          .describe('For a PDF with a scanned page read by OCR: Tesseract\'s language it was read in (eng, spa, ...), which pnpm kb:refresh reads it again in, unless --ocr-language names another.'),
       })
       .optional()
       .describe('Where the text came from.'),

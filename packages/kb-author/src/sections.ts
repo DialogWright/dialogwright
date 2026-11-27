@@ -53,6 +53,8 @@ export interface ExtractedDocument {
   readonly notes?: readonly string[];
   /** The PDF reader that read it, where it was not ours (`liteparse@<version>`): kept in its provenance. */
   readonly reader?: string;
+  /** The OCR's language, where a page of it was read by OCR: kept in its provenance, for a refresh to read it so again. */
+  readonly ocrLanguage?: string;
 }
 
 /** Characters that are never text: soft hyphens, zero-width spaces and joiners, byte-order marks. */
