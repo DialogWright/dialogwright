@@ -78,6 +78,10 @@ describe('pnpm configure, answering its questions', () => {
       VOICE_PROVIDERS: 'telnyx',
       TELNYX_PUBLIC_KEY: TELNYX_KEY,
       SIGNATURE_CHECK: 'on',
+      // Telnyx is recommended with flux and Krisp for an English app (the default locale of an app that names none).
+      TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram',
+      TELNYX_SPEECH_MODEL: 'flux',
+      TELNYX_NOISE_SUPPRESSION: 'krisp',
       PORT: '3000',
       HANDOFF_NUMBER: '+15555550123',
       JEV_CLIENT: 'jev',
@@ -267,6 +271,31 @@ describe('pnpm configure with flags alone', () => {
     expect(said).toContain('TELNYX_PUBLIC_KEY from the environment (44 chars)');
     expect(said).toContain('https://ivr.example.com/voice/telnyx');
     expect(said).not.toContain(MODEL_KEY);
+    // Telnyx is recommended: an English app (this one names no locale) gets flux and Krisp, as ordinary commented lines.
+    expect(settings(file)).toMatchObject({ TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram', TELNYX_SPEECH_MODEL: 'flux', TELNYX_NOISE_SUPPRESSION: 'krisp' });
+    expect(readFileSync(file, 'utf8')).toContain('Krisp noise suppression on the caller');
+  });
+
+  it('on Telnyx writes the noise suppression alone for an app whose default locale is not English, and says why', async () => {
+    const w = workspace();
+    writeFileSync(join(w.dir('alpha'), 'app.yaml'), 'id: alpha\nlocale: es-US\n');
+    const o = io(w.root, null, { TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    const argv = ['--app', 'alpha', '--mode', 'phone', '--carrier', 'telnyx', '--model', 'none', '--handoff', '+15555550123', '--non-interactive'];
+    expect(await runSetup(argv, o)).toBe(0);
+    const file = join(w.dir('alpha'), '.env');
+    const written = settings(file);
+    expect(written.TELNYX_NOISE_SUPPRESSION).toBe('krisp');
+    expect(written).not.toHaveProperty('TELNYX_TRANSCRIPTION_PROVIDER');
+    expect(written).not.toHaveProperty('TELNYX_SPEECH_MODEL');
+    expect(readFileSync(file, 'utf8')).toContain('is es-US, not English');
+  });
+
+  it('on Twilio writes no Telnyx setting', async () => {
+    const w = workspace();
+    const o = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
+    const argv = ['--app', 'alpha', '--mode', 'phone', '--carrier', 'twilio', '--model', 'none', '--handoff', '+15555550123', '--non-interactive'];
+    expect(await runSetup(argv, o)).toBe(0);
+    expect(Object.keys(settings(join(w.dir('alpha'), '.env'))).filter((k) => k.startsWith('TELNYX_'))).toEqual([]);
   });
 
   it('asks for the numbers app.yaml names (its transfer targets, a number callers dial), each checked, Enter a 555 number on a laptop', async () => {

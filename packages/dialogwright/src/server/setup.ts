@@ -4,6 +4,8 @@ import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
+import { parse } from 'yaml';
+import { DEFAULT_LOCALE } from '../core/locale';
 import { carrierSteps } from './carrierSteps';
 import { DEFAULT_WIDGET_FILE, type Env } from './config';
 import { main as diagnose } from './doctor';
@@ -247,6 +249,45 @@ const RETENTION_SECTION: Section = {
 interface Section {
   comment: string[];
   lines: { name: string; value: string; secret?: boolean; commented?: boolean }[];
+}
+
+/** The app's default locale: app.yaml's `locale`, else en-US (as the loader has it). */
+function appLocale(dir: string): string {
+  try {
+    const doc = parse(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { locale?: unknown } | null;
+    return typeof doc?.locale === 'string' && doc.locale.trim() !== '' ? doc.locale.trim() : DEFAULT_LOCALE;
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
+
+/**
+ * What a new Telnyx settings file recommends (the maintainer's decision, 2026-11-26, measured on live
+ * calls in a loud room): noise suppression on the caller's audio, and, for an app whose default locale is
+ * English, Deepgram's flux as the recognizer, which Telnyx offers for English only. Ordinary lines the owner
+ * may change. The server's own defaults are unchanged: this is only what a new file says.
+ */
+function telnyxRecommendedSection(locale: string): Section {
+  const noise = { name: 'TELNYX_NOISE_SUPPRESSION', value: 'krisp' };
+  if (/^en(-|_|$)/i.test(locale)) {
+    return {
+      comment: [
+        'Recommended on Telnyx for an English app (measured on live calls with a television and two people talking nearby:',
+        'the line heard only the caller). Each is an ordinary setting: change or remove it.',
+        'TELNYX_TRANSCRIPTION_PROVIDER: the speech recognizer is Deepgram.',
+        'TELNYX_SPEECH_MODEL: its flux model, which is for English only.',
+        'TELNYX_NOISE_SUPPRESSION: Krisp noise suppression on the caller\'s audio, which Telnyx bills per call.',
+      ],
+      lines: [{ name: 'TELNYX_TRANSCRIPTION_PROVIDER', value: 'deepgram' }, { name: 'TELNYX_SPEECH_MODEL', value: 'flux' }, noise],
+    };
+  }
+  return {
+    comment: [
+      `Recommended on Telnyx: noise suppression on the caller's audio (Krisp, which Telnyx bills per call). This app's default locale is ${locale}, not English, so`,
+      "the Deepgram flux recognizer (English only) is not set: Telnyx's own recognizer is used. An ordinary setting: change or remove it.",
+    ],
+    lines: [noise],
+  };
 }
 
 export async function runSetup(argv: readonly string[], io: SetupIo): Promise<number> {
@@ -569,7 +610,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   } else {
     // The carrier, and its secret.
     const carrier: Carrier = flags.carrier ?? (!interactive ? (() => { throw need('--carrier', 'telnyx or twilio'); })() : await choose('Which carrier answers the number?', [
-      { value: 'telnyx', label: 'Telnyx' },
+      { value: 'telnyx', label: 'Telnyx (recommended: Deepgram flux and Krisp noise suppression, which heard only the caller in a noisy room where Twilio did not)' },
       { value: 'twilio', label: 'Twilio' },
     ]));
     const c = CARRIER_SECRET[carrier];
@@ -590,6 +631,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
         ],
         lines: [flags.publicHost ? { name: 'PUBLIC_HOST', value: flags.publicHost } : { name: 'PUBLIC_HOST', value: 'ivr.example.com', commented: true }, { name: 'PORT', value: port }],
       },
+      ...(carrier === 'telnyx' ? [telnyxRecommendedSection(appLocale(app.dir))] : []),
       { comment: ['Where a call goes when the caller wants a person, or the line cannot help (E.164).'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
       ...numberSections,
       { comment: ['The decision model, which reads what callers say.'], lines: modelLines },
