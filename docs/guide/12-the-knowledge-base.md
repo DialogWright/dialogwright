@@ -4,6 +4,8 @@
 
 A knowledge base is for the questions callers ask that no form handles: when are you open, what happens if I return a book late, how do I renew my card. Its answers are short passages that people approved, chosen by what the caller means, and spoken word for word. No model writes them: the model only picks which topic the caller asked about, and code finds the one approved passage for this caller and this day. Where the app marks a topic `risk: low` and frames its answer line to word the answer, a model may word that approved passage for the caller's question, held to it by checks and a judge, with the passage said whenever one fails ([12.13](#1213-answers-worded-for-the-callers-question)); every other answer is said word for word.
 
+An agent app has the same folder, looked up by its agent model with the runtime's own `look_up` and worded in the model's own reply, with no check or judge before it is said: [18.15](18-agent-mode.md#1815-the-knowledge-base).
+
 This section is the whole of it, in the order you meet it: the folder, how a call uses it, the three places an answer is said from, approval and staleness, building one from documents, tuning retrieval, testing and what is recorded. The examples are one small knowledge base, Example Town Library's, whose files are the ones the engine's own tests build. [The topic slot's page](../slots/topic.md) has the question the model is asked. Two example apps have one to read whole: [the clinic](../../apps/clinic/README.md#the-knowledge-base), the smallest (five topics from one visitor page, found by keywords alone), and [the utility](../../apps/utility/README.md#the-knowledge-base) (twelve topics from a website and two PDFs, found by meaning, with an account line).
 
 ### 12.1 The folder
