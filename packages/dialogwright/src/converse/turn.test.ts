@@ -4384,6 +4384,64 @@ describe('converseTurn: putting the call through (transfer_call, decided 2026-11
   });
 });
 
+describe('converseTurn: the handoff after the model failed, put through only where transfer_call would be (fix round 1, 2026-11-26)', () => {
+  const TRANSFER = '+15555550177';
+  const OPEN = '  open:\n    weekly: { mon-fri: ["08:00-17:00"] }\n';
+  const NIGHT = new Date('2026-11-12T04:00:00Z'); // Wednesday, 11 p.m. in the business's zone
+  const HANDOFF = 'Let me get a person to call you back.';
+  const CLOSING = 'Thanks for calling. Goodbye.';
+  const once = (t: string): string => t.replace('limits: { failuresPerCall: 2, refusalsPerAction: 2 }', 'limits: { failuresPerCall: 1, refusalsPerAction: 2 }');
+  const withHours = (more = '') => (t: string): string => `${once(t).replace('  timezone: America/New_York\n', `  timezone: America/New_York\n${OPEN}`)}transfer: { number: "${TRANSFER}"${more} }\n`;
+  const failing = (): ModelEvent[][] => [[timeout], [timeout]];
+  const chat = (): ConverseState => newConverseState({ appId: 'menders', callId: 'chat-1', channel: 'chat' });
+
+  it('while open, with a transfer number: the handoff line, then lines.transfer, and the call put through as a handoff', async () => {
+    const LINE = 'Putting you through to the counter now.';
+    const h = harness(failing(), { edit: (t) => withHours()(t).replace('lines:\n', `lines:\n  transfer: { en: "${LINE}" }\n`) });
+    const s = await h.run(fresh(), { kind: 'text', text: 'hello' });
+    expect(h.said).toEqual([[HANDOFF, false], [LINE, true]]);
+    expect(h.ended).toEqual(['transfer']);
+    expect(s.ended).toBe('transfer');
+    expect(s.transferBy).toBe('handoff');
+    expect(h.traces.at(-1)!.ended).toBe('transfer');
+  });
+
+  it('while open, with no lines.transfer: the runtime\'s own line after the handoff line', async () => {
+    const h = harness(failing(), { edit: withHours() });
+    await h.run(fresh(), { kind: 'text', text: 'hello' });
+    expect(h.said).toEqual([[HANDOFF, false], ["One moment, I'll put you through.", true]]);
+    expect(h.ended).toEqual(['transfer']);
+  });
+
+  it('while closed (transfer.whenClosed callback, the default): not put through, the handoff line and the closing line, nothing said of putting through', async () => {
+    const h = harness(failing(), { edit: withHours(), now: NIGHT });
+    const s = await h.run(fresh(), { kind: 'text', text: 'hello' });
+    expect(h.said).toEqual([[HANDOFF, false], [CLOSING, true]]);
+    expect(h.said.map(([x]) => x).join(' ')).not.toMatch(/put you through/i);
+    expect(h.ended).toEqual(['handoff']);
+    expect(s.ended).toBe('handoff');
+    expect(s.transferBy).toBeUndefined();
+    expect(h.traces.at(-1)!.ended).toBeUndefined();
+  });
+
+  it('with transfer.whenClosed transfer: put through at night', async () => {
+    const h = harness(failing(), { edit: withHours(', whenClosed: transfer'), now: NIGHT });
+    const s = await h.run(fresh(), { kind: 'text', text: 'hello' });
+    expect(h.said).toEqual([[HANDOFF, false], ["One moment, I'll put you through.", true]]);
+    expect(s.ended).toBe('transfer');
+    expect(s.transferBy).toBe('handoff');
+  });
+
+  it('with no transfer number, or in a chat: the handoff line alone, as before', async () => {
+    const none = harness(failing(), { edit: once });
+    expect((await none.run(fresh(), { kind: 'text', text: 'hello' })).ended).toBe('handoff');
+    expect(none.said).toEqual([[HANDOFF, true]]);
+    const inChat = harness(failing(), { edit: withHours() });
+    expect((await inChat.run(chat(), { kind: 'text', text: 'hello' })).ended).toBe('handoff');
+    expect(inChat.said).toEqual([[HANDOFF, true]]);
+  });
+});
+
 describe('agent.yaml: transfer.whenClosed and lines.transfer', () => {
   const yaml = (t: string): ReturnType<typeof agentBusinessProblems> => agentBusinessProblems(`${BUSINESS}${t}`);
   it('takes callback or transfer, callback by default, and refuses anything else', () => {

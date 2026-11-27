@@ -1074,27 +1074,45 @@ async function endUnclear(t: Turn, sp: Speaker): Promise<void> {
 
 /**
  * The model failed the turn: the recovery line, or past the call's budget the handoff line, and the call
- * ends with a person. Where an action the caller confirmed has just run, the caller hears the done line
+ * is handed off. Where an action the caller confirmed has just run, the caller hears the done line
  * first, and it stands for the recovery line: they need not say anything again. A model that used up its
  * rounds (`stuck`: it kept calling actions) is not asked to be heard again: the stuck line stands for the
  * recovery line.
+ *
+ * The handoff puts the call through to transfer.number only where transfer_call would be offered now (transferNow, the
+ * one decision: on a call, while the business is open unless transfer.whenClosed is `transfer`; decided 2026-11-26):
+ * lines.handoff, then lines.transfer (TRANSFER_LINE where the business has none), and the call ends put through
+ * (`transfer`, by `handoff`). Otherwise it ends as it did before the transfer existed (`handoff`): lines.handoff, and on a
+ * call where the business names a transfer number (so its handoff line is written to come before either outcome, with
+ * no promise in it) the closing line after it, so the caller is never told they are put through when they are not. A
+ * chat, which puts no one through, says lines.handoff alone, as before.
  */
 function failed(t: Turn, sp: Speaker, why: 'failed' | 'stuck' = 'failed'): void {
   const lines = t.deps.business.lines;
   t.st.failures += 1;
   const handoff = t.st.failures >= t.deps.business.limits.failuresPerCall;
+  const through = handoff && transferNow(t);
   const said: string[] = [];
   const doneOwed = t.confirmedRan;
   if (doneOwed) {
     t.confirmedRan = false;
     said.push(lineFor(t, lines.done));
   }
-  if (handoff) said.push(lineFor(t, lines.handoff));
-  else if (said.length === 0) said.push(lineFor(t, why === 'stuck' ? lines.stuck : t.silence !== undefined && lines.silence !== undefined ? lines.silence : lines.recovery));
+  if (handoff) {
+    said.push(lineFor(t, lines.handoff));
+    if (through) said.push(lineFor(t, lines.transfer ?? { en: TRANSFER_LINE }));
+    // On a call not put through, where the handoff line is written to come before either outcome: the closing line ends it.
+    else if (t.st.channel === 'voice' && t.deps.business.transfer !== undefined) said.push(lineFor(t, lines.closing));
+  } else if (said.length === 0) said.push(lineFor(t, why === 'stuck' ? lines.stuck : t.silence !== undefined && lines.silence !== undefined ? lines.silence : lines.recovery));
   said.forEach((line, i) => sp.line(line, i === said.length - 1));
   if (doneOwed) t.out.replied?.();
   add(t.st, 'assistant', said.map((text) => ({ type: 'text' as const, text })));
-  if (handoff) {
+  if (through) {
+    t.ended = 'transfer';
+    t.st.ended = 'transfer';
+    t.st.transferBy = 'handoff';
+    t.out.end('transfer');
+  } else if (handoff) {
     t.st.ended = 'handoff';
     t.out.end('handoff');
   }
@@ -1229,6 +1247,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       }
       t.ended = 'transfer';
       t.st.ended = 'transfer';
+      t.st.transferBy = 'request';
       t.out.end('transfer');
       return { ok: true };
     }

@@ -207,10 +207,11 @@ lines:
     chat: { en: "Thanks for messaging Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?" }
   closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
   recovery: { en: "Sorry, could you say that again?" }
-  # assumption: the owner corrects these (on a call the line then puts the caller through to the shop, transfer.number;
-  # in the web chat, which puts no one through, the chat wording)
+  # assumption: the owner corrects these (on a call it comes before either outcome, so it promises nothing: while the shop
+  # is open the transfer line follows it and the caller is put through to the shop; while it is closed the closing line
+  # follows it and the call ends. The web chat, which puts no one through, says its own wording alone.)
   handoff:
-    en: "Sorry, something isn't working on our end. Let me put you through to the shop."
+    en: "Sorry, something isn't working on our end."
     chat: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
   # assumption: the owner corrects these (the line said on the third turn in a row it cannot follow, before the call ends)
   unclear:
@@ -388,7 +389,8 @@ actions:
     audit: { name: mask, callbackNumber: last4, about: keep, notes: keep }
 # A caller on the phone who asks for a person is put through to the shop's phone (the setting SHOP_PHONE, the same number
 # the shop's summaries are texted to, never in this file), while the shop is open (business.open); closed, the line offers
-# a callback note (transfer.whenClosed: callback, the default). A call the model has failed four times goes there too.
+# a callback note (transfer.whenClosed: callback, the default). A call the model has failed four times goes there too
+# while the shop is open; closed, it ends after the handoff and closing lines.
 # assumption: the owner corrects these (the number calls are put through to, and that only while the shop is open)
 transfer:
   number: env.SHOP_PHONE

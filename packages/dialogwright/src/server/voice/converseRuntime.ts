@@ -29,8 +29,9 @@ import type { ConverseCallEntry } from '../sessions';
  *   `last: false` (with a space after it, as the carrier joins the pieces), the reply's last piece with
  *   `last: true`, every one interruptible by speech (the converse line always is: plan ruling 2). The bridge
  *   (lines.bridge) goes whole, not interruptible. The call's end follows the turn that ended it: the closing
- *   end, the handoff's transfer end where agent.yaml names a transfer number (the completed end where it
- *   names none), or the transfer end of the model's transfer_call (its reason `transfer`), held for the lines before it where the carrier needs it (VoiceIo.sendEnd), never awaited
+ *   end, or a call put through to agent.yaml's transfer number (the turn decides: on a call, while the business is open
+ *   unless transfer.whenClosed says otherwise): the handoff end where the model failed, the transfer end of the
+ *   model's transfer_call (its reason `transfer`); a handoff not put through ends with the completed end; held for the lines before it where the carrier needs it (VoiceIo.sendEnd), never awaited
  *   in the call's queue (a carrier's playback report must reach the wait meanwhile).
  * - One turn at a time, on the call's queue. A final prompt while a turn runs stops it (converseTurn's
  *   `signal`) and is the next turn, so a recognizer that ended the caller's words early is one turn on both
@@ -892,25 +893,28 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
 
   /**
    * The call ended by its turn: the audit's row, the console told, the `end` sent once the lines before it have played (or
-   * kept for the next socket). A call put through to agent.yaml's transfer number is audited as a transfer, with by whom:
-   * the model on the caller's request (transfer_call), or the handoff after the model failed (decided 2026-11-26).
+   * kept for the next socket). Whether it is put through is the turn's decision (turn.ts transferNow, decided
+   * 2026-11-26), read here from the state: a call put through (`transfer`) is audited as a transfer with by whom, the
+   * model on the caller's request (transfer_call) or the handoff after the model failed, and its end dials agent.yaml's
+   * transfer number; a handoff not put through ends as a goodbye does, audited `handoff`.
    */
   const endCall = (e: ConverseCallEntry, app: ConverseApp, ended: 'closing' | 'handoff' | 'transfer', lines: readonly OutboundFrame[], io: VoiceIo, why?: 'silence'): void => {
     const reason = ended === 'closing' ? 'completed' : 'handoff';
-    const transferred = ended === 'transfer' ? 'request' : ended === 'handoff' && app.business.transfer !== undefined ? 'handoff' : null;
+    const by = ended === 'transfer' ? (e.session.transferBy ?? 'request') : null;
     // An end on silence is the line's own: said so in the audit and the frame log (the console's Live list counts it completed).
-    if (transferred !== null) audited(app, e.callSid, 'transfer', { by: transferred });
+    if (by !== null) audited(app, e.callSid, 'transfer', { by });
     else audited(app, e.callSid, why ?? reason);
-    // How the call ended, in the frame log as a converse chat's (the console's Calls page reads it: view.js converseRow).
-    io.record('log', { ended: why ?? ended });
+    // How the call ended, in the frame log as a converse chat's (the console's Calls page reads it: view.js converseRow): a
+    // failed call put through as a handoff, as before.
+    io.record('log', { ended: why ?? (by === 'handoff' ? 'handoff' : ended) });
     io.publish({ type: 'ended', callSid: e.callSid, at: now(), reason });
     const gone = lives.get(e.callSid);
     if (gone !== undefined) clearSilence(gone);
     lives.delete(e.callSid);
     const completed = (e.session.done ?? []).map((d) => d.action);
-    // A handoff goes to the business's transfer number where it names one (http.ts dials it); else the call ends as a goodbye
-    // does. A transfer_call is offered only where it names one, and its end says so (its reason `transfer`), dialed the same.
-    const end: EndFrame = ended === 'transfer' ? endFrame('transfer', completed) : ended === 'handoff' && app.business.transfer !== undefined ? endFrame('handoff', completed) : endFrame('completed', completed);
+    // A call put through goes to the business's transfer number (http.ts dials any end not `completed`): the handoff's end
+    // where the model failed, the `transfer` end on the caller's request. Anything else ends as a goodbye does.
+    const end: EndFrame = by === 'handoff' ? endFrame('handoff', completed) : by === 'request' ? endFrame('transfer', completed) : endFrame('completed', completed);
     // No socket to take them: kept for the next one, where the store outlives this server.
     if (e.socket === null && io.keepUndelivered([...lines, end])) return;
     // Not awaited: the carrier's playback report must reach the held end's wait (VoiceIo.sendEnd).

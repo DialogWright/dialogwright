@@ -1540,17 +1540,31 @@ describe('the converse voice runtime: the end and a restart', () => {
     expect(h.fio.finished()).toBe(1);
   });
 
-  it('the handoff after the model failed past limits.failuresPerCall: the handoff end to the transfer number, audited as a transfer by the handoff', async () => {
+  it('the handoff after the model failed past limits.failuresPerCall, the business open: the handoff line, the transfer line, the handoff end to the transfer number, audited as a transfer by the handoff', async () => {
     const failing = { type: 'error', kind: 'timeout', detail: 'no answer in time' } as const;
     const model = gatedModel([[failing], [failing]]);
     const h = harness({ model, business: (b) => ({ ...b, limits: { ...b.limits, failuresPerCall: 1 }, transfer: { number: '+15555550177', whenClosed: 'callback' } }) });
     await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
     await h.prompt('hello');
     await h.settle();
-    expect(h.said().at(-1)!.token).toBe('Let me get a person to call you back.');
+    expect(h.said().slice(-2).map((f) => f.token)).toEqual(['Let me get a person to call you back. ', "One moment, I'll put you through."]);
     expect(JSON.parse((h.fio.sent.at(-1) as { handoffData: string }).handoffData)).toEqual({ reasonCode: 'handoff' });
     expect(h.rows.at(-1)).toEqual({ type: 'call_ended', detail: { reason: 'transfer', by: 'handoff' } });
     expect(h.fio.records).toContainEqual({ dir: 'log', msg: { ended: 'handoff' } });
+  });
+
+  it('the handoff while the business is closed (transfer.whenClosed callback): not put through, the closing line after the handoff line, the completed end, audited as a handoff', async () => {
+    vi.setSystemTime(new Date('2026-11-12T04:00:00Z')); // Wednesday, 11 p.m. in the business's zone
+    const failing = { type: 'error', kind: 'timeout', detail: 'no answer in time' } as const;
+    const model = gatedModel([[failing], [failing]]);
+    const h = harness({ model, business: (b) => ({ ...b, business: { ...b.business, open: { weekly: { 'mon-fri': ['09:00-17:00'] } } }, limits: { ...b.limits, failuresPerCall: 1 }, transfer: { number: '+15555550177', whenClosed: 'callback' } }) });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    await h.prompt('hello');
+    await h.settle();
+    expect(h.said().slice(-2).map((f) => f.token)).toEqual(['Let me get a person to call you back. ', 'Thanks for getting in touch. Goodbye.']);
+    expect(h.said().map((f) => f.token).join(' ')).not.toMatch(/put you through/);
+    expect(JSON.parse((h.fio.sent.at(-1) as { handoffData: string }).handoffData)).toEqual({ reasonCode: 'completed' });
+    expect(h.rows.at(-1)).toEqual({ type: 'call_ended', detail: { reason: 'handoff' } });
   });
 
   it('with no transfer number the handoff ends as a goodbye does, audited as a handoff, and transfer_call is never offered', async () => {

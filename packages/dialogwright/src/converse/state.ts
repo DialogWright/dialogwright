@@ -78,6 +78,11 @@ export interface ConverseState {
    * through to a person on the caller's request (the runtime's transfer_call), or the caller left. Absent while it goes on.
    */
   ended?: 'closing' | 'handoff' | 'transfer' | 'left';
+  /**
+   * With `ended: transfer`, who put the call through: the model's transfer_call on the caller's request, or the handoff
+   * after the model failed past limits.failuresPerCall (decided 2026-11-26). Absent otherwise.
+   */
+  transferBy?: 'request' | 'handoff';
 }
 
 /** Where a call is among the journeys: the one the turn is in (null: the root), its phase, the one set aside and those done. */
