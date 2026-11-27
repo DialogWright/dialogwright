@@ -24,7 +24,7 @@ Everything in this repository, what each part is, and where its documentation is
 10. [Editor support](guide/10-editor-support.md): the schema line on each YAML file.
 11. [Walkthroughs](guide/11-walkthroughs.md): adding an intent, a form, a tool and a knowledge answer; following one scripted call turn by turn; after a recorded run; where to start.
 12. [The knowledge base](guide/12-the-knowledge-base.md): answers to general questions from approved passages, said word for word.
-13. [Channels](guide/13-channels.md): carriers, languages on the phone, web chat, sign-in, the widget, the call's data, where a handoff goes, and texts sent and received (`TEXT_FROM`, `POST /messages/twilio`, an app's `onText`).
+13. [Channels](guide/13-channels.md): carriers, languages on the phone, web chat, sign-in, the widget, the call's data, where a handoff goes, and texts sent and received (`TEXT_FROM`, `TEXT_PROVIDER`, `POST /messages/twilio` and `/messages/telnyx`, an app's `onText`).
 14. [Running it](guide/14-running-it.md): on a machine you own, from the first hour with two keys to a machine that stays on, many servers on one database, several apps on one server (`host.yaml`), and every option.
 15. [The adversarial suite](guide/15-the-adversarial-suite.md): the hostile calls every app inherits, and how to read a failure.
 16. [Generated wording (opt-in)](guide/16-generated-wording.md): lines a model words for the moment where the app asks for it, held by checks to their fixed text, which is said whenever a check fails; prescribed lines; measured against fixed lines; personas, the same app in other voices (app.yaml's `personas`, a persona file each: `schemas/persona.schema.json`), picked by a call data value such as a chat page's choice.

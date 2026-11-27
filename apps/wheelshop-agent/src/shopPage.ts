@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
-import { TWILIO_MEDIA_PREFIX, formFromOwnPage, sameNumber, type AppBrand, type AppRoute, type AppRoutes, type Texts } from 'dialogwright';
+import { formFromOwnPage, providerMedia, sameNumber, type AppBrand, type AppRoute, type AppRoutes, type Texts } from 'dialogwright';
 import { COUNTS, NOT_SENT, SHOP_PHONE, tenDigits, dayWords, nameWords, type Kept, type Quote, type QuoteStatus, type Received, type RequestStatus, type Systems, type Text } from './shop';
 import { confirmWord, lapseDue, markLapsed, offeredSlots, priceWords, sendQuote, shortDay, withdrawQuote, type Slot } from './quotes';
 import { SHOP_DATA_DIR } from './shopLog';
@@ -23,8 +23,9 @@ import { SHOP_DATA_DIR } from './shopLog';
  * line, start with every record kept before the server last stopped. Unset, the records are in memory, and
  * the server says so as it starts.
  *
- * Photos are shown as thumbnails linking to the full image at the provider's URL (Twilio's, the only ones
- * the engine keeps): the browser fetches each from Twilio, with no referrer; the server downloads nothing.
+ * Photos are shown as thumbnails linking to the full image at the provider's URL (Twilio's or Telnyx's, the
+ * only ones the engine keeps): the browser fetches each from the provider, with no referrer; the server
+ * downloads nothing.
  *
  * Each request card shows its state (new, photo in, quoted and waiting, booked, lapsed; the header counts them)
  * and, until it is booked, a "Quote and book" form (src/quotes.ts): the price, a drop-off window with room (the
@@ -58,8 +59,8 @@ function phoneHtml(n: string): string {
   return p.tel === null ? esc(p.shown) : `<a class="tel" href="tel:${esc(p.tel)}">${esc(p.shown)}</a>`;
 }
 
-/** A photo's URL the page may show: Twilio's own media (the engine's prefix; it keeps no other), with nothing in it an attribute could be broken by. */
-const showable = (url: string): boolean => url.startsWith(TWILIO_MEDIA_PREFIX) && !/[\s"'<>]/.test(url);
+/** A photo's URL the page may show: the provider's own media (Twilio's or Telnyx's, the engine's providerMedia; it keeps no other), with nothing in it an attribute could be broken by. */
+const showable = (url: string): boolean => providerMedia(url) && !/[\s"'<>]/.test(url);
 
 /** Thumbnails, each linking to its full image. */
 function photosHtml(media: readonly string[]): string {
@@ -381,7 +382,7 @@ ${texts}
 ${callbacks}
 </section>
 <footer>
-<p>A text's status is what the sender answered when it was sent (“queued”: Twilio took it); delivery reports are not read yet. Photos open at Twilio.</p>
+<p>A text's status is what the sender answered when it was sent (“queued”: the carrier took it); delivery reports are not read yet. Photos open at the carrier.</p>
 <p>${o.logFile === null ? 'Kept in memory: a restart of the server loses these (set SHOP_DATA_DIR to keep them).' : 'Kept on the server, in the shop’s log.'}</p>
 </footer>
 </main>

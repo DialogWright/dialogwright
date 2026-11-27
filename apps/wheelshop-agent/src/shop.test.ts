@@ -218,6 +218,17 @@ describe('the shop page', () => {
     expect(notes).toContain('C101');
   });
 
+  it('shows a photo texted in through Telnyx as one through Twilio (its own media URL), and one at a look-alike host not at all', async () => {
+    const sys = newSystems();
+    await run(sys, 'send_request', REQUEST, 'k-r1', T0);
+    await run(sys, 'send_photo_request', { callbackNumber: REQUEST.callbackNumber, textOk: 'yes' }, 'k-p1', T0);
+    const telnyx = 'https://media.telnyx.com/abc123/image.jpg';
+    await onText(sys, { ...message('+15555550177', 'rear right', [telnyx, 'https://media.telnyx.com.example.com/x.jpg']), id: '84cca175-9755-4859-b67f-4730d7f58aa3', provider: 'telnyx' }, textCtx(T0 + 40 * MIN));
+    const html = shopPageHtml(shopView(sys), OPTIONS);
+    expect(html).toContain(`<a href="${telnyx}" target="_blank" rel="noopener noreferrer"><img src="${telnyx}" alt="Photo 1" loading="lazy" referrerpolicy="no-referrer"></a>`);
+    expect(html).not.toContain('media.telnyx.com.example.com');
+  });
+
   it('escapes everything a caller gave, shows no photo that is not at Twilio\'s media URL, and says so when it is empty', async () => {
     const sys = newSystems();
     await run(sys, 'send_request', { ...REQUEST, callerName: '<script>alert(1)</script>', vehicle: '"><img src=x onerror=alert(1)>' }, 'k-r1', T0);

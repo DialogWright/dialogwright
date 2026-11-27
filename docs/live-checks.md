@@ -382,6 +382,21 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log, with how long after the line's words ended the re-prompt came (on Twilio its estimate decides; note a voice slower than the estimate, which makes the wait shorter than 9 s).
 
+## 23. Texts through Telnyx, on a call of the wheel shop agent
+
+**Why.** An app's texts may go through Telnyx (`TEXT_PROVIDER=telnyx` with `TELNYX_API_KEY`, or that key alone) and come in at `POST /messages/telnyx` ([the guide's 13.17](guide/13-channels.md#1317-texts-sending-and-receiving)). The tests hold the request the sender makes, the webhook's signature and its `message.received` on a fake fetch and signed posts; Telnyx's real answer, its webhook's real payload, where its inbound media is kept (the engine keeps only `https://media.telnyx.com/`, as Telnyx's pages show it) and a 10DLC number's delivery are a live text's to say.
+
+**Set.** The wheel shop on the converse runtime (`apps/wheelshop-agent`) on a Telnyx number on a messaging profile, with its 10DLC brand and campaign registered and the number assigned (US). `TEXT_FROM` that number, `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, `SHOP_PHONE` your own phone. The profile's inbound webhook URL is `https://<PUBLIC_HOST>/messages/telnyx`, API version 2 (`pnpm diagnose` prints it, and warns of a key not shaped as Telnyx's). Calls on Telnyx (`VOICE_PROVIDERS=telnyx`).
+
+**Do and look for.**
+
+1. **A text sent.** Call, ask for a repair, say yes to being texted and confirm the request. Your phone gets the photo request from the business's number, the shop's phone its summary. The audit's `text_sent` rows say `provider: telnyx`, a UUID id and `status: queued`; nothing in the log or the audit holds a number whole or the key.
+2. **A photo texted back.** Reply to the photo request with a photo. The server's log has `/messages/telnyx <id> from ...<last four>: ... 1 media`, with no `not at the provider's own URLs dropped`; the audit's `text_received` says `provider: telnyx`, `media: 1`. The shop's phone gets the photo forwarded, and the shop page shows it. A photo counted as dropped means Telnyx kept it at another host: note the host (from Telnyx's message detail, never the log) for `TELNYX_MEDIA_PREFIX` in `texts/telnyx.ts`.
+3. **The status events.** The log has `/messages/telnyx <id>: message.sent (sent), a text sent: set aside`, then `message.finalized (delivered)`, for each text sent; nothing more is done with them.
+4. **The quote's reply.** On the shop page, quote the request; reply CONFIRM from your phone: the booking is made, as on Twilio.
+
+**Record.** One row per step in the results log, with the media host seen and any field of Telnyx's answer or webhook the adapter did not expect.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

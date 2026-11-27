@@ -63,7 +63,7 @@ export interface Received {
   from: string;
   /** The caller's own words ("" for a photo alone). */
   text: string;
-  /** Its photos, by the provider's URLs (the engine keeps only Twilio's own); nothing is downloaded. */
+  /** Its photos, by the provider's URLs (the engine keeps only the provider's own, Twilio's or Telnyx's); nothing is downloaded. */
   media: string[];
   /** The request it was matched to (a recent request from its number), by its reference. */
   request?: string;
