@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The site (site/, published to GitHub Pages by .github/workflows/pages.yml): the landing page and the
+ * The site (site/, published to GitHub Pages by .github/workflows/pages.yml): the landing page, the
  * guides under site/guides/. On every page, every link and asset it names exists, every link into the
  * repository on GitHub points at a path the repository has, a link to another page's section finds that
  * section, the excerpts it quotes are still in the files they come from, and the page keeps its basics
@@ -91,7 +91,7 @@ describe('the site', () => {
   });
 
   it('has the landing page and the guides', () => {
-    expect(PAGES).toEqual(expect.arrayContaining(['index.html', 'guides/home-server.html', 'guides/scaling.html']));
+    expect(PAGES).toEqual(expect.arrayContaining(['index.html', 'agent-mode.html', 'guides/home-server.html', 'guides/scaling.html']));
   });
 
   it('has its own title and canonical URL on every page', () => {
@@ -99,7 +99,8 @@ describe('the site', () => {
     expect(new Set(titles).size).toBe(PAGES.length);
     for (const page of PAGES) {
       const canonical = /<link rel="canonical" href="([^"]+)">/.exec(htmlOf(page))?.[1];
-      expect(canonical, page).toBe(`https://${DOMAIN}/${page === 'index.html' ? '' : page}`);
+      // A folder's index is canonical as the folder itself (https://dialogwright.com/blog/).
+      expect(canonical, page).toBe(`https://${DOMAIN}/${page.endsWith('index.html') ? page.slice(0, -'index.html'.length) : page}`);
     }
   });
 
@@ -209,20 +210,25 @@ describe('the site', () => {
       }
     });
 
-    it('says on a phone what its comparison table says', () => {
-      // The phone shows one card per approach in place of the table; each card is a column of it.
-      if (!html.includes('<table class="compare">')) return expect(html).not.toContain('class="ccard');
-      const table = html.slice(html.indexOf('<table class="compare">'), html.indexOf('</table>'));
-      const columns = [...table.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((m) => m[1]!);
-      const rows = [...table.matchAll(/<tr>\s*<th scope="row">(.*?)<\/th>([\s\S]*?)<\/tr>/g)].map((m) => ({ label: m[1]!, cells: [...m[2]!.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((c) => c[1]!) }));
-      const fromTable = columns.map((column, i) => ({ column, answers: rows.map((r) => [r.label, r.cells[i]]) }));
-      const cards = [...html.matchAll(/<section class="ccard[^"]*"[^>]*>\s*<h3>(.*?)<\/h3>\s*<dl>([\s\S]*?)<\/dl>/g)].map((m) => ({
-        column: m[1]!,
-        answers: [...m[2]!.matchAll(/<dt>(.*?)<\/dt><dd>(.*?)<\/dd>/g)].map((a) => [a[1], a[2]]),
-      }));
-      expect(columns.length).toBe(3);
-      expect(rows.length).toBeGreaterThan(3);
-      expect(cards).toEqual(fromTable);
+    it('says on a phone what each of its comparison tables says', () => {
+      // The phone shows one card per approach in place of each table (the cards that follow it); each card is a column of it.
+      const tables = [...html.matchAll(/<table class="compare(?: [^"]*)?">([\s\S]*?)<\/table>/g)].map((m) => m[1]!);
+      if (tables.length === 0) return expect(html).not.toContain('class="ccard');
+      const groups = [...html.matchAll(/<div class="compare-cards">([\s\S]*?)<\/div>/g)].map((m) => m[1]!);
+      expect(groups.length).toBe(tables.length);
+      tables.forEach((table, t) => {
+        const columns = [...table.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((m) => m[1]!);
+        const rows = [...table.matchAll(/<tr>\s*<th scope="row">(.*?)<\/th>([\s\S]*?)<\/tr>/g)].map((m) => ({ label: m[1]!, cells: [...m[2]!.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((c) => c[1]!) }));
+        const fromTable = columns.map((column, i) => ({ column, answers: rows.map((r) => [r.label, r.cells[i]]) }));
+        const cards = [...groups[t]!.matchAll(/<section class="ccard[^"]*"[^>]*>\s*<h3>(.*?)<\/h3>\s*<dl>([\s\S]*?)<\/dl>/g)].map((m) => ({
+          column: m[1]!,
+          answers: [...m[2]!.matchAll(/<dt>(.*?)<\/dt><dd>(.*?)<\/dd>/g)].map((a) => [a[1], a[2]]),
+        }));
+        expect(columns.length).toBeGreaterThanOrEqual(2);
+        expect(rows.length).toBeGreaterThan(3);
+        expect(cards).toEqual(fromTable);
+      });
     });
   });
 });
+

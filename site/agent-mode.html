@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright: agent mode</title>
+  <meta name="description" content="Agent mode in DialogWright: a model holds the conversation from the business's own file, while every change is read back in the business's words, runs only on the caller's clear yes, and goes through the policy gate into the audit. Measured on simulated and live calls.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/agent-mode.html">
+  <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="brand/favicon-180.png">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/agent-mode.html">
+  <meta property="og:title" content="DialogWright agent mode">
+  <meta property="og:description" content="The model talks; the runtime decides. Every change read back and run only on the caller's yes, through the gate and into the audit.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="./" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-mark-dark.svg">
+          <img src="brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+        <span class="word">DialogWright</span>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="./#why">Why</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="agent-mode.html" aria-current="page">Agent mode</a></li>
+          <li><a href="decision-models.html">Decision models</a></li>
+          <li><a href="./#guides">Guides</a></li>
+          <li><a href="./#examples">Examples</a></li>
+          <li><a href="./#start">Quick start</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+      <details class="menu">
+        <summary>Menu</summary>
+        <nav aria-label="Site menu">
+          <ul>
+            <li><a href="./#why">Why</a></li>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="agent-mode.html" aria-current="page">Agent mode</a></li>
+            <li><a href="decision-models.html">Decision models</a></li>
+            <li><a href="./#guides">Guides</a></li>
+            <li><a href="./#examples">Examples</a></li>
+            <li><a href="./#start">Quick start</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+          </ul>
+        </nav>
+      </details>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="./">DialogWright</a> / Agent mode</p>
+      <h1>Agent mode</h1>
+      <p class="lede">
+        A model holds the conversation, on a call and in a chat, from the business's own file. What is done stays
+        fixed: every change is read back in the business's words and runs only on the caller's clear yes, through
+        the policy gate and into the audit. The model talks; the runtime decides.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#what">What it is</a></li>
+          <li><a href="#fixed">What stays fixed</a></li>
+          <li><a href="#journeys">Journeys</a></li>
+          <li><a href="#phone">On the phone</a></li>
+          <li><a href="#measured">Measured</a></li>
+          <li><a href="#cost">What a call costs</a></li>
+          <li><a href="#start">Start</a></li>
+        </ol>
+      </nav>
+    </div>
+
+    <div class="wrap guide">
+      <section id="what" aria-labelledby="what-title">
+        <h2 id="what-title">What it is</h2>
+        <p>
+          A runtime of its own beside the scripted engine. It shares the carriers, the chat, the gate, the audit, the
+          traces, the console and the texts, and never imports the scripted turn (a test holds that). An app whose
+          <code>app.yaml</code> does not say <code>mode: agent</code> never meets it.
+        </p>
+        <ol class="cards steps">
+          <li>
+            <h3><span class="num" aria-hidden="true">1</span> The business is a file</h3>
+            <p>
+              <code>agent.yaml</code> holds who the business is, its services and ballpark prices with the caveat said
+              beside any of them, its hours, the questions callers ask with its answers, the lines said word for word,
+              and its actions. A little code runs each action. No intents, forms, slots or prompts.
+            </p>
+          </li>
+          <li>
+            <h3><span class="num" aria-hidden="true">2</span> The model talks</h3>
+            <p>
+              It words each reply its own way, answers what the caller asks within the business's world, and takes
+              what the caller gives in whatever order it comes. Its replies are streamed a sentence at a time.
+            </p>
+          </li>
+          <li>
+            <h3><span class="num" aria-hidden="true">3</span> The runtime decides</h3>
+            <p>
+              The model acts only by calling the business's actions. Each call's values are checked by type, put to
+              the policy gate and audited; a change is read back by the line, not the model, and runs only on the
+              caller's yes.
+            </p>
+          </li>
+        </ol>
+        <div class="code-grid even">
+          <figure class="wrapped">
+            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">apps/wheelshop-agent/agent.yaml</a> (excerpt): the business</figcaption>
+<pre data-from="apps/wheelshop-agent/agent.yaml"><code>business:
+  name: Example Wheel Works
+  hours: Monday to Friday, 7:30 am to 5:30 pm, with two drop-off windows a day; closed Saturday and Sunday. # assumption: the owner corrects these
+  timezone: America/New_York
+services: # assumption: the owner corrects these
+  - name: curb rash repair
+    about: Scrapes and gouges on the rim's edge from a curb.
+    price: { from: 125, to: 175, per: wheel }
+priceCaveat:
+  en: "That's a ballpark; the shop firms up the price once it sees the damage."
+questions: # assumption: the owner corrects these
+  - q: Do I need to bring anything when I drop the car off?
+    a: Just the car and its keys; there's no paperwork.</code></pre>
+          </figure>
+          <figure class="wrapped">
+            <figcaption>The same file (excerpt): an action, its read-back, its follow-ons, and a consent rule</figcaption>
+<pre data-from="apps/wheelshop-agent/agent.yaml"><code>  send_request:
+    kind: change
+    readBack:
+      en: "So that's a request for {name}: your {vehicle}, with {finish}, and work on {wheels} of its wheels for {damage}. That's for {slot}. We'll reach you on {callbackNumber}, and you said {textOk} to texts there.[ We'll also pass on: {notes}.] Did I get that right?"
+    then: [send_photo_request, notify_shop_request]
+  send_photo_request:
+    kind: change
+    rules:
+      - oneOf: { field: textOk, values: ["yes"], reason: no-consent }</code></pre>
+          </figure>
+        </div>
+        <p>
+          Each assumption the demo had to make is marked in the file for the shop's owner to correct; a correction is
+          an edit to the file, never to code
+          (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/DESIGN.md">the demo's assumptions</a>).
+        </p>
+      </section>
+
+      <section id="fixed" aria-labelledby="fixed-title">
+        <h2 id="fixed-title">What stays fixed</h2>
+        <p>What a change goes through, every time, whatever the model wrote:</p>
+        <ol class="flow">
+          <li><strong>The model calls it</strong><span>With its values as arguments: the only way a value reaches the runtime.</span></li>
+          <li><strong>Checked by type</strong><span>A real date; a drop-off window only one a lookup returned on this call; a choice one of its options.</span></li>
+          <li><strong>The gate decides</strong><span>The business's rules for the action. Allowed or refused, the decision goes to the audit.</span></li>
+          <li><strong>Read back</strong><span>The line says the business's own words with exactly the call's values. The model cannot change them.</span></li>
+          <li><strong>A clear yes</strong><span>Read by the decision model: a yes at 0.7 or more, a no under 0.3. Anything else runs nothing.</span></li>
+          <li class="last"><strong>Run, with its follow-ons</strong><span>On that yes, each through the gate with its own hash: the photo text only where the caller said yes to texts.</span></li>
+        </ol>
+        <ul class="minis">
+          <li><strong>Never left unsent, unasked</strong>A change the caller has not confirmed is kept. The model's first goodbye is refused, so it asks whether they still want it.</li>
+          <li><strong>A goodbye held</strong>Where the caller sounds like they are wrapping up while a change could be left unsent, the model's words are held, and a goodbye that would leave it unsent is never said.</li>
+          <li><strong>Honest about what it is</strong>Asked whether it is a person, it says it is the business's automated assistant. A business cannot turn this off.</li>
+          <li><strong>The line keeps the record</strong>What was done on the call goes with every request to the model, so it never has to work it out.</li>
+        </ul>
+        <h3>Five rules, for every business</h3>
+        <ol>
+          <li>Claim nothing the business information or a lookup on this call does not support: prices only from the information, with its caveat; times only from a lookup; no callback time it does not give.</li>
+          <li>Nothing changes without the caller's yes to the line's read-back.</li>
+          <li>Nothing is said to be booked, sent or done unless an action's result on this call says so.</li>
+          <li>Whatever the caller is told is noted or passed on must be carried by an action they confirm.</li>
+          <li>What the caller says about themselves is said back as they gave it, nothing added.</li>
+        </ol>
+        <p class="note">
+          No check holds a reply before it is said; unsupported claims are kept out by these rules and the actions, and
+          measured by simulated callers (<a href="#measured">below</a>). The model is sent the conversation and what each
+          action returned; the caller's number goes to it by its last four only. The policy card says all of it.
+        </p>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/POLICY.md">The wheel shop's policy card</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/18-agent-mode.md#185-the-read-back">The read-back, in the guide</a>
+        </p>
+      </section>
+
+      <section id="journeys" aria-labelledby="journeys-title">
+        <h2 id="journeys-title">Journeys: the model sees only the task the caller is on</h2>
+        <p>
+          A line that does more than one thing gives each task its own journey: its goal, instructions, information and
+          actions. Each caller turn, the decision model reads which one the caller wants, and the agent model is shown
+          that journey alone. An action of another journey is refused before the gate.
+        </p>
+        <figure class="wrapped">
+          <figcaption>The wheel shop's two journeys (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt): a dealership is recognized by the number it calls from</figcaption>
+<pre data-from="apps/wheelshop-agent/agent.yaml"><code>journeys:
+  request:
+    for: { account: none }
+    actions: [check_availability, send_request, leave_callback]
+  dealer_booking:
+    for: { account: recognised }
+    start: { account: recognised }
+    actions: [recognise_caller, check_availability, book_dealer, leave_callback]</code></pre>
+        </figure>
+        <p>
+          <strong>Guide, don't guess.</strong> A turn the line cannot follow is unclear, never guessed at: the model
+          guides the caller to what the line needs, only lookups are offered on that turn, and the third unclear turn in a
+          row ends the call politely.
+        </p>
+        <h3>Measured on 300 simulated calls</h3>
+        <ul class="stats four wide">
+          <li><b>83%</b><span>got what they came for (150 of 180), against 80% without journeys (72 of 90)</span></li>
+          <li><b>4.6</b><span>gaps per 100 calls, from 14.2: each task's own facts answer more of what callers ask</span></li>
+          <li><b>0.68 to 0.71 s</b><span>to the first sentence at the median, from 0.74 to 0.76 s</span></li>
+          <li><b>$0.0032 to $0.0033</b><span>for the line's model a call, from $0.0038 to $0.0040</span></li>
+        </ul>
+        <p class="note">
+          Wrong replies were 12.5 per 100 calls against 11.7 without journeys: the bar was "no worse", missed by 0.8, within
+          the noise of runs this size; serious ones were level, at 8.3. Later, with one journey for every request and the shop closed, 4% of 140
+          happy-path calls had a serious wrong reply.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-journeys.md">Journeys, measured</a>;
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-after-hours.md">after hours, measured</a>.
+        </p>
+      </section>
+
+      <section id="phone" aria-labelledby="phone-title">
+        <h2 id="phone-title">On the phone</h2>
+        <p>An agent app takes calls on Telnyx and Twilio as it takes chats. On a call:</p>
+        <ul class="minis">
+          <li><strong>Talk over any reply</strong>Each sentence goes to the carrier as it is written. A caller who speaks stops the turn, and their words are the next one, with what they heard.</li>
+          <li><strong>A read-back heard</strong>A yes confirms a read-back only where the caller heard at least 85% of it.</li>
+          <li><strong>Said again, held</strong>Once a caller has talked over a change's read-back, every later read-back of it is said whole, and cannot be talked over (the maintainer's decision, 2026-11-26).</li>
+          <li><strong>Silence</strong>Nine seconds after the reply has played, the model helps the caller go on. After one more silence, a polite goodbye, and the call ends.</li>
+          <li><strong>After hours</strong>The model knows whether the business is open. A call that starts while it is closed hears the after-hours greeting, and no callback time is promised that the business does not give.</li>
+          <li><strong>A bridge, only when it helps</strong>"One sec." is said once, only when a reply has said nothing after 2.5 seconds.</li>
+        </ul>
+        <blockquote class="said-by">
+          <p>It's a fine line between time to think and "did it hang up on me?"</p>
+          <footer>The maintainer, on the nine seconds</footer>
+        </blockquote>
+        <figure class="wrapped">
+          <figcaption>The wheel shop's lines for a silence (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt), each said word for word</figcaption>
+<pre data-from="apps/wheelshop-agent/agent.yaml"><code>  silence: { en: "Are you still there? Take your time, we can carry on whenever you're ready." }
+  silenceEnd: { en: "It sounds like now isn't a good time, so we'll let you go. Call us back any time." }</code></pre>
+        </figure>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/18-agent-mode.md#189-on-the-phone">On the phone, in the guide</a>
+          <a href="guides/home-server.html#which-carrier">Which carrier</a>
+        </p>
+      </section>
+
+      <section id="measured" aria-labelledby="measured-title">
+        <h2 id="measured-title">Measured</h2>
+        <p>
+          A line in agent mode is measured by simulated callers: a model plays each caller against the app's own server,
+          and each reply is labelled or judged against the business information and the actions the gate decided. All the
+          figures below are the wheel shop's; its model is Muse Ember 1.0.
+        </p>
+        <h3>On the voice path</h3>
+        <p>
+          60 simulated calls over the voice path, the carrier played in text and replies at speaking pace, then the same
+          60 over the chat (2026-11-25). No speech recognition, speech or real carrier.
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th scope="col">The bar</th><th scope="col">Voice</th><th scope="col">Chat</th><th scope="col">Met?</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">First sentence, median, about 1.2 s at most</th><td data-label="Voice">736 ms</td><td data-label="Chat">677 ms</td><td data-label="Met?">Yes</td></tr>
+              <tr><th scope="row">First sentence, p95, 2.5 s at most</th><td data-label="Voice">1,204 ms heard</td><td data-label="Chat">1,247 ms</td><td data-label="Met?">Yes</td></tr>
+              <tr><th scope="row">Timeouts, 1% of turns at most</th><td data-label="Voice">0.0% of 622</td><td data-label="Chat">0.3% of 336</td><td data-label="Met?">Yes</td></tr>
+              <tr><th scope="row">Cooperative calls done correctly, 95% at least</th><td data-label="Voice">67% of 39</td><td data-label="Chat">88% of 40</td><td data-label="Met?">No</td></tr>
+              <tr><th scope="row">Contradicted material claims, none</th><td data-label="Voice">4</td><td data-label="Chat">6</td><td data-label="Met?">No</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Callers who neither interrupt nor break their turns were done 20 of 20 on voice. The gap was callers who cut in
+          on every long reply, the read-back too, so their yes never counted: 8 of 20 done. The held read-back
+          (<a href="#phone">above</a>) came from that finding.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-voice.md">The voice run</a>.
+        </p>
+        <h3>Wrong replies, kept from being said</h3>
+        <p>
+          Every reply of 120 simulated calls a set, labelled against the business information, the call's actions and what
+          the caller said. What the runtime and the lookup know, told to the model plainly, halved the wrong replies.
+        </p>
+        <figure class="chart">
+          <svg viewBox="0 0 420 186" role="img" aria-labelledby="wrong-title wrong-desc">
+            <title id="wrong-title">Wrong replies in 120 simulated calls, before and after</title>
+            <desc id="wrong-desc">Before any change, on Mercury 3: 28 wrong replies of 695. After the prompt and the business file changed: 33 of 769. With the lookup's reasons and the line's record of the call too: 16 of 776. The same changes on Muse Ember 1.0: 14 of 713.</desc>
+            <text class="ch-label" x="0" y="14">Before, Mercury 3</text>
+            <rect class="ch-before" x="0" y="22" width="255" height="14" rx="3"/><text class="ch-value" x="261" y="33">28 of 695</text>
+            <text class="ch-label" x="0" y="60">The prompt and the business file</text>
+            <rect class="ch-before" x="0" y="68" width="300" height="14" rx="3"/><text class="ch-value" x="306" y="79">33 of 769</text>
+            <text class="ch-label" x="0" y="106">With the lookup's reasons and the call's record</text>
+            <rect class="ch-after" x="0" y="114" width="145" height="14" rx="3"/><text class="ch-value" x="151" y="125">16 of 776</text>
+            <text class="ch-label" x="0" y="152">The same, on Muse Ember 1.0</text>
+            <rect class="ch-after" x="0" y="160" width="127" height="14" rx="3"/><text class="ch-value" x="133" y="171">14 of 713</text>
+          </svg>
+          <figcaption>Each set is 120 calls; a set has about 15 to 30 wrong replies, so a difference of a few is noise. The halving is not. <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-prevention.md">Prevention, measured</a>.</figcaption>
+        </figure>
+        <h3>The model, chosen by measurement</h3>
+        <p>
+          Eight models ran on the same simulated callers, five calls each, against the same bars, judged again under the
+          material-claims rubric. No model cleared every bar. Three were fast enough; of those, Muse Ember 1.0 did best on
+          both quality bars, and it is the wheel shop's.
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th scope="col">Model</th><th scope="col">First sentence, median / p95</th><th scope="col">Cooperative calls done correctly</th><th scope="col">Material claims in 60 calls</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Muse Ember 1.0 (minimal)</th><td data-label="First sentence, median / p95">711 / 1,257 ms</td><td data-label="Cooperative calls done correctly">70%</td><td data-label="Material claims in 60 calls">16</td></tr>
+              <tr><th scope="row">Mercury 3 (minimal)</th><td data-label="First sentence, median / p95">509 / 826 ms</td><td data-label="Cooperative calls done correctly">52.5%</td><td data-label="Material claims in 60 calls">26</td></tr>
+              <tr><th scope="row">gpt-oss-120b on Groq (low)</th><td data-label="First sentence, median / p95">562 / 1,471 ms</td><td data-label="Cooperative calls done correctly">35%</td><td data-label="Material claims in 60 calls">103</td></tr>
+              <tr><th scope="row">Claude Sonnet 5.5 (low), the best on quality</th><td data-label="First sentence, median / p95">1,453 / 3,701 ms</td><td data-label="Cooperative calls done correctly">80%</td><td data-label="Material claims in 60 calls">6</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          The bars: the first sentence by 1.2 s at the median and 2.5 s at p95, timeouts on 1% of turns or fewer, 95% of
+          cooperative calls done correctly, no unsupported material claim. Mercury, faster still, ends on 2026-12-28.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-model-comparison-rejudged.md">The comparison, re-judged</a>,
+          and <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-model-comparison.md">as first run</a>.
+        </p>
+        <h3>Live calls</h3>
+        <ul class="stats">
+          <li><b>17</b><span>live calls to the wheel shop line, 6 on Twilio and 11 on Telnyx, placed by the maintainer to test it</span></li>
+          <li><b>3 min 0 s</b><span>a call at the median, 11 decision-model requests</span></li>
+          <li><b>$0.0063</b><span>the agent model's cost a call, the mean, measured from the traces</span></li>
+        </ul>
+        <p class="note">
+          From the calls' traces and frame logs, in <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">the cost report</a>.
+        </p>
+      </section>
+
+      <section id="cost" aria-labelledby="cost-title">
+        <h2 id="cost-title">What a call costs</h2>
+        <p>
+          The model's share of a call's cost is small in both modes, so the difference between them is a few percent of a
+          call's total. Model costs are measured from the calls' tokens at the models' list prices; the carrier,
+          recognition and speech are list prices read on 2026-11-25.
+        </p>
+        <ul class="stats four wide">
+          <li><b>$0.0084</b><span>a call for agent mode's models, at most: the agent model measured, the decision model an upper bound</span></li>
+          <li><b>$0.002</b><span>a call for scripted mode's decision model, measured on one call</span></li>
+          <li><b>$0.10 to $0.26</b><span>a call for everything else, the same in both modes: the carrier, recognition and speech</span></li>
+          <li><b>2.3% to 5.9%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
+        </ul>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th scope="col">Carrier path</th><th scope="col">Shared cost a call, at list prices</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="Shared cost a call, at list prices">$0.262</td></tr>
+              <tr><th scope="row">Telnyx from parts, Deepgram recognition</th><td data-label="Shared cost a call, at list prices">$0.099</td></tr>
+              <tr><th scope="row">Telnyx from parts, Telnyx recognition</th><td data-label="Shared cost a call, at list prices">$0.135</td></tr>
+              <tr><th scope="row">Telnyx with its Conversation Relay add-on</th><td data-label="Shared cost a call, at list prices">$0.196</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <blockquote class="said-by">
+          <p>The mode and the model for a line are chosen by what the job needs, not by their price.</p>
+          <footer>The maintainer's reading of the cost report, 2026-11-26. The larger saving is in the carrier path.</footer>
+        </blockquote>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">The cost of a call in each mode</a>
+        </p>
+      </section>
+
+      <section id="start" aria-labelledby="start-title">
+        <h2 id="start-title">Start</h2>
+        <p>
+          The wheel shop is the example: a repair request with a drop-off window, a dealership booking recognized by caller
+          ID, and a callback note. Its tests run with no key, on a scripted model:
+        </p>
+<pre data-copy><code>pnpm --filter @dialogwright/example-wheelshop-agent test</code></pre>
+        <p>
+          Not every line suits it: keep a line scripted where every word must be its own, where callers prove who they are,
+          or where it needs a knowledge base or more than one language (<a href="./#ways">how to choose</a>).
+        </p>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/18-agent-mode.md">Guide, chapter 18: agent mode</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop agent</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/2026-11-11-agent-runtime.md">The design</a>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+          <p>Made by <a href="https://stiles.one">Jason Stiles</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="agent-mode.html">Agent mode</a></li>
+            <li><a href="decision-models.html">Decision models</a></li>
+            <li><a href="guides/home-server.html">A machine you own</a></li>
+            <li><a href="guides/scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+            <li><a href="privacy.html">Privacy</a></li>
+            <li><a href="terms.html">Text message terms</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

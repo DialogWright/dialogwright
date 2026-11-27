@@ -86,7 +86,8 @@ h3 { font-size: 1.2rem; margin: 0 0 0.5rem; }
 .top { border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; background: var(--bg); }
 /* The bar stays on screen, so a link to a section lands below it, not under it. */
 html { scroll-padding-top: 4.5rem; }
-/* On a narrow screen the bar is one row: the links fold into a menu (a details element, no script needed). */
+/* On a narrow screen the bar is one row: the links fold into a menu (a details element, no script needed),
+   wherever the nine links and the name would not fit on one row beside each other (with a scrollbar, up to about 1000 px). */
 .menu { display: none; position: relative; }
 .menu summary {
   list-style: none; cursor: pointer; font-weight: 600; padding: 0.4rem 0.8rem; border: 1px solid var(--line);
@@ -101,7 +102,7 @@ html { scroll-padding-top: 4.5rem; }
 }
 .top .menu ul { display: block; }
 .top .menu a { display: block; padding: 0.55rem 1.1rem; font-size: 1rem; }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .top nav[aria-label="Site"] { display: none; }
   .menu { display: block; }
   .bar { flex-wrap: nowrap; }
@@ -442,3 +443,31 @@ pre.answers { font-size: 0.8rem; }
 .flow.four { grid-template-columns: 1fr; }
 @media (min-width: 600px) { .flow.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1040px) { .flow.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Two ways to build a line: a comparison of two equals, neither column marked. */
+.compare.two-ways thead td { width: 18%; }
+.compare.two-ways thead th { width: 41%; border-top: 4px solid var(--accent); border-bottom-color: var(--line); }
+.compare.two-ways td { color: var(--text); }
+.compare.two-ways td + td { border-left: 1px solid var(--line); }
+h3.sub { margin: 2.25rem 0 0.75rem; }
+.choose { display: grid; gap: 1rem 2.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); margin: 0 0 1.75rem; }
+.choose > div { border-left: 3px solid var(--accent); padding: 0.1rem 0 0.1rem 1rem; }
+.choose h4 { margin: 0 0 0.4rem; color: var(--heading); font-size: 1rem; }
+.choose ul { margin: 0; padding-left: 1.1rem; color: var(--muted); }
+.choose li { margin-bottom: 0.35rem; }
+.links .button { margin-right: 0.25rem; }
+/* Five cards: one column on a phone, two, three and two, then a row of five. */
+.five { grid-template-columns: 1fr; }
+@media (min-width: 600px) { .five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 860px) { .five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .five { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+
+/* A quotation of the maintainer's, set apart. */
+.said-by { margin: 0 0 1.75rem; padding: 0.3rem 0 0.3rem 1.25rem; border-left: 4px solid var(--accent); max-width: 46rem; }
+.said-by p { margin: 0 0 0.4rem; font-size: 1.15rem; line-height: 1.45; color: var(--text); }
+.said-by footer { color: var(--muted); font-size: 0.9rem; }
+
+/* Tiles that take the page's full width, where a figure is a range. */
+.guide .stats.wide { max-width: none; }
+/* A chart keeps its own width inside a page of its own (.guide figure would otherwise stretch it to the page's, its words at twice their size). */
+.guide figure.chart { max-width: 36rem; }

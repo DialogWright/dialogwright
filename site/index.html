@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright: voice and chat agents that understand like an LLM and act like code</title>
-  <meta name="description" content="DialogWright is an open-source TypeScript framework for voice and chat agents. A decision model understands what callers mean, code decides what happens, the words are the ones you approved, and a policy gate checks and audits every action.">
+  <meta name="description" content="DialogWright is an open-source TypeScript framework for voice and chat agents. Callers are understood in their own words, and what is done is predictable: build a line scripted, every word yours, or in agent mode, a model holding the conversation, with a policy gate checking and auditing every action either way.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -17,7 +17,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://dialogwright.com/">
   <meta property="og:title" content="DialogWright">
-  <meta property="og:description" content="Voice and chat agents that understand people like an LLM and act like code: predictable words and actions, fast replies. An open-source TypeScript framework.">
+  <meta property="og:description" content="Voice and chat agents that understand people like an LLM and act like code: predictable actions, fast replies, scripted or in agent mode. An open-source TypeScript framework.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="style.css">
   <script src="copy.js" defer></script>
@@ -38,6 +38,7 @@
         <ul>
           <li><a href="#why">Why</a></li>
           <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="agent-mode.html">Agent mode</a></li>
           <li><a href="decision-models.html">Decision models</a></li>
           <li><a href="#guides">Guides</a></li>
           <li><a href="#examples">Examples</a></li>
@@ -51,6 +52,7 @@
           <ul>
             <li><a href="#why">Why</a></li>
             <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="agent-mode.html">Agent mode</a></li>
             <li><a href="decision-models.html">Decision models</a></li>
             <li><a href="#guides">Guides</a></li>
             <li><a href="#examples">Examples</a></li>
@@ -71,14 +73,123 @@
         </picture>
         <h1 id="hero-title">Voice and chat agents that understand people like an LLM, and act like code.</h1>
         <p class="lede">
-          Callers say it their own way. A decision model works out what they mean, your code decides what
-          happens, and they hear the words you approved. What is said and done is predictable, and replies are fast.
+          Callers say it their own way, and are understood. What is done is predictable: nothing runs unless the
+          policy gate allows it, and every decision is audited. Script every word, or let a model hold the
+          conversation in agent mode. Either way, replies are fast.
         </p>
         <p class="actions">
           <a class="button primary" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
           <a class="button" href="#start">Quick start</a>
         </p>
         <p class="note">Open source, Apache-2.0. Pre-release. Try it on your laptop, no keys needed.</p>
+      </div>
+    </section>
+
+    <section id="ways" aria-labelledby="ways-title">
+      <div class="wrap">
+        <h2 id="ways-title">Two ways to build a line</h2>
+        <p class="intro">
+          Both understand callers in their own words, and both hold what is done to the same gate and the same audit.
+          They differ in who words the replies.
+        </p>
+        <div class="compare-wrap">
+          <table class="compare two-ways">
+            <thead>
+              <tr>
+                <td></td>
+                <th scope="col">Scripted</th>
+                <th scope="col">Agent mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Who talks</th>
+                <td>Code chooses every line, said word for word; wording is generated only where the app opts in, and checked</td>
+                <td>A model words every reply, from the business's own file</td>
+              </tr>
+              <tr>
+                <th scope="row">Understanding</th>
+                <td>A decision model answers typed questions about what the caller said</td>
+                <td>The model follows the conversation; the decision model reads the caller's yes and, where the line has tasks, picks the one the caller is on</td>
+              </tr>
+              <tr>
+                <th scope="row">What is done</th>
+                <td>Decided by code; every action through the policy gate and into the hash-chained audit</td>
+                <td>Every change read back in the business's words, run only on a clear yes; every action through the gate and into the audit</td>
+              </tr>
+              <tr>
+                <th scope="row">The app</th>
+                <td>A folder: intents, forms, slots, prompts and policy in YAML, tools in TypeScript</td>
+                <td><code>agent.yaml</code>: services, prices, hours, questions and actions, with a little code per action</td>
+              </tr>
+              <tr>
+                <th scope="row">For</th>
+                <td>Every word predictable: regulated lines, high volume, identity checks</td>
+                <td>A small business that wants a natural conversation, with what gets done still fixed</td>
+              </tr>
+              <tr>
+                <th scope="row">The example</th>
+                <td><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic</a></td>
+                <td><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="compare-cards">
+          <section class="ccard" aria-label="Scripted">
+            <h3>Scripted</h3>
+            <dl>
+              <dt>Who talks</dt><dd>Code chooses every line, said word for word; wording is generated only where the app opts in, and checked</dd>
+              <dt>Understanding</dt><dd>A decision model answers typed questions about what the caller said</dd>
+              <dt>What is done</dt><dd>Decided by code; every action through the policy gate and into the hash-chained audit</dd>
+              <dt>The app</dt><dd>A folder: intents, forms, slots, prompts and policy in YAML, tools in TypeScript</dd>
+              <dt>For</dt><dd>Every word predictable: regulated lines, high volume, identity checks</dd>
+              <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic</a></dd>
+            </dl>
+          </section>
+          <section class="ccard" aria-label="Agent mode">
+            <h3>Agent mode</h3>
+            <dl>
+              <dt>Who talks</dt><dd>A model words every reply, from the business's own file</dd>
+              <dt>Understanding</dt><dd>The model follows the conversation; the decision model reads the caller's yes and, where the line has tasks, picks the one the caller is on</dd>
+              <dt>What is done</dt><dd>Every change read back in the business's words, run only on a clear yes; every action through the gate and into the audit</dd>
+              <dt>The app</dt><dd><code>agent.yaml</code>: services, prices, hours, questions and actions, with a little code per action</dd>
+              <dt>For</dt><dd>A small business that wants a natural conversation, with what gets done still fixed</dd>
+              <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop</a></dd>
+            </dl>
+          </section>
+        </div>
+        <h3 class="sub">What both share</h3>
+        <ul class="minis">
+          <li><strong>The gate and the audit</strong>Every action checked by the policy gate; every decision, allowed or refused, in the hash-chained log.</li>
+          <li><strong>The carriers and the chat</strong>Telnyx and Twilio on the phone, the web chat and its widget, and texts.</li>
+          <li><strong>The console</strong>Every call and chat, turn by turn, with what was said and done.</li>
+          <li><strong>The policy pages</strong>What the gate decides, in plain English and as a matrix, generated and reviewed.</li>
+        </ul>
+        <h3 class="sub">How to choose</h3>
+        <div class="choose">
+          <div>
+            <h4>Agent mode, where</h4>
+            <ul>
+              <li>the line should talk like a person at the counter: callers interrupt, wander, correct themselves and give things in any order;</li>
+              <li>the business accepts that it cannot choose every word, and that the line will sometimes be a little odd in ways a scripted one never is;</li>
+              <li>it is one file of the business's information and actions, with no intents, forms, slots or prompts to write.</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Scripted, where</h4>
+            <ul>
+              <li>every line must be the app's own words, such as a regulated disclosure;</li>
+              <li>callers prove who they are: agent mode has no identity levels yet;</li>
+              <li>it needs a knowledge base, more than one language, a keypad menu or routes, which agent mode does not have yet.</li>
+            </ul>
+          </div>
+        </div>
+        <p class="links">
+          <a class="button" href="agent-mode.html">Agent mode in depth</a>
+          <a href="how-it-works.html">How the scripted mode works</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/18-agent-mode.md#181-when-to-choose-it-and-when-not">When to choose it, in the guide</a>
+        </p>
       </div>
     </section>
 
@@ -107,13 +218,13 @@
                 <th scope="row">What callers hear</th>
                 <td>Recorded prompts</td>
                 <td>Generated, different every call</td>
-                <td class="ours">The lines you approved</td>
+                <td class="ours">The lines you approved; in agent mode, a model's words, with every change read back in yours</td>
               </tr>
               <tr>
                 <th scope="row">What it does</th>
                 <td>A fixed flow</td>
                 <td>Whatever the prompt leads to</td>
-                <td class="ours">Decided by code, checked and audited</td>
+                <td class="ours">Decided by code, or in agent mode run only on the caller's yes; checked and audited</td>
               </tr>
               <tr>
                 <th scope="row">Each turn</th>
@@ -125,7 +236,7 @@
                 <th scope="row">Tuning</th>
                 <td>Grammars and menu trees</td>
                 <td>Editing the prompt</td>
-                <td class="ours">Measured on recorded calls</td>
+                <td class="ours">Measured on recorded and simulated calls</td>
               </tr>
             </tbody>
           </table>
@@ -155,14 +266,14 @@
             <h3>DialogWright</h3>
             <dl>
               <dt>Understanding</dt><dd>Understands natural speech</dd>
-              <dt>What callers hear</dt><dd>The lines you approved</dd>
-              <dt>What it does</dt><dd>Decided by code, checked and audited</dd>
+              <dt>What callers hear</dt><dd>The lines you approved; in agent mode, a model's words, with every change read back in yours</dd>
+              <dt>What it does</dt><dd>Decided by code, or in agent mode run only on the caller's yes; checked and audited</dd>
               <dt>Each turn</dt><dd>Fast; a fraction of a cent</dd>
-              <dt>Tuning</dt><dd>Measured on recorded calls</dd>
+              <dt>Tuning</dt><dd>Measured on recorded and simulated calls</dd>
             </dl>
           </section>
         </div>
-        <p class="verdict">DialogWright: an LLM's understanding, with predictable words and actions, at a fraction of a cent a turn.</p>
+        <p class="verdict">DialogWright: an LLM's understanding, with predictable actions and words as fixed as you choose, at a fraction of a cent a turn.</p>
       </div>
     </section>
 
@@ -252,7 +363,8 @@
         <h2 id="use-title">Why you would use it</h2>
         <ul class="reasons">
           <li><a href="how-it-works.html#understands">Callers talk naturally.</a> Their own words, three answers at once.</li>
-          <li><a href="how-it-works.html#decides">What is said and done is predictable.</a> Approved lines, steps decided by code.</li>
+          <li><a href="how-it-works.html#decides">What is done is predictable.</a> Steps decided by code, every action gated; scripted, every line approved too.</li>
+          <li><a href="agent-mode.html">Or a natural conversation, in agent mode.</a> A model talks from the business's own file; every change is read back and run only on a clear yes.</li>
           <li><a href="decision-models.html#measured">Fast and cheap per turn.</a> A turn's answers in about 90 to 150 ms (p50).</li>
           <li><a href="how-it-works.html#gate">Every decision is audited.</a> Allowed or refused, hash-chained.</li>
           <li><a href="how-it-works.html#tested">Tested with recorded calls and an adversarial suite.</a></li>
@@ -297,8 +409,8 @@
     <section id="examples" class="alt" aria-labelledby="examples-title">
       <div class="wrap">
         <h2 id="examples-title">Examples</h2>
-        <p class="intro">Four fictional organizations, none needing a key to run.</p>
-        <div class="cards four">
+        <p class="intro">Five fictional organizations. The four scripted ones run with no key; the wheel shop, in agent mode, runs its tests with none and needs its model's key to take a call.</p>
+        <div class="cards five">
           <article class="card">
             <h3>Example Family Practice</h3>
             <p>Appointments: schedule, reschedule, cancel. The app to learn from.</p>
@@ -318,6 +430,11 @@
             <h3>Harbor Mutual</h3>
             <p>Claims, and coverage questions answered from a knowledge base; brokers on the chat. The app for the knowledge base.</p>
             <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/README.md">Read about Harbor Mutual</a></p>
+          </article>
+          <article class="card">
+            <h3>Example Wheel Works</h3>
+            <p>Repair requests with a drop-off window, dealership bookings, callback notes. The app for agent mode.</p>
+            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">Read about the wheel shop</a></p>
           </article>
         </div>
       </div>
@@ -358,6 +475,7 @@ pnpm install</code></pre>
             <h3>Guides</h3>
             <ul>
               <li><a href="how-it-works.html">How it works</a></li>
+              <li><a href="agent-mode.html">Agent mode</a></li>
               <li><a href="decision-models.html">Decision models</a></li>
               <li><a href="guides/home-server.html">Run it on a machine you own</a></li>
               <li><a href="guides/scaling.html">Scaling out</a></li>
@@ -392,6 +510,7 @@ pnpm install</code></pre>
           <h2>Guides</h2>
           <ul>
             <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="agent-mode.html">Agent mode</a></li>
             <li><a href="decision-models.html">Decision models</a></li>
             <li><a href="guides/home-server.html">A machine you own</a></li>
             <li><a href="guides/scaling.html">Scaling out</a></li>
