@@ -1,6 +1,6 @@
 import type { ConverseApp } from '../converse/app';
 import type { ActionSpec, AgentBusiness } from '../converse/business/schema';
-import { END_CALL, TEXT_MAX } from '../converse/business/schema';
+import { END_CALL, TEXT_MAX, TRANSFER_CALL, TRANSFER_LINE } from '../converse/business/schema';
 import { hasJourneys } from '../converse/journeys';
 import { confirmedFields, CALLER, NO_LOOKUPS, policyOf } from '../converse/policy';
 import { readRule } from '../define/ruleEntry';
@@ -257,6 +257,25 @@ function journeyCardLines(b: AgentBusiness): string[] {
 }
 
 /** A line's own words in the web chat, where it has them (agent.yaml's `chat` on a line), after its words on a call. */
+/**
+ * What the card says of the runtime's transfer_call, where agent.yaml names a transfer number (none otherwise): when it is
+ * offered, what is said, the unsent rule, and that nothing of the call reaches the person. Never the number itself.
+ */
+function transferCardLines(b: AgentBusiness): string[] {
+  const t = b.transfer;
+  if (t === undefined) return [];
+  const hours = b.business.open === undefined
+    ? 'at any hour (agent.yaml gives no opening hours, `business.open`)'
+    : t.whenClosed === 'transfer'
+      ? 'at any hour, open or closed (`transfer.whenClosed`: transfer)'
+      : 'only while the business is open by `business.open` (`transfer.whenClosed`: callback): while it is closed the agent model is not offered it';
+  const line = b.lines.transfer === undefined ? `the runtime's own line, "${cell(TRANSFER_LINE)}"` : `\`lines.transfer\`, word for word ("${cell(b.lines.transfer.en)}")`;
+  return [
+    `- ${code(TRANSFER_CALL)} is the runtime's own action, offered to the agent model only on a call (never in a chat) and ${hours}. It puts the caller through to a person at agent.yaml's transfer number (\`transfer.number\`), and changes nothing: the agent model's own words written with it are said first, ${line} where it writes none, then the call goes to the number (audited as \`converse_end\` by \`${TRANSFER_CALL}\`, and the call's end as \`call_ended\` with the reason \`transfer\`, by \`request\`). It takes no params: nothing the model writes reaches the carrier, and nothing of the call (no summary, no values) is passed to the person. The unsent rule refuses it as it refuses ${code(END_CALL)}: the first after a read-back the caller did not confirm is refused and audited, and the agent model is told to ask whether the caller still wants the change. Called where it is not offered, it is refused as not offered and audited.`,
+    '- A call the agent model has failed past `limits.failuresPerCall` is handed to the same number after `lines.handoff` (its `call_ended` the reason `transfer`, by `handoff`).',
+  ];
+}
+
 const inChat = (line: { chat?: { en: string } | undefined }): string => (line.chat === undefined ? '' : `, and in the web chat "${cell(line.chat.en)}"`);
 
 /** The card's lines for a business with opening hours (agent.yaml `business.open`). */
@@ -337,6 +356,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     `- After ${b.limits.refusalsPerAction} refusals of the same action on a call (\`limits.refusalsPerAction\`), the agent model is told to offer the caller a person rather than try again.`,
     silenceCardLine(b),
     `- ${code(END_CALL)} is the runtime's own action, offered to the model on every call: it ends the call on the model's own goodbye (the closing line where the model writes none), and changes nothing. The first ${code(END_CALL)} after a read-back the caller did not confirm (turned down, spoken over or not read) is refused and audited, and the call goes on: a goodbye written with it has been said, and the agent model is told the change was never done and to ask whether the caller still wants it, unless they have said they do not. Any later ${code(END_CALL)} in that turn is refused too, and the caller's next turn decides: there, the next ${code(END_CALL)} ends the call. No change is kept where the decision model reads that the caller withdrew it (in their answer to the read-back, or on a later turn), or once the journey no longer offers its action.`,
+    ...transferCardLines(b),
     '',
     '## What a model is sent and what is recorded',
     '',
@@ -425,6 +445,7 @@ export function converseAppMapText(app: ConverseApp): string {
     lines.push(`  ${nodeId('a', name)}${shape[0]}${mermaidLabel(name, spec.kind === 'lookup' ? 'lookup' : followOns.has(name) ? 'change (follow-on)' : 'change: read back, then yes')}${shape[1]}`);
   }
   lines.push(`  ${nodeId('a', END_CALL)}(${mermaidLabel(END_CALL, 'ends the call')})`);
+  if (b.transfer !== undefined) lines.push(`  ${nodeId('a', TRANSFER_CALL)}(${mermaidLabel(TRANSFER_CALL, 'puts the call through to a person')})`);
   for (const [name, spec] of Object.entries(b.actions)) {
     for (const [p, s] of Object.entries(spec.params)) if (s.type === 'slot' && s.from !== undefined && names.includes(s.from)) lines.push(`  ${nodeId('a', s.from)} -->|${mermaidLabel(p).slice(1, -1)}| ${nodeId('a', name)}`);
     for (const t of spec.then ?? []) lines.push(`  ${nodeId('a', name)} ==>|"then, after the yes"| ${nodeId('a', t)}`);

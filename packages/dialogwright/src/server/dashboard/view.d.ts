@@ -443,7 +443,8 @@ export interface ConverseTurnView {
   journeyEnded?: string | null;
   /** On a call with journeys: how many unclear turns in a row this one made (null: it was not unclear), and `unclear` when the line ended the call on it. */
   unclear?: number | null;
-  endedBy?: 'unclear' | 'silence' | null;
+  /** How the line ended the call on this turn: three unclear turns, the caller's silence, or put through to a person (`transfer`). */
+  endedBy?: 'unclear' | 'silence' | 'transfer' | null;
   /** On a phone call, where the turn says so: what the caller heard of the line before (its first `chars` characters as the trace keeps the line; null: unknown) and whether they cut in on it or spoke before it began. */
   heard?: { cutIn: boolean; spokeBefore: boolean; chars: number | null; text: string | null };
   /** On a phone call: the turn answered the caller's silence (its count in a row, and how long it was; null: not recorded). */

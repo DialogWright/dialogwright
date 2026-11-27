@@ -40,10 +40,11 @@
               "request",
               "booking",
               "callback",
+              "transfer",
               "answer",
               "none"
             ],
-            "description": "What the call should come to: a request or booking taken, a callback note left, a question answered, or nothing done."
+            "description": "What the call should come to: a request or booking taken, a callback note left, the call put through to a person (on the voice path, an agent app with transfer.number), a question answered, or nothing done."
           },
           "adversarial": {
             "description": "What the caller tries that they should not get (a free job, the line ignoring its instructions...).",

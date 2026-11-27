@@ -20,6 +20,11 @@ export interface SimCall {
   /** Who ended it: the line (an end or a transfer, or it fell silent), the caller (hung up) or the turn limit. */
   ended: 'line' | 'caller' | 'turns';
   /**
+   * On the voice path, where the line ended the call by putting it through to a person (its end's reason): `request`,
+   * the model's transfer_call on the caller's request; `handoff`, the handoff after the model failed. Absent otherwise.
+   */
+  transferred?: 'request' | 'handoff';
+  /**
    * For each caller turn, ms from sending it to the line's first sentence (its first say_delta, else its say); on the
    * voice path, from the caller's (last) final prompt to the first text frame heard, the bridge included.
    */

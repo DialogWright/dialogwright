@@ -64,6 +64,23 @@ export function voiceEnv(env: Record<string, string | undefined>): Record<string
   return { ...env, VOICE_PROVIDERS: 'twilio', SIGNATURE_CHECK: 'off', TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN || 'eval-not-a-token', HANDOFF_NUMBER: env.HANDOFF_NUMBER || '+15555550199' };
 }
 
+/** The person's number a simulated call is put through to where the app's own setting for it is unset: a 555 number, dialed by no one. */
+export const EVAL_TRANSFER_NUMBER = '+15555550199';
+
+/**
+ * An agent app's settings on an evaluation's server: where agent.yaml's transfer.number names a setting (env.<NAME>) the
+ * author's settings leave unset, the setting is EVAL_TRANSFER_NUMBER, so the simulated calls run (a server refuses an
+ * unset transfer number) and a call can be put through (the driver takes the end, dialing nothing). Any other app, or
+ * one whose setting is set, as it is.
+ */
+export function transferEnv(app: HostedApp, env: Record<string, string | undefined>): Record<string, string | undefined> {
+  if (!isConverseApp(app)) return env;
+  const n = app.business.transfer?.number;
+  if (n === undefined || !n.startsWith('env.')) return env;
+  const name = n.slice('env.'.length);
+  return env[name]?.trim() ? env : { ...env, [name]: EVAL_TRANSFER_NUMBER };
+}
+
 export interface EvalServer {
   /** The chat's address. */
   url: string;
@@ -88,7 +105,7 @@ export async function startEvalServer(app: HostedApp, env: Record<string, string
   const voice = o.channel === 'voice';
   // The voice path runs on the converse runtime alone (its turns' ends are what the driver ends a reply on).
   if (voice && !isConverseApp(app)) throw new Error(`the voice path is for an agent app (app.yaml mode: agent); ${app.id} is a scripted app`);
-  const serverEnv: Record<string, string | undefined> = { ...(voice ? voiceEnv(env) : env), AUDIT_DIR: auditDir, TRACE_DIR: traceDir };
+  const serverEnv: Record<string, string | undefined> = { ...transferEnv(app, voice ? voiceEnv(env) : env), AUDIT_DIR: auditDir, TRACE_DIR: traceDir };
   let running: RunningServer;
   const ends = turnEndSignal();
   const base = { host: '127.0.0.1', log: () => {}, env: serverEnv, onTurnEnd: ends.ended, ...(o.onClaimsRead !== undefined ? { onClaimsRead: o.onClaimsRead } : {}), ...(o.textProvider !== undefined ? { textProvider: o.textProvider } : {}), ...(o.client !== undefined ? { client: o.client } : {}) };

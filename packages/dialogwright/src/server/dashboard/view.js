@@ -1991,11 +1991,13 @@ const msOfTs = (ts) => {
   return Number.isFinite(t) ? t : null;
 };
 
-/** How a converse chat or call ended, from its frame log's end (`{ended}`: closing, handoff, caller, idle). */
+/** How a converse chat or call ended, from its frame log's end (`{ended}`: closing, handoff, transfer, caller, idle). */
 function converseEnding(reason, voice = false) {
   if (reason === null) return null;
   if (reason === 'closing') return { kind: 'handled', text: 'handled' };
   if (reason === 'handoff') return { kind: 'person', reason: 'handoff', text: 'to a person' };
+  // The caller asked for a person and the model put the call through (the runtime's transfer_call).
+  if (reason === 'transfer') return { kind: 'person', reason: 'transfer', text: 'put through to a person' };
   if (reason === 'caller') return { kind: 'hangup', text: voice ? 'hung up' : 'left the chat' };
   if (reason === 'idle') return { kind: 'hangup', text: 'left the chat (idle)' };
   if (reason === 'silence') return { kind: 'hangup', text: 'ended after silence' };
@@ -2049,9 +2051,9 @@ export function converseRow(records, frames) {
     task: { form: null, label: null },
     step: null,
     tasks,
-    status: endReason === 'handoff' ? 'with-person' : endReason !== null ? 'ended' : 'on-track',
+    status: endReason === 'handoff' || endReason === 'transfer' ? 'with-person' : endReason !== null ? 'ended' : 'on-track',
     frustrated: false,
-    handoffReason: endReason === 'handoff' ? 'handoff' : null,
+    handoffReason: endReason === 'handoff' || endReason === 'transfer' ? endReason : null,
     ending: converseEnding(endReason, voice),
     costUsd: Math.round(cost * 1e6) / 1e6,
   };
@@ -2095,6 +2097,8 @@ export function converseCall(records) {
     // A turn on the caller's silence (no words of theirs), with how long it was; and a call the line ended on one.
     if (typeof r.silence === 'number') callView.silence = { count: r.silence, ms: typeof r.silenceMs === 'number' ? r.silenceMs : null };
     if (r.ended === 'silence') callView.endedBy = 'silence';
+    // A call the model put through to a person on the caller's request (the runtime's transfer_call).
+    if (r.ended === 'transfer') callView.endedBy = 'transfer';
     // The caller's speech over a held read-back, ignored before this turn: each utterance by its length.
     if (Array.isArray(r.ignored) && r.ignored.length > 0) callView.ignored = r.ignored.filter((n) => typeof n === 'number');
     // A goodbye held and never said, its end_call refused for a change still unsent: by its length, never its words.
@@ -2116,7 +2120,7 @@ export function converseCall(records) {
       journeyView.journeyEnded = r.journeyEnded != null && typeof r.journeyEnded.journey === 'string' ? r.journeyEnded.journey : null;
       // An unclear turn (the line could not follow it) with how many in a row, and a call the line ended by the third.
       journeyView.unclear = r.route != null && typeof r.route.unclear === 'number' ? r.route.unclear : null;
-      journeyView.endedBy = r.ended === 'unclear' ? 'unclear' : null;
+      journeyView.endedBy = r.ended === 'unclear' ? 'unclear' : r.ended === 'transfer' ? 'transfer' : null;
     }
     return {
       index: r.turnIndex,

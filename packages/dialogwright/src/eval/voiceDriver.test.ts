@@ -9,12 +9,12 @@ import { fakeModel } from '../converse/model/fake';
 import type { ConverseModel, ModelEvent, ModelRequest } from '../converse/model/types';
 import { BRIDGE_AFTER_MS, CUT_IN_NOTE } from '../converse/turn';
 import { converseFixture } from '../testing/converse/app';
-import { BOOKING, CALLER, DAY, done, text, yesJev } from '../testing/converse/chat';
+import { BOOKING, CALLER, call as toolCall, DAY, done, text, yesJev } from '../testing/converse/chat';
 import type { SimTurn, TurnEnds } from './chatDriver';
 import { actionsOfCall, modelUseOfCall } from './judge';
 import type { Persona } from './personas';
-import { startEvalServer, type EvalServer } from './server';
-import { driveVoice, SPEAKING_WORDS_PER_S } from './voiceDriver';
+import { EVAL_TRANSFER_NUMBER, startEvalServer, transferEnv, type EvalServer } from './server';
+import { driveVoice, SPEAKING_WORDS_PER_S, transferOf } from './voiceDriver';
 
 /**
  * The simulated callers on the voice path (eval/voiceDriver.ts): a Twilio carrier played over the relay wire to a
@@ -297,4 +297,41 @@ describe('driveVoice: a line the caller cannot interrupt', () => {
       await far.close();
     }
   }, 20_000);
+});
+
+describe('driveVoice: a call put through to a person (transfer_call, decided 2026-11-26)', () => {
+  /** The fixture app with a transfer number from a setting the evaluation's settings leave unset. */
+  const withDesk = () => {
+    const { app } = converseFixture();
+    return { ...app, business: { ...app.business, transfer: { number: 'env.EVAL_TEST_DESK', whenClosed: 'callback' as const } } };
+  };
+
+  it('ends on the transfer end, and records the call\'s end as a transfer on the caller\'s request; the audit has it for the judge', async () => {
+    const model = fakeModel([[text('Sure, one moment while I put you through.'), toolCall('c1', 'transfer_call', {}), done('tool')]]);
+    // The setting is unset: the evaluation's server gives it a 555 number, so the server starts and the call can be put through.
+    const s = await startEvalServer(withDesk(), env(folder()), { work: folder(), converseModel: () => model, client: yesJev(), channel: 'voice' });
+    servers.push(s);
+    const c = scripted(['Can I talk to someone at the shop?']);
+    const call = await driveVoice({ url: s.ws, serverHttp: s.http, persona: { ...persona(), expects: 'transfer' }, caller: c.caller, maxTurns: 4, timeoutMs: 5000, turnEnds: s.turnEnds, timeScale: SCALE });
+    expect(call.ended).toBe('line');
+    expect(call.transferred).toBe('request');
+    expect(call.turns.at(-1)).toMatchObject({ who: 'line', text: 'Sure, one moment while I put you through.' });
+    await s.close();
+    servers.splice(0);
+    expect(actionsOfCall(s.auditDir, call.callId!).filter((a) => a.tool === 'transfer')).toEqual([{ tool: 'transfer', params: {}, verdict: 'TRANSFER', reason: 'put through to a person at the caller\'s request' }]);
+  }, 20_000);
+
+  it('reads how an end puts the call through from its handoff data', () => {
+    expect(transferOf(JSON.stringify({ reasonCode: 'transfer' }))).toBe('request');
+    expect(transferOf(JSON.stringify({ reasonCode: 'handoff', completed: ['book'] }))).toBe('handoff');
+    expect(transferOf(JSON.stringify({ reasonCode: 'completed' }))).toBeNull();
+    expect(transferOf('not json')).toBeNull();
+    expect(transferOf(undefined)).toBeNull();
+  });
+
+  it('the evaluation\'s settings give an unset transfer setting a 555 number, and leave one that is set, or another app, as it is', () => {
+    expect(transferEnv(withDesk(), {})).toEqual({ EVAL_TEST_DESK: EVAL_TRANSFER_NUMBER });
+    expect(transferEnv(withDesk(), { EVAL_TEST_DESK: '+15555550142' })).toEqual({ EVAL_TEST_DESK: '+15555550142' });
+    expect(transferEnv(converseFixture().app, { A: '1' })).toEqual({ A: '1' });
+  });
 });

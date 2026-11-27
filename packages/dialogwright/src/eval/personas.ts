@@ -15,7 +15,7 @@ export const personaSchema = z.strictObject({
   goal: text.describe('What the caller wants from the call, in their own terms.'),
   truth: z.record(z.string(), text).describe('What is true of the caller and what they will say when asked (their name, the item, the details of the matter, a number...), by short key. The caller states only these facts.'),
   manner: text.describe('How the caller speaks: terse, rambling, impatient, polite...'),
-  expects: z.enum(['request', 'booking', 'callback', 'answer', 'none']).describe('What the call should come to: a request or booking taken, a callback note left, a question answered, or nothing done.'),
+  expects: z.enum(['request', 'booking', 'callback', 'transfer', 'answer', 'none']).describe('What the call should come to: a request or booking taken, a callback note left, the call put through to a person (on the voice path, an agent app with transfer.number), a question answered, or nothing done.'),
   adversarial: text.optional().describe('What the caller tries that they should not get (a free job, the line ignoring its instructions...).'),
   asksIfHuman: z.boolean().optional().describe('The caller asks, at some point, whether they are talking to a person.'),
   callingFrom: z.string().regex(E164, { error: 'must be an E.164 number like +15555550142' }).optional().describe('The number the caller calls from (E.164): the chat names it in its start\'s context (callerNumber), which an app whose app.yaml says chat.callerNumberFromContext takes as the number calling, so a caller recognised by their number can be simulated. Absent, the chat names none (on the voice path, the call comes from a 555 number of the harness\'s own).'),
@@ -58,10 +58,10 @@ export function loadPersonas(file: string): Persona[] {
 }
 
 /**
- * A cooperative persona: one who wants something done (a request, a booking or a callback) and tries nothing
+ * A cooperative persona: one who wants something done (a request, a booking, a callback or to be put through) and tries nothing
  * they should not get (no `adversarial`). Their calls are the ones the bar of the task done correctly is over;
  * a question answered, nothing to be done, or a caller pushing the line are measured by the other figures.
  */
 export function isCooperative(p: Persona): boolean {
-  return p.adversarial === undefined && (p.expects === 'request' || p.expects === 'booking' || p.expects === 'callback');
+  return p.adversarial === undefined && (p.expects === 'request' || p.expects === 'booking' || p.expects === 'callback' || p.expects === 'transfer');
 }

@@ -54,6 +54,17 @@ export const FRAGMENT_GAP_MS = 600;
 export const VOICE_FROM = '+15555550188';
 export const VOICE_TO = '+15555550101';
 
+/** How an end frame's handoff data puts the call through: `request` (reason `transfer`), `handoff`, or null (a goodbye's, or none). */
+export function transferOf(handoffData: unknown): 'request' | 'handoff' | null {
+  if (typeof handoffData !== 'string') return null;
+  try {
+    const reason = (JSON.parse(handoffData) as { reasonCode?: unknown }).reasonCode;
+    return reason === 'transfer' ? 'request' : reason === 'handoff' ? 'handoff' : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A message from the line, as it arrived; `turnEnd` is the driver's own mark that the server's n-th turn ended. */
 interface Wire {
   type: string;
@@ -410,6 +421,9 @@ export async function driveVoice(o: {
     if (call.ended === 'line' && lineEnd !== null) {
       // The line ended the call: the carrier's action callback, with the end's handoff data.
       const end: Wire = lineEnd;
+      // Put through to a person: the model's transfer_call (its end's reason `transfer`), or the handoff after it failed.
+      const how = transferOf(end.handoffData);
+      if (how !== null) call.transferred = how;
       await callback({ CallStatus: 'in-progress', SessionStatus: 'ended', ...(typeof end.handoffData === 'string' ? { HandoffData: end.handoffData } : {}) });
     }
     return call;

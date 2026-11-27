@@ -171,6 +171,17 @@ describe('a converse phone call in the console', () => {
     expect(converseRow(records, [{ ts: ts(30), dir: 'log' as const, msg: { ended: 'silence' } }])).toMatchObject({ status: 'ended', ending: { kind: 'hangup', text: 'ended after silence' } });
   });
 
+  it('shows a call put through to a person on the caller\'s request (transfer_call), on the Calls page and in its detail', () => {
+    const records: ConverseTraceRecord[] = [
+      { v: 3, kind: 'converse', sessionId: 'CA-4', turnIndex: 0, ts: ts(0), said: null, replies: ['Example Visits, how can I help?'], tools: [], model: model(0, 0) },
+      { v: 3, kind: 'converse', sessionId: 'CA-4', turnIndex: 1, ts: ts(8), said: 'can I talk to someone?', ended: 'transfer', replies: ['Sure, putting you through.'], tools: [{ name: 'transfer_call', args: {}, outcome: 'ran' }], model: model(400, 0.0001) },
+    ];
+    const turns = converseCall(records).turns;
+    expect(turns[0]!.endedBy).toBeUndefined();
+    expect(turns[1]).toMatchObject({ endedBy: 'transfer', tools: [{ name: 'transfer_call', outcome: 'ran' }] });
+    expect(converseRow(records, [{ ts: ts(9), dir: 'in' as const, msg: { type: 'setup' } }, { ts: ts(10), dir: 'log' as const, msg: { ended: 'transfer' } }])).toMatchObject({ status: 'with-person', handoffReason: 'transfer', ending: { kind: 'person', reason: 'transfer', text: 'put through to a person' } });
+  });
+
   it('shows a read-back said again held (and brief), and the speech over it that was ignored, by its length', () => {
     const turns = converseCall([
       { v: 3, kind: 'converse', sessionId: 'CA-2', turnIndex: 0, ts: ts(0), said: 'wait, what?', replies: ['Tuesday morning, on ending in 0123. Right?'], tools: [{ name: 'book', args: {}, outcome: 'readBack' }], readBack: { text: 'Tuesday morning, on ending in 0123. Right?', held: true, brief: true }, model: model(300, 0.0001) },
