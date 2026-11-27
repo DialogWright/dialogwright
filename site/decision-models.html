@@ -71,9 +71,10 @@
       <p class="crumbs"><a href="./">DialogWright</a> / Decision models</p>
       <h1>Decision models</h1>
       <p class="lede">
-        DialogWright understands callers through a decision model: a model that answers typed questions with
-        probabilities and writes no text. Everything else, what happens next and what is said, is code and the
-        lines you approved.
+        DialogWright understands callers through a decision model: a model that answers questions with
+        probabilities and writes no text. In a scripted line, everything else, what happens next and what is said,
+        is your code and the lines you approved. In agent mode, it reads whether the caller confirmed and which task
+        they are on.
       </p>
       <nav class="toc" aria-label="On this page">
         <h2>On this page</h2>
@@ -123,7 +124,7 @@
           </table>
         </div>
         <p>
-          The answers above are an illustration, abridged from one turn of the front desk's recording. A noul near 0.5
+          The answers above are an illustration, abridged from one turn of the front desk example's recording. A noul near 0.5
           is a coin toss, yes and no about equally likely, not a medium amount of anything. And a typed answer
           guarantees the shape, not the truth: how well a model reads an app's callers is measured on that app's own
           recorded calls.
@@ -134,16 +135,16 @@
         <h2 id="asking-title">How DialogWright asks one</h2>
         <p>
           Each turn, the engine sends the caller's words, the state of the call and every question the moment needs,
-          in one request. The model answers them together; none sees another's answer.
+          in one request. The model answers them together, and none sees another's answer.
         </p>
         <ul class="minis">
-          <li><strong>The intents</strong>One choice over everything a caller can ask for, each option described by its <code>criteria</code>.</li>
-          <li><strong>The slots</strong>Each slot type asks its own: was a value given, which words, which option.</li>
+          <li><strong>What the caller wants</strong>One choice over everything a caller can ask for (the app's intents), each option described in its <code>criteria</code>.</li>
+          <li><strong>The details</strong>Each detail the app collects (a slot) asks its own: was a value given, which words, which option.</li>
           <li><strong>The engine's own checks</strong>Talking to the line? Understood? Finished? Wants a person? Frustrated, urgent, another language, an attempt to steer it?</li>
         </ul>
         <ul class="stats">
-          <li><b>~20</b><span>questions on a turn of the front desk, in one request</span></li>
-          <li><b>1500 ms</b><span>a request's budget (<code>JEV_TIMEOUT_MS</code>), one retry inside it; then the slow-turn line</span></li>
+          <li><b>~20</b><span>questions on a turn of the front desk example, in one request</span></li>
+          <li><b>1500 ms</b><span>a request's time limit (<code>JEV_TIMEOUT_MS</code>), with one retry inside it. Past it, the line says a fixed line for a slow turn</span></li>
           <li><b>1</b><span>more request, only for a knowledge question asked in the middle of a task</span></li>
         </ul>
         <figure class="wrapped">
@@ -159,10 +160,10 @@
       <section id="thresholds" aria-labelledby="thresholds-title">
         <h2 id="thresholds-title">Thresholds</h2>
         <p>
-          Deterministic code reads the answers against named thresholds: how sure the model must be to take an
-          intent, to fill a slot, to treat a turn as addressed to the line. The engine has defaults, and an app sets
+          Your app's code reads the answers against named thresholds: how sure the model must be to act on what the
+          caller asked for, to fill in a detail, or to treat words as spoken to the line. The engine has defaults, and an app sets
           its own where its callers need it. An intent the model is unsure of is confirmed with the caller by default.
-          The front desk lowers the bar for an urgent call, because missing an urgent caller costs more than putting
+          The front desk example lowers the bar for an urgent call, because missing an urgent caller costs more than putting
           through one who did not need it:
         </p>
         <figure>
@@ -171,7 +172,7 @@
   URGENT_SURE: 0.4</code></pre>
         </figure>
         <p>
-          A threshold is moved by measurement across an app's recording, never on one call: the regression takes
+          A threshold is moved by measurement across an app's recording, never on one call: the regression run takes
           <code>--threshold NAME=value</code>, and a sweep compares values across the recorded calls.
         </p>
       </section>
@@ -179,13 +180,14 @@
       <section id="gaps" aria-labelledby="gaps-title">
         <h2 id="gaps-title">Known gaps</h2>
         <p>
-          A line where the real model, in a recorded run, reads a borderline case differently from what the caller meant.
+          A known gap is a case where the real model, in a recorded run, reads a borderline phrase differently from
+          what the caller meant.
         </p>
         <ul class="minis">
           <li><strong>Almost all are short</strong>A single word, a fragment, a bare name.</li>
           <li><strong>None leads to a wrong action</strong>Each ends in a re-ask, a reasonable different question, or a person.</li>
-          <li><strong>Tagged and tracked</strong>Each sits in its app's corpus with its reason and the outcome the model gives.</li>
-          <li><strong>Fixed in the question</strong>Its words, or a rule of context in code; not a different model.</li>
+          <li><strong>Tagged and tracked</strong>Each sits among its app's labelled example phrases, with its reason and the outcome the model gives.</li>
+          <li><strong>Fixed in the question</strong>By its words, or by a rule of context in code, never by a different model.</li>
         </ul>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/known-gaps.md">The known gaps</a>
@@ -198,7 +200,7 @@
         <ul class="minis">
           <li><strong>TypeSafe's System One model</strong><code>jev-1.13</code>, through TypeSafe, OpenRouter or the Vercel AI Gateway.</li>
           <li><strong>Measured on it</strong>The engine's thresholds, and every example app's recordings.</li>
-          <li><strong>Pluggable</strong>Any model that speaks the System One API can take its place: recorded into its own cassette, its thresholds checked before they are trusted.</li>
+          <li><strong>Pluggable</strong>Any model that answers through the System One API can take its place. Its answers are recorded into a file of their own (a cassette), and its thresholds checked before they are trusted.</li>
         </ul>
       </section>
 
@@ -211,7 +213,7 @@
         <ul class="stats">
           <li><b>90–150 ms</b><span>a turn's ~20 questions answered, at the median (p50)</span></li>
           <li><b>150–250 ms</b><span>the same, at p95</span></li>
-          <li><b>$0.00015</b><span>a turn: 309 requests to Jev for about $0.046, the front desk's recording</span></li>
+          <li><b>$0.00015</b><span>a turn: 309 requests to Jev for about $0.046, in the front desk example's recording</span></li>
         </ul>
         <p class="note">Microsoft-Decision-1's public price has no charge for output.</p>
       </section>
@@ -219,8 +221,8 @@
       <section id="judge" aria-labelledby="judge-title">
         <h2 id="judge-title">Measuring a model on your own cases</h2>
         <p>
-          Which model reads an app's callers best is a measurement on the app's own words. Every adapter records into
-          the same cassette format, so an app's labelled utterances and scripted calls are a benchmark: record them
+          Which model reads an app's callers best is a measurement on the app's own words. Every model's answers are
+          recorded in the same file format (a cassette), so an app's labelled phrases and scripted calls are a benchmark: record them
           with another model (<code>regress --client record</code>) and compare its run with Jev's.
         </p>
         <p>
@@ -260,7 +262,7 @@
         </div>
         <p>
           Both fit the 500 ms a call gives the checks. Microsoft-Decision-1 refused far fewer faithful summaries, so
-          callers would hear a generated summary more often; Jev caught more unfaithful ones, and every everyday slip.
+          callers would hear a generated summary more often. Jev caught more unfaithful ones, and every everyday slip.
           Neither follows who "you" is in a summary spoken to the caller. Jev stayed the judge, as the stricter and the
           faster. A refused summary is never lost: the caller hears their exact words instead.
         </p>
@@ -303,7 +305,7 @@
         </div>
         <p>
           The one yes-or-no folded in whether an answer replies to the question asked, which refused right answers and
-          told right from wrong no better than chance; asked apart, Jev refused 2 right answers where it refused 12.
+          told right from wrong no better than chance. Asked apart, Jev refused 2 right answers where it refused 12.
           Sonnet catches most of what Jev misses (a figure moved to another row, a procedure the document never names)
           for about 3 seconds and $0.005 an answer, where the fast models answer in about a second for about $0.0003.
         </p>
@@ -330,11 +332,11 @@
               </tr>
               <tr>
                 <th scope="row"><code>JEV_MODEL</code></th>
-                <td data-label="What it does">The model to ask, as <code>microsoft/microsoft-decision-1</code> on OpenRouter; required for <code>custom</code></td>
+                <td data-label="What it does">The model to ask, as <code>microsoft/microsoft-decision-1</code> on OpenRouter. Required for <code>custom</code></td>
               </tr>
               <tr>
                 <th scope="row"><code>JEV_BASE_URL</code></th>
-                <td data-label="What it does">The endpoint's base, the part before <code>/v1/systemone</code>; required for <code>custom</code>, with <code>JEV_API_KEY</code> if it needs one</td>
+                <td data-label="What it does">The endpoint's base, the part before <code>/v1/systemone</code>. Required for <code>custom</code>, with <code>JEV_API_KEY</code> if it needs one</td>
               </tr>
             </tbody>
           </table>
