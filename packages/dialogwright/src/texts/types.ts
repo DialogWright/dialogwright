@@ -9,17 +9,18 @@ import type { TextKeys, TextLimits } from './record';
  * that comes in is handed to the app's own hook (AppCode.onText).
  *
  * - **Sending.** A tool (ToolContext.texts) and the incoming hook (TextContext.texts) send with
- *   `texts.send({ to, body, media? })`, absent where the server has no sender (TEXT_FROM unset): an app
+ *   `texts.send({ to, body, media? })`, through the carrier TEXT_PROVIDER names, absent where the server has
+ *   no sender (TEXT_FROM unset): an app
  *   then prints what it would have sent, as before. Each text is recorded in the audit (`text_sent`: the
  *   number by its last four, the body by its length, the media by their count, the provider's message id
  *   and status) and, on a call, in the turn's trace (TraceRecord.texts).
- * - **Receiving.** `POST /messages/<provider>` (Twilio's today), its signature checked as the voice
- *   webhook's is; the number texted picks the app, as a call's number does under a host. The message is
+ * - **Receiving.** `POST /messages/<provider>` (`twilio`, `telnyx`), its signature checked as that
+ *   carrier's voice webhooks' are; the number texted picks the app, as a call's number does under a host. The message is
  *   recorded (`text_received`: from by its last four, the media by their count; no media is fetched) and
  *   handed to App.onText. The engine answers the provider with nothing to send (no auto-reply).
  *
- * A provider is one adapter (TextProvider): Twilio's Messages API by fetch (texts/twilio.ts) today; a
- * Telnyx one is a second adapter of the same shape, chosen by a setting when it is added.
+ * A provider is one adapter (TextProvider): Twilio's Messages API (texts/twilio.ts) and Telnyx's Messaging
+ * API (texts/telnyx.ts), each by fetch, chosen by TEXT_PROVIDER (texts/settings.ts).
  */
 
 /** A text an app sends: the number (E.164, or ten digits read as +1), the words, and media to attach by URL. */
@@ -42,7 +43,7 @@ export interface OutgoingText {
 
 /** What a provider said of a text it took: its message id and its status ("queued", "accepted"), or `failed`. */
 export interface TextReceipt {
-  /** The provider's message id ("SM..."), null where it took none (a failure before it answered). */
+  /** The provider's message id (Twilio's "SM...", Telnyx's a UUID), null where it took none (a failure before it answered). */
   readonly id: string | null;
   /** The provider's status as it answered, `failed`, or `limited` (refused by the sender's abuse limits before it reached the provider). */
   readonly status: string;
@@ -54,7 +55,7 @@ export interface TextReceipt {
 
 /** A provider's adapter: it sends one text from a number, and never throws (a failure is a receipt with `failed`). */
 export interface TextProvider {
-  /** The provider's id ("twilio"), as the audit and the log name it. */
+  /** The provider's id ("twilio", "telnyx"), as the audit and the log name it. */
   readonly id: string;
   send(text: OutgoingText & { readonly from: string }): Promise<TextReceipt>;
 }
@@ -72,7 +73,7 @@ export interface IncomingMedia {
 
 /** A text that came in, as the provider's webhook gave it. */
 export interface IncomingText {
-  /** The provider's message id ("SM..."). */
+  /** The provider's message id (Twilio's "SM...", Telnyx's a UUID). */
   readonly id: string;
   /** The number it came from (E.164), whole: the app's code decides what it keeps of it. */
   readonly from: string;
@@ -82,7 +83,7 @@ export interface IncomingText {
   readonly body: string;
   /** The media it came with, by the provider's URL, in order; the engine fetches none. */
   readonly media: readonly IncomingMedia[];
-  /** The provider's id ("twilio"). */
+  /** The provider's id ("twilio", "telnyx"). */
   readonly provider: string;
 }
 
@@ -138,7 +139,7 @@ export interface TextRecord {
   readonly error?: string;
   /** A send not made again for its key (OutgoingText.key). */
   readonly repeat?: true;
-  /** Media a text that came in carried at URLs that are not the provider's own, dropped, never handed on (twilio.ts parseTwilioMessage). */
+  /** Media a text that came in carried at URLs that are not the provider's own, dropped, never handed on (twilio.ts parseTwilioMessage, telnyx.ts parseTelnyxMessage). */
   readonly mediaDropped?: number;
   /** A text that came in to a number no app texts from or is reached by: recorded in the server's own audit, handed to no app. */
   readonly unrouted?: true;

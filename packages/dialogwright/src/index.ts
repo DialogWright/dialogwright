@@ -187,8 +187,10 @@ export { RESULT_UNCHECKED } from './core/lifecycle';
 // Texts (SMS and MMS) an app's code sends (ToolContext.texts, TextContext.texts) and receives (AppCode.onText):
 // the guide's 13.17. The sender is the server's; whether a caller is texted is the app's policy.
 export type { IncomingMedia, IncomingText, OutgoingText, TextContext, TextDecide, TextReceipt, Texts } from './texts/types';
-// The only media URLs a text that comes in keeps (the provider's own); an app shows or forwards no other.
+// The only media URLs a text that comes in keeps (each provider's own); an app shows or forwards no other.
 export { TWILIO_MEDIA_PREFIX } from './texts/twilio';
+export { TELNYX_MEDIA_PREFIX } from './texts/telnyx';
+export { PROVIDER_MEDIA_PREFIXES, providerMedia } from './texts/media';
 // Whether a form post comes from this server's own page (Sec-Fetch-Site and Origin): an app page's form checks it beside its token.
 export { formFromOwnPage } from './server/localOnly';
 

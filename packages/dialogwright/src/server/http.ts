@@ -24,6 +24,8 @@ import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
 import { EMPTY_TWIML, parseTwilioMessage } from '../texts/twilio';
+import { parseTelnyxMessage } from '../texts/telnyx';
+import { verifyTelnyxSignature } from './voice/telnyxSignature';
 import type { IncomingText } from '../texts/types';
 import type { App } from '../core/app/types';
 import type { VoiceProviderId } from '../channel/voiceProviders';
@@ -171,17 +173,18 @@ export interface HttpDeps extends HttpApp {
    */
   consoleAuth?: ConsoleAuth;
   /**
-   * Texts that come in (`POST /messages/twilio`; texts/types.ts, the guide's 13.17): the Twilio auth token
-   * their signature is checked with (null where the server has none, so every one is refused while
-   * SIGNATURE_CHECK is on), and what is done with each once Twilio has been answered (index.ts: routed to
-   * its app by the number texted, recorded, then handed to the app's onText). Absent (no app has onText
-   * or a sender), the route does not exist (404).
+   * Texts that come in (`POST /messages/twilio` and `POST /messages/telnyx`; texts/types.ts, the guide's
+   * 13.17): the key each provider's signature is checked with, Twilio's auth token and Telnyx's public key
+   * (null where the server has none, so every one of that provider's is refused while SIGNATURE_CHECK is
+   * on), and what is done with each once the provider has been answered (index.ts: routed to its app by the
+   * number texted, recorded, then handed to the app's onText). Absent (no app has onText or a sender), the
+   * routes do not exist (404).
    */
-  messages?: { readonly secret: string | null; receive(message: IncomingText, mediaDropped: number): Promise<void> };
+  messages?: { readonly secrets: { readonly twilio: string | null; readonly telnyx: string | null }; receive(message: IncomingText, mediaDropped: number): Promise<void> };
 }
 
-/** The incoming-message webhook's path: `/messages/<provider>`, Twilio's the one today. */
-export const MESSAGES_PATH = '/messages/twilio';
+/** The incoming-message webhooks' paths, `/messages/<provider>`. */
+export const MESSAGES_PATHS = Object.freeze({ twilio: '/messages/twilio', telnyx: '/messages/telnyx' });
 
 /** What the server gives the console's Health page beside `/health`'s numbers (index.ts makes it). */
 export interface ServerHealth {
@@ -850,7 +853,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       }
       // Texts that come in: Twilio's signature checked as the voice webhook's is, the number texted picking the
       // app, the message recorded and handed to the app's onText once Twilio has its empty answer.
-      if (path === MESSAGES_PATH && deps.messages !== undefined) {
+      if (path === MESSAGES_PATHS.twilio && deps.messages !== undefined) {
         if (req.method !== 'POST') {
           reply(res, 404, 'text/plain', 'not found');
           return;
@@ -858,7 +861,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         const raw = await readBody(req, res);
         if (raw === null) return;
         const posted: WebhookRequest = { url: req.url ?? path, headers: lowerHeaders(req.headers), rawBody: raw, nowSec: Math.floor(Date.now() / 1000) };
-        const secret = deps.messages.secret;
+        const secret = deps.messages.secrets.twilio;
         if (deps.config.signatureCheck && (!secret || !twilioProvider.verify(posted, secret, deps.config.publicHost))) {
           deps.log(`${path}: signature rejected`);
           reply(res, 403, 'text/plain', 'invalid signature');
@@ -872,6 +875,45 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         }
         reply(res, 200, 'text/xml', EMPTY_TWIML);
         deps.messages.receive(parsed.message, parsed.mediaDropped).catch((e: unknown) => deps.log(`${path} ${parsed.message.id}: ${e instanceof Error ? e.name : 'error'}`));
+        return;
+      }
+      // Telnyx's messaging webhook: its signature checked as its voice webhooks' are (Ed25519 over
+      // `<timestamp>|<body>`, five minutes either way), a message.received handed on as Twilio's is once
+      // Telnyx has its 200 (it waits two seconds at most), and the status events of texts sent (message.sent,
+      // message.finalized, to the messaging profile's webhook too) answered and set aside: delivery reports
+      // are not read, as Twilio's are not asked for.
+      if (path === MESSAGES_PATHS.telnyx && deps.messages !== undefined) {
+        if (req.method !== 'POST') {
+          reply(res, 404, 'text/plain', 'not found');
+          return;
+        }
+        const raw = await readBody(req, res);
+        if (raw === null) return;
+        const headers = lowerHeaders(req.headers);
+        const key = deps.messages.secrets.telnyx;
+        if (deps.config.signatureCheck && (!key || !verifyTelnyxSignature({ signature: headers['telnyx-signature-ed25519'], timestamp: headers['telnyx-timestamp'], rawBody: raw, nowSec: Math.floor(Date.now() / 1000) }, key))) {
+          deps.log(`${path}: signature rejected`);
+          reply(res, 403, 'text/plain', 'invalid signature');
+          return;
+        }
+        let body: unknown = null;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          body = null;
+        }
+        const event = parseTelnyxMessage(body);
+        if (event === null) {
+          deps.log(`${path}: not a messaging event, or a message with no id or sender`);
+          reply(res, 400, 'text/plain', 'not a messaging event');
+          return;
+        }
+        reply(res, 200, 'text/plain', '');
+        if (event.kind === 'status') {
+          deps.log(`${path} ${event.id ?? '(no id)'}: ${event.event}${event.status !== null ? ` (${event.status})` : ''}, a text sent: set aside`);
+          return;
+        }
+        deps.messages.receive(event.message, event.mediaDropped).catch((e: unknown) => deps.log(`${path} ${event.message.id}: ${e instanceof Error ? e.name : 'error'}`));
         return;
       }
       // A carrier's webhooks: `/voice/<id>` and `/cr-action/<id>` for an enabled provider, and the

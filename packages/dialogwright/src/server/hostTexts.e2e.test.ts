@@ -40,13 +40,14 @@ afterEach(async () => {
 });
 
 /** The host with each app taking texts in (its onText noting what reached it), the routed app sending from its own number. */
-function withTexts(got: { app: string; m: IncomingText }[]): HostRouting {
+function withTexts(got: { app: string; m: IncomingText }[], provider: 'twilio' | 'telnyx' = 'twilio'): HostRouting {
+  const sender = provider === 'twilio' ? { TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 't' } : { TEXT_PROVIDER: 'telnyx', TELNYX_API_KEY: `KEY${'0'.repeat(40)}` };
   return {
     ...base,
     apps: base.apps.map((a) => ({
       ...a,
       app: { ...a.app, onText: (m: IncomingText) => void got.push({ app: a.id, m }) },
-      ...(a.id === 'routed' ? { env: { ...a.env, TEXT_FROM: ROUTED_TEXTS, TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 't' } } : {}),
+      ...(a.id === 'routed' ? { env: { ...a.env, TEXT_FROM: ROUTED_TEXTS, ...sender } } : {}),
     })),
   };
 }
@@ -58,6 +59,9 @@ async function start(apps: HostRouting): Promise<{ url: string; audit: string }>
   running = await startServer(config, { host: '127.0.0.1', apps, client: new HeuristicStubClient({ todayIso: '2026-09-18' }), log: () => {}, textProvider: fakeTextProvider() });
   return { url: `http://127.0.0.1:${running.port}`, audit: join(dir, 'audit') };
 }
+
+/** A text that comes in through Telnyx: its messaging webhook's message.received (SIGNATURE_CHECK is off here). */
+const telnyxText = (url: string, id: string, to: string) => fetch(`${url}/messages/telnyx`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data: { event_type: 'message.received', payload: { id, from: { phone_number: '+15555550177' }, to: [{ phone_number: to }], text: 'hi', media: [] } } }) });
 
 const text = (url: string, id: string, to: string) => fetch(`${url}/messages/twilio`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ MessageSid: id, From: '+15555550177', To: to, Body: 'hi' }).toString() });
 
@@ -84,8 +88,21 @@ describe('a text that comes in to a host', () => {
     expect(rows(join(audit, 'callback')).filter((r) => r.type === 'text_received').map((r) => r.callId)).toEqual(['SM2']);
   });
 
+  it('through Telnyx, routes as through Twilio: the app that texts from the number, then the app host.yaml lists it for, else none', async () => {
+    const got: { app: string; m: IncomingText }[] = [];
+    const { url, audit } = await start(withTexts(got, 'telnyx'));
+    expect((await telnyxText(url, 'tx-1', ROUTED_TEXTS)).status).toBe(200);
+    expect((await telnyxText(url, 'tx-2', NUMBERS.CALLBACK_LINE)).status).toBe(200);
+    expect((await telnyxText(url, 'tx-3', '+15555550398')).status).toBe(200);
+    await vi.waitFor(() => expect(rows(join(audit, SERVER_RECORDS)).map((r) => r.callId)).toEqual(['tx-3']));
+    await vi.waitFor(() => expect(got).toHaveLength(2));
+    expect(got.map((g) => [g.app, g.m.id, g.m.provider])).toEqual([['routed', 'tx-1', 'telnyx'], ['callback', 'tx-2', 'telnyx']]);
+    expect(rows(join(audit, 'routed')).filter((r) => r.type === 'text_received')[0]).toMatchObject({ callId: 'tx-1', detail: { provider: 'telnyx', number: '...0177' } });
+  });
+
   it('has no webhook where no app takes texts in or sends them', async () => {
     const { url } = await start(base);
     expect((await text(url, 'SM5', NUMBERS.CALLBACK_LINE)).status).toBe(404);
+    expect((await telnyxText(url, 'tx-5', NUMBERS.CALLBACK_LINE)).status).toBe(404);
   });
 });

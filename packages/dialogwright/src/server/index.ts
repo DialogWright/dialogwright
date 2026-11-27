@@ -12,7 +12,7 @@ import { defaultLocaleOf } from '../core/locale';
 import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, voiceFor, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPEECH_OVER_LINE, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
-import { createRequestHandler, MESSAGES_PATH, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
+import { createRequestHandler, MESSAGES_PATHS, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
 import { randomBytes } from 'node:crypto';
@@ -74,6 +74,7 @@ import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 import { generatesLines } from '../render/config';
 import { textSettings } from '../texts/settings';
 import { twilioTextProvider } from '../texts/twilio';
+import { telnyxTextProvider } from '../texts/telnyx';
 import { receivedRecord, recordingTexts, TextKeys, TextLimits, textAuditRow } from '../texts/record';
 import { textDecider } from '../texts/decide';
 import { sameNumber } from '../core/conditions';
@@ -180,8 +181,8 @@ export interface ServerOverrides {
   /** With AUDIT_STORE=postgres://..., the connection to use, as sessionSql is for SESSION_STORE: a test seam, not a setting. */
   auditSql?: SqlClient;
   /**
-   * How texts are sent (texts/types.ts TextProvider) for every app with TEXT_FROM set, in place of Twilio's
-   * Messages API: a test's fake (dialogwright/testing fakeTextProvider), so no test sends a text. A test seam, not a setting.
+   * How texts are sent (texts/types.ts TextProvider) for every app with TEXT_FROM set, in place of its provider's
+   * API: a test's fake (dialogwright/testing fakeTextProvider), so no test sends a text. A test seam, not a setting.
    */
   textProvider?: TextProvider;
   /** With TRACE_STORE=s3://..., how the store is reached in place of the global fetch: a test seam, not a setting. */
@@ -568,21 +569,33 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   }
   const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;
 
-  // Texts: each app's sender, from TEXT_FROM (on a host, the app's own settings file's), through Twilio's
-  // Messages API with TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN (texts/settings.ts). TEXT_FROM unset is no
-  // sender: the app's code has none (ToolContext.texts), and no text is sent, as before.
+  // Texts: each app's sender, from TEXT_FROM (on a host, the app's own settings file's), through the provider
+  // TEXT_PROVIDER names (texts/settings.ts): Twilio's Messages API with TWILIO_ACCOUNT_SID and
+  // TWILIO_AUTH_TOKEN, or Telnyx's Messaging API with TELNYX_API_KEY. TEXT_FROM unset is no sender: the
+  // app's code has none (ToolContext.texts), and no text is sent, as before. A text that comes in is checked
+  // with the voice webhooks' key of its provider where the server takes its calls (providerSecrets), else
+  // with the texts' own (TWILIO_AUTH_TOKEN, TELNYX_PUBLIC_KEY).
   const textSenders = new Map<string, TurnTexts>();
   let textSecret: string | null = config.providerSecrets.twilio ?? null;
+  let telnyxTextKey: string | null = config.providerSecrets.telnyx ?? null;
   for (const a of hosted) {
     const t = forApp(a.id, () => textSettings(a.env));
     if (t === null) {
-      if (a.app.onText !== undefined) log(`${tag(a.id)}texts: TEXT_FROM unset: a text that comes in (${MESSAGES_PATH}) is recorded and handed to the app, which can send none`);
+      if (a.app.onText !== undefined) log(`${tag(a.id)}texts: TEXT_FROM unset: a text that comes in (${MESSAGES_PATHS.twilio}, ${MESSAGES_PATHS.telnyx}) is recorded and handed to the app, which can send none`);
       continue;
     }
-    textSecret ??= t.authToken;
-    const provider = overrides.textProvider ?? twilioTextProvider({ accountSid: t.accountSid, authToken: t.authToken });
+    let provider: TextProvider;
+    if (t.provider === 'twilio') {
+      textSecret ??= t.authToken;
+      provider = overrides.textProvider ?? twilioTextProvider({ accountSid: t.accountSid, authToken: t.authToken });
+    } else {
+      telnyxTextKey ??= t.publicKey;
+      provider = overrides.textProvider ?? telnyxTextProvider({ apiKey: t.apiKey });
+      if (telnyxTextKey === null && config.signatureCheck) log(`WARNING: ${tag(a.id)}texts: sent through Telnyx, but TELNYX_PUBLIC_KEY is unset: every text that comes in (${MESSAGES_PATHS.telnyx}) is refused, its signature unchecked; set it to the account's public key (Mission Control, Keys & Credentials, Public Key)`);
+    }
     textSenders.set(a.id, { provider, from: t.from, keys: new TextKeys(), limits: new TextLimits(t.limits, now) });
-    log(`${tag(a.id)}texts: sent from ...${lastFour(t.from)} through ${provider.id === 'twilio' ? 'Twilio\'s Messages API' : provider.id}; texts that come in: ${MESSAGES_PATH}`);
+    const through = provider.id === 'twilio' ? 'Twilio\'s Messages API' : provider.id === 'telnyx' ? 'Telnyx\'s Messaging API' : provider.id;
+    log(`${tag(a.id)}texts: sent from ...${lastFour(t.from)} through ${through}; texts that come in: ${MESSAGES_PATHS[t.provider]}`);
   }
   const textsOf = (id: string): TurnTexts | null => textSenders.get(hostedOf(id).id) ?? null;
 
@@ -1146,23 +1159,24 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const seenTexts = new Map<string, string[]>();
   const SEEN_TEXTS = 1000;
   /**
-   * A text that came in (POST /messages/twilio), its app picked by the number texted: recorded in the app's
-   * audit (text_received, under the provider's message id, channel sms), then handed to the app's onText
-   * with a sender whose texts are recorded beside it. Nothing is fetched of its media; media not at Twilio's
-   * own URLs were dropped and are counted. A text for no app is recorded in the server's own audit and
+   * A text that came in (POST /messages/twilio or /messages/telnyx), its app picked by the number texted:
+   * recorded in the app's audit (text_received, under the provider's message id, channel sms), then handed
+   * to the app's onText with a sender whose texts are recorded beside it. Nothing is fetched of its media;
+   * media not at the provider's own URLs were dropped and are counted. A text for no app is recorded in the server's own audit and
    * handed to none; one handed on before (the same message id) is not handed on again.
    */
   const receiveText = async (m: IncomingText, mediaDropped: number): Promise<void> => {
+    const webhook = m.provider === 'telnyx' ? MESSAGES_PATHS.telnyx : MESSAGES_PATHS.twilio;
     const appId = textAppOf(m.to);
     if (appId === null) {
-      log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)} to ...${lastFour(m.to)}: no app texts from or is reached by that number; recorded, handed to none`);
+      log(`${webhook} ${m.id} from ...${lastFour(m.from)} to ...${lastFour(m.to)}: no app texts from or is reached by that number; recorded, handed to none`);
       await audit.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped, unrouted: true })));
       return;
     }
     const a = hostedOf(appId);
     const seen = seenTexts.get(a.id) ?? [];
     if (seen.includes(m.id)) {
-      log(`${MESSAGES_PATH} ${m.id}${host ? ` (app ${a.id})` : ''}: sent again by the provider; handed on once already`);
+      log(`${webhook} ${m.id}${host ? ` (app ${a.id})` : ''}: sent again by the provider; handed on once already`);
       return;
     }
     seen.push(m.id);
@@ -1173,7 +1187,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const rows: AuditDraft[] = [];
     const t = textsOf(a.id);
     const texts = t !== null ? recordingTexts(t.provider, t.from, t.keys, (r) => rows.push(textAuditRow(r)), t.limits) : null;
-    log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)}${host ? ` (app ${a.id})` : ''}: ${m.body.length} characters, ${m.media.length} media${mediaDropped > 0 ? `, ${mediaDropped} not at Twilio's URLs dropped` : ''}`);
+    log(`${webhook} ${m.id} from ...${lastFour(m.from)}${host ? ` (app ${a.id})` : ''}: ${m.body.length} characters, ${m.media.length} media${mediaDropped > 0 ? `, ${mediaDropped} not at the provider's own URLs dropped` : ''}`);
     await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped })));
     try {
       const decide = textDecider(clientOf(a.id), thresholds.JEV_TIMEOUT_MS, m, (row) => rows.push(row), now);
@@ -1181,7 +1195,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const sys = isConverseApp(a.app) ? undefined : toolsOf(a.id).sys;
       if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys, nowMs: now(), decide });
     } catch (err) {
-      log(`${MESSAGES_PATH} ${m.id}: the app's onText failed (${err instanceof Error ? err.name : 'error'})`);
+      log(`${webhook} ${m.id}: the app's onText failed (${err instanceof Error ? err.name : 'error'})`);
     } finally {
       for (const row of rows) await sink.append(m.id, TEXT_CHANNEL, row);
     }
@@ -1215,7 +1229,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // A converse call's hangup is recorded by its runtime.
     ...(converseVoice ? { converse: converseVoice } : {}),
     // The incoming-message webhook, only where some app takes texts in or sends them.
-    ...(textSenders.size > 0 || hosted.some((a) => a.app.onText !== undefined) ? { messages: { secret: textSecret, receive: receiveText } } : {}),
+    ...(textSenders.size > 0 || hosted.some((a) => a.app.onText !== undefined) ? { messages: { secrets: { twilio: textSecret, telnyx: telnyxTextKey }, receive: receiveText } } : {}),
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
     ...(transfer ? { transfer } : {}),
     ...(numbers.length > 0 ? { numbers } : {}),

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { converseChecks, formatResult, googleCalendarChecks, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { converseChecks, formatResult, textChecks, googleCalendarChecks, hostChecks, languageChecks, main, noiseSuppressionChecks, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { main as cliMain } from '../define/cli';
 import { loadAppFolder, OLD_AGENT_MODE_FIX } from '../define/load';
 import { CONVERSE_FIXTURE_DIR } from '../testing/converse/app';
@@ -1125,5 +1125,40 @@ describe('Telnyx noise suppression in pnpm diagnose', () => {
       message: 'TELNYX_NOISE_SUPPRESSION is Krisp, a Telnyx setting, but VOICE_PROVIDERS lists no Telnyx line: no call is sent it',
       fix: 'list telnyx in VOICE_PROVIDERS, or unset TELNYX_NOISE_SUPPRESSION (Twilio\'s start document has no such setting)',
     }]);
+  });
+});
+
+describe('texts in pnpm diagnose', () => {
+  const SID = `AC${'0'.repeat(32)}`;
+  const KEY = `KEY${'0'.repeat(20)}_${'a'.repeat(22)}`;
+  const PUBLIC = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+  const base = { PUBLIC_HOST: 'voice.example.com', TEXT_FROM: '+15555550100' };
+
+  it('says nothing with TEXT_FROM unset, and Twilio\'s as before', () => {
+    expect(textChecks({})).toEqual([]);
+    expect(textChecks({ ...base, TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 't' })).toEqual([{ id: 'texts', status: 'ok', message: 'texts sent from ...0100 through Twilio\'s Messages API (TWILIO_ACCOUNT_SID set); texts that come in: POST /messages/twilio' }]);
+  });
+
+  it('Telnyx: the key by its prefix and length, never its value, and the webhook URL to paste on the messaging profile', () => {
+    const out = textChecks({ ...base, TELNYX_API_KEY: KEY, TELNYX_PUBLIC_KEY: PUBLIC });
+    expect(out).toEqual([{ id: 'texts', status: 'ok', message: `texts sent from ...0100 through Telnyx's Messaging API (TELNYX_API_KEY set: starts KEY, ${KEY.length} characters); texts that come in: POST https://voice.example.com/messages/telnyx, set as the inbound webhook URL of the messaging profile ...0100 is on (Mission Control, Messaging); a US local number's texts are delivered only once its 10DLC brand and campaign are registered with Telnyx` }]);
+    expect(JSON.stringify(out)).not.toContain(KEY);
+  });
+
+  it('warns of a key that is not shaped as a Telnyx API key, the public key in its place, and no public key to check texts with', () => {
+    expect(textChecks({ ...base, TELNYX_API_KEY: 'abc123', TELNYX_PUBLIC_KEY: PUBLIC })).toContainEqual(expect.objectContaining({ id: 'texts', status: 'warn', message: 'TELNYX_API_KEY does not start with KEY, as a Telnyx API key does (6 characters)' }));
+    expect(textChecks({ ...base, TELNYX_API_KEY: PUBLIC, TELNYX_PUBLIC_KEY: PUBLIC })).toContainEqual(expect.objectContaining({ status: 'warn', message: expect.stringMatching(/^TELNYX_API_KEY is the account's public key/) }));
+    const unchecked = textChecks({ ...base, TELNYX_API_KEY: KEY });
+    expect(unchecked).toContainEqual({ id: 'texts', status: 'warn', message: 'TELNYX_PUBLIC_KEY is unset: every text that comes in through Telnyx is refused, its signature unchecked', fix: 'set TELNYX_PUBLIC_KEY to the account\'s public key (Mission Control, Account settings, Keys & Credentials, Public Key)' });
+    expect(textChecks({ ...base, TELNYX_API_KEY: KEY, SIGNATURE_CHECK: 'off' }).filter((c) => c.status === 'warn')).toEqual([]);
+  });
+
+  it('says which carrier sends where both are set up and TEXT_PROVIDER names none', () => {
+    expect(textChecks({ ...base, TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 't', TELNYX_API_KEY: KEY })).toContainEqual(expect.objectContaining({ id: 'texts', status: 'warn', message: 'TWILIO_ACCOUNT_SID and TELNYX_API_KEY are both set and TEXT_PROVIDER is unset: texts are sent through Twilio', fix: 'set TEXT_PROVIDER=telnyx to send through Telnyx, or TEXT_PROVIDER=twilio to say so' }));
+    expect(textChecks({ ...base, TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 't', TELNYX_API_KEY: KEY, TEXT_PROVIDER: 'twilio' }).filter((c) => c.status === 'warn')).toEqual([]);
+  });
+
+  it('a setting the server would refuse fails, with the fix', () => {
+    expect(textChecks({ ...base, TEXT_PROVIDER: 'telnyx' })).toEqual([{ id: 'texts', status: 'fail', message: expect.stringMatching(/^TEXT_PROVIDER is telnyx, but TELNYX_API_KEY is unset/), fix: 'fix the setting in the settings file, or unset TEXT_FROM to send no texts' }]);
   });
 });

@@ -34,6 +34,7 @@ const PARTS: readonly Readonly<Record<string, string>>[] = [
   { CONSOLE_AUTH: 'token' },
   { WIDGET: 'on' },
   { TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}` },
+  { TEXT_FROM: '+15555550100', TEXT_PROVIDER: 'telnyx' },
 ];
 
 /** What every environment starts with: the settings a server cannot start without. */

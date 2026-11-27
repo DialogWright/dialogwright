@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { generateKeyPairSync } from 'node:crypto';
 import { fakeTextProvider, recordingTexts, TextKeys, TextLimits, textAuditRow, receivedRecord } from './record';
 import { DEFAULT_TEXT_LIMITS, textSettings } from './settings';
 import { e164, EMPTY_TWIML, parseTwilioMessage, scrubbed, twilioTextProvider } from './twilio';
@@ -186,7 +187,45 @@ describe('the sender\'s settings', () => {
   it('refuses, naming the setting, a number not E.164, a missing or malformed account, a missing token', () => {
     expect(() => textSettings({ TEXT_FROM: '555-0100' })).toThrow(/TEXT_FROM is not a phone number/);
     expect(() => textSettings({ TEXT_FROM: '+15555550100' })).toThrow(/TWILIO_ACCOUNT_SID is unset/);
+    expect(() => textSettings({ TEXT_FROM: '+15555550100' })).toThrow(/TEXT_PROVIDER=telnyx with TELNYX_API_KEY/);
     expect(() => textSettings({ TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: 'AC123' })).toThrow(/TWILIO_ACCOUNT_SID is not a Twilio account id/);
     expect(() => textSettings({ TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID })).toThrow(/TWILIO_AUTH_TOKEN is unset/);
+  });
+});
+
+describe('the sender\'s provider (TEXT_PROVIDER)', () => {
+  const TELNYX_KEY = `KEY${'0'.repeat(20)}_${'a'.repeat(22)}`;
+  const limits = { perNumber: 3, perHour: 20, exempt: [] };
+
+  it('unset with Twilio\'s settings alone: Twilio, as before (and with Telnyx\'s key beside them, still Twilio)', () => {
+    const twilio = { from: '+15555550100', provider: 'twilio', accountSid: SID, authToken: 'tok', limits };
+    expect(textSettings({ TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok' })).toEqual(twilio);
+    expect(textSettings({ TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok', TELNYX_API_KEY: TELNYX_KEY })).toEqual(twilio);
+  });
+
+  it('unset with Telnyx\'s key alone: Telnyx, its webhook key read where given', () => {
+    expect(textSettings({ TEXT_FROM: '+15555550100', TELNYX_API_KEY: TELNYX_KEY })).toEqual({ from: '+15555550100', provider: 'telnyx', apiKey: TELNYX_KEY, publicKey: null, limits });
+    // The voice webhooks' token beside it is not Twilio's text settings: Telnyx still.
+    const pk = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+    expect(textSettings({ TEXT_FROM: '+15555550100', TELNYX_API_KEY: TELNYX_KEY, TWILIO_AUTH_TOKEN: 'tok', TELNYX_PUBLIC_KEY: pk })).toMatchObject({ provider: 'telnyx', publicKey: pk });
+  });
+
+  it('named: each with both providers\' settings given', () => {
+    const both = { TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok', TELNYX_API_KEY: TELNYX_KEY };
+    expect(textSettings({ ...both, TEXT_PROVIDER: 'telnyx' })).toMatchObject({ provider: 'telnyx', apiKey: TELNYX_KEY });
+    expect(textSettings({ ...both, TEXT_PROVIDER: ' Twilio ' })).toMatchObject({ provider: 'twilio', accountSid: SID });
+  });
+
+  it('refuses, naming the setting and the fix, a provider it does not know, Telnyx with no key, and a key with a space in it', () => {
+    expect(() => textSettings({ TEXT_FROM: '+15555550100', TEXT_PROVIDER: 'carrier' })).toThrow(/TEXT_PROVIDER is twilio or telnyx/);
+    expect(() => textSettings({ TEXT_FROM: '+15555550100', TEXT_PROVIDER: 'telnyx' })).toThrow(/TEXT_PROVIDER is telnyx, but TELNYX_API_KEY is unset: .*API Keys/);
+    expect(() => textSettings({ TEXT_FROM: '+15555550100', TEXT_PROVIDER: 'telnyx', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok' })).toThrow(/TELNYX_API_KEY is unset/);
+    expect(() => textSettings({ TEXT_FROM: '+15555550100', TEXT_PROVIDER: 'twilio', TELNYX_API_KEY: TELNYX_KEY })).toThrow(/TWILIO_ACCOUNT_SID is unset/);
+    expect(() => textSettings({ TEXT_FROM: '+15555550100', TELNYX_API_KEY: 'KEY one two' })).toThrow(/TELNYX_API_KEY has a space in it/);
+    expect(() => textSettings({ TEXT_FROM: '+15555550100', TELNYX_API_KEY: TELNYX_KEY, TELNYX_PUBLIC_KEY: 'bm90IGEga2V5' })).toThrow(/TELNYX_PUBLIC_KEY is not .*Ed25519/);
+  });
+
+  it('TEXT_FROM unset is no sender, whatever the provider', () => {
+    expect(textSettings({ TEXT_PROVIDER: 'telnyx', TELNYX_API_KEY: TELNYX_KEY })).toBeNull();
   });
 });

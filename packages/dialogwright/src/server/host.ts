@@ -63,10 +63,11 @@ export interface HostApp<A extends HostedApp = HostedApp> {
  * handoffs go when it has no transfer targets (HANDOFF_NUMBER), and its chat's sign-in: whom its tokens
  * are for (CHAT_AUDIENCE), who issues them (CHAT_ISSUER) and where that issuer's keys are
  * (CHAT_JWKS_URL), so each app's portal may use an identity provider of its own; and the number its texts are
- * sent from (TEXT_FROM: a business's own number, texts/settings.ts) and its texts' abuse limits
- * (TEXT_LIMIT_PER_NUMBER, TEXT_LIMIT_PER_HOUR, TEXT_LIMIT_EXEMPT). Absent there, the server's.
+ * sent from (TEXT_FROM: a business's own number, texts/settings.ts), the carrier they go through
+ * (TEXT_PROVIDER: the one that number is on; the carriers' keys stay the server's) and its texts' abuse
+ * limits (TEXT_LIMIT_PER_NUMBER, TEXT_LIMIT_PER_HOUR, TEXT_LIMIT_EXEMPT). Absent there, the server's.
  */
-export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL', 'TEXT_FROM', 'TEXT_LIMIT_PER_NUMBER', 'TEXT_LIMIT_PER_HOUR', 'TEXT_LIMIT_EXEMPT'];
+export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL', 'TEXT_FROM', 'TEXT_PROVIDER', 'TEXT_LIMIT_PER_NUMBER', 'TEXT_LIMIT_PER_HOUR', 'TEXT_LIMIT_EXEMPT'];
 
 /**
  * What an app's own settings file sets beyond what the server reads from it (`ignored`), in two: the
