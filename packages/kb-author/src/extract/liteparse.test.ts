@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FOLDER } from '../__fixtures__/server';
 import { extractPdf } from './pdf';
-import { fakeLiteParse, item, mergedRowsPage, scannedPages, tablePage } from '../__fixtures__/liteparse';
+import { box, fakeLiteParse, item, mergedRowsPage, scannedPages, tablePage } from '../__fixtures__/liteparse';
 import { extractPdfLiteParse, liteParseVersion } from './liteparse';
 import { readLabels } from './tables/labels';
 import { scorePdf } from './tables/score';
@@ -59,6 +59,21 @@ describe('LiteParse as the PDF reader', () => {
     expect(text).toContain('Total carbohydrates: In network: 275; Out of network: 150');
     expect(text).toContain('Fat: In network: 78; Out of network: 39');
     expect(text).not.toMatch(/1275|1502|1 78/);
+  });
+
+  it('leaves out of a table the caption LiteParse read into its first row, so it stays a heading', async () => {
+    // A title centred over the table and across its columns' edges, inside the box LiteParse gave its heading row (as it
+    // read a nutrition table's).
+    const rows = [{ label: 'Office visit', top: 130, values: ['$20', '$60'] }, { label: 'Emergency room', top: 150, values: ['$100', '$300'] }];
+    const page = tablePage(rows);
+    // In the page's order: after the sentence, before the table.
+    page.textItems.splice(2, 0, item('Fees by visit and by network', 188, 94, 14, { bold: true }));
+    const cell = (text: string, x: number, top: number, height = 12) => ({ text, bbox: box(x, top, 100, height), textItemIndices: [] });
+    const header = [cell('Service', 72, 110), cell('In network', 250, 110), cell('Fees by visit and by network Out of network', 400, 94, 28)];
+    const doc = await extractPdfLiteParse(bytes('rights-notice.pdf'), { open: fakeLiteParse(() => [{ ...page, blocks: [{ kind: 'table', header, rows: rows.map((r) => [cell(r.label, 72, r.top), ...r.values.map((v, k) => cell(v, 250 + k * 150, r.top))]), textItemIndices: [] }] }]).open });
+    const section = doc.sections.find((s) => s.id === 'fees-by-visit-and-by-network')!;
+    expect(section.heading).toBe('Fees by visit and by network');
+    expect(section.text).toBe('Office visit: In network: $20; Out of network: $60\n\nEmergency room: In network: $100; Out of network: $300');
   });
 
   it('notes a table the two readers read differently, naming the page and the figures, and one LiteParse read weakly', async () => {
