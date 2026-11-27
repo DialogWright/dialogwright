@@ -36,7 +36,10 @@ export interface OutgoingText {
   readonly media?: readonly string[];
   /**
    * The write's key (ToolContext.idempotencyKey): a text sent again with the same key on this server is
-   * not sent twice; the first receipt is returned, marked `repeat`. Absent, every send is sent.
+   * not sent twice; the first receipt is returned, marked `repeat`. Absent, every send is sent. On Telnyx
+   * the key also reaches the provider, which holds it account-wide for 24 hours: as a hash of the text with
+   * it (the numbers, the key, the words and the media: texts/telnyx.ts telnyxIdempotencyKey), so the same
+   * text sent again after a restart is sent once and no other text is taken for it.
    */
   readonly key?: string;
 }
@@ -45,7 +48,11 @@ export interface OutgoingText {
 export interface TextReceipt {
   /** The provider's message id (Twilio's "SM...", Telnyx's a UUID), null where it took none (a failure before it answered). */
   readonly id: string | null;
-  /** The provider's status as it answered, `failed`, or `limited` (refused by the sender's abuse limits before it reached the provider). */
+  /**
+   * The provider's status as it answered, `failed`, or `limited` (refused by the sender's abuse limits before
+   * it reached the provider); on Telnyx also `pending` (a text with this key still being sent: not sent
+   * again) and `duplicate` (a text Telnyx took before under this key: not sent again), neither a failure.
+   */
   readonly status: string;
   /** Why it failed, safe to record (the provider's error code and message, never a key or the body). */
   readonly error?: string;

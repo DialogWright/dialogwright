@@ -167,6 +167,9 @@ export async function shopOnText(s: Systems, m: IncomingText, ctx: TextContext):
   }
   const vars = { name: recent?.name ?? '', last4: m.from.replace(/\D/g, '').slice(-4), vehicle: recent?.vehicle ?? '' };
   const line = recent === undefined ? textLine('unknownForward', vars) : textLine(media.length > 0 ? 'photoForward' : 'textForward', vars);
+  // The photo goes on by its URL; nothing is resized. Through Telnyx, media over its limit (under 1 MB in all,
+  // guide 13.17) are refused: the forward is kept `failed` (shown so on the shop page), or stays `queued` where
+  // Telnyx refuses it only after taking it; the photo itself is kept above, as it came in, and shown.
   await sendText(s, ctx.texts, ctx.nowMs, s.nextRef('T', s.texts.length), ctx.env(SHOP_PHONE) ?? '', forwardBody(line, m.body), line, { media });
   // The thank-you promises a price, so it goes only before the request is quoted, and to the number on file.
   if (recent !== undefined && number !== null && recent.textOk === 'yes' && media.length > 0 && s.quotesOf(recent.ref).length === 0) await sendText(s, ctx.texts, ctx.nowMs, s.nextRef('T', s.texts.length), `+1${number}`, textLine('photoThanks'), textLine('photoThanks'));

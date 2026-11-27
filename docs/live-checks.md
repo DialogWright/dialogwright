@@ -392,8 +392,9 @@ Say `I need to move my appointment to next week`, then quit.
 
 1. **A text sent.** Call, ask for a repair, say yes to being texted and confirm the request. Your phone gets the photo request from the business's number, the shop's phone its summary. The audit's `text_sent` rows say `provider: telnyx`, a UUID id and `status: queued`; nothing in the log or the audit holds a number whole or the key.
 2. **A photo texted back.** Reply to the photo request with a photo. The server's log has `/messages/telnyx <id> from ...<last four>: ... 1 media`, with no `not at the provider's own URLs dropped`; the audit's `text_received` says `provider: telnyx`, `media: 1`. The shop's phone gets the photo forwarded, and the shop page shows it. A photo counted as dropped means Telnyx kept it at another host: note the host (from Telnyx's message detail, never the log) for `TELNYX_MEDIA_PREFIX` in `texts/telnyx.ts`.
-3. **The status events.** The log has `/messages/telnyx <id>: message.sent (sent), a text sent: set aside`, then `message.finalized (delivered)`, for each text sent; nothing more is done with them.
-4. **The quote's reply.** On the shop page, quote the request; reply CONFIRM from your phone: the booking is made, as on Twilio.
+3. **A full-size photo.** Reply with a photo straight from a phone's camera (several MB). Note what the shop's phone gets and the forward's status on the shop page: `failed` (Telnyx refused it as it was sent), `queued` with nothing delivered (refused after), or delivered (resized by the carrier or the profile's MMS transcoding); and whether the profile has MMS transcoding on.
+4. **The status events.** The log has `/messages/telnyx <id>: message.sent (sent), a text sent: set aside`, then `message.finalized (delivered)`, for each text sent; nothing more is done with them.
+5. **The quote's reply.** On the shop page, quote the request; reply CONFIRM from your phone: the booking is made, as on Twilio.
 
 **Record.** One row per step in the results log, with the media host seen and any field of Telnyx's answer or webhook the adapter did not expect.
 

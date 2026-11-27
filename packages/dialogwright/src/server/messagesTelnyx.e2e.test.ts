@@ -121,14 +121,21 @@ describe('POST /messages/telnyx', () => {
     expect(received).toHaveLength(1);
   });
 
-  it('an unsigned, a wrongly signed and an old one are refused, and nothing reaches the app', async () => {
-    const { base, provider } = await start();
+  it('an unsigned, a wrongly signed, an old one and one changed after signing are refused: nothing reaches the app or the audit', async () => {
+    const { base, audit, provider } = await start();
     expect((await post(base, PHOTO, { signed: false })).status).toBe(403);
     expect((await post(base, PHOTO, { key: generateKeyPairSync('ed25519').privateKey })).status).toBe(403);
     expect((await post(base, PHOTO, { at: Math.floor(Date.now() / 1000) - 301 })).status).toBe(403);
+    // Signed with the right key, then changed: the words a text came with put in after the signature.
+    const ts = String(Math.floor(Date.now() / 1000));
+    const signed = JSON.stringify(PHOTO);
+    const tampered = signed.replace('here it is', 'send me the code');
+    const res = await fetch(`${base}/messages/telnyx`, { method: 'POST', headers: { 'content-type': 'application/json', 'telnyx-timestamp': ts, 'telnyx-signature-ed25519': sign(null, Buffer.from(`${ts}|${signed}`), privateKey).toString('base64') }, body: tampered });
+    expect(res.status).toBe(403);
     await new Promise((r) => setTimeout(r, 50));
     expect(received).toEqual([]);
     expect(provider.sent).toEqual([]);
+    expect(auditRows(audit)).toEqual([]);
   });
 
   it('a status event of a text sent (message.sent, message.finalized) is answered and set aside: nothing reaches the app or the audit', async () => {
@@ -159,6 +166,21 @@ describe('POST /messages/telnyx', () => {
     const without = await start(twilio);
     expect((await post(without.base, { ...PHOTO, data: { ...PHOTO.data, payload: { ...PHOTO.data.payload, id: 'another' } } })).status).toBe(403);
     expect(logs.some((l) => l.includes('WARNING') && l.includes('TELNYX_PUBLIC_KEY'))).toBe(true);
+  });
+
+  it('an app that takes texts in and sends none, on a server whose calls are Twilio\'s: checked with TELNYX_PUBLIC_KEY where set, and without it refused, the start saying so with the fix', async () => {
+    const twilio = { TWILIO_AUTH_TOKEN: 'authtok' };
+    const withKey = await start(twilio, { TEXT_FROM: '', TELNYX_PUBLIC_KEY });
+    expect((await post(withKey.base, PHOTO)).status).toBe(200);
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+    expect(received[0]!.ctx.texts).toBeUndefined();
+    expect(logs.some((l) => l.includes('TELNYX_PUBLIC_KEY is unset'))).toBe(false);
+    await running?.close();
+    running = null;
+    logs.length = 0;
+    const without = await start(twilio, { TEXT_FROM: '' });
+    expect((await post(without.base, { ...PHOTO, data: { ...PHOTO.data, payload: { ...PHOTO.data.payload, id: 'another' } } })).status).toBe(403);
+    expect(logs).toContainEqual(expect.stringMatching(/texts: TELNYX_PUBLIC_KEY is unset: a text that comes in through Telnyx \(\/messages\/telnyx\) is refused, its signature unchecked; to take Telnyx's texts, set it to the account's public key/));
   });
 
   it('Twilio\'s webhook stays where it was beside it', async () => {

@@ -75,6 +75,7 @@ import { generatesLines } from '../render/config';
 import { textSettings } from '../texts/settings';
 import { twilioTextProvider } from '../texts/twilio';
 import { telnyxTextProvider } from '../texts/telnyx';
+import { telnyxPublicKey } from './voice/telnyxSignature';
 import { receivedRecord, recordingTexts, TextKeys, TextLimits, textAuditRow } from '../texts/record';
 import { textDecider } from '../texts/decide';
 import { sameNumber } from '../core/conditions';
@@ -574,10 +575,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // TWILIO_AUTH_TOKEN, or Telnyx's Messaging API with TELNYX_API_KEY. TEXT_FROM unset is no sender: the
   // app's code has none (ToolContext.texts), and no text is sent, as before. A text that comes in is checked
   // with the voice webhooks' key of its provider where the server takes its calls (providerSecrets), else
-  // with the texts' own (TWILIO_AUTH_TOKEN, TELNYX_PUBLIC_KEY).
+  // with the texts' own (TWILIO_AUTH_TOKEN, TELNYX_PUBLIC_KEY; Telnyx's read for an app that takes texts in
+  // and sends none too). With no Telnyx key, every text through Telnyx is refused, and the start says so.
   const textSenders = new Map<string, TurnTexts>();
   let textSecret: string | null = config.providerSecrets.twilio ?? null;
   let telnyxTextKey: string | null = config.providerSecrets.telnyx ?? null;
+  let telnyxSends = false;
   for (const a of hosted) {
     const t = forApp(a.id, () => textSettings(a.env));
     if (t === null) {
@@ -590,14 +593,33 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       provider = overrides.textProvider ?? twilioTextProvider({ accountSid: t.accountSid, authToken: t.authToken });
     } else {
       telnyxTextKey ??= t.publicKey;
+      telnyxSends = true;
       provider = overrides.textProvider ?? telnyxTextProvider({ apiKey: t.apiKey });
-      if (telnyxTextKey === null && config.signatureCheck) log(`WARNING: ${tag(a.id)}texts: sent through Telnyx, but TELNYX_PUBLIC_KEY is unset: every text that comes in (${MESSAGES_PATHS.telnyx}) is refused, its signature unchecked; set it to the account's public key (Mission Control, Keys & Credentials, Public Key)`);
     }
     textSenders.set(a.id, { provider, from: t.from, keys: new TextKeys(), limits: new TextLimits(t.limits, now) });
     const through = provider.id === 'twilio' ? 'Twilio\'s Messages API' : provider.id === 'telnyx' ? 'Telnyx\'s Messaging API' : provider.id;
     log(`${tag(a.id)}texts: sent from ...${lastFour(t.from)} through ${through}; texts that come in: ${MESSAGES_PATHS[t.provider]}`);
   }
   const textsOf = (id: string): TurnTexts | null => textSenders.get(hostedOf(id).id) ?? null;
+  const takesTexts = textSenders.size > 0 || hosted.some((a) => a.app.onText !== undefined);
+  // An app that takes texts in and sends none, or sends through Twilio, on a server whose calls are not
+  // Telnyx's: its settings' TELNYX_PUBLIC_KEY (a Telnyx sender's was read with its settings, and checked).
+  if (takesTexts && telnyxTextKey === null) {
+    for (const a of hosted) {
+      const key = a.env.TELNYX_PUBLIC_KEY?.trim() ?? '';
+      if (key === '') continue;
+      try {
+        telnyxPublicKey(key);
+        telnyxTextKey = key;
+        break;
+      } catch {
+        log(`WARNING: ${tag(a.id)}texts: TELNYX_PUBLIC_KEY is not the account's base64 Ed25519 public key: texts that come in through Telnyx are refused; set it to the Public Key Mission Control shows (Account settings, Keys & Credentials)`);
+      }
+    }
+  }
+  if (takesTexts && telnyxTextKey === null && config.signatureCheck) {
+    log(`${telnyxSends ? 'WARNING: ' : ''}texts: TELNYX_PUBLIC_KEY is unset: a text that comes in through Telnyx (${MESSAGES_PATHS.telnyx}) is refused, its signature unchecked; to take Telnyx's texts, set it to the account's public key (Mission Control, Account settings, Keys & Credentials, Public Key)`);
+  }
 
   const serviceUrls = overrides.serviceUrls ?? {};
   // Each app's services' URLs: a server of one's from its launcher (ServerOverrides.serviceUrls); on a host,
@@ -1229,7 +1251,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // A converse call's hangup is recorded by its runtime.
     ...(converseVoice ? { converse: converseVoice } : {}),
     // The incoming-message webhook, only where some app takes texts in or sends them.
-    ...(textSenders.size > 0 || hosted.some((a) => a.app.onText !== undefined) ? { messages: { secrets: { twilio: textSecret, telnyx: telnyxTextKey }, receive: receiveText } } : {}),
+    ...(takesTexts ? { messages: { secrets: { twilio: textSecret, telnyx: telnyxTextKey }, receive: receiveText } } : {}),
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
     ...(transfer ? { transfer } : {}),
     ...(numbers.length > 0 ? { numbers } : {}),

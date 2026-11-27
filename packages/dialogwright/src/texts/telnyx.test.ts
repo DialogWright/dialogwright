@@ -39,15 +39,40 @@ describe('Telnyx\'s sender', () => {
     expect(JSON.parse(String(f.calls[0]!.init.body))).toEqual({ from: '+15555550100', to: '+15555550177', text: 'Reply with a photo.', media_urls: ['https://media.telnyx.com/a.jpg', 'https://example.com/b.png'] });
   });
 
-  it('a text with no media sends no media_urls; one with a key sends its hash as the Idempotency-Key, never the key', async () => {
+  it('a text with no media sends no media_urls; one with a key sends a hash as the Idempotency-Key, never the key', async () => {
     const f = telnyxFetch();
     await telnyxTextProvider({ apiKey: KEY, fetch: f }).send({ from: '+15555550100', to: '+15555550177', body: 'x', key: 'quote R101 2' });
     const body = JSON.parse(String(f.calls[0]!.init.body)) as Record<string, unknown>;
     expect(body).toEqual({ from: '+15555550100', to: '+15555550177', text: 'x' });
     const headers = f.calls[0]!.init.headers as Record<string, string>;
-    expect(headers['idempotency-key']).toBe(telnyxIdempotencyKey('quote R101 2'));
-    expect(headers['idempotency-key']).toBe(createHash('sha256').update('quote R101 2', 'utf8').digest('hex'));
-    expect(headers['idempotency-key']).toMatch(/^[A-Za-z0-9_-]{1,255}$/);
+    expect(headers['idempotency-key']).toBe(telnyxIdempotencyKey({ from: '+15555550100', to: '+15555550177', body: 'x', key: 'quote R101 2' }));
+    expect(headers['idempotency-key']).toMatch(/^[0-9a-f]{64}$/);
+    expect(headers['idempotency-key']).not.toBe(createHash('sha256').update('quote R101 2', 'utf8').digest('hex'));
+  });
+
+  it('the Idempotency-Key is held account-wide by Telnyx, so it is the text\'s: its sender, recipient, key and content', () => {
+    const text = { from: '+15555550100', to: '+15555550177', body: 'Your quote is $120.', media: ['https://media.telnyx.com/a.jpg'], key: 'quote R101 2' };
+    const same = telnyxIdempotencyKey(text);
+    // The same text sent again (a restart, a takeover): the same header, so Telnyx sends it once.
+    expect(telnyxIdempotencyKey({ ...text, from: '5555550100', to: '(555) 555-0177', media: ['https://media.telnyx.com/a.jpg'] })).toBe(same);
+    // Anything else is another text, never taken for this one.
+    const others = [
+      { ...text, from: '+15555550101' },
+      { ...text, to: '+15555550178' },
+      { ...text, key: 'quote R101 3' },
+      { ...text, body: 'Your quote is $125.' },
+      { ...text, media: ['https://media.telnyx.com/b.jpg'] },
+      { ...text, media: [] },
+      { ...text, media: undefined },
+    ].map(telnyxIdempotencyKey);
+    for (const o of others) expect(o).not.toBe(same);
+    expect(new Set(others).size).toBe(others.length - 1);
+  });
+
+  it('a photo with no words sends no text (Telnyx takes text only non-empty), its media alone', async () => {
+    const f = telnyxFetch();
+    await telnyxTextProvider({ apiKey: KEY, fetch: f }).send({ from: '+15555550100', to: '+15555550177', body: '', media: ['https://media.telnyx.com/a.jpg'] });
+    expect(JSON.parse(String(f.calls[0]!.init.body))).toEqual({ from: '+15555550100', to: '+15555550177', media_urls: ['https://media.telnyx.com/a.jpg'] });
   });
 
   it('a send Telnyx replays for its key is marked repeat', async () => {
@@ -58,6 +83,38 @@ describe('Telnyx\'s sender', () => {
   it('a refusal is a failed receipt with the first error\'s code and words, numbers and addresses masked, never a throw', async () => {
     const p = telnyxTextProvider({ apiKey: KEY, fetch: telnyxFetch(422, { errors: [{ code: '40310', title: 'Invalid \'to\' address', detail: 'The destination +15555550177 is invalid; see https://developers.telnyx.com/x' }] }) });
     expect(await p.send({ from: '+15555550100', to: '+15555550177', body: 'x' })).toEqual({ id: null, status: 'failed', error: 'HTTP 422 40310: Invalid \'to\' address: The destination [number] is invalid; see [url]' });
+  });
+
+  it('a keyed send Telnyx says is still in progress (409) or could not hold to its key (503) is asked once more with the same key', async () => {
+    for (const status of [409, 503]) {
+      const answers = [new Response(JSON.stringify({ errors: [{ code: status === 409 ? '10036' : '10016', title: 'x' }] }), { status }), new Response(JSON.stringify({ data: { id: 'm-2', to: [{ status: 'queued' }] } }), { status: 200, headers: { 'idempotent-replayed': status === 409 ? 'true' : 'false' } })];
+      const calls: RequestInit[] = [];
+      const f = (async (_: string, init: RequestInit) => { calls.push(init); return answers.shift()!; }) as unknown as typeof fetch;
+      const r = await telnyxTextProvider({ apiKey: KEY, fetch: f, retryAfterMs: 0 }).send({ from: '+15555550100', to: '+15555550177', body: 'x', key: 'k' });
+      expect(calls).toHaveLength(2);
+      expect((calls[0]!.headers as Record<string, string>)['idempotency-key']).toBe((calls[1]!.headers as Record<string, string>)['idempotency-key']);
+      expect(r).toEqual(status === 409 ? { id: 'm-2', status: 'queued', repeat: true } : { id: 'm-2', status: 'queued' });
+    }
+  });
+
+  it('a 409 twice is the text still being sent (pending), never a failure; a 503 twice was not sent (failed), said so', async () => {
+    const always = (status: number, code: string) => (async () => new Response(JSON.stringify({ errors: [{ code, title: 'Idempotency' }] }), { status })) as unknown as typeof fetch;
+    expect(await telnyxTextProvider({ apiKey: KEY, fetch: always(409, '10036'), retryAfterMs: 0 }).send({ from: '+15555550100', to: '+15555550177', body: 'x', key: 'k' })).toEqual({ id: null, status: 'pending', error: 'HTTP 409 10036: Telnyx is still sending a text with this key; not sent again' });
+    expect(await telnyxTextProvider({ apiKey: KEY, fetch: always(503, '10016'), retryAfterMs: 0 }).send({ from: '+15555550100', to: '+15555550177', body: 'x', key: 'k' })).toEqual({ id: null, status: 'failed', error: 'HTTP 503 10016: Telnyx could not hold the text to its key, and did not send it; send it again with the same key' });
+  });
+
+  it('a 422 for a keyed send is a text Telnyx took before with this key (duplicate), not sent again and never a failure', async () => {
+    const f = (async () => new Response('', { status: 422 })) as unknown as typeof fetch;
+    expect(await telnyxTextProvider({ apiKey: KEY, fetch: f, retryAfterMs: 0 }).send({ from: '+15555550100', to: '+15555550177', body: 'x', key: 'k' })).toEqual({ id: null, status: 'duplicate', error: 'HTTP 422: Telnyx took another request with this key in the last 24 hours; this one was not sent' });
+  });
+
+  it('without a key, a 409, 422 or 503 is asked once only and is a plain failure (no key holds a second ask to one text)', async () => {
+    for (const status of [409, 422, 503]) {
+      let n = 0;
+      const f = (async () => { n += 1; return new Response('', { status }); }) as unknown as typeof fetch;
+      expect(await telnyxTextProvider({ apiKey: KEY, fetch: f, retryAfterMs: 0 }).send({ from: '+15555550100', to: '+15555550177', body: 'x' })).toEqual({ id: null, status: 'failed', error: `HTTP ${status}` });
+      expect(n).toBe(1);
+    }
   });
 
   it('a refusal with no body, and a fetch that throws, are failed receipts', async () => {

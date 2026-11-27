@@ -540,10 +540,12 @@ export function googleCalendarChecks(calendarId: string | undefined, env: Env): 
 /**
  * Texts (the guide's 13.17): with TEXT_FROM set, the number texts are sent from (by its last four) and the
  * provider they go through (TEXT_PROVIDER, or the one whose credentials are given), or the setting the
- * server would refuse. Through Telnyx: its API key by its prefix and length, never its value; the messaging
- * webhook's URL to set on the number's messaging profile; and TELNYX_PUBLIC_KEY, without which every text
- * that comes in is refused. Nothing with TEXT_FROM unset (no texts, the default). No text is sent, and
- * neither Twilio nor Telnyx is asked.
+ * server would refuse. Through Telnyx: its API key by its length and whether it starts KEY, never a
+ * character of it; the messaging webhook's URL to set on the number's messaging profile; and
+ * TELNYX_PUBLIC_KEY, without which every text that comes in is refused (said too with TEXT_FROM unset where
+ * Telnyx's texts are set up, TELNYX_API_KEY or TEXT_PROVIDER=telnyx: an app may take texts in and send none).
+ * Nothing else with TEXT_FROM unset (no texts, the default). No text is sent, and neither Twilio nor Telnyx
+ * is asked.
  */
 export function textChecks(env: Env): CheckResult[] {
   let t: ReturnType<typeof textSettings>;
@@ -552,7 +554,11 @@ export function textChecks(env: Env): CheckResult[] {
   } catch (e) {
     return [{ id: 'texts', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file, or unset TEXT_FROM to send no texts' }];
   }
-  if (t === null) return [];
+  const signatures = env.SIGNATURE_CHECK?.trim().toLowerCase() !== 'off';
+  const unchecked: CheckResult = { id: 'texts', status: 'warn', message: 'TELNYX_PUBLIC_KEY is unset: every text that comes in through Telnyx is refused, its signature unchecked', fix: 'set TELNYX_PUBLIC_KEY to the account\'s public key (Mission Control, Account settings, Keys & Credentials, Public Key)' };
+  const noPublicKey = (env.TELNYX_PUBLIC_KEY?.trim() ?? '') === '';
+  // No sender, but Telnyx's texts set up (its key, or TEXT_PROVIDER naming it): an app that takes texts in is sent them at /messages/telnyx.
+  if (t === null) return signatures && noPublicKey && ((env.TELNYX_API_KEY?.trim() ?? '') !== '' || env.TEXT_PROVIDER?.trim().toLowerCase() === 'telnyx') ? [unchecked] : [];
   const out: CheckResult[] = [];
   if ((env.TEXT_PROVIDER?.trim() ?? '') === '' && (env.TWILIO_ACCOUNT_SID?.trim() ?? '') !== '' && (env.TELNYX_API_KEY?.trim() ?? '') !== '') {
     out.push({ id: 'texts', status: 'warn', message: 'TWILIO_ACCOUNT_SID and TELNYX_API_KEY are both set and TEXT_PROVIDER is unset: texts are sent through Twilio', fix: 'set TEXT_PROVIDER=telnyx to send through Telnyx, or TEXT_PROVIDER=twilio to say so' });
@@ -564,7 +570,7 @@ export function textChecks(env: Env): CheckResult[] {
   const host = (env.PUBLIC_HOST?.trim() ?? '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const url = `https://${host === '' || host === 'quick' ? '<PUBLIC_HOST>' : host}/messages/telnyx`;
   const last4 = t.from.slice(-4);
-  out.unshift({ id: 'texts', status: 'ok', message: `texts sent from ...${last4} through Telnyx's Messaging API (TELNYX_API_KEY set: starts ${t.apiKey.slice(0, 3)}, ${t.apiKey.length} characters); texts that come in: POST ${url}, set as the inbound webhook URL of the messaging profile ...${last4} is on (Mission Control, Messaging); a US local number's texts are delivered only once its 10DLC brand and campaign are registered with Telnyx` });
+  out.unshift({ id: 'texts', status: 'ok', message: `texts sent from ...${last4} through Telnyx's Messaging API (TELNYX_API_KEY set: ${t.apiKey.length} characters${t.apiKey.startsWith('KEY') ? ', starting KEY as a Telnyx API key does' : ''}); texts that come in: POST ${url}, set as the inbound webhook URL of the messaging profile ...${last4} is on (Mission Control, Messaging); a US local number's texts are delivered only once its 10DLC brand and campaign are registered with Telnyx` });
   let isPublicKey = false;
   try {
     telnyxPublicKey(t.apiKey);
@@ -575,9 +581,7 @@ export function textChecks(env: Env): CheckResult[] {
   const keyFix = 'paste the API key from Mission Control, Account settings, Keys & Credentials, API Keys';
   if (isPublicKey) out.push({ id: 'texts', status: 'warn', message: 'TELNYX_API_KEY is the account\'s public key, which checks webhooks and sends nothing', fix: keyFix });
   else if (!t.apiKey.startsWith('KEY')) out.push({ id: 'texts', status: 'warn', message: `TELNYX_API_KEY does not start with KEY, as a Telnyx API key does (${t.apiKey.length} characters)`, fix: keyFix });
-  if (t.publicKey === null && env.SIGNATURE_CHECK?.trim().toLowerCase() !== 'off') {
-    out.push({ id: 'texts', status: 'warn', message: 'TELNYX_PUBLIC_KEY is unset: every text that comes in through Telnyx is refused, its signature unchecked', fix: 'set TELNYX_PUBLIC_KEY to the account\'s public key (Mission Control, Account settings, Keys & Credentials, Public Key)' });
-  }
+  if (t.publicKey === null && signatures) out.push(unchecked);
   return out;
 }
 

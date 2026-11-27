@@ -229,6 +229,21 @@ describe('the shop page', () => {
     expect(html).not.toContain('media.telnyx.com.example.com');
   });
 
+  it('a photo the carrier will not forward (over Telnyx\'s size limit): the forward is failed, said so, and the page still has the photo as it came in', async () => {
+    const sys = newSystems();
+    await run(sys, 'send_request', REQUEST, 'k-r1', T0);
+    const telnyx = 'https://media.telnyx.com/abc123/big.jpg';
+    // Telnyx's refusal as its sender reports it (texts/telnyx.ts): a failed receipt, never a throw.
+    const refusing: Texts = { send: async (t) => (t.media !== undefined && t.media.length > 0 ? { id: null, status: 'failed', error: 'HTTP 400 40008: Media too large' } : { id: 'm-1', status: 'queued' }) };
+    await onText(sys, { ...message('+15555550177', '', [telnyx]), provider: 'telnyx' }, { ...textCtx(T0 + 40 * MIN), texts: refusing, env: (n) => (n === 'SHOP_PHONE' ? '+15555550101' : undefined) });
+    const forward = sys.texts.find((t) => t.to === '+15555550101');
+    expect(forward).toMatchObject({ status: 'failed', media: [telnyx] });
+    const html = shopPageHtml(shopView(sys), OPTIONS);
+    expect(html).toContain('<span class="badge warn">failed</span>');
+    // The photo itself, as it came in, is still on the page.
+    expect(html.split(`<img src="${telnyx}"`).length - 1).toBeGreaterThanOrEqual(1);
+  });
+
   it('escapes everything a caller gave, shows no photo that is not at Twilio\'s media URL, and says so when it is empty', async () => {
     const sys = newSystems();
     await run(sys, 'send_request', { ...REQUEST, callerName: '<script>alert(1)</script>', vehicle: '"><img src=x onerror=alert(1)>' }, 'k-r1', T0);
