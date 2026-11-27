@@ -28,12 +28,14 @@ import type { Rule } from './tables/rules';
  *   LiteParse dropped an empty cell before it. Our readers run on the same lines; where both found a table
  *   and a figure one reading has is not in the other's, or our checker scores LiteParse's weak, the
  *   author is told (./pdf.ts `secondOpinion`): neither reading is chosen silently.
- * - A page with no text layer (no item with text) is read again with LiteParse's OCR, Tesseract always
+ * - A page with no text layer (no item with text) that LiteParse's own complexity check calls a scan
+ *   (`scanned` among its reasons: one image over 90% of the page) is read again with LiteParse's OCR, Tesseract always
  *   named (LiteParse's own OCR model, OCRia-nano, has a restrictive licence and no Intel macOS build, and
  *   pulling it would change how LiteParse reads tables), in English unless the author names another
  *   language. Each section with text from such a page is marked `ocr: true`, and the page is noted, so the
  *   person approving reads it against the page. The first OCR on a machine downloads Tesseract's language
- *   data (about 15 MB): `onOcr` is told before it.
+ *   data (about 15 MB): `onOcr` is told before it. A page with no text layer that is no scan (a drawing in
+ *   vector lines, pictures, a blank page) is not read, and noted: OCR would make garbled text of it.
  * - The page count is read first by pdf.js (./pdf.ts `pdfFacts`, with its metadata title): a document of
  *   more than 500 pages is refused before LiteParse reads a page.
  *
@@ -95,6 +97,8 @@ export interface LpPage {
   readonly height: number;
   readonly textItems: readonly LpTextItem[];
   readonly blocks?: readonly LpBlock[];
+  /** LiteParse's own reading of the page (`includeComplexity`): `scanned` among its reasons, or one image over the page, is a scan. */
+  readonly complexity?: { readonly reasons: readonly string[]; readonly fullPageImage: boolean };
   readonly vectorGraphics?: {
     readonly shapes: readonly { readonly bbox: LpRect; readonly stroke: boolean; readonly fill: boolean; readonly hasCurve: boolean }[];
     readonly lines: readonly { readonly x1: number; readonly y1: number; readonly x2: number; readonly y2: number; readonly stroke: boolean }[];
@@ -145,6 +149,7 @@ export const openLiteParse: LiteParseOpen = (config) => ({
       emitWordBoxes: true,
       extractTextMetadata: true,
       extractVectorGraphics: true,
+      includeComplexity: true,
       outputFormat: 'json',
       quiet: true,
     });
@@ -397,6 +402,8 @@ export interface LiteParseOptions {
 }
 
 const hasText = (page: LpPage): boolean => page.textItems.some((t) => t.text.trim() !== '');
+/** A page LiteParse's complexity check calls a scan: `scanned` among its reasons, or one image over the page. */
+const isScan = (page: LpPage): boolean => page.complexity !== undefined && (page.complexity.reasons.includes('scanned') || page.complexity.fullPageImage);
 
 /** The sections of a document read from pages some of which OCR read, each with text from one of them marked. */
 function markOcr(sections: readonly ExtractedSection[], ocrPages: ReadonlySet<number>): ExtractedSection[] {
@@ -417,9 +424,15 @@ export async function extractPdfLiteParse(bytes: Uint8Array, options: LiteParseO
   const open = options.open ?? openLiteParse;
   const first = await open({ ocrEnabled: false, ocrLanguage, maxPages }).parse(bytes);
   const byPage = new Map(first.pages.map((p) => [p.pageNum, p]));
-  const blank = first.pages.filter((p) => !hasText(p)).map((p) => p.pageNum);
+  // Each page's note, said in the pages' order. A page with no text: a scan is read by OCR below; any other
+  // (a drawing, pictures, a blank page) is noted, not read.
+  const byPageNote = new Map<number, string>();
+  const blank: number[] = [];
+  for (const p of first.pages.filter((p) => !hasText(p))) {
+    if (isScan(p)) blank.push(p.pageNum);
+    else byPageNote.set(p.pageNum, `page ${p.pageNum} has no text layer and looks like a drawing: not read`);
+  }
   const ocrPages = new Set<number>();
-  const notes: string[] = [];
   if (blank.length > 0) {
     options.onOcr?.(`a PDF page with no text layer is read by OCR (Tesseract, ${ocrLanguage}); the first OCR on this machine downloads Tesseract's language data for it (about 15 MB)`);
     const second = await open({ ocrEnabled: true, ocrLanguage, maxPages, targetPages: blank.join(',') }).parse(bytes);
@@ -427,9 +440,10 @@ export async function extractPdfLiteParse(bytes: Uint8Array, options: LiteParseO
       if (!blank.includes(p.pageNum) || !hasText(p)) continue;
       byPage.set(p.pageNum, p);
       ocrPages.add(p.pageNum);
-      notes.push(`page ${p.pageNum}: it has no text layer, so it was read by OCR (Tesseract, ${ocrLanguage}): read its sections against the page before approving a passage from them`);
+      byPageNote.set(p.pageNum, `page ${p.pageNum}: it has no text layer, so it was read by OCR (Tesseract, ${ocrLanguage}): read its sections against the page before approving a passage from them`);
     }
   }
+  const notes = [...byPageNote.entries()].sort((a, b) => a[0] - b[0]).map(([, n]) => n);
   const read = pagesOfLiteParse([...byPage.values()]);
   const doc = readPages(read.pages, new Map(), notes, { name: 'LiteParse', grids: read.grids });
   // A note said once: two of LiteParse's tables over one of ours can differ from it in the same words.

@@ -80,9 +80,9 @@ export function mergedRowsPage(): LpPage {
   );
 }
 
-/** Two pages, the second with no text layer: what LiteParse gives with OCR off, and with OCR on for page 2 (its items with a confidence). */
+/** Two pages, the second a scan (no text layer, one image over the page, LiteParse's complexity says `scanned`): what LiteParse gives with OCR off, and with OCR on for page 2 (its items with a confidence). */
 export function scannedPages(config: LiteParseConfig): LpPage[] {
   const first: LpPage = { pageNum: 1, width: 612, height: 792, textItems: [item('Opening hours', 72, 60, 14), item('The branch opens at nine.', 72, 82)] };
-  if (!config.ocrEnabled) return [first, { pageNum: 2, width: 612, height: 792, textItems: [] }];
+  if (!config.ocrEnabled) return [first, { pageNum: 2, width: 612, height: 792, textItems: [], complexity: { reasons: ['scanned'], fullPageImage: true } }];
   return [{ pageNum: 2, width: 612, height: 792, textItems: [item('Late fees', 72, 60, 14, { confidence: 0.9 }), item('Each day late is 25 cents.', 72, 82, 10, { confidence: 0.92 })] }];
 }

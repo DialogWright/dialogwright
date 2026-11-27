@@ -470,19 +470,24 @@ function sayFigures(figures: readonly string[]): string {
 }
 
 /**
- * The notes on another reader's tables of a page: each it read weakly by our checker, and each where our
+ * The notes on another reader's tables of a page: each it read weakly by our checker, each where our
  * readers, on the same lines, found a table too and a figure one reading has is not in the other's (a
- * figure with its row's label: ./pdfTables.ts figuresOf). Neither reading is chosen silently: the author
- * checks such a table against the source.
+ * figure with its row's label: ./pdfTables.ts figuresOf), and each table our readers found where it read
+ * text. Neither reading is chosen silently: the author checks such a table against the source.
  */
 export function secondOpinion(page: number, lines: readonly Line[], rules: readonly Rule[], theirs: readonly TableRead[], name: string): string[] {
   const notes: string[] = [];
-  if (theirs.length === 0) return notes;
   const ours = readTables(lines, rules).tables;
+  if (theirs.length + ours.length === 0) return notes;
   const size = (t: TableRead): string => {
     const rows = t.table.grid.rows.length - t.table.grid.headRows;
     return `a table of ${t.table.grid.columns.length} columns and ${rows} row${rows === 1 ? '' : 's'}`;
   };
+  // A table only ours found: the other reader read its lines as text.
+  const theirLines = new Set(theirs.flatMap((t) => linesIn(t.table.grid, lines)));
+  for (const o of ours) {
+    if (!linesIn(o.table.grid, lines).some((i) => theirLines.has(i))) notes.push(`page ${page}: our reader found ${size(o)} here that ${name} read as text: check against the source`);
+  }
   for (const t of theirs) {
     if (t.check.score < WEAK) notes.push(`page ${page}: ${size(t)} read by ${name} read weakly (${t.check.score.toFixed(2)}): ${t.check.problems.join('; ')}`);
     const members = new Set(linesIn(t.table.grid, lines));

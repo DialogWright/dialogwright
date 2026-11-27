@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FOLDER } from '../__fixtures__/server';
 import { extractPdf } from './pdf';
 import { box, fakeLiteParse, item, mergedRowsPage, scannedPages, tablePage } from '../__fixtures__/liteparse';
-import { extractPdfLiteParse, liteParseVersion } from './liteparse';
+import { extractPdfLiteParse, liteParseVersion, type LiteParseConfig, type LpPage } from './liteparse';
 import { readLabels } from './tables/labels';
 import { scorePdf } from './tables/score';
 
@@ -87,6 +87,15 @@ describe('LiteParse as the PDF reader', () => {
     ]);
   });
 
+  it('notes a table our reader found that LiteParse read as text, in that direction too', async () => {
+    // The same table, but LiteParse gave no table block for it.
+    const page = tablePage([{ label: 'Office visit', top: 130, values: ['$20', '$60'] }, { label: 'Emergency room', top: 150, values: ['$100', '$300'] }], []);
+    const doc = await extractPdfLiteParse(bytes('rights-notice.pdf'), { open: fakeLiteParse(() => [page]).open });
+    expect(doc.notes).toEqual(['page 1: our reader found a table of 3 columns and 2 rows here that LiteParse read as text: check against the source']);
+    // LiteParse's reading, the lines as text, is the one written.
+    expect(doc.sections.find((s) => s.id === 'visit-costs')!.text).not.toContain('In network: $20');
+  });
+
   it('reads a page with no text layer by OCR (Tesseract), marks its sections, notes it, and says once that OCR may download its language data', async () => {
     const fake = fakeLiteParse(scannedPages, 2);
     const said: string[] = [];
@@ -121,6 +130,33 @@ describe('LiteParse as the PDF reader', () => {
     // Ours reads the PDF itself (no such table on its page); LiteParse's reading (the fake's page) has it whole.
     expect(score.tables[0]!.reader).toBeUndefined();
     expect(score.tables[0]!.liteparse).toMatchObject({ reader: 'liteparse', check: 1, cells: { right: 6, of: 6 }, rows: { right: 2, of: 2 }, heads: { right: 3, of: 3 } });
+  });
+
+  it('reads by OCR only a page LiteParse calls scanned; a page with no text that is a drawing is noted, not read', async () => {
+    const pages = (config: LiteParseConfig): LpPage[] => {
+      if (config.ocrEnabled) return scannedPages(config);
+      const [first, scan] = scannedPages(config);
+      // Page 3: no text, and no image over the page (a drawing in vector lines, as a datasheet's package outline).
+      return [first!, scan!, { pageNum: 3, width: 612, height: 792, textItems: [], complexity: { reasons: ['no-text'], fullPageImage: false } }];
+    };
+    const fake = fakeLiteParse(pages, 3);
+    const doc = await extractPdfLiteParse(bytes('rights-notice.pdf'), { open: fake.open });
+    expect(fake.configs.map((c) => c.targetPages)).toEqual([undefined, '2']);
+    expect(doc.sections.map((s) => [s.id, s.page, s.ocr])).toEqual([
+      ['opening-hours', 1, undefined],
+      ['late-fees', 2, true],
+    ]);
+    expect(doc.notes).toEqual([
+      'page 2: it has no text layer, so it was read by OCR (Tesseract, eng): read its sections against the page before approving a passage from them',
+      'page 3 has no text layer and looks like a drawing: not read',
+    ]);
+    // Only drawings: no OCR at all, and nothing said of a download.
+    const said: string[] = [];
+    const drawings = fakeLiteParse(() => [{ pageNum: 1, width: 612, height: 792, textItems: [], complexity: { reasons: ['no-text'], fullPageImage: false } }]);
+    const none = await extractPdfLiteParse(bytes('rights-notice.pdf'), { open: drawings.open, onOcr: (l) => said.push(l) });
+    expect(drawings.configs.filter((c) => c.ocrEnabled)).toEqual([]);
+    expect(said).toEqual([]);
+    expect(none.notes).toEqual(['page 1 has no text layer and looks like a drawing: not read']);
   });
 
   it('refuses a PDF of more than 500 pages before LiteParse reads a page', async () => {
