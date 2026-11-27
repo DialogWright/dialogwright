@@ -38,6 +38,7 @@
     "kb:tables": "tsx src/cli.ts kb:tables"
   },
   "dependencies": {
+    "@llamaindex/liteparse": "2.21.3",
     "@mozilla/readability": "^0.6.0",
     "dialogwright": "workspace:^",
     "linkedom": "^0.18.13",

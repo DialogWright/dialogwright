@@ -249,12 +249,14 @@ export function sectionHtml(source: KbSourceDocument | undefined, sectionId: str
   if (!source) return '<p role="alert">The source document is not in kb/sources.</p>';
   const section = Object.hasOwn(source.sections, sectionId) ? source.sections[sectionId]! : undefined;
   const where = source.provenance?.url ?? source.provenance?.file;
-  const head = `<h3>${esc(source.document)}</h3><dl><dt>Section</dt><dd class="mono">${esc(sectionId)}${section?.heading ? ` <span class="muted">(${esc(section.heading)})</span>` : ''}</dd>${where ? `<dt>From</dt><dd class="mono">${source.provenance?.url ? `<a href="${esc(source.provenance.url)}" rel="noreferrer noopener" target="_blank">${esc(where)}</a>` : esc(where)}</dd>` : ''}${section?.page !== undefined ? `<dt>Page</dt><dd>${section.page}${section.lastPage !== undefined ? ` to ${section.lastPage}` : ''}</dd>` : ''}${source.provenance?.retrieved ? `<dt>Read on</dt><dd>${esc(source.provenance.retrieved)}</dd>` : ''}</dl>`;
+  const head = `<h3>${esc(source.document)}</h3><dl><dt>Section</dt><dd class="mono">${esc(sectionId)}${section?.heading ? ` <span class="muted">(${esc(section.heading)})</span>` : ''}</dd>${where ? `<dt>From</dt><dd class="mono">${source.provenance?.url ? `<a href="${esc(source.provenance.url)}" rel="noreferrer noopener" target="_blank">${esc(where)}</a>` : esc(where)}</dd>` : ''}${section?.page !== undefined ? `<dt>Page</dt><dd>${section.page}${section.lastPage !== undefined ? ` to ${section.lastPage}` : ''}</dd>` : ''}${source.provenance?.retrieved ? `<dt>Read on</dt><dd>${esc(source.provenance.retrieved)}</dd>` : ''}${source.provenance?.reader ? `<dt>Read by</dt><dd class="mono">${esc(source.provenance.reader)}</dd>` : ''}</dl>`;
   if (!section) return `${head}<p role="alert">This section is not in the source document now.</p>`;
+  // A section OCR read (a page with no text layer, ../extract/liteparse.ts): a word may be misread.
+  const ocr = section.ocr === true ? `<p class="hint" role="alert">This section was read by OCR from ${section.page !== undefined ? `page ${section.page}${section.lastPage !== undefined ? ` to ${section.lastPage}` : ''}` : 'a page'}, which has no text layer: a word may be misread. Read it against the page before approving a passage from it.</p>` : '';
   const range = excerpt === null ? null : excerptRange(section.text, excerpt);
   const text = range ? `${esc(section.text.slice(0, range.start))}<mark><span class="sr">Excerpt: </span>${esc(section.text.slice(range.start, range.end))}</mark>${esc(section.text.slice(range.end))}` : esc(section.text);
   const note = excerpt === null ? '' : range ? '<p class="hint">The marked words are the excerpt the draft quotes.</p>' : '<p class="hint" role="alert">The draft\'s excerpt is not in this section word for word.</p>';
-  return `${head}<div class="section-text" tabindex="0" aria-label="The section's text">${text}</div>${note}`;
+  return `${head}${ocr}<div class="section-text" tabindex="0" aria-label="The section's text">${text}</div>${note}`;
 }
 
 /** The fields of an edit form: the answer, who it is for, and when (and a draft's excerpt). */

@@ -65,6 +65,8 @@ export interface CrawlOptions {
   maxBytes?: number;
   /** A model's tables for the PDFs it reads (../extract/pdf.ts PdfTablesOptions). */
   pdfTables?: PdfTablesOptions;
+  /** How a PDF it fetched is read (kb:ingest's reader, ../extract/index.ts). Default: ours, with `pdfTables`. */
+  readPdf?: (bytes: Uint8Array, url: string) => Promise<ExtractedDocument>;
   /** How long one request may take, in milliseconds. Default 30 seconds. */
   timeoutMs?: number;
 }
@@ -358,7 +360,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlResult> {
     try {
       if (format !== 'html') {
         if (header.noindex) skip(url, 'noindex');
-        else result.documents.push({ url, depth: item.depth, format, document: format === 'pdf' ? await extractPdf(bytes, options.pdfTables !== undefined ? { tables: options.pdfTables } : {}) : await extractDocx(bytes) });
+        else result.documents.push({ url, depth: item.depth, format, document: format === 'pdf' ? await (options.readPdf?.(bytes, url) ?? extractPdf(bytes, options.pdfTables !== undefined ? { tables: options.pdfTables } : {})) : await extractDocx(bytes) });
         continue;
       }
       const doc = parseHtml(decode(bytes, contentType));

@@ -125,9 +125,11 @@ export interface KbSourceDocument {
     readonly retrieved?: string;
     /** For a page read by a crawl: its settings, which a refresh crawls with again. */
     readonly crawl?: { readonly start: string; readonly depth: number; readonly include?: readonly string[]; readonly allowHosts?: readonly string[]; readonly maxPages?: number; readonly rateMs?: number };
+    /** For a PDF: the reader that read it (`liteparse@<version>`, or `ours`); absent, ours. */
+    readonly reader?: string;
   };
-  /** Its sections by id; a paged document's say the pages they are on (provenance only, never hashed). */
-  readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number; readonly summarize?: false }>>;
+  /** Its sections by id; a paged document's say the pages they are on, and one with text read by OCR says so (provenance only, never hashed). */
+  readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number; readonly ocr?: true; readonly summarize?: false }>>;
   /** false: never summarized, whatever its approval (a document that is only the source of passages). */
   readonly summarize?: false;
   /** Which callers an answer summarized from it is for (canonical: each fact's values sorted); absent, every caller. */

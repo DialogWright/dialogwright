@@ -25,6 +25,49 @@ function snapshot(kb: string): Record<string, string> {
   return Object.fromEntries(readdirSync(dir).sort().map((n) => [n, readFileSync(join(dir, n), 'utf8')]));
 }
 
+/** The patron guide's source file as our reader wrote it before LiteParse (and still does, with --reader ours). */
+const PATRON_GUIDE = [
+  'document: Example Town Library Patron Guide',
+  'provenance:',
+  '  file: docs/patron-guide.pdf',
+  '  retrieved: 2026-10-03',
+  'sections:',
+  '  intro:',
+  '    text: This guide explains how to use the branches of the Example Town Library.',
+  '    page: 1',
+  '  opening-hours:',
+  '    heading: Opening hours',
+  '    text: All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday.',
+  '    page: 1',
+  '  library-cards:',
+  '    heading: Library cards',
+  '    text: |-',
+  '      A library card is free for anyone who lives, works or studies in Example Town. Bring a photo ID to any branch desk to get one.',
+  '',
+  '      A card is valid for three years and is renewed at any branch desk.',
+  '    page: 1',
+  '  late-fees:',
+  '    heading: Late fees',
+  '    text: |-',
+  '      An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.',
+  '',
+  '      Junior cards are not charged late fees.',
+  '    page: 2',
+  '  renewing-items:',
+  '    heading: Renewing items',
+  '    text: |-',
+  '      Most items can be renewed twice, online or at any branch desk, unless another patron has placed a hold on them.',
+  '',
+  '      Items borrowed from another library through the interlibrary service cannot be renewed.',
+  '    page: 2',
+  '    lastPage: 3',
+  '  meeting-rooms:',
+  '    heading: Meeting rooms',
+  '    text: Meeting rooms can be booked up to sixty days ahead at no charge by any card holder. Each booking may last up to three hours.',
+  '    page: 3',
+  '',
+].join('\n');
+
 describe('ingesting a folder', () => {
   it('writes each document to kb/sources with its provenance and sections, in a form the engine loads', async () => {
     const app = scratchApp();
@@ -44,49 +87,14 @@ describe('ingesting a folder', () => {
     const folder = loadKnowledgeFolder(app.kb);
     expect(folder.problems).toEqual([]);
     expect(Object.keys(folder.kb!.sources)).toEqual(report.documents.map((d) => d.id));
-    expect(readFileSync(join(app.kb, 'sources', 'patron-guide.yaml'), 'utf8')).toBe(
-      [
-        'document: Example Town Library Patron Guide',
-        'provenance:',
-        '  file: docs/patron-guide.pdf',
-        '  retrieved: 2026-10-03',
-        'sections:',
-        '  intro:',
-        '    text: This guide explains how to use the branches of the Example Town Library.',
-        '    page: 1',
-        '  opening-hours:',
-        '    heading: Opening hours',
-        '    text: All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday.',
-        '    page: 1',
-        '  library-cards:',
-        '    heading: Library cards',
-        '    text: |-',
-        '      A library card is free for anyone who lives, works or studies in Example Town. Bring a photo ID to any branch desk to get one.',
-        '',
-        '      A card is valid for three years and is renewed at any branch desk.',
-        '    page: 1',
-        '  late-fees:',
-        '    heading: Late fees',
-        '    text: |-',
-        '      An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.',
-        '',
-        '      Junior cards are not charged late fees.',
-        '    page: 2',
-        '  renewing-items:',
-        '    heading: Renewing items',
-        '    text: |-',
-        '      Most items can be renewed twice, online or at any branch desk, unless another patron has placed a hold on them.',
-        '',
-        '      Items borrowed from another library through the interlibrary service cannot be renewed.',
-        '    page: 2',
-        '    lastPage: 3',
-        '  meeting-rooms:',
-        '    heading: Meeting rooms',
-        '    text: Meeting rooms can be booked up to sixty days ahead at no charge by any card holder. Each booking may last up to three hours.',
-        '    page: 3',
-        '',
-      ].join('\n'),
-    );
+    // Read by LiteParse (the default), its provenance says so; its sections are as our reader gives them (below).
+    expect(readFileSync(join(app.kb, 'sources', 'patron-guide.yaml'), 'utf8')).toBe(PATRON_GUIDE.replace('  file: docs/patron-guide.pdf\n', '  file: docs/patron-guide.pdf\n  reader: liteparse@2.21.3\n'));
+  });
+
+  it('with --reader ours, writes exactly what it wrote before LiteParse: no reader in the provenance', async () => {
+    const app = scratchApp();
+    await run(app, join(app.docs, 'patron-guide.pdf'), '2026-10-03', { reader: 'ours' });
+    expect(readFileSync(join(app.kb, 'sources', 'patron-guide.yaml'), 'utf8')).toBe(PATRON_GUIDE);
   });
 
   it('gives the same bytes for the same input: a second run (another day) changes nothing, and a fresh folder gets the same files', async () => {

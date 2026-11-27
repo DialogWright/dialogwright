@@ -80,6 +80,11 @@
             "depth"
           ],
           "additionalProperties": false
+        },
+        "reader": {
+          "description": "For a PDF: the reader that read it, \"liteparse@<version>\" (LiteParse, kb:ingest's default) or \"ours\" (kb:ingest --reader ours). pnpm kb:refresh reads it again with the same reader, unless --reader moves it to another. Default: ours, as a PDF ingested before LiteParse was read.",
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false
@@ -176,6 +181,11 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "ocr": {
+            "description": "true: some of its text was read by OCR from a page with no text layer (pnpm kb:ingest, LiteParse with Tesseract), so a word may be misread: read it against the page before approving a passage from it. Provenance only: approvals do not hash it.",
+            "type": "boolean",
+            "const": true
           },
           "summarize": {
             "description": "false: never answered from by summarizing (kb.yaml documents), whatever the document's approval: for what a document says that should not be said to a caller. Default: summarized where no passage cites it.",

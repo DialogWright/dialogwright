@@ -1,10 +1,10 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../sections';
-import { readTables, type PlacedRun, type RowLine } from './pdfTables';
+import { figuresNotIn, figuresOf, readTables, type PlacedRun, type RowLine, type TableRead } from './pdfTables';
 import { WEAK } from './tables/check';
 import { rulesOf, type Rule } from './tables/rules';
 import { layoutKey, type TablesCache } from './tables/cache';
-import type { TableGrid } from './tables/grid';
+import { linesIn, type TableGrid } from './tables/grid';
 import { gridOfModel, pageLayout, type ModelTableReader } from './tables/model';
 
 /**
@@ -402,12 +402,19 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
  * headings; and a note for each table its check found weak (./tables/check.ts), for the author to read
  * against the page.
  */
-export function readPages(pages: readonly PageLines[], proposed: ReadonlyMap<number, readonly TableGrid[]> = new Map(), modelNotes: readonly string[] = []): ExtractedDocument {
+export function readPages(pages: readonly PageLines[], proposed: ReadonlyMap<number, readonly TableGrid[]> = new Map(), modelNotes: readonly string[] = [], reader?: TablesReader): ExtractedDocument {
   const body = bodyLines(pages);
   const tabled: Line[] = [];
   const notes: string[] = [...modelNotes];
   for (const p of pages) {
-    const read = readTables(body.filter((l) => l.page === p.page), p.rules, proposed.get(p.page) ?? []);
+    const lines = body.filter((l) => l.page === p.page);
+    if (reader !== undefined) {
+      const read = readTables(lines, p.rules, reader.grids.get(p.page) ?? [], { own: false });
+      tabled.push(...(read.lines as Line[]));
+      notes.push(...secondOpinion(p.page, lines, p.rules ?? [], read.tables, reader.name));
+      continue;
+    }
+    const read = readTables(lines, p.rules, proposed.get(p.page) ?? []);
     tabled.push(...(read.lines as Line[]));
     for (const t of read.tables.filter((t) => t.check.score < WEAK)) {
       const { grid } = t.table;
@@ -430,6 +437,66 @@ export function readPages(pages: readonly PageLines[], proposed: ReadonlyMap<num
   const read = sectionsOf(kept, { paged: true, ...(cover.title === undefined ? {} : { titled: true }) });
   const title = cover.title ?? read.title;
   return { ...(title === undefined ? {} : { title }), sections: read.sections, ...(notes.length === 0 ? {} : { notes }) };
+}
+
+/**
+ * Another reader's tables (./liteparse.ts): each page's grids, read in place of ours; ours run on the same
+ * lines as its second opinion (`secondOpinion`).
+ */
+export interface TablesReader {
+  /** Its name, as the author's notes say it. */
+  readonly name: string;
+  readonly grids: ReadonlyMap<number, readonly TableGrid[]>;
+}
+
+/** The most figures a note names on each side. */
+const NOTED_FIGURES = 8;
+
+/** A reading's figures said for a note: each with the row it is in ("$20, $60 in "Office visit""). */
+function sayFigures(figures: readonly string[]): string {
+  const shown = figures.slice(0, NOTED_FIGURES).map((f) => {
+    const [label, figure] = f.split('\u0000') as [string, string];
+    return { label: label.length > 40 ? `${label.slice(0, 40)}…` : label, figure };
+  });
+  const parts: string[] = [];
+  for (let i = 0; i < shown.length; ) {
+    let j = i;
+    while (j < shown.length && shown[j]!.label === shown[i]!.label) j += 1;
+    const said = shown.slice(i, j).map((s) => s.figure).join(', ');
+    parts.push(shown[i]!.label === '' ? `${said} (in a row with no label)` : `${said} in "${shown[i]!.label}"`);
+    i = j;
+  }
+  return parts.join(', ') + (figures.length > NOTED_FIGURES ? `, and ${figures.length - NOTED_FIGURES} more` : '');
+}
+
+/**
+ * The notes on another reader's tables of a page: each it read weakly by our checker, and each where our
+ * readers, on the same lines, found a table too and a figure one reading has is not in the other's (a
+ * figure with its row's label: ./pdfTables.ts figuresOf). Neither reading is chosen silently: the author
+ * checks such a table against the source.
+ */
+export function secondOpinion(page: number, lines: readonly Line[], rules: readonly Rule[], theirs: readonly TableRead[], name: string): string[] {
+  const notes: string[] = [];
+  if (theirs.length === 0) return notes;
+  const ours = readTables(lines, rules).tables;
+  const size = (t: TableRead): string => {
+    const rows = t.table.grid.rows.length - t.table.grid.headRows;
+    return `a table of ${t.table.grid.columns.length} columns and ${rows} row${rows === 1 ? '' : 's'}`;
+  };
+  for (const t of theirs) {
+    if (t.check.score < WEAK) notes.push(`page ${page}: ${size(t)} read by ${name} read weakly (${t.check.score.toFixed(2)}): ${t.check.problems.join('; ')}`);
+    const members = new Set(linesIn(t.table.grid, lines));
+    const same = ours.filter((o) => linesIn(o.table.grid, lines).some((i) => members.has(i)));
+    if (same.length === 0) continue;
+    const a = figuresOf(t);
+    const b = same.flatMap(figuresOf);
+    const onlyTheirs = figuresNotIn(a, b);
+    const onlyOurs = figuresNotIn(b, a);
+    if (onlyTheirs.length + onlyOurs.length === 0) continue;
+    const said = [...(onlyTheirs.length > 0 ? [`${name} reads ${sayFigures(onlyTheirs)}`] : []), ...(onlyOurs.length > 0 ? [`ours reads ${sayFigures(onlyOurs)}`] : [])];
+    notes.push(`page ${page}: check against the source: the two readers differ on ${size(t)}: ${said.join('; ')}`);
+  }
+  return notes;
 }
 
 /** A PDF's pages as lines, and its metadata title (refused over `maxPages`, default 500). */
@@ -468,14 +535,31 @@ export async function pdfPages(bytes: Uint8Array, options: { maxPages?: number }
       pages.push({ page: n, height: page.getViewport({ scale: 1 }).height, lines: linesOf(content.items as unknown as Run[], n, isBold), ...(rules.length === 0 ? {} : { rules }) });
       page.cleanup();
     }
-    let metaTitle: string | undefined;
-    try {
-      const info = (await pdf.getMetadata()).info as { Title?: unknown } | undefined;
-      metaTitle = typeof info?.Title === 'string' && cleanText(info.Title) !== '' ? cleanText(info.Title) : undefined;
-    } catch {
-      metaTitle = undefined;
-    }
+    const metaTitle = await metaTitleOf(pdf);
     return { pages, count: pdf.numPages, ...(metaTitle === undefined ? {} : { metaTitle }) };
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
+}
+
+/** A PDF's metadata title, where it has one. */
+async function metaTitleOf(pdf: Awaited<ReturnType<typeof getDocumentProxy>>): Promise<string | undefined> {
+  try {
+    const info = (await pdf.getMetadata()).info as { Title?: unknown } | undefined;
+    return typeof info?.Title === 'string' && cleanText(info.Title) !== '' ? cleanText(info.Title) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How many pages a PDF has and its metadata title, read by pdf.js without its pages (refused over `maxPages`, default 500). */
+export async function pdfFacts(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<{ count: number; metaTitle?: string }> {
+  const maxPages = options.maxPages ?? MAX_PDF_PAGES;
+  const pdf = await getDocumentProxy(new Uint8Array(bytes), { ...PDF_OPEN_OPTIONS } as Parameters<typeof getDocumentProxy>[1]);
+  try {
+    if (pdf.numPages > maxPages) throw new PdfLimitError(`it has ${pdf.numPages} pages, over the ${maxPages} read`);
+    const metaTitle = await metaTitleOf(pdf);
+    return { count: pdf.numPages, ...(metaTitle === undefined ? {} : { metaTitle }) };
   } finally {
     await pdf.loadingTask.destroy();
   }

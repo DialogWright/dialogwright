@@ -194,7 +194,10 @@ describe('kb:tables', () => {
     writeFileSync(join(t.io.cwd, 'rights-notice.tables.yaml'), LABELS.replace('fees.pdf', 'rights-notice.pdf'));
     expect(await tablesCommand(['.'], t.io)).toBe(0);
     expect(t.out[0]).toBe('# Table readers scored on 1 labelled document, 1 table');
-    expect(t.out).toContain('| rights-notice.pdf | 1 | Fees | not found | 0/6 (0%) | 0/2 (0%) | 0/3 (0%) |  |  |');
+    // LiteParse's reading is scored beside ours.
+    expect(t.out).toContain('| Document | Page | Table | Reader | Cells right | Whole rows | Headings | Check | LiteParse cells | LiteParse rows | LiteParse headings | LiteParse check | Each reader\'s cells |');
+    expect(t.out).toContain('| rights-notice.pdf | 1 | Fees | not found | 0/6 (0%) | 0/2 (0%) | 0/3 (0%) |  | 0/6 (0%) | 0/2 (0%) | 0/3 (0%) |  |  |');
+    expect(t.out).toContain('LiteParse: cells 0/6 (0%); whole rows 0/2 (0%); headings 0/3 (0%).');
   });
 
   it('refuses labels that do not read or name no PDF beside them, and a command line with nothing to score', async () => {

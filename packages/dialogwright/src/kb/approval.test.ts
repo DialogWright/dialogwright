@@ -471,6 +471,20 @@ describe('kb:status', () => {
     });
   });
 
+  it('lists the sections read by OCR (ocr: true, kb:ingest from a page with no text layer), with what cites each, to read against the page', async () => {
+    const kb = kbCopy();
+    edit(join(kb, 'sources/patron-guide.yaml'), (t) => t.replace('    text: Junior cards are not charged late fees.\n', '    text: Junior cards are not charged late fees.\n    page: 2\n    ocr: true\n'));
+    writeFileSync(join(kb, 'pending/late-fees-junior-2025.yaml'), DRAFT);
+    expect(loadKnowledgeFolder(kb, 'en-US').problems).toEqual([]);
+    const run = await bin(['kb:status', kb], kb);
+    expect(run.out.slice(-4)).toEqual([
+      'read by OCR from a page with no text layer, so a word may be misread (1):',
+      '  kb/sources/patron-guide.yaml section "3.2" (page 2): cited by late-fees-junior, draft late-fees-junior-2025',
+      '    -> read each against its page before approving a passage from it',
+      'pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved',
+    ]);
+  });
+
   it('lists the topics drafts propose (kb/pending/topics.yaml, never a draft), and passes over rejected drafts', async () => {
     const kb = kbCopy();
     writeFileSync(join(kb, 'pending/topics.yaml'), '# yaml-language-server: $schema=../../../../../schemas/kb-topics.schema.json\nmeeting_rooms:\n  title: Meeting rooms\n  keywords: [meeting room]\n');

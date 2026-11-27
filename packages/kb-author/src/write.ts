@@ -7,7 +7,7 @@ import { distinct, type ExtractedSection } from './sections';
 
 /**
  * Writing what was read into a knowledge base's `kb/sources/<doc>.yaml`, the format dialogwright's
- * loader reads (`{ document, provenance: { url | file, retrieved }, sections: { <id>: { heading?, text, page?, lastPage? } } }`),
+ * loader reads (`{ document, provenance: { url | file, retrieved, reader? }, sections: { <id>: { heading?, text, page?, lastPage?, ocr? } } }`),
  * and saying what changed.
  *
  * - A document's id is kept from run to run: a source file whose provenance (its URL, or its file's
@@ -38,7 +38,7 @@ export interface CrawlProvenance {
 /** A document read, ready to be written. */
 export interface SourceInput {
   /** Where it came from: its URL (and the crawl that read it), or its file's path from the app folder (forward slashes). */
-  provenance: { url: string; crawl?: CrawlProvenance } | { file: string };
+  provenance: { url: string; crawl?: CrawlProvenance; reader?: string } | { file: string; reader?: string };
   /** Its title. */
   title: string;
   /** Its id when no source file already has its provenance: a slug of its path. */
@@ -58,7 +58,7 @@ export interface SectionChange {
   status: SectionStatus;
   /** Only its heading changed (its text, which approvals hash, did not): it counts as changed. */
   headingOnly?: boolean;
-  /** Only the pages it is on changed (its text and heading did not): it counts as changed, though no approval hashes its pages. */
+  /** Only the pages it is on, or whether OCR read it, changed (its text and heading did not): it counts as changed, though no approval hashes either. */
   pageOnly?: boolean;
 }
 
@@ -88,7 +88,7 @@ export interface Existing {
   key: string | undefined;
   /** The file's text, for what a person wrote into it (keptByPerson). */
   text?: string;
-  data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown; crawl?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown; page?: unknown; lastPage?: unknown }> } | null;
+  data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown; crawl?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown; page?: unknown; lastPage?: unknown; ocr?: unknown }> } | null;
 }
 
 /** A provenance as one string, to compare. */
@@ -125,7 +125,7 @@ export function schemaPathFor(sourcesDir: string): string | undefined {
 
 /** The keys of a source file and of its sections that reading a document writes; every other is a person's (keptByPerson). */
 const READ_KEYS = new Set(['document', 'provenance', 'sections']);
-const READ_SECTION_KEYS = new Set(['heading', 'text', 'page', 'lastPage']);
+const READ_SECTION_KEYS = new Set(['heading', 'text', 'page', 'lastPage', 'ocr']);
 
 const keyName = (pair: Pair): string | undefined => (isScalar(pair.key) && typeof pair.key.value === 'string' ? pair.key.value : undefined);
 
@@ -166,7 +166,7 @@ export function sourceYaml(input: { title: string; provenance: SourceInput['prov
   const sections = new Map(
     input.sections.map((s) => [
       s.id,
-      { ...(s.heading === undefined ? {} : { heading: s.heading }), text: s.text, ...(s.page === undefined ? {} : { page: s.page }), ...(s.lastPage === undefined ? {} : { lastPage: s.lastPage }) },
+      { ...(s.heading === undefined ? {} : { heading: s.heading }), text: s.text, ...(s.page === undefined ? {} : { page: s.page }), ...(s.lastPage === undefined ? {} : { lastPage: s.lastPage }), ...(s.ocr === true ? { ocr: true } : {}) },
     ]),
   );
   const doc = new Document({ document: input.title, provenance: { ...input.provenance, retrieved: input.retrieved }, sections });
@@ -183,7 +183,7 @@ function sectionChanges(previous: Existing['data'], next: readonly ExtractedSect
     const old = before[s.id]!;
     if (typeof old?.text !== 'string' || sourceHashOf(old.text) !== sourceHashOf(s.text)) return { id: s.id, status: 'changed' };
     if ((typeof old.heading === 'string' ? old.heading : undefined) !== s.heading) return { id: s.id, status: 'changed', headingOnly: true };
-    if (old.page !== s.page || old.lastPage !== s.lastPage) return { id: s.id, status: 'changed', pageOnly: true };
+    if (old.page !== s.page || old.lastPage !== s.lastPage || (old.ocr === true) !== (s.ocr === true)) return { id: s.id, status: 'changed', pageOnly: true };
     return { id: s.id, status: 'unchanged' };
   });
   const ids = new Set(next.map((s) => s.id));

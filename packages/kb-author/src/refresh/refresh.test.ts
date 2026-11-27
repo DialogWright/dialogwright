@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fakeClock, guardedFetch, serveSite, type FixtureSite } from '../__fixtures__/server';
+import { FOLDER, fakeClock, guardedFetch, serveSite, type FixtureSite } from '../__fixtures__/server';
+import { openLiteParse } from '../extract/liteparse';
 import { ingest } from '../ingest';
 import { findKb } from '../kbPlace';
 import { main, type Io } from '../cli';
@@ -133,5 +134,74 @@ describe('refreshing a crawled site', () => {
     expect(report.notRead).toEqual([]);
     expect(readdirSync(join(app, 'kb', 'sources')).sort()).toEqual(ids);
     expect(readFileSync(join(app, 'kb', 'sources', 'about.yaml'), 'utf8')).toContain('retrieved: 2026-10-03');
+  });
+});
+
+describe('the reader a refresh reads a PDF with', () => {
+  /** An app with the patron guide in docs/, ingested by `reader`. */
+  async function ingestedBy(reader: 'liteparse' | 'ours'): Promise<{ app: string; source: string; io: (liteparse: Io['liteparse']) => { io: Io; out: string[] } }> {
+    const { app } = appWithOutside();
+    mkdirSync(join(app, 'docs'));
+    writeFileSync(join(app, 'docs', 'guide.pdf'), readFileSync(join(FOLDER, 'patron-guide.pdf')));
+    await ingest({ input: join(app, 'docs'), appDir: app, kbDir: join(app, 'kb'), today: '2026-10-03', reader });
+    const io = (liteparse: Io['liteparse']) => {
+      const out: string[] = [];
+      return { out, io: { out: (l: string) => out.push(l), err: (l: string) => out.push(l), cwd: app, today: () => '2026-11-01', ...(liteparse !== undefined ? { liteparse } : {}) } };
+    };
+    return { app, source: join(app, 'kb', 'sources', 'guide.yaml'), io };
+  }
+  const never: Io['liteparse'] = () => {
+    throw new Error('LiteParse was asked to read a source ours read');
+  };
+
+  it('reads a source with no reader in its provenance (one ingested before LiteParse) with ours, and changes nothing', async () => {
+    const { source, io } = await ingestedBy('ours');
+    const before = readFileSync(source, 'utf8');
+    expect(before).not.toContain('reader:');
+    const run = io(never);
+    expect(await main(['kb:refresh'], run.io)).toBe(0);
+    expect(run.out[0]).toBe('kb:refresh kb: 1 read (1 document): 0 added, 0 changed, 1 unchanged');
+    expect(readFileSync(source, 'utf8')).toBe(before);
+  });
+
+  it('reads a source its provenance says LiteParse read with LiteParse again', async () => {
+    const { source, io } = await ingestedBy('liteparse');
+    const before = readFileSync(source, 'utf8');
+    expect(before).toContain('  reader: liteparse@2.21.3\n');
+    let asked = 0;
+    const counted: Io['liteparse'] = (config) => {
+      asked += 1;
+      return openLiteParse(config);
+    };
+    const run = io(counted);
+    expect(await main(['kb:refresh'], run.io)).toBe(0);
+    expect(asked).toBe(1);
+    expect(run.out[0]).toBe('kb:refresh kb: 1 read (1 document): 0 added, 0 changed, 1 unchanged');
+    expect(readFileSync(source, 'utf8')).toBe(before);
+  });
+
+  it('moves a source to another reader with --reader, records it, and says that a passage whose section reads differently is withheld', async () => {
+    const { source, io } = await ingestedBy('ours');
+    const run = io(undefined);
+    expect(await main(['kb:refresh', '--reader', 'liteparse'], run.io)).toBe(0);
+    expect(readFileSync(source, 'utf8')).toContain('  file: docs/guide.pdf\n  reader: liteparse@2.21.3\n  retrieved: 2026-11-01\n');
+    expect(run.out).toContain('  reader    guide: ours to liteparse@2.21.3');
+    expect(run.out).toContain('read by another reader now (1): a passage whose section reads differently is withheld until a person approves it again (pnpm kb:review)');
+    // Back to ours: its provenance names no reader again.
+    const back = io(never);
+    expect(await main(['kb:refresh', '--reader', 'ours'], back.io)).toBe(0);
+    expect(readFileSync(source, 'utf8')).not.toContain('reader:');
+    expect(back.out).toContain('  reader    guide: liteparse@2.21.3 to ours');
+  });
+
+  it('refuses a reader it does not have, in a source\'s provenance or on the command line', async () => {
+    const { app, source, io } = await ingestedBy('ours');
+    writeFileSync(source, readFileSync(source, 'utf8').replace('  file: docs/guide.pdf\n', '  file: docs/guide.pdf\n  reader: pdfjs@4\n'));
+    const run = io(never);
+    expect(await main(['kb:refresh'], run.io)).toBe(1);
+    expect(run.out).toContain('  failed    docs/guide.pdf: guide\'s provenance names a reader kb-author does not have (pdfjs@4): it is not read (the source is left as it is); its reader is liteparse@<version> or ours');
+    const bad = io(never);
+    expect(await main(['kb:refresh', app, '--reader', 'pdfjs'], bad.io)).toBe(2);
+    expect(bad.out.join('\n')).toMatch(/--reader must be liteparse or ours/);
   });
 });

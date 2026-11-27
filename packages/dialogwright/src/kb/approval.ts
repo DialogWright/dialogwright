@@ -566,6 +566,17 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
       }
     }
   }
+  // The sections OCR read (kb:ingest, from a page with no text layer), with what cites each: a word may be misread.
+  const ocr = Object.values(kb.sources).flatMap((d) => Object.entries(d.sections).filter(([, s]) => s.ocr === true).map(([id, s]) => ({ document: d.id, id, page: s.page })));
+  head('read by OCR from a page with no text layer, so a word may be misread', ocr.length);
+  for (const o of ocr) {
+    const citing = [
+      ...all.filter((p) => p.source.document === o.document && p.source.section === o.id).map((p) => p.id),
+      ...drafts.filter((d) => d.draft?.source.document === o.document && d.draft.source.section === o.id).map((d) => `draft ${d.id}`),
+    ];
+    lines.push(`  ${base}/sources/${o.document}.yaml section "${o.id}"${o.page !== undefined ? ` (page ${o.page})` : ''}: ${citing.length > 0 ? `cited by ${citing.join(', ')}` : 'nothing cites it yet'}`);
+  }
+  if (ocr.length > 0) lines.push('    -> read each against its page before approving a passage from it');
   if (outside.length + changed.length + edited.length + unapproved.length + drafts.length + proposed.length === 0) lines.push('every passage is approved and fresh, and nothing waits for review');
   else lines.push('pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved');
   return { lines, ok: true };

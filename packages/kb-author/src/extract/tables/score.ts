@@ -1,5 +1,6 @@
 import { readTables, type TableRead } from '../pdfTables';
-import { bodyLines, pdfPages, type PageLines } from '../pdf';
+import { bodyLines, MAX_PDF_PAGES, pdfPages, type PageLines } from '../pdf';
+import { DEFAULT_OCR_LANGUAGE, pagesOfLiteParse, type LiteParseOpen } from '../liteparse';
 import { joinCell } from './grid';
 import type { LabelCell, LabelFile, LabelTable } from './labels';
 import { gridOfModel, pageLayout, type ModelTableReader } from './model';
@@ -10,7 +11,8 @@ import type { TableGrid } from './grid';
  * table read on its page that has the most of its cells right, and how many of its cells, whole rows
  * and headings that table has right. Cells are compared without case or spacing (a PDF's spaces are
  * where its runs fall, not where a reader sees them), and the checker's score of the table is kept
- * beside them, so how well the checker sees a weak table is measured too.
+ * beside them, so how well the checker sees a weak table is measured too. With LiteParse's reading of the
+ * document (../liteparse.ts), its tables are scored beside ours, the same way.
  */
 
 export interface Tally {
@@ -31,6 +33,8 @@ export interface TableScore {
   readonly misses: readonly { readonly label: string; readonly row: string | null }[];
   /** Each reader's best on it, read or not: its cells right. */
   readonly readers?: Readonly<Record<string, Tally>>;
+  /** LiteParse's reading of it (../liteparse.ts: its tables filled with its own runs), scored the same way; absent when LiteParse was not run. */
+  readonly liteparse?: Omit<TableScore, 'page' | 'name' | 'readers' | 'liteparse'>;
 }
 
 export interface DocumentScore {
@@ -148,8 +152,15 @@ async function modelGrids(pages: readonly PageLines[], labels: LabelFile, model:
 }
 
 /** The tables read from `pages` scored on `labels` (see the file's comment); with `model`, its grids proposed beside the other readers'. */
-export function scorePages(pages: readonly PageLines[], labels: LabelFile, model?: { grids: Map<number, TableGrid[]>; problems: { page: number; problem: string }[] }): DocumentScore {
+export function scorePages(
+  pages: readonly PageLines[],
+  labels: LabelFile,
+  model?: { grids: Map<number, TableGrid[]>; problems: { page: number; problem: string }[] },
+  lite?: { pages: readonly PageLines[]; grids: ReadonlyMap<number, readonly TableGrid[]> },
+): DocumentScore {
   const body = bodyLines(pages);
+  const liteBody = lite === undefined ? [] : bodyLines(lite.pages);
+  const liteOn = new Map<number, TableRead[]>();
   const readOn = new Map<number, TableRead[]>();
   const proposedOn = new Map<number, TableRead[]>();
   const tables: TableScore[] = [];
@@ -173,7 +184,16 @@ export function scorePages(pages: readonly PageLines[], labels: LabelFile, model
     const of = table.rows.reduce((n, row) => n + row.length, 0);
     const heads = labelHeads(table);
     const none = { cells: { right: 0, of }, rows: { right: 0, of: table.rows.length }, heads: { right: 0, of: heads.columnHeads.length + heads.spanHeads.length }, misses: [] };
-    tables.push({ page: table.page, name: table.name, ...(scored ?? none), readers });
+    // LiteParse's tables on the page, scored as ours are.
+    let liteparse: TableScore['liteparse'];
+    if (lite !== undefined) {
+      if (!liteOn.has(table.page)) {
+        const lines = liteBody.filter((l) => l.page === table.page);
+        liteOn.set(table.page, readTables(lines, lite.pages.find((p) => p.page === table.page)?.rules, lite.grids.get(table.page) ?? [], { own: false }).tables);
+      }
+      liteparse = liteOn.get(table.page)!.map((r) => scoreAgainst(table, r)).filter((s) => s.cells.right > 0).sort((a, b) => b.cells.right - a.cells.right)[0] ?? none;
+    }
+    tables.push({ page: table.page, name: table.name, ...(scored ?? none), readers, ...(liteparse !== undefined ? { liteparse } : {}) });
     // The labelled words the page's text does not have.
     const page = pages.find((p) => p.page === table.page);
     const text = comparable((page?.lines ?? []).map((l) => l.text).join(' '));
@@ -184,7 +204,12 @@ export function scorePages(pages: readonly PageLines[], labels: LabelFile, model
 }
 
 /** A PDF's tables scored on its labels; with a model reader, its grids proposed too. */
-export async function scorePdf(bytes: Uint8Array, labels: LabelFile, model?: ModelTableReader): Promise<DocumentScore> {
+export async function scorePdf(bytes: Uint8Array, labels: LabelFile, model?: ModelTableReader, liteparse?: LiteParseOpen): Promise<DocumentScore> {
   const { pages } = await pdfPages(bytes);
-  return scorePages(pages, labels, model === undefined ? undefined : await modelGrids(pages, labels, model));
+  let lite: { pages: PageLines[]; grids: Map<number, TableGrid[]> } | undefined;
+  if (liteparse !== undefined) {
+    const read = await liteparse({ ocrEnabled: false, ocrLanguage: DEFAULT_OCR_LANGUAGE, maxPages: MAX_PDF_PAGES }).parse(bytes);
+    lite = pagesOfLiteParse(read.pages);
+  }
+  return scorePages(pages, labels, model === undefined ? undefined : await modelGrids(pages, labels, model), lite);
 }

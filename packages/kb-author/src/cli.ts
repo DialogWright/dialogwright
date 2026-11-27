@@ -8,6 +8,8 @@ import type { Drafter } from './draft/drafter';
 import { draftCommand } from './draft/command';
 import { gapsCommand } from './gaps/command';
 import { HttpModelTableReader, type ModelTableReader } from './extract/tables/model';
+import { DEFAULT_PDF_READER, PDF_READERS, type PdfReaderName } from './extract/index';
+import type { LiteParseOpen } from './extract/liteparse';
 import { formatReport, ingest, IngestError, isUrl } from './ingest';
 import { todayUtc } from './args';
 import { refreshCommand } from './refresh/command';
@@ -18,12 +20,12 @@ import { tablesCommand } from './tables/command';
  * The authoring commands (the `dialogwright-kb` bin; the workspace's `pnpm kb:ingest`, `kb:draft`,
  * `kb:review`, `kb:refresh`, `kb:gaps` and `kb:tables`):
  *
- *   kb:ingest <folder | file | url> [--dir <app folder>] [--depth N] [--include <glob>]...
+ *   kb:ingest <folder | file | url> [--dir <app folder>] [--reader liteparse|ours] [--ocr-language <code>] [--depth N] [--include <glob>]...
  *             [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--allow-private] [--dry-run] [--json]
  *   kb:draft [dir] [--source <doc>]... [--topic-hint <text>]... [--model <id>] [--all] [--dry-run] [--json]
  *             (./draft/command.ts)
  *   kb:review [dir] [--port N]       (./review/command.ts)
- *   kb:refresh [dir] [--allow-private] [--dry-run] [--json]   (./refresh/command.ts)
+ *   kb:refresh [dir] [--reader liteparse|ours] [--ocr-language <code>] [--allow-private] [--dry-run] [--json]   (./refresh/command.ts)
  *   kb:gaps [dir] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]   (./gaps/command.ts)
  *   kb:tables <labels file | folder>... [--out <file>] [--json]   (./tables/command.ts)
  *
@@ -52,6 +54,8 @@ export interface Io {
   env?: NodeJS.ProcessEnv;
   /** kb:review: called with the running server instead of waiting for Ctrl-C (a test's). */
   onReview?: (server: { url: string; close(): Promise<void> }) => void | Promise<void>;
+  /** LiteParse, in place of the real one (a test's fake). */
+  liteparse?: LiteParseOpen;
 }
 
 /** The package's version, for the User-Agent. */
@@ -64,16 +68,18 @@ export const USER_AGENT = `dialogwright-kb-ingest/${VERSION} (+https://github.co
 const MIN_RATE_MS = 100;
 
 const USAGE = [
-  'usage: kb:ingest <folder | file | url> [--dir <app folder>] [--tables <openrouter|anthropic>:<model>] [--dry-run] [--json]',
+  'usage: kb:ingest <folder | file | url> [--dir <app folder>] [--reader liteparse|ours] [--ocr-language <code>] [--tables <openrouter|anthropic>:<model>] [--dry-run] [--json]',
   '       for a url: [--depth N] [--include <glob>]... [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--allow-private]',
   '  reads PDF, DOCX, HTML, Markdown and text files (a folder recursively), or a website to a link depth,',
   '  and writes each document to <app>/kb/sources/<doc>.yaml with its sections and provenance;',
   `  a crawl stays on the start page's host, follows robots.txt, waits --rate ms between requests (default ${DEFAULT_RATE_MS})`,
   `  and reads at most --max-pages pages (default ${DEFAULT_MAX_PAGES}); --depth is how many links from the start page (default 1);`,
   '  --include narrows what is fetched beyond the start page by URL path (/help/**, *.pdf);',
+  '  a PDF is read by LiteParse (--reader liteparse, the default) with our tables read beside its as a second opinion, or by ours alone (--reader ours);',
+  '  LiteParse reads a page with no text layer by OCR (Tesseract; --ocr-language, default eng; the first OCR downloads its language data, about 15 MB);',
   '  a crawl reads only public addresses: --allow-private reads a site on a private network (loopback, RFC 1918, link-local);',
   '  --tables asks that model where the tables are on each PDF page that has one (OPENROUTER_API_KEY or ANTHROPIC_API_KEY, your own;',
-  '  never in CI), keeping its answers in <kb>/.tables/grids.json, which every later ingest and refresh reads: commit it'
+  '  never in CI; with --reader ours), keeping its answers in <kb>/.tables/grids.json, which every later ingest and refresh reads: commit it'
 ].join('\n');
 
 const stdio = (): Io => ({
@@ -81,6 +87,16 @@ const stdio = (): Io => ({
   err: (line) => console.error(line),
   cwd: process.env.INIT_CWD ?? process.cwd(),
 });
+
+/** A line said the first time only (the first OCR's download, said once a run), after the command's name. */
+export function onceSaid(say: (line: string) => void, command: string): (line: string) => void {
+  let said = false;
+  return (line) => {
+    if (said) return;
+    said = true;
+    say(`${command}: ${line}`);
+  };
+}
 
 /** Where the sources go: the app folder and its kb folder, from --dir (or the working directory). */
 function placeOf(dir: string): { appDir: string; kbDir: string } | string {
@@ -98,7 +114,7 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i]!;
     if (a === '--dry-run' || a === '--json' || a === '--allow-private') flags.add(a);
-    else if (['--dir', '--depth', '--max-pages', '--rate', '--include', '--allow-host', '--tables'].includes(a)) {
+    else if (['--dir', '--depth', '--max-pages', '--rate', '--include', '--allow-host', '--tables', '--reader', '--ocr-language'].includes(a)) {
       const v = args[i + 1];
       if (v === undefined || v.startsWith('--')) {
         io.err(`kb:ingest: ${a} needs a value\n${USAGE}`);
@@ -138,11 +154,20 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
     }
   }
 
+  const reader = values['--reader'] ?? DEFAULT_PDF_READER;
+  if (!(PDF_READERS as readonly string[]).includes(reader)) {
+    io.err(`kb:ingest: --reader must be ${PDF_READERS.join(' or ')}\n${USAGE}`);
+    return 2;
+  }
   let tables: ModelTableReader | undefined;
   if (values['--tables'] !== undefined) {
     const env = io.env ?? process.env;
     if (env.CI !== undefined && env.CI !== '' && env.CI !== 'false') {
       io.err('kb:ingest: --tables does not run in CI: it asks a model with your own key, on your machine');
+      return 2;
+    }
+    if (reader !== 'ours') {
+      io.err(`kb:ingest: a model's tables (--tables) are read with our readers only: give --reader ours with --tables\n${USAGE}`);
       return 2;
     }
     try {
@@ -168,6 +193,10 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
       kbDir: place.kbDir,
       today: (io.today ?? todayUtc)(),
       dryRun: flags.has('--dry-run'),
+      reader: reader as PdfReaderName,
+      ...(values['--ocr-language'] !== undefined ? { ocrLanguage: values['--ocr-language'] } : {}),
+      onOcr: onceSaid(flags.has('--json') ? io.err : io.out, 'kb:ingest'),
+      ...(io.liteparse !== undefined ? { liteparse: io.liteparse } : {}),
       ...(tables !== undefined ? { tables } : {}),
       ...(url
         ? {

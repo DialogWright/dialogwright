@@ -40,6 +40,8 @@ export interface ExtractedSection {
   readonly page?: number;
   /** The page it ends on, when that is a later page than `page`. */
   readonly lastPage?: number;
+  /** Some of its text was read by OCR from a page with no text layer (./extract/liteparse.ts): read it against the page. */
+  readonly ocr?: true;
 }
 
 /** A document read into sections. */
@@ -49,6 +51,8 @@ export interface ExtractedDocument {
   readonly sections: readonly ExtractedSection[];
   /** What the author should read against the document: a table read weakly, with why. */
   readonly notes?: readonly string[];
+  /** The PDF reader that read it, where it was not ours (`liteparse@<version>`): kept in its provenance. */
+  readonly reader?: string;
 }
 
 /** Characters that are never text: soft hyphens, zero-width spaces and joiners, byte-order marks. */

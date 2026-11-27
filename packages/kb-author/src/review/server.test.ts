@@ -10,6 +10,7 @@ import { findKb, type KbPlace } from '../kbPlace';
 import { loadKb } from '../kbPlace';
 import { acceptTopic, approve, approvedSectionText, confirmApproval, editAndApprove, mergeTopic, reject, reviewState } from './actions';
 import { backTo, sameToken, startReviewServer, type ReviewServer } from './server';
+import { sectionHtml } from './pages';
 import { excerptRange, wordDiff } from './text';
 
 /**
@@ -723,5 +724,23 @@ describe('the review page\'s text', () => {
       { kind: 'added', text: 'costs 1 dollar.' },
     ]);
     expect(wordDiff('Same words here.', 'Same\nwords here.').every((p) => p.kind === 'same')).toBe(true);
+  });
+});
+
+describe('a source section on the review page', () => {
+  it('says the PDF reader that read it, and that OCR read it, to read it against its page', () => {
+    const source = {
+      id: 'guide',
+      document: 'A guide',
+      provenance: { file: 'docs/guide.pdf', retrieved: '2026-11-27', reader: 'liteparse@2.21.3' },
+      sections: { fees: { heading: 'Fees', text: 'Each day late is 25 cents.', page: 2, ocr: true as const } },
+      hash: '0'.repeat(64),
+      freshness: 'unapproved' as const,
+    };
+    const html = sectionHtml(source, 'fees', null);
+    expect(html).toContain('<dt>Read by</dt><dd class="mono">liteparse@2.21.3</dd>');
+    expect(html).toContain('<p class="hint" role="alert">This section was read by OCR from page 2, which has no text layer: a word may be misread. Read it against the page before approving a passage from it.</p>');
+    const { ocr: _ocr, ...typed } = source.sections.fees;
+    expect(sectionHtml({ ...source, sections: { fees: typed } }, 'fees', null)).not.toContain('read by OCR');
   });
 });

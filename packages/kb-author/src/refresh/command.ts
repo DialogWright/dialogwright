@@ -1,11 +1,12 @@
 import { resolve } from 'node:path';
 import { parseArgs, shown, todayUtc } from '../args';
-import { USER_AGENT, type Io } from '../cli';
+import { onceSaid, USER_AGENT, type Io } from '../cli';
+import { PDF_READERS, type PdfReaderName } from '../extract/index';
 import { findKb } from '../kbPlace';
 import { formatRefreshReport, refreshKb } from './refresh';
 
 /**
- * kb:refresh [dir] [--allow-private] [--dry-run] [--json]
+ * kb:refresh [dir] [--reader liteparse|ours] [--ocr-language <code>] [--allow-private] [--dry-run] [--json]
  *
  * Reads every source document again from where it came from (./refresh.ts), writes those that
  * changed, and lists the passages now withheld and the sections nothing cites. Exit codes: 0 done
@@ -16,20 +17,26 @@ import { formatRefreshReport, refreshKb } from './refresh';
  */
 
 export const REFRESH_USAGE = [
-  'usage: kb:refresh [dir] [--allow-private] [--dry-run] [--json]',
+  'usage: kb:refresh [dir] [--reader liteparse|ours] [--ocr-language <code>] [--allow-private] [--dry-run] [--json]',
   '  reads every source in kb/sources again from its file, or with the crawl that read it, and writes those that changed;',
   '  it reads only files inside the app folder and public addresses (--allow-private: a site on a private network too), and names the hosts it asks first;',
+  '  a PDF is read again by the reader that read it (its provenance\'s reader; none: ours); --reader reads every PDF with the one it names, on purpose;',
   '  passages whose section changed are withheld until approved again (pnpm kb:review); new sections are offered to pnpm kb:draft.',
 ].join('\n');
 
 export async function refreshCommand(args: readonly string[], io: Io): Promise<number> {
-  const parsed = parseArgs(args, { flags: ['--allow-private', '--dry-run', '--json'] });
+  const parsed = parseArgs(args, { values: ['--reader', '--ocr-language'], flags: ['--allow-private', '--dry-run', '--json'] });
   if (typeof parsed === 'string') {
     io.err(`kb:refresh: ${parsed}\n${REFRESH_USAGE}`);
     return 2;
   }
   if (parsed.positional.length > 1) {
     io.err(`kb:refresh: give one app folder (or knowledge base folder) at most\n${REFRESH_USAGE}`);
+    return 2;
+  }
+  const reader = parsed.values['--reader'];
+  if (reader !== undefined && !(PDF_READERS as readonly string[]).includes(reader)) {
+    io.err(`kb:refresh: --reader must be ${PDF_READERS.join(' or ')}\n${REFRESH_USAGE}`);
     return 2;
   }
   const dir = resolve(io.cwd, parsed.positional[0] ?? '.');
@@ -43,6 +50,10 @@ export async function refreshCommand(args: readonly string[], io: Io): Promise<n
     place,
     today: (io.today ?? todayUtc)(),
     dryRun,
+    ...(reader !== undefined ? { reader: reader as PdfReaderName } : {}),
+    ...(parsed.values['--ocr-language'] !== undefined ? { ocrLanguage: parsed.values['--ocr-language'] } : {}),
+    onOcr: onceSaid(parsed.flags.has('--json') ? io.err : io.out, 'kb:refresh'),
+    ...(io.liteparse !== undefined ? { liteparse: io.liteparse } : {}),
     crawl: {
       userAgent: USER_AGENT,
       ...(parsed.flags.has('--allow-private') ? { allowPrivate: true } : {}),

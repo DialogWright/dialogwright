@@ -5,7 +5,8 @@ import type { Io } from '../cli';
 import { WEAK } from '../extract/tables/check';
 import { readLabels } from '../extract/tables/labels';
 import { HttpModelTableReader, ModelReaderError, type ModelTableReader } from '../extract/tables/model';
-import { scorePdf, type DocumentScore, type Tally } from '../extract/tables/score';
+import { openLiteParse } from '../extract/liteparse';
+import { scorePdf, type DocumentScore, type TableScore, type Tally } from '../extract/tables/score';
 
 /**
  * kb:tables <labels file | folder>... [--out <file>] [--json]
@@ -13,7 +14,8 @@ import { scorePdf, type DocumentScore, type Tally } from '../extract/tables/scor
  * Scores the PDF table readers on documents whose tables a person labelled (`<name>.tables.yaml` beside
  * each document, ../extract/tables/labels.ts): for each table, how many of its cells, whole rows and
  * headings were read right, the checker's score of it, and the first cells read wrong; then the totals,
- * and how many tables the checker calls weak among those read badly and those read well. A folder is
+ * and how many tables the checker calls weak among those read badly and those read well. LiteParse's
+ * reading (kb:ingest's reader by default, ../extract/liteparse.ts) is scored beside ours. A folder is
  * searched for labels files. Markdown by default (to stdout, or `--out`), JSON with `--json`. Exit
  * codes: 0 a report written, 1 a problem (a labels file that does not read, a document not found), 2 a
  * command line not understood.
@@ -22,7 +24,8 @@ import { scorePdf, type DocumentScore, type Tally } from '../extract/tables/scor
 export const TABLES_USAGE = [
   'usage: kb:tables <labels file | folder>... [--model <openrouter|anthropic>:<model id>] [--out <file>] [--json]',
   '  scores the PDF table readers on documents whose tables a person labelled (<name>.tables.yaml beside each document):',
-  '  each table\'s cells, whole rows and headings read right, the checker\'s score of it and the first cells read wrong, then the totals.',
+  '  each table\'s cells, whole rows and headings read right, the checker\'s score of it and the first cells read wrong, then the totals;',
+  '  LiteParse\'s reading (kb:ingest\'s reader of PDFs by default) is scored beside ours.',
   '  A folder is searched for labels files; --out writes the report to a file; --json prints JSON for tools.',
   '  --model asks that model where each labelled page\'s tables are (OPENROUTER_API_KEY or ANTHROPIC_API_KEY, your own; never in CI), its grids read beside the others\'.',
 ].join('\n');
@@ -48,13 +51,24 @@ const cell = (s: string) => s.replace(/\|/g, '\\|');
 export function formatTables(scores: readonly DocumentScore[]): string[] {
   const all = scores.flatMap((d) => d.tables.map((t) => ({ d, t })));
   const lines = [`# Table readers scored on ${scores.length} labelled document${scores.length === 1 ? '' : 's'}, ${all.length} table${all.length === 1 ? '' : 's'}`, ''];
-  lines.push('| Document | Page | Table | Reader | Cells right | Whole rows | Headings | Check | Each reader\'s cells |', '|---|---|---|---|---|---|---|---|---|');
+  const lite = all.some(({ t }) => t.liteparse !== undefined);
+  lines.push(
+    `| Document | Page | Table | Reader | Cells right | Whole rows | Headings | Check |${lite ? ' LiteParse cells | LiteParse rows | LiteParse headings | LiteParse check |' : ''} Each reader\'s cells |`,
+    `|---|---|---|---|---|---|---|---|${lite ? '---|---|---|---|' : ''}---|`,
+  );
+  const check = (c: number | undefined) => (c === undefined ? '' : c.toFixed(2));
   for (const { d, t } of all) {
     const each = Object.entries(t.readers ?? {}).map(([name, c]) => `${name} ${c.right}`).join(', ');
-    lines.push(`| ${cell(d.document)} | ${t.page} | ${cell(t.name)} | ${t.reader ?? 'not found'} | ${share(t.cells)} | ${share(t.rows)} | ${share(t.heads)} | ${t.check === undefined ? '' : t.check.toFixed(2)} | ${each} |`);
+    const l = t.liteparse;
+    const liteCells = !lite ? '' : l === undefined ? ' | | | |' : ` ${share(l.cells)} | ${share(l.rows)} | ${share(l.heads)} | ${check(l.check)} |`;
+    lines.push(`| ${cell(d.document)} | ${t.page} | ${cell(t.name)} | ${t.reader ?? 'not found'} | ${share(t.cells)} | ${share(t.rows)} | ${share(t.heads)} | ${check(t.check)} |${liteCells} ${each} |`);
   }
   const cells = sum(all.map(({ t }) => t.cells));
-  lines.push('', `Cells ${share(cells)}; whole rows ${share(sum(all.map(({ t }) => t.rows)))}; headings ${share(sum(all.map(({ t }) => t.heads)))}.`);
+  lines.push('', `Ours: cells ${share(cells)}; whole rows ${share(sum(all.map(({ t }) => t.rows)))}; headings ${share(sum(all.map(({ t }) => t.heads)))}.`);
+  if (lite) {
+    const ls = all.flatMap(({ t }) => (t.liteparse === undefined ? [] : [t.liteparse]));
+    lines.push(`LiteParse: cells ${share(sum(ls.map((l) => l.cells)))}; whole rows ${share(sum(ls.map((l) => l.rows)))}; headings ${share(sum(ls.map((l) => l.heads)))}.`);
+  }
   // How the checker sees the tables found and read badly (under half their cells) and those read well.
   const found = all.filter(({ t }) => t.reader !== undefined && t.cells.of > 0);
   const bad = found.filter(({ t }) => t.cells.right / t.cells.of < 0.5);
@@ -64,14 +78,17 @@ export function formatTables(scores: readonly DocumentScore[]): string[] {
     `${all.length - found.length} of the ${all.length} tables were not found (no table read has any of their cells). ` +
       `The checker calls ${weak(bad)} of the ${bad.length} found and read badly (under half their cells right) weak, and ${weak(good)} of the ${good.length} read well.`,
   );
-  const missed = all.filter(({ t }) => t.misses.length > 0);
-  if (missed.length > 0) {
-    lines.push('', '## Cells read wrong (the first of each table)', '');
+  const misses = (title: string, of: (t: TableScore) => TableScore['misses'] | undefined) => {
+    const missed = all.filter(({ t }) => (of(t) ?? []).length > 0);
+    if (missed.length === 0) return;
+    lines.push('', title, '');
     for (const { d, t } of missed) {
       lines.push(`- ${d.document} p${t.page} ${t.name}:`);
-      for (const m of t.misses) lines.push(`  - "${m.label}": the row read: ${m.row === null ? 'none matched' : `"${m.row.length > 200 ? `${m.row.slice(0, 200)}…` : m.row}"`}`);
+      for (const m of of(t)!) lines.push(`  - "${m.label}": the row read: ${m.row === null ? 'none matched' : `"${m.row.length > 200 ? `${m.row.slice(0, 200)}…` : m.row}"`}`);
     }
-  }
+  };
+  misses('## Cells read wrong (the first of each table)', (t) => t.misses);
+  misses('## Cells LiteParse read wrong (the first of each table)', (t) => t.liteparse?.misses);
   const failed = scores.flatMap((d) => (d.model ?? []).map((m) => ({ d, m })));
   if (failed.length > 0) {
     lines.push('', '## What the model could not give', '');
@@ -135,7 +152,7 @@ export async function tablesCommand(args: readonly string[], io: Io): Promise<nu
       io.err(`kb:tables: ${where}: ${labels.document} is not a PDF beside it`);
       return 1;
     }
-    scores.push(await scorePdf(new Uint8Array(readFileSync(document)), labels, model));
+    scores.push(await scorePdf(new Uint8Array(readFileSync(document)), labels, model, io.liteparse ?? openLiteParse));
   }
   const text = parsed.flags.has('--json') ? [JSON.stringify(scores, null, 2)] : formatTables(scores);
   if (model?.spent !== undefined && !parsed.flags.has('--json')) {

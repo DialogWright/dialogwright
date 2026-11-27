@@ -4,6 +4,8 @@ import type { KbPlace, KnowledgeBase } from 'dialogwright';
 import type { CrawlOptions } from '../crawl/crawl';
 import { canonicalUrl, hostOf } from '../crawl/url';
 import { draftsIn } from '../draft/draft';
+import { DEFAULT_PDF_READER, readerOfProvenance, type PdfReaderName } from '../extract/index';
+import type { LiteParseOpen } from '../extract/liteparse';
 import { ingest, type IngestReport } from '../ingest';
 import { loadKb } from '../kbPlace';
 import { existingSources, type CrawlProvenance, type DocumentChange } from '../write';
@@ -18,6 +20,12 @@ import { existingSources, type CrawlProvenance, type DocumentChange } from '../w
  * - a passage whose section is gone is withheld too, and cannot be approved until it cites a section
  *   that is there;
  * - a section no passage, draft or rejected draft cites is new material, offered to kb:draft.
+ *
+ * A PDF is read again by the reader its provenance names (`reader: liteparse@<version>`; none, as a PDF
+ * ingested before LiteParse, is ours), so a source is read as it was and no approved passage goes stale
+ * from a change of reader. `reader` (kb:refresh --reader) moves every PDF to the reader it names on
+ * purpose: a section that reads differently then withholds the passages citing it until a person
+ * approves them again, as any change in a source does, and the report lists each document moved.
  *
  * It writes nothing but kb/sources. A source written by hand (no provenance) is left as it is; a file
  * that is gone is reported and its source left as it is.
@@ -41,6 +49,14 @@ export interface RefreshOptions {
   onHosts?: (hosts: readonly string[]) => void;
   /** Re-read and report, but write nothing. */
   dryRun?: boolean;
+  /** Read every PDF with this reader (kb:refresh --reader), in place of the one its provenance names. */
+  reader?: PdfReaderName;
+  /** Tesseract's language for a page with no text layer (kb:refresh --ocr-language). */
+  ocrLanguage?: string;
+  /** Told before a document's first OCR (said once). */
+  onOcr?: (line: string) => void;
+  /** LiteParse itself, or a test's fake of it. */
+  liteparse?: LiteParseOpen;
 }
 
 /** One re-reading: a file, a crawl, or a page read alone. */
@@ -61,6 +77,8 @@ export interface RefreshReport {
   hosts: string[];
   /** Sources not read again: written by hand (no provenance), or their file is gone. */
   notRead: { id: string; why: string }[];
+  /** Documents read by another reader than their provenance named (kb:refresh --reader, or LiteParse's version): from and to (`ours` for none). */
+  moved: { id: string; from: string; to: string }[];
   /** Passages withheld because their section changed since approval. */
   stale: { id: string; topic: string; document: string; section: string }[];
   /** Passages withheld because their section is gone. */
@@ -104,15 +122,28 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
   const { place, today } = options;
   const appDir = place.appDir ?? dirname(place.kbDir);
   const sourcesDir = join(place.kbDir, 'sources');
-  const report: RefreshReport = { runs: [], hosts: [], notRead: [], stale: [], gone: [], uncited: [], readAfter: false };
+  const report: RefreshReport = { runs: [], hosts: [], notRead: [], moved: [], stale: [], gone: [], uncited: [], readAfter: false };
   const refusedRuns: RefreshRun[] = [];
 
   // What to read again: each file, each crawl once (the pages it read share its settings), each page read without one.
   const files: string[] = [];
   const crawls = new Map<string, CrawlProvenance>();
   const pages: string[] = [];
+  // The reader each source was read by, by where it came from, and as its provenance says it.
+  const readers = new Map<string, PdfReaderName>();
+  const recorded = new Map<string, string>();
   for (const e of existingSources(sourcesDir)) {
-    const p = e.data?.provenance;
+    const p = e.data?.provenance as { file?: unknown; url?: unknown; crawl?: unknown; reader?: unknown } | undefined;
+    const where = typeof p?.file === 'string' ? `file ${p.file}` : typeof p?.url === 'string' ? `url ${p.url}` : undefined;
+    if (where !== undefined) {
+      const reader = readerOfProvenance(p?.reader);
+      if (reader === undefined) {
+        refusedRuns.push({ input: String(p?.file ?? p?.url), kind: typeof p?.file === 'string' ? 'file' : 'page', documents: [], skipped: [], error: `${e.id}'s provenance names a reader kb-author does not have (${String(p?.reader)}): it is not read (the source is left as it is); its reader is liteparse@<version> or ours` });
+        continue;
+      }
+      readers.set(where, reader);
+      recorded.set(e.id, typeof p?.reader === 'string' ? p.reader : 'ours');
+    }
     if (typeof p?.file === 'string') {
       const where = fileInApp(appDir, p.file);
       if (where === 'gone') report.notRead.push({ id: e.id, why: `its file ${p.file} is not there (the source is left as it is)` });
@@ -144,7 +175,19 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
   report.hosts = [...hosts].sort();
   if (report.hosts.length > 0) options.onHosts?.(report.hosts);
 
-  const common = { appDir, kbDir: place.kbDir, today, ...(options.dryRun ? { dryRun: true } : {}) };
+  // A PDF read again by the reader its provenance names, or --reader's; a document new to the sources by the default.
+  const readerFor = (source: { file?: string; url?: string }): PdfReaderName =>
+    options.reader ?? readers.get(source.file !== undefined ? `file ${source.file}` : `url ${source.url}`) ?? DEFAULT_PDF_READER;
+  const common = {
+    appDir,
+    kbDir: place.kbDir,
+    today,
+    reader: readerFor,
+    ...(options.dryRun ? { dryRun: true } : {}),
+    ...(options.ocrLanguage !== undefined ? { ocrLanguage: options.ocrLanguage } : {}),
+    ...(options.onOcr !== undefined ? { onOcr: options.onOcr } : {}),
+    ...(options.liteparse !== undefined ? { liteparse: options.liteparse } : {}),
+  };
   for (const file of [...new Set(files)].sort()) await run(file, 'file', () => ingest({ ...common, input: join(appDir, file) }));
   for (const c of [...crawls.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))) {
     await run(c.start, 'crawl', () =>
@@ -166,6 +209,12 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
     if (!reread.has(e.id) && !listed.has(e.id)) report.notRead.push({ id: e.id, why: 'not read again this time (see what was skipped); the source is left as it is' });
   }
   report.notRead.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // The documents now read by another reader than their provenance named.
+  for (const d of report.runs.flatMap((r) => r.documents)) {
+    const from = recorded.get(d.id);
+    const to = (d.provenance as { reader?: string }).reader ?? 'ours';
+    if (from !== undefined && from !== to) report.moved.push({ id: d.id, from, to });
+  }
 
   if (options.dryRun) return report;
 
@@ -216,8 +265,10 @@ export function formatRefreshReport(report: RefreshReport, labels: { kb: string;
     const marks = d.sections.filter((s) => s.status !== 'unchanged').map((s) => `${s.status === 'added' ? '+' : s.status === 'removed' ? '-' : '~'} ${s.id}${s.headingOnly ? ' (its heading only)' : s.pageOnly ? ' (its pages only)' : ''}`);
     lines.push(`  changed   ${d.id}: ${marks.join(', ') || 'its title or provenance'}`);
   }
+  for (const m of report.moved) lines.push(`  reader    ${m.id}: ${m.from} to ${m.to}`);
   for (const s of report.notRead) lines.push(`  not read  ${s.id}: ${s.why}`);
   for (const r of report.runs) for (const s of r.skipped) lines.push(`  skipped   ${s.what}: ${s.reason}`);
+  if (report.moved.length > 0) lines.push(`read by another reader now (${report.moved.length}): a passage whose section reads differently is withheld until a person approves it again (pnpm kb:review)`);
   if (!report.readAfter) {
     if (!labels.dryRun) lines.push('the knowledge base does not load now, so the passages\' state cannot be read: run pnpm check');
     return lines;

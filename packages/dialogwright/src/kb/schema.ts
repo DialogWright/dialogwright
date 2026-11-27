@@ -279,6 +279,9 @@ export const kbSourceSchema = z
           })
           .optional()
           .describe('For a page read by a crawl (pnpm kb:ingest <url>): the crawl\'s settings, which pnpm kb:refresh crawls with again.'),
+        reader: text()
+          .optional()
+          .describe('For a PDF: the reader that read it, "liteparse@<version>" (LiteParse, kb:ingest\'s default) or "ours" (kb:ingest --reader ours). pnpm kb:refresh reads it again with the same reader, unless --reader moves it to another. Default: ours, as a PDF ingested before LiteParse was read.'),
       })
       .optional()
       .describe('Where the text came from.'),
@@ -304,6 +307,7 @@ export const kbSourceSchema = z
           text: text().describe('The section\'s text, as the document has it. Approvals hash it (whitespace collapsed), so a changed word makes its passages stale.'),
           page: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('For a document with pages (a PDF): the page the section starts on. Provenance only: approvals do not hash it.'),
           lastPage: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('For a section that runs on past its first page: the page it ends on. Provenance only.'),
+          ocr: z.literal(true, { error: 'must be true, or left out' }).optional().describe('true: some of its text was read by OCR from a page with no text layer (pnpm kb:ingest, LiteParse with Tesseract), so a word may be misread: read it against the page before approving a passage from it. Provenance only: approvals do not hash it.'),
           summarize: z.literal(false, { error: 'must be false, or left out' }).optional().describe('false: never answered from by summarizing (kb.yaml documents), whatever the document\'s approval: for what a document says that should not be said to a caller. Default: summarized where no passage cites it.'),
         }),
         { error: 'must be a map from section id to the section' },

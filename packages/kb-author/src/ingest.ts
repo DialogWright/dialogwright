@@ -2,7 +2,8 @@ import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import { crawl, type CrawlOptions, type CrawlResult } from './crawl/crawl';
 import { hostOf } from './crawl/url';
-import { EXTENSIONS, extract, formatOfName } from './extract/index';
+import { DEFAULT_PDF_READER, EXTENSIONS, extract, extractPdfWith, formatOfName, type ExtractOptions, type PdfReaderName } from './extract/index';
+import type { LiteParseOpen } from './extract/liteparse';
 import { slugOf } from './sections';
 import type { PdfTablesOptions } from './extract/pdf';
 import { TablesCache } from './extract/tables/cache';
@@ -36,6 +37,18 @@ export interface IngestOptions {
    * table that kb/.tables/grids.json does not have yet. Without one, the grids already there are read.
    */
   tables?: ModelTableReader;
+  /**
+   * Which reader reads a PDF (./extract/index.ts): LiteParse (the default) or ours; or, for kb:refresh, the
+   * reader for each document by where it came from (its file's path from the app folder, or its URL), as
+   * its source's provenance names it. A model's tables (`tables`) are read by ours only.
+   */
+  reader?: PdfReaderName | ((source: { file?: string; url?: string }) => PdfReaderName);
+  /** Tesseract's language for a PDF page with no text layer, read by LiteParse's OCR (default `eng`). */
+  ocrLanguage?: string;
+  /** Told before a document's first OCR (kb:ingest says it once: the first OCR on a machine downloads its language data). */
+  onOcr?: (line: string) => void;
+  /** LiteParse itself, or a test's fake of it. */
+  liteparse?: LiteParseOpen;
 }
 
 export interface IngestReport {
@@ -56,6 +69,9 @@ export interface IngestReport {
 export class IngestError extends Error {}
 
 export const isUrl = (input: string): boolean => /^https?:\/\//i.test(input);
+
+/** Why a PDF gave no sections, by its reader. */
+const noPdfText = (reader: PdfReaderName | undefined): string => (reader === 'ours' ? 'no text (a scanned PDF: --reader liteparse reads it by OCR)' : 'no text, even by OCR');
 
 /** A path with forward slashes. */
 const posix = (path: string): string => path.split(sep).join('/');
@@ -91,7 +107,7 @@ function walk(root: string, at: string, files: string[], skipped: IngestReport['
 }
 
 /** A folder's or a file's documents. */
-async function readFiles(input: string, appDir: string, pdfTables: PdfTablesOptions): Promise<{ kind: 'folder' | 'file'; inputs: SourceInput[]; skipped: IngestReport['skipped']; under: string }> {
+async function readFiles(input: string, appDir: string, pdfOf: (file: string) => ExtractOptions): Promise<{ kind: 'folder' | 'file'; inputs: SourceInput[]; skipped: IngestReport['skipped']; under: string }> {
   let stat;
   try {
     stat = statSync(input);
@@ -115,16 +131,17 @@ async function readFiles(input: string, appDir: string, pdfTables: PdfTablesOpti
     const format = formatOfName(rel)!;
     const file = join(root, rel);
     try {
-      const read = await extract(format, new Uint8Array(readFileSync(file)), { tables: pdfTables });
+      const how = pdfOf(posix(relative(appDir, file)));
+      const read = await extract(format, new Uint8Array(readFileSync(file)), how);
       const name = rel.split('/').pop()!;
       const ext = name.slice(name.lastIndexOf('.') + 1);
       if (read.sections.length === 0) {
-        skipped.push({ what: rel, reason: format === 'pdf' ? 'no text (a scanned PDF needs OCR first)' : 'no text' });
+        skipped.push({ what: rel, reason: format === 'pdf' ? noPdfText(how.reader) : 'no text' });
         continue;
       }
       const segments = rel.slice(0, rel.length - ext.length - 1).split('/');
       inputs.push({
-        provenance: { file: posix(relative(appDir, file)) },
+        provenance: { file: posix(relative(appDir, file)), ...(read.reader !== undefined ? { reader: read.reader } : {}) },
         title: read.title ?? titleFromName(name.slice(0, name.length - ext.length - 1)),
         ...idsOfPath(segments, ext, 'document'),
         sections: read.sections,
@@ -162,13 +179,30 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
   // The grids a model gave before, read by every PDF; asked of the model for a page they do not have.
   const counts = { asked: 0, cached: 0 };
   const pdfTables: PdfTablesOptions = { cache: TablesCache.load(options.kbDir), ...(options.tables !== undefined ? { reader: options.tables } : {}), counts };
+  if (options.tables !== undefined && typeof options.reader !== 'function' && (options.reader ?? DEFAULT_PDF_READER) === 'liteparse') {
+    throw new IngestError('a model\'s tables (--tables) are read with our readers only: give --reader ours with --tables');
+  }
+  // How each PDF is read: by its reader, ours with the model's tables, LiteParse with its OCR settings.
+  const readerFor = (source: { file?: string; url?: string }): PdfReaderName => (typeof options.reader === 'function' ? options.reader(source) : (options.reader ?? DEFAULT_PDF_READER));
+  const pdfOf = (source: { file?: string; url?: string }): ExtractOptions => {
+    const reader = readerFor(source);
+    if (reader === 'ours') return { reader, tables: pdfTables };
+    return {
+      reader,
+      liteparse: {
+        ...(options.ocrLanguage !== undefined ? { ocrLanguage: options.ocrLanguage } : {}),
+        ...(options.onOcr !== undefined ? { onOcr: options.onOcr } : {}),
+        ...(options.liteparse !== undefined ? { open: options.liteparse } : {}),
+      },
+    };
+  };
   let report: IngestReport;
   let inputs: SourceInput[];
   let mine: (provenance: { url?: unknown; file?: unknown } | undefined) => boolean;
 
   if (isUrl(options.input)) {
     if (!options.crawl) throw new IngestError('a URL needs the crawl settings');
-    const result = await crawl({ ...options.crawl, start: options.input, pdfTables });
+    const result = await crawl({ ...options.crawl, start: options.input, pdfTables, readPdf: (bytes, url) => extractPdfWith(bytes, pdfOf({ url })) });
     const startHost = hostOf(result.requests[0]?.url ?? options.input);
     const hosts = new Set([startHost, ...(options.crawl.allowHosts ?? []).map((h) => h.toLowerCase())]);
     inputs = [];
@@ -185,12 +219,12 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
     const skipped: IngestReport['skipped'] = result.skipped.map((s) => ({ what: s.url, reason: s.reason }));
     for (const d of result.documents) {
       if (d.document.sections.length === 0) {
-        skipped.push({ what: d.url, reason: d.format === 'pdf' ? 'no text (a scanned PDF needs OCR first)' : 'no text' });
+        skipped.push({ what: d.url, reason: d.format === 'pdf' ? noPdfText(readerFor({ url: d.url })) : 'no text' });
         continue;
       }
       const u = new URL(d.url);
       const name = u.pathname.split('/').filter(Boolean).pop() ?? u.host;
-      inputs.push({ provenance: { url: d.url, crawl: crawled }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections, ...(d.document.notes === undefined ? {} : { notes: d.document.notes }) });
+      inputs.push({ provenance: { url: d.url, crawl: crawled, ...(d.document.reader !== undefined ? { reader: d.document.reader } : {}) }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections, ...(d.document.notes === undefined ? {} : { notes: d.document.notes }) });
     }
     report = { input: options.input, kind: 'site', documents: [], skipped, notSeen: [], crawl: { requests: result.requests, robots: result.robots } };
     mine = (p) => {
@@ -202,7 +236,7 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
       }
     };
   } else {
-    const read = await readFiles(options.input, options.appDir, pdfTables);
+    const read = await readFiles(options.input, options.appDir, (file) => pdfOf({ file }));
     inputs = read.inputs;
     report = { input: options.input, kind: read.kind, documents: [], skipped: read.skipped, notSeen: [] };
     mine = (p) => typeof p?.file === 'string' && (read.kind === 'file' ? p.file === read.under : p.file.startsWith(read.under === '' ? '' : `${read.under}/`));

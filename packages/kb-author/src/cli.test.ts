@@ -2,6 +2,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { fakeLiteParse, mergedRowsPage, scannedPages } from './__fixtures__/liteparse';
 import { FOLDER, fakeClock, guardedFetch, serveSite, type FixtureSite } from './__fixtures__/server';
 import { main, USER_AGENT, VERSION, type Io } from './cli';
 
@@ -82,6 +83,39 @@ describe('kb:ingest', () => {
       expect([args.join(' '), await main(args, s.io)]).toEqual([args.join(' '), code]);
       expect(s.err.join('\n')).toMatch(message);
     }
+  });
+
+  it('notes a table the two PDF readers read differently, under its document', async () => {
+    const s = scratch({ liteparse: fakeLiteParse(() => [mergedRowsPage()]).open });
+    expect(await main(['kb:ingest', 'docs/rights-notice.pdf'], s.io)).toBe(0);
+    expect(s.out).toContain('    ! page 1: check against the source: the two readers differ on a table of 3 columns and 1 row: LiteParse reads $20, $50, $60, $75 in "Office visit Urgent care"; ours reads $20, $60 in "Office visit", $50, $75 in "Urgent care"');
+  });
+
+  it('reads a page with no text layer by OCR, in the language --ocr-language names, says once that OCR downloads its data, and marks the section', async () => {
+    const fake = fakeLiteParse(scannedPages, 2);
+    const s = scratch({ liteparse: fake.open });
+    cpSync(join(s.app, 'docs', 'rights-notice.pdf'), join(s.app, 'docs', 'second-notice.pdf'));
+    expect(await main(['kb:ingest', 'docs', '--ocr-language', 'spa'], s.io)).toBe(0);
+    expect(s.out.filter((l) => l.includes('downloads'))).toEqual(['kb:ingest: a PDF page with no text layer is read by OCR (Tesseract, spa); the first OCR on this machine downloads Tesseract\'s language data for it (about 15 MB)']);
+    expect(s.out).toContain('    ! page 2: it has no text layer, so it was read by OCR (Tesseract, spa): read its sections against the page before approving a passage from them');
+    expect(fake.configs.filter((c) => c.ocrEnabled).map((c) => c.ocrLanguage)).toEqual(['spa', 'spa', 'spa']);
+    const yaml = readFileSync(join(s.app, 'kb', 'sources', 'second-notice.yaml'), 'utf8');
+    expect(yaml).toContain('  late-fees:\n    heading: Late fees\n    text: Each day late is 25 cents.\n    page: 2\n    ocr: true\n');
+    expect(yaml).toContain('  reader: liteparse@2.21.3\n');
+  });
+
+  it('takes --reader liteparse or ours, and refuses another, and --tables without --reader ours', async () => {
+    for (const [args, code, message] of [
+      [['kb:ingest', 'docs', '--reader', 'pdfjs'], 2, /--reader must be liteparse or ours/],
+      [['kb:ingest', 'docs', '--tables', 'anthropic:claude-x'], 2, /a model's tables \(--tables\) are read with our readers only: give --reader ours with --tables/],
+    ] as [string[], number, RegExp][]) {
+      const s = scratch({ env: { ANTHROPIC_API_KEY: 'test-key' } });
+      expect(await main(args, s.io)).toBe(code);
+      expect(s.err.join('\n')).toMatch(message);
+    }
+    const s = scratch({ liteparse: () => { throw new Error('LiteParse is not used with --reader ours'); } });
+    expect(await main(['kb:ingest', 'docs/patron-guide.pdf', '--reader', 'ours'], s.io)).toBe(0);
+    expect(readFileSync(join(s.app, 'kb', 'sources', 'patron-guide.yaml'), 'utf8')).not.toContain('reader:');
   });
 
   it('names itself in the User-Agent with its version and where it comes from', () => {
