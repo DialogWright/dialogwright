@@ -403,4 +403,4 @@ One row per check run. Keep earlier rows.
 
 | Date | Check | Carrier or provider | Result | What changed because of it |
 |---|---|---|---|---|
-| | | | | |
+| 2026-11-26 | 2.11 and 2.12, with the wheel shop agent | Telnyx, Deepgram flux, Krisp | Passed, in a room with a loud television and two people talking nearby: 10 speech events reached the line, none cut a reply off, and the request was sent in nine turns. The same room on Twilio (flux, `interruptSensitivity` low, `ignoreBackchannel` on) gave 135 speech events and 7 replies cut off, the room's voices were transcribed as the caller's words, and the call could not go on. | Telnyx is the recommended carrier ([13.2](guide/13-channels.md#132-serving-voice-twilio-telnyx-or-both)); `pnpm configure` writes the three settings for an English app. |

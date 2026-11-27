@@ -45,7 +45,7 @@ Then replace the example with your own, reading the [authoring guide](docs/guide
 
 ## Answer a real phone call in an hour
 
-On your own laptop, with two keys: a carrier's (Telnyx or Twilio, with a number) and a decision model's (TypeSafe, OpenRouter or the Vercel AI Gateway; or none, with a compatible model on your own machine). Nothing else needs an account: the carrier reaches you through Cloudflare's quick tunnel, which needs only `cloudflared` installed (`brew install cloudflared` on a Mac, or Cloudflare's package for Linux).
+On your own laptop, with two keys: a carrier's (Telnyx, recommended for its noise suppression, or Twilio, with a number; [why](docs/guide/13-channels.md#132-serving-voice-twilio-telnyx-or-both)) and a decision model's (TypeSafe, OpenRouter or the Vercel AI Gateway; or none, with a compatible model on your own machine). Nothing else needs an account: the carrier reaches you through Cloudflare's quick tunnel, which needs only `cloudflared` installed (`brew install cloudflared` on a Mac, or Cloudflare's package for Linux).
 
 ```sh
 pnpm install

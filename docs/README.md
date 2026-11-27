@@ -78,7 +78,7 @@ General questions ("when are you open", "what is the late fee") are answered fro
 
 ### Channels, and the widget
 
-The same app answers on the phone through Twilio, Telnyx or both (`VOICE_PROVIDERS`; each carrier is a plug-in behind one interface, proven by a conformance kit against the carrier's documented frames), in the caller's language end to end, and on the web through the engine's own chat endpoint (`CHAT=on`), with sign-in by the site's own identity token. Every choice is an option with a default: [section 13 of the guide](guide/13-channels.md). What only a real call can confirm is [live-checks.md](live-checks.md).
+The same app answers on the phone through Telnyx (the recommended carrier: [why](guide/13-channels.md#132-serving-voice-twilio-telnyx-or-both)), Twilio or both (`VOICE_PROVIDERS`; each carrier is a plug-in behind one interface, proven by a conformance kit against the carrier's documented frames), in the caller's language end to end, and on the web through the engine's own chat endpoint (`CHAT=on`), with sign-in by the site's own identity token. Every choice is an option with a default: [section 13 of the guide](guide/13-channels.md). What only a real call can confirm is [live-checks.md](live-checks.md).
 
 `packages/widget` (`@dialogwright/widget`): the web chat widget a site embeds with one script tag: a few kilobytes, no runtime dependencies and none of the engine, themed with CSS custom properties, every word replaceable, with reconnect and resume built in; `createChatClient` is the same client for a site with its own interface. [Its README](../packages/widget/README.md).
 
