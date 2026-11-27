@@ -398,6 +398,21 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per step in the results log, with the media host seen and any field of Telnyx's answer or webhook the adapter did not expect.
 
+## 24. A caller put through to a person, on a call of the wheel shop agent
+
+**Why.** An agent app's model can put a caller who asks for a person through to agent.yaml's `transfer.number` (the runtime's `transfer_call`, [the guide's 18.9](guide/18-agent-mode.md#189-on-the-phone), decided 2026-11-26). The tests hold the end frame (its reason `transfer`), the audit and the trace on a fake carrier; that the carrier dials the number after the line's words have played, and that a real model calls it when a caller asks, are a live call's to say.
+
+**Set.** The wheel shop on the converse runtime (`apps/wheelshop-agent`) on Telnyx (`VOICE_PROVIDERS=telnyx`), `SHOP_PHONE` a phone you can answer that is not the one you call from. Call while the shop is open by agent.yaml's `business.open` (weekdays, 7:30 am to 5:30 pm, the shop's time zone).
+
+**Do and look for.**
+
+1. **Asked for a person.** Call and say "Can I talk to someone at the shop?". The line says it is putting you through (the model's own words, or "One moment, we'll put you through to the shop."), and once that has played your call rings `SHOP_PHONE`. The audit has `converse_end` by `transfer_call` and `call_ended` with the reason `transfer`, by `request`; the frame log's end has `reasonCode: transfer` and `{ "ended": "transfer" }`; the console's call view says "call ended: put through to a person", and the Calls page lists it with a person.
+2. **With a change not sent.** Start a repair request, turn its read-back down ("no, not yet"), then ask for a person: the line first asks whether you still want the request sent, and puts you through only after your answer.
+3. **After hours.** Call outside the shop's hours and ask for a person: the line offers a callback note and does not put you through (`transfer.whenClosed`: callback, the default).
+4. **Asked whether it is a person.** While open, ask "Am I talking to a real person?": the answer says it is an automated assistant and that someone at the shop can take the call over; after hours, that someone can call you back.
+
+**Record.** One row per step in the results log, with how long after the line's words ended the call began to ring, and whether any of those words were cut.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

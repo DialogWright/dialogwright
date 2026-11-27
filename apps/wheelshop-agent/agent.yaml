@@ -61,7 +61,8 @@ facts:
   - How long any other job takes depends on the damage; the shop says once it has seen it. # assumption: the owner corrects these
   - "Cars are dropped off in a window: the morning window, drop off by 8, ready by about noon; or the afternoon window, drop off by noon, ready by about 5." # assumption: the owner corrects these
   - Dealerships on Commerce Drive send their trade-ins here.
-  - There is no live transfer; a caller who wants to speak with someone can leave a callback note, and someone from the shop calls back as soon as they can.
+  # assumption: the owner corrects these (whether the shop can take a call put through while it is open)
+  - On a phone call while the shop is open, we can put a caller who wants to speak with someone through to the shop. At other times, and on the web chat, they can leave a callback note, and someone from the shop calls back as soon as they can.
 # The questions callers ask, with the shop's answers. Each came from the simulated callers' calls, where a
 # model answered something this file did not (the judge's "gaps", 2026-11-11): the owner answers them here.
 questions: # assumption: the owner corrects these
@@ -157,7 +158,9 @@ journeys:
     - q: When will someone from the shop call me back?
       a: As soon as the shop can; we don't give a set time.
     - q: Can I call the shop directly?
-      a: There's no direct line on this number; leave a callback note and someone from the shop calls you back.
+      a: >-
+        While the shop is open we can put your call through to the shop from this line; otherwise, leave a callback note
+        and someone from the shop calls you back.
     actions: [check_availability, send_request, leave_callback]
     # Never moves to its after phase: a caller may send a request and also leave a callback note, each read back
     # and confirmed on its own.
@@ -204,7 +207,11 @@ lines:
     chat: { en: "Thanks for messaging Example Wheel Works. We can price a repair, set up a drop-off, or take a note for the shop to call you back; the shop itself is closed right now. How can we help?" }
   closing: { en: "Thanks for getting in touch with Example Wheel Works. Take care." }
   recovery: { en: "Sorry, could you say that again?" }
-  handoff: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
+  # assumption: the owner corrects these (on a call the line then puts the caller through to the shop, transfer.number;
+  # in the web chat, which puts no one through, the chat wording)
+  handoff:
+    en: "Sorry, something isn't working on our end. Let me put you through to the shop."
+    chat: { en: "Sorry, something isn't working on our end. Please get in touch again in a little while." }
   # assumption: the owner corrects these (the line said on the third turn in a row it cannot follow, before the call ends)
   unclear:
     en: "Sorry, this line can only help with a wheel repair or a callback. Call us back any time."
@@ -217,6 +224,8 @@ lines:
   # the silence; and the goodbye after one more, before the call ends)
   silence: { en: "Are you still there? Take your time, we can carry on whenever you're ready." }
   silenceEnd: { en: "It sounds like now isn't a good time, so we'll let you go. Call us back any time." }
+  # assumption: the owner corrects these (said before a call is put through to the shop, where the model writes nothing of its own)
+  transfer: { en: "One moment, we'll put you through to the shop." }
 model:
   # Muse Ember (Meta's Standard mode, which does not train on the conversations): the model comparison of
   # 2026-11-11 (docs/designs/eval/2026-11-model-comparison.md) found it better than Mercury on both quality bars
@@ -377,3 +386,9 @@ actions:
     readBack:
       en: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}.[ A note for the shop: {notes}.] Is that right?"
     audit: { name: mask, callbackNumber: last4, about: keep, notes: keep }
+# A caller on the phone who asks for a person is put through to the shop's phone (the setting SHOP_PHONE, the same number
+# the shop's summaries are texted to, never in this file), while the shop is open (business.open); closed, the line offers
+# a callback note (transfer.whenClosed: callback, the default). A call the model has failed four times goes there too.
+# assumption: the owner corrects these (the number calls are put through to, and that only while the shop is open)
+transfer:
+  number: env.SHOP_PHONE

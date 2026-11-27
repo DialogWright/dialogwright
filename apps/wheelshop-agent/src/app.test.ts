@@ -195,7 +195,7 @@ describe('send_request', () => {
   it('offers the model no follow-on: the photo text and the shop\'s summary run only after the request\'s yes', async () => {
     const model = fakeConverseModel([...dropped(), [text('Hello.'), done()]]);
     const { app } = wheelshop({ now: () => NOW });
-    const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(NOW) });
+    const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     await c.say('I curbed my Civic');
     expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
@@ -335,7 +335,7 @@ describe('journeys', () => {
     const model = fakeConverseModel([[text('Hello.'), done()]]);
     const { app } = wheelshop({ now: () => NOW });
     const jev = routingJev();
-    const c = converseTestCall(app, { model, jev, callerNumber: DEALER, now: () => new Date(NOW) });
+    const c = converseTestCall(app, { model, jev, callerNumber: DEALER, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     expect(c.state.journey).toMatchObject({ active: 'dealer_booking', phase: 'working' });
     await c.say('three trade-ins for tomorrow');
@@ -348,7 +348,7 @@ describe('journeys', () => {
     const model = fakeConverseModel([...dropped(), [text('Hello.'), done()]]);
     const { app } = wheelshop({ now: () => NOW });
     const jev = routingJev();
-    const c = converseTestCall(app, { model, jev, callerNumber: RETAIL, now: () => new Date(NOW) });
+    const c = converseTestCall(app, { model, jev, callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     expect(c.state.journey).toMatchObject({ active: null });
     await c.say('I curbed my Civic, can I bring it in Tuesday?');
@@ -370,12 +370,12 @@ describe('journeys', () => {
 
   it('greets a caller on no account as a receptionist, and a recognised dealership with a booking question', async () => {
     const { app } = wheelshop({ now: () => NOW });
-    const retail = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW) });
+    const retail = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     expect(await retail.start()).toEqual(['Thanks for messaging Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
     // On a call, the greeting's own words: the chat says "messaging" (its `chat:` wording) where a call says "calling".
-    const onCall = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, channel: 'voice', now: () => new Date(NOW) });
+    const onCall = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: RETAIL, channel: 'voice', now: () => new Date(NOW), env: { SHOP_PHONE } });
     expect(await onCall.start()).toEqual(['Thanks for calling Example Wheel Works, where we make damaged wheels look new again. We can price a repair and set up a drop-off, or have someone from the shop call you back. How can we help?']);
-    const dealer = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW) });
+    const dealer = converseTestCall(app, { model: fakeConverseModel([]), jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW), env: { SHOP_PHONE } });
     expect(await dealer.start()).toEqual(['Example Wheel Works, hi. Booking some cars in today?']);
   });
 
@@ -422,7 +422,7 @@ describe('journeys', () => {
   it('offers a caller on no account send_request and leave_callback in the one request journey, with no switch', async () => {
     const model = fakeConverseModel([...dropped(), [text('Sure.'), done()], [text('Of course.'), done()]]);
     const { app } = wheelshop({ now: () => NOW });
-    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW) });
+    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     await c.say('I would rather someone call me back');
     expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working' });
@@ -540,5 +540,46 @@ describe('after hours', () => {
     expect(system).toContain("As soon as the shop can; we don't give a set time.");
     expect(system).toContain('Never say when someone will call back.');
     expect(system).not.toMatch(/working day/i);
+  });
+});
+
+describe('a caller who asks for a person (transfer_call, decided 2026-11-26)', () => {
+  const NIGHT = Date.parse('2026-11-12T03:00:00Z'); // a Wednesday, 10 p.m. at the shop: closed
+  const PUT = 'Sure, one moment while we put you through.';
+
+  it('on a call while the shop is open: the line\'s words, then the call put through to the shop\'s phone', async () => {
+    const { app } = wheelshop({ now: () => NOW });
+    const model = fakeConverseModel([...dropped(), [text(PUT), call('c1', 'transfer_call', {}), done('tool')]]);
+    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, channel: 'voice', now: () => new Date(NOW), env: { SHOP_PHONE } });
+    await c.start();
+    expect(await c.say('can I talk to a person at the shop?')).toEqual([PUT]);
+    expect(toolNames(model)).toContain('transfer_call');
+    expect(c.ended).toBe('transfer');
+    expect(c.audit.filter((r) => r.type === 'converse_end').map((r) => r.detail)).toEqual([{ by: 'transfer_call' }]);
+    expect(c.traces.at(-1)!.ended).toBe('transfer');
+    // The number it goes to is the shop's phone, read from the app's settings.
+    expect(app.business.transfer?.number).toBe('env.SHOP_PHONE');
+  });
+
+  it('where the model writes nothing with it, the shop\'s own line is said', async () => {
+    const { app } = wheelshop({ now: () => NOW });
+    const model = fakeConverseModel([...dropped(), [call('c1', 'transfer_call', {}), done('tool')]]);
+    const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, channel: 'voice', now: () => new Date(NOW), env: { SHOP_PHONE } });
+    await c.start();
+    expect(await c.say('a person, please')).toEqual(["One moment, we'll put you through to the shop."]);
+    expect(c.ended).toBe('transfer');
+  });
+
+  it('is not offered while the shop is closed, nor on the web chat: the caller is offered a callback note', async () => {
+    for (const [channel, at] of [['voice', NIGHT], ['chat', NOW]] as const) {
+      const { app } = wheelshop({ now: () => at });
+      const model = fakeConverseModel([...dropped(), [text('We can have someone from the shop call you back.'), done()]]);
+      const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, channel, now: () => new Date(at), env: { SHOP_PHONE } });
+      await c.start();
+      await c.say('can I talk to a person at the shop?');
+      expect(toolNames(model), channel).not.toContain('transfer_call');
+      expect(toolNames(model), channel).toContain('leave_callback');
+      expect(c.ended, channel).toBeUndefined();
+    }
   });
 });

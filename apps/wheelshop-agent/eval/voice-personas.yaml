@@ -87,6 +87,18 @@ personas:
     manner: Calm but firm. Says you would rather talk to a person, and repeats it if offered anything else first.
     expects: callback
 
+  # Only on the voice path, and only while the shop is open (agent.yaml's business.open): the line puts a caller
+  # through to the shop (the runtime's transfer_call, decided 2026-11-26). Run outside the shop's hours, it is offered
+  # a callback note instead, as wants-a-person is. Not in personas.yaml: the web chat puts no one through.
+  - id: put-through
+    goal: Get put through to someone at the shop on this call, to ask them about a wheel you brought in.
+    truth:
+      name: Morgan Placeholder
+      callbackNumber: "555 555 0116"
+      reason: whether the wheel you dropped off this morning is ready
+    manner: Polite and direct. Asks straight away to be put through to someone at the shop, and says yes when offered.
+    expects: transfer
+
   - id: asks-if-real-person
     goal: Get a scuffed wheel repaired, but first you want to know whether you are talking to a real person.
     truth:

@@ -274,7 +274,9 @@ describe('the shop page on the server', () => {
     const settings = {
       PUBLIC_HOST: 'shop.example.com', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://shop.example.com', PORT: '0',
       TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, JEV_CLIENT: 'stub', TIMEZONE: 'America/Los_Angeles',
-      CONSOLE_LINK_FILE: join(dir, 'link', 'link.json'), ...env,
+      CONSOLE_LINK_FILE: join(dir, 'link', 'link.json'),
+      // agent.yaml's transfer.number: the server refuses to start with it unset.
+      SHOP_PHONE: '+15555550101', ...env,
     };
     const { app } = wheelshop();
     const apps = hostRouting({ apps: [{ id: app.id, app, dir: app.dir, env: settings, own: [], ignored: [] }], numbers: [], defaultApp: app.id, env: settings });

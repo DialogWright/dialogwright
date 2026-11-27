@@ -34,6 +34,7 @@ flowchart LR
   a_notify_shop_booking[["notify_shop_booking<br/>change (follow-on)"]]
   a_leave_callback[["leave_callback<br/>change: read back, then yes"]]
   a_end_call("end_call<br/>ends the call")
+  a_transfer_call("transfer_call<br/>puts the call through to a person")
   a_check_availability -->|slot| a_send_request
   a_send_request ==>|"then, after the yes"| a_send_photo_request
   a_send_request ==>|"then, after the yes"| a_notify_shop_request
