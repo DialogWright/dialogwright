@@ -13,7 +13,8 @@ import { conversePolicyCardText, conversePolicyMatrixText } from '../testing/con
 import { converseTestCall } from '../testing/converseCall';
 import { judgeInput, type AuditedAction } from '../eval/judge';
 import { defineConverseApp, type ConverseApp } from './app';
-import { LOOK_UP } from './business/schema';
+import { LOOK_UP, NOTE_GAP } from './business/schema';
+import { converseFacts } from '../server/dashboard/figures';
 import { hasApprovedAnswer, LOOK_UP_AT, LOOK_UP_QUESTION_ID, lookUp, NOT_FOUND, WORDING_AS_WRITTEN, WORDING_LOW, type ConverseKnowledge } from './knowledge';
 import { fakeModel } from './model/fake';
 import type { ModelEvent } from './model/types';
@@ -244,6 +245,24 @@ describe('the lookup on a call', () => {
     expect(await checkApp(d, { todayIso: TODAY })).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'knowledge.journeys', message: 'knowledge.journeys names journeys, and the business has none' })]));
   });
 
+  it('a note of a question the passage found does not answer carries what the turn\'s lookups found, and takes no third round', async () => {
+    const app = appOf(folder(), ['care-1']);
+    const question = 'How should I clean it, is steam all right?';
+    const noted = 'Whether a steam cleaner is all right on a mended item';
+    const model = fakeModel([
+      [call('k1', LOOK_UP, { question }), done('tool')],
+      [text('Our care notes say a dry cloth, and say nothing of steam, so I would not want to guess.'), call('g1', NOTE_GAP, { question: noted }), done('tool')],
+    ]);
+    const c = converseTestCall(app, { model, jev: jevReading('care', 0.9), now: () => NOW });
+    await c.start();
+    await c.say(question);
+    expect((model as unknown as { requests: unknown[] }).requests).toHaveLength(2);
+    expect(c.traces.at(-1)!.gapNotes).toEqual([{ question: `<${noted.length} chars>`, lookUps: [{ outcome: 'answered', topic: 'care' }] }]);
+    expect(c.audit.find((r) => r.type === 'converse_gap_note')!.detail).toEqual({ question: `<${noted.length} chars>`, lookUps: ['answered: care'] });
+    // The console's call view says it on the turn, with the question as recorded.
+    expect(converseCall(c.traces).turns.at(-1)!.gapNotes).toEqual([`noted a gap: <${noted.length} chars>`]);
+  });
+
   it('called where it is not offered (nothing approved), it is refused as not offered', async () => {
     const app = appOf(folder());
     const model = fakeModel([[call('k1', LOOK_UP, { question: 'How do I clean it?' }), done('tool')], [text('I cannot say.'), done()]]);
@@ -273,6 +292,19 @@ describe('what the lookup adds around it', () => {
     expect(conversePolicyMatrixText(app)).toContain(`${LOOK_UP} · level 0 · no rules\n  every caller  ALLOW`);
   });
 
+  it('the policy pages list note_gap with the runtime\'s own actions, saying how its question is recorded; off, that it is off', async () => {
+    const app = appOf(folder());
+    const card = conversePolicyCardText(app);
+    expect(card).toContain(`- \`${NOTE_GAP}\` is the runtime's own action, offered to the agent model on every turn`);
+    expect(card).toContain('is recorded by its length only (`gaps.audit`)');
+    expect(conversePolicyMatrixText(app)).toContain(`${NOTE_GAP} · level 0 · no rules\n  every caller  ALLOW`);
+    const d = folder();
+    writeFileSync(join(d, 'agent.yaml'), `${(await import('node:fs')).readFileSync(join(d, 'agent.yaml'), 'utf8')}gaps:\n  note: off\n`);
+    const off = appOf(d);
+    expect(conversePolicyCardText(off)).toContain(`- \`${NOTE_GAP}\`, the runtime's note of a question the business could not answer, is off (\`gaps.note\`: off)`);
+    expect(conversePolicyMatrixText(off)).not.toContain(NOTE_GAP);
+  });
+
   it('kb:gaps reads a lookup that found no approved answer from an agent app\'s trace', () => {
     const record = { v: 3, kind: 'converse', sessionId: 'c-1', turnIndex: 1, ts: `${TODAY}T15:00:00.000Z`, said: 'Do you clean carpets?', replies: [], tools: [], model: { id: 'm', ms: 0, firstTextMs: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null },
       lookUps: [
@@ -288,10 +320,39 @@ describe('what the lookup adds around it', () => {
     ]);
   });
 
+  it('kb:gaps reads a gap note as a gap, by the topic the turn\'s lookup found, its note where kept and the caller\'s words; the turn\'s unanswered lookup is not counted again', () => {
+    const base = { v: 3, kind: 'converse', ts: `${TODAY}T15:00:00.000Z`, replies: [], tools: [], model: { id: 'm', ms: 0, firstTextMs: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null } };
+    const records = [
+      { ...base, sessionId: 'c-1', turnIndex: 1, said: 'Is steam all right on it?', lookUps: [{ question: '<25 chars>', retriever: 'keyword', candidates: [{ topic: 'care', score: 1 }], outcome: 'answered', topic: 'care', title: 'Caring', passage: { id: 'care-1' }, ms: 3 }],
+        gapNotes: [{ question: 'Whether steam cleaning is all right on a mended item', lookUps: [{ outcome: 'answered', topic: 'care' }] }] },
+      { ...base, sessionId: 'c-2', turnIndex: 1, said: 'Do you mend brass?', lookUps: [{ question: '<18 chars>', retriever: 'keyword', candidates: [{ topic: 'returns', score: 1 }], reading: { choice: 'unanswered', p: 0.9 }, outcome: 'none', ms: 3 }],
+        gapNotes: [{ question: '<23 chars>', lookUps: [{ outcome: 'none', nearest: 'returns' }], journey: 'root' }] },
+      { ...base, sessionId: 'c-3', turnIndex: 1, said: 'Do you open on holidays?', lookUps: [], gapNotes: [{ question: '<30 chars>', lookUps: [] }] },
+    ];
+    const { turns } = turnsOfLines(records.map((r) => JSON.stringify(r)), 'trace.jsonl');
+    const { gaps } = collectGaps(turns, { topicSlots: new Set(), informational: new Set(), nearest: (w) => (w.includes('holidays') ? 'returns' : null) });
+    expect(gaps).toEqual([
+      expect.objectContaining({ kind: 'noted', topic: 'care', near: 'passage', words: 'Is steam all right on it?', note: 'Whether steam cleaning is all right on a mended item', sessionId: 'c-1' }),
+      expect.objectContaining({ kind: 'noted', topic: 'returns', near: 'nominated', words: 'Do you mend brass?', sessionId: 'c-2' }),
+      expect.objectContaining({ kind: 'noted', topic: 'returns', near: 'keyword', words: 'Do you open on holidays?', sessionId: 'c-3' }),
+    ]);
+    expect(gaps[1]!.note).toBeUndefined();
+    // The console counts them where it counts unanswered lookups.
+    expect(converseFacts([records[0]!]).gaps).toEqual({ noted: 1 });
+    expect(converseFacts([records[2]!]).gapTopics).toEqual({ '~': expect.objectContaining({ n: 1 }) });
+  });
+
   it('the judge is given the approved passages the call looked up, as part of the business information', () => {
     const actions: AuditedAction[] = [{ tool: LOOK_UP, params: { question: '<20 chars>' }, verdict: 'ALLOW', result: '{"topic":"Caring"...', passage: { id: 'care-1', title: 'Caring for a mended item', answer: 'Wipe a mended item with a dry cloth.' } }];
     const input = judgeInput('Example Visits: home visits.', { id: 'p', goal: 'Ask how to care for it', truth: { question: 'how to care for a mended item' }, manner: 'brief', expects: 'answer' }, { persona: 'p', turns: [], ended: 'line', firstWordMs: [] }, actions);
     const business = input.split('## The caller')[0]!;
     expect(business).toContain('- Caring for a mended item: Wipe a mended item with a dry cloth.');
+  });
+
+  it('the judge is given each gap note as what the line recorded for the business, never a claim to the caller', () => {
+    const actions: AuditedAction[] = [{ tool: NOTE_GAP, params: { question: '<20 chars>' }, verdict: 'ALLOW', result: 'Recorded for the business to review.' }];
+    const input = judgeInput('Example Visits: home visits.', { id: 'p', goal: 'Ask about brass', truth: {}, manner: 'brief', expects: 'answer' }, { persona: 'p', turns: [], ended: 'line', firstWordMs: [] }, actions);
+    expect(input).toContain('## The actions the gate decided\n(none)');
+    expect(input).toContain('## What the line recorded for the business to review (said to no one on the call, so no claim to the caller)\n- note_gap(question=<20 chars>)');
   });
 });

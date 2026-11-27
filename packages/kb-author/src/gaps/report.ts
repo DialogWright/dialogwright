@@ -10,7 +10,8 @@ import { isStoreSpec, readTurns, storeTurns, traceFilesOf, type Turn } from './t
  *
  * Groups: by the topic retrieval nominated first; for words nothing was nominated for, by the topic
  * the keyword retriever scores best on them, else "no near topic"; for an unavailable resolution, by
- * the passage's own topic. Ranked by how many gaps, then how recently the latest happened, then the
+ * the passage's own topic; for a question an agent app's model noted it could not answer, by the topic
+ * its turn's lookup read or nominated first, else the nearest by keywords. Ranked by how many gaps, then how recently the latest happened, then the
  * topic id, so the same traces always give the same report.
  */
 
@@ -37,6 +38,8 @@ export interface Sample {
   documents?: true;
   /** The sections offered on the turn, best ranked first (a question found nothing for in the documents). */
   offered?: string[];
+  /** A question an agent app's model noted the business could not answer: the note, where the trace kept it whole. */
+  note?: string;
 }
 
 /**
@@ -55,7 +58,7 @@ export interface CandidateSection {
   questions: number;
 }
 
-export type FixId = 'add-glossary' | 'add-section-asks' | 'check-candidates' | 'add-keywords' | 'write-passage' | 'draft-from-section' | 're-approve' | 'add-translation' | 'check-facts' | 'fix-topic' | 'fix-overlap' | 'check-tool';
+export type FixId = 'add-glossary' | 'add-section-asks' | 'check-candidates' | 'add-keywords' | 'write-passage' | 'draft-from-section' | 're-approve' | 'add-translation' | 'check-facts' | 'fix-topic' | 'fix-overlap' | 'check-tool' | 'answer-noted';
 
 /** What to do about one kind of gap in a group. */
 export interface Fix {
@@ -199,6 +202,17 @@ function headingOf(kb: KnowledgeBase, key: string): string | null {
 function fixesFor(g: Gap, kb: KnowledgeBase, hasFreshPassage: (topic: string) => boolean): Omit<Fix, 'count'>[] {
   const topic = g.topic;
   const name = (id: string): string => (Object.hasOwn(kb.topics, id) ? `${kb.topics[id]!.title} (${id})` : id);
+  if (g.kind === 'noted') {
+    // A question an agent app's model noted the business could not answer: a passage, a topic, or the business information.
+    const info = 'or, where it is about the business itself (its services, hours or policies), a line in agent.yaml\'s business information';
+    if (topic === null) return [{ id: 'answer-noted', kind: 'noted', topics: [], text: `The line noted it could not answer these. No topic came near: write a topic and a passage for what callers ask, ${info}.` }];
+    const found = g.lookedUp === 'answered'
+      ? `a passage of topic "${name(topic)}" was found and did not answer it: if that topic should answer these, write its passage to say what callers ask (a person approves it again), or write a topic and a passage of their own`
+      : g.lookedUp === 'withheld'
+        ? `topic "${name(topic)}" came nearest, and its passage is withheld (pnpm kb:status says why): approve it again if it answers these, or write a passage that does`
+        : `topic "${name(topic)}" came nearest: write a passage for it that answers what callers ask, or a topic and a passage of their own`;
+    return [{ id: 'answer-noted', kind: 'noted', topics: [topic], text: `The line noted it could not answer these: ${found}; ${info}.` }];
+  }
   if (g.kind === 'close') {
     const topics = [g.topic!, g.other!];
     return [{ id: 'add-keywords', kind: 'close', topics, text: `Tell "${name(topics[0]!)}" and "${name(topics[1]!)}" apart: add the words that set each one apart to their keywords and asks in kb/topics.yaml (callers were asked which they meant).` }];
@@ -338,7 +352,7 @@ function groupOf(
     const text = g.words.replace(/\s+/g, ' ').trim();
     if (text === '' || seen.has(norm(text))) continue;
     seen.add(norm(text));
-    samples.push({ kind: g.kind, words: text, ts: g.ts, sessionId: g.sessionId, turnIndex: g.turnIndex, ...(g.reason ? { reason: g.reason } : {}), ...(g.section !== undefined ? { documents: true as const } : {}), ...(g.offered !== undefined ? { offered: g.offered } : {}) });
+    samples.push({ kind: g.kind, words: text, ts: g.ts, sessionId: g.sessionId, turnIndex: g.turnIndex, ...(g.reason ? { reason: g.reason } : {}), ...(g.section !== undefined ? { documents: true as const } : {}), ...(g.offered !== undefined ? { offered: g.offered } : {}), ...(g.note !== undefined && norm(g.note) !== norm(text) ? { note: g.note } : {}) });
   }
 
   const fixes = new Map<string, Fix>();
@@ -353,10 +367,10 @@ function groupOf(
 
   // The sections nothing cites that read as relevant: for the gaps a passage would fix (nothing answers, or nothing in force).
   // (Not for questions the documents found nothing for: the documents are answered from as they are.)
-  const wanting = list.filter((g) => g.section === undefined && (g.kind === 'none' || g.kind === 'unmatched' || g.reason === 'not-in-force'));
+  const wanting = list.filter((g) => g.section === undefined && (g.kind === 'none' || g.kind === 'unmatched' || g.kind === 'noted' || g.reason === 'not-in-force'));
   let draftFrom: DraftFrom[] = [];
   if (wanting.length > 0 && anyUncited) {
-    const said = wanting.flatMap((g) => (g.words === null ? [] : [g.words])).join(' ');
+    const said = wanting.flatMap((g) => [...(g.words === null ? [] : [g.words]), ...(g.note !== undefined ? [g.note] : [])]).join(' ');
     const title = known ? `${kb.topics[topic!]!.title} ${kb.topics[topic!]!.keywords.join(' ')}` : '';
     draftFrom = sections.relevant(`${title} ${said}`.trim(), sectionCount);
     if (draftFrom.length > 0) {
@@ -490,6 +504,7 @@ const KIND_TEXT: Record<GapKind, string> = {
   unmatched: 'asked with no topic nominated',
   unavailable: 'unavailable',
   close: 'close call',
+  noted: 'noted by the line',
 };
 
 const REASON_TEXT: Record<Unavailable, string> = {
@@ -560,7 +575,7 @@ export function formatMarkdown(r: GapReport): string[] {
     lines.push(`${kindsText(g)}. Latest ${g.latest.slice(0, 10)}.${g.near === 'keyword' ? ' (Nearest by keywords: retrieval nominated nothing.)' : ''}`);
     if (g.samples.length > 0) {
       lines.push('', 'Callers said:');
-      for (const s of g.samples) lines.push(`- ${codeSpan(s.words)} (${sampleLabel(s)}, ${s.ts.slice(0, 10)})`);
+      for (const s of g.samples) lines.push(`- ${codeSpan(s.words)} (${sampleLabel(s)}, ${s.ts.slice(0, 10)})${s.note !== undefined ? `, noted as ${codeSpan(s.note)}` : ''}`);
     }
     if (g.withheld > 0) lines.push('', `${n(g.withheld, 'turn')} not shown: the caller gave a value the trace masks on ${g.withheld === 1 ? 'it' : 'them'}.`);
     lines.push('', 'Fix:');

@@ -9,7 +9,8 @@ import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { speakableOn } from './speakable';
 import { checkArgs, idempotencyKey } from './actions';
-import { END_CALL, lineOn, LOOK_UP, TRANSFER_CALL, TRANSFER_LINE, type ActionSpec, type AgentBusiness } from './business/schema';
+import { END_CALL, lineOn, LOOK_UP, NOTE_GAP, TRANSFER_CALL, TRANSFER_LINE, type ActionSpec, type AgentBusiness } from './business/schema';
+import { GAP_QUESTION_PARAM, gapLookUpText, gapNoteOf, NOTED, noteGapOffered, noteGapSpec, type GapNoteRecord } from './gaps';
 import { lookUp, lookUpOffered, lookUpSpec, QUESTION_PARAM, type ConverseKnowledge, type LookUpRecord } from './knowledge';
 import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { askWithin, askWithinWhy, changedParams, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackBriefText, readBackText, readYesNo, shortReadBackText, shownParams, WITHDRAWN_AT, WRAPPING_UP, WRAPPING_UP_AT, type PendingReadBack, type ReadBackReading } from './confirm';
@@ -340,6 +341,8 @@ interface Turn {
   unsentEnds: number;
   /** Each lookup in the knowledge base this turn (look_up), as the trace records it. */
   lookUps?: LookUpRecord[];
+  /** Each question the business could not answer, noted this turn (note_gap), as the trace records it. */
+  gapNotes?: GapNoteRecord[];
 }
 
 /** Whether a call is one of the runtime's own that end the call (end_call, transfer_call), which the unsent rule refuses alike. */
@@ -636,6 +639,12 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
   let readBack: string | null = null;
   const error = (id: string, content: string): void => void results.push({ type: 'tool_result', id, content, isError: true });
   for (const c of calls) {
+    if (c.name === NOTE_GAP) {
+      // Before every other rule: a note says nothing and changes nothing, so it is recorded on a turn the caller cut into,
+      // while the call is ending, and while a read-back waits for its answer alike.
+      await runNoteGap(t, c, results);
+      continue;
+    }
     const spec = Object.hasOwn(b.actions, c.name) ? b.actions[c.name] : undefined;
     if (cut(t)) {
       const why = 'Not run: the caller spoke before it ran.';
@@ -839,6 +848,44 @@ async function runLookUp(t: Turn, c: Extract<ModelEvent, { type: 'tool_call' }>,
 }
 
 /**
+ * The runtime's note of a question the business could not answer (gaps.ts): offered unless agent.yaml's gaps.note is
+ * off, else refused as an action the turn did not offer is, counted toward no refusal; its question checked as a text
+ * param; put to the gate as a lookup (audited with the question as agent.yaml's gaps.audit records it); then recorded,
+ * with what the turn's lookups found so far and the journey the call is in (the audit's converse_gap_note, the trace's
+ * Turn.gapNotes), and the model told only that it was recorded. Nothing is said by it.
+ */
+async function runNoteGap(t: Turn, c: Extract<ModelEvent, { type: 'tool_call' }>, results: ModelContent[]): Promise<void> {
+  const b = t.deps.business;
+  const spec = noteGapSpec(b);
+  const error = (content: string): void => void results.push({ type: 'tool_result', id: c.id, content, isError: true });
+  const journey = t.st.journey !== undefined ? t.st.journey.active ?? 'root' : undefined;
+  if (!noteGapOffered(b)) {
+    const why = `Not run: "${NOTE_GAP}" is not available on this line.`;
+    await record(t, { type: 'converse_refused', detail: { action: NOTE_GAP, reason: 'not-offered', ...(journey !== undefined ? { journey } : {}) } });
+    traceTool(t, spec, NOTE_GAP, c.args, 'refused', why);
+    return error(why);
+  }
+  const checked = checkArgs(spec, c.args, t.st.seen, t.todayIso, t.st.caller.number);
+  if (!checked.ok) {
+    traceTool(t, spec, NOTE_GAP, c.args, 'invalid', checked.reason);
+    return error(checked.reason);
+  }
+  const call: ToolCall = { tool: NOTE_GAP, params: checked.params };
+  const d = await gate(t, spec, call, null);
+  if (d.verdict !== 'ALLOW') {
+    const why = gateReason(d, spec, call, []);
+    traceTool(t, spec, NOTE_GAP, call.params, 'refused', why);
+    return error(refused(t, NOTE_GAP, why));
+  }
+  const note = gapNoteOf(recordedArgs(spec, call.params)[GAP_QUESTION_PARAM] ?? '', t.lookUps ?? [], journey);
+  await record(t, { type: 'tool_result', detail: { tool: NOTE_GAP, ok: true, summary: NOTED } });
+  await record(t, { type: 'converse_gap_note', detail: { question: note.question, lookUps: note.lookUps.map(gapLookUpText), ...(note.journey !== undefined ? { journey: note.journey } : {}) } });
+  traceTool(t, spec, NOTE_GAP, call.params, 'ran');
+  (t.gapNotes ??= []).push(note);
+  results.push({ type: 'tool_result', id: c.id, content: NOTED });
+}
+
+/**
  * A request's outcome; a failure says whether anything of it was said, whether it never began (stalled), and
  * whether the provider refused it for its rate limit (`rateLimited`, with the wait it asked for where it named one).
  */
@@ -1002,7 +1049,7 @@ async function roundAsked(t: Turn, sp: Speaker, emptyOk: boolean, routeStop: Abo
   const stop = routeStop !== undefined && t.signal !== undefined ? AbortSignal.any([routeStop, t.signal]) : routeStop ?? t.signal;
   const b = t.deps.business;
   const looks = lookUpNow(t);
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear, looks), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t), looks ? lookUpSpec(b) : undefined), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear, looks), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t), looks ? lookUpSpec(b) : undefined, noteGapOffered(b) ? noteGapSpec(b) : undefined), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
@@ -1230,13 +1277,20 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       if (!silent) failed(t, sp);
       return { ok: false, error: r.error };
     }
-    const final = r.calls.length === 0;
+    // A round whose only calls are notes of questions the business could not answer (note_gap), written beside its reply,
+    // ends the turn as a round with no calls does: the notes are recorded and their results kept in the conversation, and
+    // the model is not asked again for them (decided 2026-11-27). With no words beside them, or with any other call, the
+    // round goes on as every round with calls does.
+    const notesOnly = r.calls.length > 0 && r.calls.every((c) => c.name === NOTE_GAP) && r.text.trim() !== '';
+    const final = r.calls.length === 0 || notesOnly;
+    // The calls that act, a note set aside: a round that ends the call with a note beside it ends on its own words too.
+    const acting = r.calls.filter((c) => c.name !== NOTE_GAP);
     // A round that only ends the call (nothing waits on a read-back) ends on its own words, where it wrote any: they are the goodbye.
     // Not while a change is kept unsent (or one refused an end_call this turn): that end_call is refused, the call goes on,
     // and the next round's words end the turn. Whether the caller withdrew it is read first, where it is being read.
     if (t.st.unsent !== undefined && r.calls.some((c) => endsCall(c.name))) await settleWithdrawal(t);
     // A round that only puts the call through (transfer_call) ends on its own words in the same way: they are said before it.
-    const goodbye = !final && t.st.pending === null && t.st.unsent === undefined && t.unsentRefused === undefined && r.calls.length > 0 && r.calls.every((c) => c.name === r.calls[0]!.name && endsCall(c.name));
+    const goodbye = !final && t.st.pending === null && t.st.unsent === undefined && t.unsentRefused === undefined && acting.length > 0 && acting.every((c) => c.name === acting[0]!.name && endsCall(c.name));
     // Words held to the round's end (holdsWords). Where the round calls end_call they wait for its calls, as the unsent rule
     // may refuse it: refused, they are never said, nor kept in the conversation as said (only their length is traced);
     // otherwise (and in every round with no end_call) they are said now, whole, before what the calls bring.
@@ -1271,7 +1325,10 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       t.confirmedRan = false;
       t.own.push(said);
     }
-    if (final) return { ok: true };
+    if (final) {
+      if (notesOnly) add(t.st, 'user', (await runCalls(t, r.calls)).results);
+      return { ok: true };
+    }
     const { results, readBack } = ran ?? (await runCalls(t, r.calls));
     add(t.st, 'user', results);
     if (cut(t)) {
@@ -1949,6 +2006,7 @@ function traceRecordOf(t: Turn, input: Input, now: Date): { record: ConverseTrac
     ...(t.readBack !== undefined ? { readBack: { ...t.readBack, text: scrubbed(t.readBack.text) } } : {}),
     ...(t.check !== undefined ? { check: t.check } : {}),
     ...(t.lookUps !== undefined ? { lookUps: t.lookUps } : {}),
+    ...(t.gapNotes !== undefined ? { gapNotes: t.gapNotes } : {}),
     ...(t.carriedNote ? { carriedNote: true as const } : {}),
     ...(t.carriedNoteDropped ? { carriedNoteDropped: true as const } : {}),
     ...(t.route !== undefined ? { route: t.route } : {}),

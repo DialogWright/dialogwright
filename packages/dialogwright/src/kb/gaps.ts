@@ -67,6 +67,12 @@ export interface Turn {
    * withheld with why. Absent on a scripted app's turn.
    */
   lookUps?: { question: string; candidates: string[]; outcome: string; topic: string | null; withheld: { why: string; id: string | null } | null }[];
+  /**
+   * An agent app's turn: each question the business could not answer that its agent model noted (the runtime's note_gap),
+   * as its trace records it: the question as recorded, and what each of the turn's lookups before it found (its outcome,
+   * the topic it read, or where it read none the topic nominated first). Absent on a scripted app's turn.
+   */
+  gapNotes?: { question: string; lookUps: { outcome: string; topic: string | null; nearest: string | null }[] }[];
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -89,6 +95,11 @@ function converseTurnOf(raw: Record<string, unknown>, file: string, line: number
     const withheld = isObject(l.withheld) && typeof l.withheld.why === 'string' ? { why: l.withheld.why, id: str(l.withheld.id) } : null;
     return [{ question: str(l.question) ?? '', candidates, outcome: l.outcome, topic: str(l.topic), withheld }];
   });
+  const gapNotes = (Array.isArray(raw.gapNotes) ? raw.gapNotes : []).flatMap((n) => {
+    if (!isObject(n)) return [];
+    const looked = (Array.isArray(n.lookUps) ? n.lookUps : []).flatMap((l) => (isObject(l) && typeof l.outcome === 'string' ? [{ outcome: l.outcome, topic: str(l.topic), nearest: str(l.nearest) }] : []));
+    return [{ question: str(n.question) ?? '', lookUps: looked }];
+  });
   return {
     file, line, sessionId, turnIndex: raw.turnIndex, ts,
     words: str(raw.said),
@@ -107,6 +118,7 @@ function converseTurnOf(raw: Record<string, unknown>, file: string, line: number
     calls: [],
     kb: null,
     lookUps,
+    gapNotes,
   };
 }
 
@@ -268,6 +280,9 @@ export function turnsOfLines(lines: readonly string[], file: string): { turns: T
  *   the rarer `unknown-topic`, `ambiguous` and `no-answer`.
  * - `close`: the topic slot asked the caller which of two topics they meant (a `disambiguate_<slot>`
  *   prompt with the topic question asked): the two were within the margin of each other.
+ * - `noted`: an agent app's model noted that the business could not answer a question (the runtime's
+ *   note_gap): one a lookup found a passage for that does not say, or one the business information does
+ *   not cover (lookUpGaps).
  *
  * A turn is at most one gap. A quarantined turn (the injection screen) is never one and its words are
  * never read. The words shown are the trace's recorded text as it is, except a turn whose words
@@ -275,12 +290,12 @@ export function turnsOfLines(lines: readonly string[], file: string): { turns: T
  * or the decision carries one): its words are withheld, never printed.
  */
 
-export type GapKind = 'none' | 'unmatched' | 'unavailable' | 'close';
+export type GapKind = 'none' | 'unmatched' | 'unavailable' | 'close' | 'noted';
 
 /** The not-found reply (kb_not_found, and each of its wordings, `.v2` and on). */
 const NOT_FOUND = /^kb_not_found(\.v\d+)?$/;
 
-export const GAP_KINDS: readonly GapKind[] = ['none', 'unmatched', 'unavailable', 'close'];
+export const GAP_KINDS: readonly GapKind[] = ['none', 'unmatched', 'unavailable', 'close', 'noted'];
 
 export type Unavailable = 'stale' | 'not-in-force' | 'no-translation' | 'no-facts' | 'unknown-topic' | 'ambiguous' | 'no-answer';
 
@@ -316,6 +331,10 @@ export interface Gap {
   section?: { key: string; read: number | null };
   /** A question an app that answers from documents found nothing for: the sections offered on the turn that read it, best ranked first (none where none was). */
   offered?: string[];
+  /** A `noted` gap: the question as the agent model noted it, where the trace kept it whole (agent.yaml gaps.audit: keep). */
+  note?: string;
+  /** A `noted` gap whose topic a lookup of its turn read: what came of that lookup (`answered`: a passage was found, and did not answer it; `withheld`). */
+  lookedUp?: string;
 }
 
 /** What the collector knows beyond the trace. */
@@ -497,7 +516,10 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
 }
 
 /**
- * The gaps of an agent app's turn: each lookup in the knowledge base that returned no passage (the runtime's look_up). One
+ * The gaps of an agent app's turn: each question its model noted the business could not answer (the runtime's note_gap,
+ * `noted`), by the topic a lookup of the turn read (`passage`), else the one it nominated first, else the nearest by
+ * keywords to the note or the caller's words, its note where the trace kept it whole and the caller's words of the turn;
+ * where the turn has none, each lookup in the knowledge base that returned no passage (the runtime's look_up). One
  * nothing was nominated for is `unmatched` (its nearest topic by keywords, where any is near); one whose candidates the
  * decision model read none of at its bar is `none` (the first candidate its topic); one whose topic's passage was withheld
  * is `unavailable`, with why. A lookup that could not be made (`unread`) is no gap: it is counted with the retrievals that
@@ -508,14 +530,30 @@ function lookUpGaps(t: Turn, nearest: (words: string, locale: string | null) => 
   const gaps: Gap[] = [];
   let unread = 0;
   const base = { sessionId: t.sessionId, turnIndex: t.turnIndex, ts: t.ts, locale: t.locale };
+  const kept = (q: string): boolean => q !== '' && !MASKED_VALUE.test(q) && !RECORDED_MASK.test(q);
+  // A turn whose model noted what the business could not answer: each note is the gap, and its unanswered lookups are the
+  // same question, so they are not counted again (one that could not be made still is, with the retrievals that failed).
+  const notes = t.gapNotes ?? [];
+  for (const n of notes) {
+    const note = kept(n.question) ? n.question : undefined;
+    const words = t.words ?? note ?? null;
+    const read = n.lookUps.find((l) => l.topic !== null);
+    const nominated = n.lookUps.find((l) => l.nearest !== null)?.nearest ?? null;
+    const byWords = read === undefined && nominated === null ? (note ?? t.words) : null;
+    const keyword = byWords !== null ? nearest(byWords, t.locale) : null;
+    const topic = read?.topic ?? nominated ?? keyword;
+    const near: Near = read !== undefined ? 'passage' : nominated !== null ? 'nominated' : keyword !== null ? 'keyword' : 'none';
+    const candidates = (t.lookUps ?? []).flatMap((l) => l.candidates);
+    gaps.push({ kind: 'noted', topic, near, nominated: [...new Set(candidates)], words, ...base, ...(note !== undefined ? { note } : {}), ...(read !== undefined ? { lookedUp: read.outcome } : {}) });
+  }
   for (const l of t.lookUps ?? []) {
     if (l.outcome === 'unread') {
       unread += 1;
       continue;
     }
+    if (notes.length > 0) continue;
     if (l.outcome !== 'none' && l.outcome !== 'withheld') continue;
-    const kept = l.question !== '' && !MASKED_VALUE.test(l.question) && !RECORDED_MASK.test(l.question);
-    const words = kept ? l.question : t.words;
+    const words = kept(l.question) ? l.question : t.words;
     if (l.outcome === 'withheld') {
       const reason = (UNAVAILABLE as readonly string[]).includes(l.withheld?.why ?? '') ? (l.withheld!.why as Unavailable) : 'no-answer';
       gaps.push({ kind: 'unavailable', topic: l.topic, near: l.topic !== null ? 'passage' : 'none', nominated: l.candidates, words, ...base, reason, ...(l.withheld?.id ? { passage: { id: l.withheld.id, document: null, section: null } } : {}) });

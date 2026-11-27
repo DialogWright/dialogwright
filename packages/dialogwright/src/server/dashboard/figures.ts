@@ -156,7 +156,7 @@ const readsHours = (subjects: readonly string[] | undefined): boolean => (subjec
 /**
  * What a converse call (records of kind 'converse') adds to Insights: the actions its caller confirmed as
  * its tasks, finished, and the gate's refusals by action, and its knowledge base's unanswered questions (its
- * lookups that returned no passage, by kb:gaps' rules). It has no slots or routes, so nothing else; where it
+ * lookups that returned no passage, and the questions its model noted the business could not answer, by kb:gaps' rules). It has no slots or routes, so nothing else; where it
  * stood is "between".
  */
 export function converseFacts(records: readonly unknown[]): CallFacts {
@@ -170,7 +170,7 @@ export function converseFacts(records: readonly unknown[]): CallFacts {
     }
   }
   const turns = records.map((r, i) => turnOf(r, '', i + 1)).filter((t): t is Turn => t !== null && t.lookUps !== undefined);
-  if (turns.some((t) => (t.lookUps ?? []).length > 0)) countGaps(facts, collectGaps(turns, CONVERSE_GAPS).gaps);
+  if (turns.some((t) => (t.lookUps ?? []).length > 0 || (t.gapNotes ?? []).length > 0)) countGaps(facts, collectGaps(turns, CONVERSE_GAPS).gaps);
   return facts;
 }
 

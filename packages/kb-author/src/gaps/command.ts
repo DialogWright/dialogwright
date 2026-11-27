@@ -1,5 +1,6 @@
-import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { loadAppFolder, type KbPlace, type KnowledgeBase } from 'dialogwright';
 import { parseArgs, shown } from '../args';
 import type { Io } from '../cli';
 import { findKb, loadKb } from '../kbPlace';
@@ -20,7 +21,8 @@ export const GAPS_USAGE = [
   'usage: kb:gaps [dir] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]',
   '  ranks what callers asked the knowledge base that it did not answer, from the traces of real calls: a topic question answered none,',
   '  words that look like a question with no topic nominated, a passage that could not be said (stale, not in force, no translation, no facts),',
-  '  and a close call between two topics; grouped by the nearest topic, with samples of their words and the fix for each kind.',
+  '  a close call between two topics, and the questions an agent app\'s model noted the business could not answer (note_gap; an agent app with no kb/ too);',
+  '  grouped by the nearest topic, with samples of their words and the fix for each kind.',
   '  --traces: a trace file, a folder of them, a glob, or a trace store s3://<bucket>/<prefix> with the S3_ variables (default: $TRACE_STORE, else $TRACE_DIR, else <app>/traces, else ./traces); --since: from that day on;',
   '  --samples: callers\' words shown per group (default 3); --out writes the report to a file; --json prints JSON for tools.',
   '  The traces hold the callers\' words as spoken (identity values are masked): keep the report as private as they are.',
@@ -33,6 +35,17 @@ function isDay(day: string): boolean {
   if (!DAY.test(day)) return false;
   const d = new Date(`${day}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
+/**
+ * An agent app's folder with no kb/ (app.yaml's mode: agent), as a place with an empty knowledge base: kb:gaps ranks the
+ * questions its model noted the business could not answer (note_gap), whose fix is a topic and a passage or a line in
+ * agent.yaml's business information. Null for any other folder.
+ */
+function agentAppWithoutKb(dir: string, label: string): { place: KbPlace; kb: KnowledgeBase } | null {
+  if (existsSync(join(dir, 'kb')) || !existsSync(join(dir, 'agent.yaml')) || loadAppFolder(dir).converse !== true) return null;
+  const kb: KnowledgeBase = { settings: { action: 'look_up', applies: {}, localeFallback: 'none', maxAnswerChars: 0, retrieval: { cap: 0 } }, defaultLocale: 'en', topics: {}, passages: {}, sources: {} };
+  return { place: { kbDir: join(dir, 'kb'), appDir: dir, label }, kb };
 }
 
 export async function gapsCommand(args: readonly string[], io: Io): Promise<number> {
@@ -59,12 +72,15 @@ export async function gapsCommand(args: readonly string[], io: Io): Promise<numb
     }
   }
   const dir = resolve(io.cwd, parsed.positional[0] ?? '.');
-  const place = findKb(dir, shown(io.cwd, dir));
-  if (typeof place === 'string') {
-    io.err(`kb:gaps: ${place}`);
+  const at = findKb(dir, shown(io.cwd, dir));
+  // An agent app with no kb/: its model's gap notes are still ranked, against a knowledge base with nothing in it.
+  const bare = typeof at === 'string' ? agentAppWithoutKb(dir, shown(io.cwd, dir)) : null;
+  if (typeof at === 'string' && bare === null) {
+    io.err(`kb:gaps: ${at}`);
     return 1;
   }
-  const loaded = loadKb(place);
+  const place = bare?.place ?? (at as KbPlace);
+  const loaded = bare !== null ? { kb: bare.kb, problems: [] } : loadKb(place);
   if (loaded.kb === null) {
     io.err(`kb:gaps: the knowledge base does not load:`);
     for (const p of loaded.problems) io.err(`  ${p}`);

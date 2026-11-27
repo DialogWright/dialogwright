@@ -93,6 +93,16 @@ export const LOOK_UP = 'look_up';
 /** How the lookup's question is recorded in the trace and the audit, where agent.yaml's `knowledge.audit` does not say: by its length. */
 export const LOOK_UP_AUDIT_DEFAULT = 'length';
 
+/**
+ * The runtime's own note of a question the business could not answer (decided 2026-11-27): offered on every turn unless
+ * agent.yaml's `gaps.note` is off, its one param the question in general terms (converse/gaps.ts). It records the
+ * question for the business to review (kb:gaps), and does nothing else. No business action takes its name.
+ */
+export const NOTE_GAP = 'note_gap';
+
+/** How a gap note's question is recorded in the trace and the audit, where agent.yaml's `gaps.audit` does not say: by its length. */
+export const NOTE_GAP_AUDIT_DEFAULT = 'length';
+
 /** What the line does with a caller who asks for a person while the business is closed (agent.yaml transfer.whenClosed). */
 export const TRANSFER_WHEN_CLOSED = ['callback', 'transfer'] as const;
 
@@ -312,6 +322,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
     if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which ends the call`);
     if (name === TRANSFER_CALL) issue(ctx, ['actions', name], `"${TRANSFER_CALL}" is the runtime's own action`, `name the action something else: the runtime offers "${TRANSFER_CALL}", which puts a call through to transfer.number`);
     if (name === LOOK_UP) issue(ctx, ['actions', name], `"${LOOK_UP}" is the runtime's own action`, `name the action something else: the runtime offers "${LOOK_UP}", which looks the caller's question up in the knowledge base (kb/)`);
+    if (name === NOTE_GAP) issue(ctx, ['actions', name], `"${NOTE_GAP}" is the runtime's own action`, `name the action something else: the runtime offers "${NOTE_GAP}", which records a question the business could not answer for the business to review`);
     if (!isMap(a)) continue;
     const params = isMap(a.params) ? a.params : {};
     if (a.kind === 'change' && a.readBack === undefined) {
@@ -581,6 +592,13 @@ export const agentBusinessSchema = z
       })
       .optional()
       .describe(`The knowledge base, where the app has a kb/ folder beside agent.yaml (chapter 18 of the guide): the runtime's own lookup "${LOOK_UP}" is offered to the agent model wherever a passage a person approved is there to be found, and it returns the passage that answers the caller's question, or that the business has no approved answer to it. Absent: offered on every turn.`),
+    gaps: z
+      .strictObject({
+        note: z.enum(['on', 'off']).default('on').describe(`on: the runtime's own "${NOTE_GAP}" is offered to the agent model on every turn, to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).`),
+        audit: z.strictObject({ question: z.enum(AUDIT_MASKS).describe('How the question is recorded: last4, mask, length, secret or keep.') }).optional().describe(`How "${NOTE_GAP}"'s one param, the question in general terms, is recorded in the trace and the audit. Default: by its length (${NOTE_GAP_AUDIT_DEFAULT}).`),
+      })
+      .default({ note: 'on' })
+      .describe(`The questions the business could not answer, noted by the agent model with the runtime's own "${NOTE_GAP}" for the business to review (chapter 18 of the guide). Absent: offered on every turn, the question recorded by its length.`),
     transfer: z
       .strictObject({
         number: numberOrEnv().describe('The number to hand a call to: E.164, or env.<NAME>.'),

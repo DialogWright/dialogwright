@@ -42,7 +42,7 @@ function groupCard(ctx: PageContext, view: GapsView, g: GapGroup, rank: number, 
   const samples =
     g.samples.length === 0
       ? '<p class="muted">No words to show.</p>'
-      : `<ul>${g.samples.map((s) => `<li><q>${esc(s.words)}</q> <span class="chip">${esc(sampleLabel(s))}</span> <span class="muted">${esc(s.ts.slice(0, 10))}</span></li>`).join('')}</ul>`;
+      : `<ul>${g.samples.map((s) => `<li><q>${esc(s.words)}</q> <span class="chip">${esc(sampleLabel(s))}</span> <span class="muted">${esc(s.ts.slice(0, 10))}</span>${s.note !== undefined ? ` <span class="muted">noted as <q>${esc(s.note)}</q></span>` : ''}</li>`).join('')}</ul>`;
   const withheld = g.withheld > 0 ? `<p class="hint">${g.withheld} not shown: the caller gave a value the trace masks.</p>` : '';
   const fixes = `<ul>${g.fixes.map((f) => `<li>${esc(f.text)}${f.count > 1 ? ` <span class="muted">(${f.count})</span>` : ''}${fixLinks(ctx, view, g, f)}</li>`).join('')}</ul>`;
   const candidates =

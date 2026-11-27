@@ -8,7 +8,7 @@ It is a pipeline of five commands:
 2. **`pnpm kb:draft`** gives the sections to a drafter (Claude, with your own key; a fake in tests), checks every draft it proposes, and writes those that pass to `kb/pending`, which is never said.
 3. **`pnpm kb:review`** serves a review page on this machine, where a person approves, edits then approves, or rejects each draft, and accepts or merges each topic a draft proposes.
 4. **`pnpm kb:refresh`** reads every source again; a passage whose section changed is withheld until a person approves it again in the review page.
-5. **`pnpm kb:gaps`** reads the traces of real calls and ranks what callers asked that the knowledge base did not answer, with the fix for each, so the next round of drafting and review starts from what callers needed.
+5. **`pnpm kb:gaps`** reads the traces of real calls and ranks what callers asked that the knowledge base did not answer (and the questions an agent app's model noted the business could not answer, its `note_gap`), with the fix for each, so the next round of drafting and review starts from what callers needed.
 
 ## Ingesting
 

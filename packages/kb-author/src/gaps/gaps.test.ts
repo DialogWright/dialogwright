@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { cleanScratch } from 'dialogwright/kb/__fixtures__/libraryKbApp';
+import { CONVERSE_FIXTURE_DIR } from 'dialogwright/testing/converse/app';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { appendJunk, appOf, cleanGaps, runCalls, SAYS_CARD, scratchApp, scratchDir, type CallScript } from '../__fixtures__/gapCalls';
 import { main, type Io } from '../cli';
@@ -307,7 +308,7 @@ describe('grouping and ranking', () => {
   it('groups by nearest topic and ranks by count, then recency', () => {
     const r = report();
     expect(r.gaps).toBe(11);
-    expect(r.byKind).toEqual({ none: 3, unmatched: 3, unavailable: 4, close: 1 });
+    expect(r.byKind).toEqual({ none: 3, unmatched: 3, unavailable: 4, close: 1, noted: 0 });
     expect(r.groups.map((g) => [g.key, g.count])).toEqual([
       ['late_fees', 6],
       ['card_renewal', 3],
@@ -371,6 +372,38 @@ describe('the fix for each kind', () => {
     // a section that shares one word ("card", "book") with a long question is not relevant to it
     for (const key of ['late_fees', 'card_renewal', 'opening_hours']) expect(group(key).draftFrom).toEqual([]);
     expect(group('late_fees').fixes.map((f) => f.id)).not.toContain('draft-from-section');
+  });
+});
+
+describe('an agent app\'s gap notes (the runtime\'s note_gap)', () => {
+  const converse = (sessionId: string, said: string, gapNotes: unknown[], lookUps: unknown[] = []): Turn =>
+    turnOf({ v: 3, kind: 'converse', sessionId, turnIndex: 1, ts: '2026-10-03T15:00:00.000Z', said, replies: [], tools: [], lookUps, gapNotes }, 'trace.jsonl', 1)!;
+  const turns = [
+    converse('A01', 'are you open on public holidays', [{ question: 'Whether the library opens on public holidays', lookUps: [{ outcome: 'answered', topic: 'opening_hours' }] }], [{ question: '<32 chars>', retriever: 'keyword', candidates: [{ topic: 'opening_hours', score: 1 }], outcome: 'answered', topic: 'opening_hours', passage: { id: 'x' }, ms: 1 }]),
+    converse('A02', 'can I bring my dog', [{ question: '<25 chars>', lookUps: [] }]),
+  ];
+  const noted = (): GapReport => buildReport({ kb, place, label: 'app', turns });
+
+  it('ranks each note as a gap of its own kind, by the topic its turn\'s lookup read, with the note where kept and the caller\'s words', () => {
+    const r = noted();
+    expect(r.byKind.noted).toBe(2);
+    const hours = r.groups.find((g) => g.key === 'opening_hours')!;
+    expect(hours.kinds).toEqual({ noted: 1 });
+    expect(hours.samples).toEqual([expect.objectContaining({ kind: 'noted', words: 'are you open on public holidays', note: 'Whether the library opens on public holidays' })]);
+    expect(r.groups.find((g) => g.key === '~')!.samples).toEqual([expect.not.objectContaining({ note: expect.anything() })]);
+  });
+
+  it('gives the fix: the passage found does not answer it, or no topic is near; a passage, a topic or a line in agent.yaml\'s business information', () => {
+    const r = noted();
+    const [found] = r.groups.find((g) => g.key === 'opening_hours')!.fixes;
+    expect(found).toMatchObject({ id: 'answer-noted', kind: 'noted', topics: ['opening_hours'] });
+    expect(found!.text).toContain('a passage of topic "Opening hours (opening_hours)" was found and did not answer it');
+    expect(found!.text).toContain('agent.yaml');
+    const none = r.groups.find((g) => g.key === '~')!.fixes.find((f) => f.id === 'answer-noted')!;
+    expect(none.text).toContain('No topic came near');
+    const text = formatMarkdown(r).join('\n');
+    expect(text).toContain('By kind: 2 noted by the line.');
+    expect(text).toContain('- `are you open on public holidays` (noted by the line, 2026-10-03), noted as `Whether the library opens on public holidays`');
   });
 });
 
@@ -487,6 +520,24 @@ describe('kb:gaps, the command', () => {
     const lost = await run(['somewhere-else', '--traces', traces]);
     expect(lost.code).toBe(1);
     expect(lost.err[0]).toMatch(/^kb:gaps: somewhere-else: neither an app folder/);
+  });
+
+  it('ranks an agent app\'s gap notes, an app with no knowledge base included: its fix a line in agent.yaml\'s business information', async () => {
+    const app = join(scratchDir(), 'agent-no-kb');
+    mkdirSync(app, { recursive: true });
+    for (const f of ['app.yaml', 'agent.yaml']) cpSync(join(CONVERSE_FIXTURE_DIR, f), join(app, f));
+    const record = { v: 3, kind: 'converse', sessionId: 'N01', turnIndex: 1, ts: '2026-10-03T15:00:00.000Z', said: 'do you visit on Sundays', replies: [], tools: [], lookUps: [], gapNotes: [{ question: 'Whether visits are made on Sundays', lookUps: [] }] };
+    const at = join(scratchDir(), 'agent-traces');
+    mkdirSync(at, { recursive: true });
+    writeFileSync(join(at, 'N01.jsonl'), `${JSON.stringify(record)}\n`);
+    const r = await run([app, '--traces', at]);
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(r.out[0]).toContain('1 noted by the line');
+    expect(r.out[0]).toContain('No topic came near');
+    expect(r.out[0]).toContain('agent.yaml');
+    // A folder that is no app at all is still refused.
+    expect((await run([at, '--traces', at])).code).toBe(1);
   });
 
   it('is named in the usage of an unknown command', async () => {

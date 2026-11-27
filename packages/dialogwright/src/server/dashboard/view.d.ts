@@ -457,6 +457,8 @@ export interface ConverseTurnView {
   goodbyeDropped?: number;
   /** Each lookup in the knowledge base (the runtime's look_up), in one line: "looked up: <topic title>", or "no approved answer". */
   lookUps?: string[];
+  /** Each question the business could not answer that the agent model noted (the runtime's note_gap), in one line: "noted a gap: <the question as recorded>". */
+  gapNotes?: string[];
   /** The turn was stopped by the caller speaking: what it had not said was dropped. */
   interrupted?: true;
   /** The turn threw in the line (the trace's `failed`): what it said and ran as far as it reached, the line said after it last. */

@@ -2115,6 +2115,8 @@ export function converseCall(records) {
     if (r.failed === 'internal') callView.failed = true;
     // Each lookup in the knowledge base: the topic whose approved passage it returned, or that none answered.
     if (Array.isArray(r.lookUps) && r.lookUps.length > 0) callView.lookUps = r.lookUps.map(lookUpLine);
+    // Each question the business could not answer that the model noted (the runtime's note_gap), its question as recorded.
+    if (Array.isArray(r.gapNotes) && r.gapNotes.length > 0) callView.gapNotes = r.gapNotes.map((n) => `noted a gap: ${typeof n?.question === 'string' ? n.question : '?'}`);
     const m = r.model ?? null;
     const asked = m !== null && (m.ms > 0 || (m.usage?.inputTokens ?? 0) > 0 || typeof m.error === 'string');
     const rb = r.readBack ?? null;

@@ -1797,6 +1797,46 @@
       },
       "additionalProperties": false
     },
+    "gaps": {
+      "default": {
+        "note": "on"
+      },
+      "description": "The questions the business could not answer, noted by the agent model with the runtime's own \"note_gap\" for the business to review (chapter 18 of the guide). Absent: offered on every turn, the question recorded by its length.",
+      "type": "object",
+      "properties": {
+        "note": {
+          "default": "on",
+          "description": "on: the runtime's own \"note_gap\" is offered to the agent model on every turn, to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).",
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        "audit": {
+          "description": "How \"note_gap\"'s one param, the question in general terms, is recorded in the trace and the audit. Default: by its length (length).",
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "enum": [
+                "last4",
+                "mask",
+                "length",
+                "secret",
+                "keep"
+              ],
+              "description": "How the question is recorded: last4, mask, length, secret or keep."
+            }
+          },
+          "required": [
+            "question"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "transfer": {
       "description": "Where a call goes when it is handed to a person: on a call, the runtime's own transfer_call puts the caller through on their request (while the business is open, by default), and a call the model has failed past limits.failuresPerCall is handed there after the handoff line. Nothing of the call is passed to the person.",
       "type": "object",

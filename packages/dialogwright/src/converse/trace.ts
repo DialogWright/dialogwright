@@ -3,6 +3,7 @@ import { recordedValue, scrubberFor, type RecordingApp, type Scrub } from '../au
 import type { ToolCall } from '../gate/types';
 import type { ActionSpec } from './business/schema';
 import type { RouteOutcome } from './journeys';
+import type { GapNoteRecord } from './gaps';
 import type { LookUpRecord } from './knowledge';
 
 /**
@@ -133,6 +134,12 @@ export interface ConverseTraceRecord {
    * model's reading, and the passage returned (its id and its approval's short hash) or why none was. Absent: none.
    */
   lookUps?: LookUpRecord[];
+  /**
+   * Each question the business could not answer that the agent model noted this turn (the runtime's note_gap,
+   * converse/gaps.ts): the question as agent.yaml's gaps.audit records it (by its length by default), what each of the
+   * turn's lookups before it found (its outcome and topic), and the journey the call was in. Absent: none.
+   */
+  gapNotes?: GapNoteRecord[];
   /** Whether the business was open at the turn (agent.yaml `business.open`); absent where it gives no opening hours. */
   open?: boolean;
   /** Written by a server after it let the call go to another (trace/store.ts): late, kept apart. */
