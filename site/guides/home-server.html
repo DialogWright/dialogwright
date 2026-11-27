@@ -399,16 +399,36 @@ pnpm start --app utility</code></pre>
           Twilio's ConversationRelay has no noise suppression of its own, and the server never gets the call's raw audio, so
           there is nothing to filter on Twilio's side. Telnyx denoises the caller's audio before its recognizer hears it, and
           it is the cheaper carrier per call (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">the cost report</a>). For an English app, set
-          these three; <code>pnpm configure</code> writes them when you choose Telnyx for an English app:
+          these three (the third, Krisp, is an option: its cost and what it bought are below); <code>pnpm configure</code>
+          writes them when you choose Telnyx for an English app:
         </p>
 <pre data-copy><code>TELNYX_TRANSCRIPTION_PROVIDER=deepgram
 TELNYX_SPEECH_MODEL=flux
 TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
         <p>
-          Krisp is billed by Telnyx per call. Flux is for English only: an app whose default language is another leaves the
-          first two out and keeps the noise suppression.
+          Flux is for English only: an app whose default language is another leaves the first two out and keeps the noise
+          suppression.
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#132-serving-voice-twilio-telnyx-or-both">The guide's 13.2</a>
           has the decision and the measurement.
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th scope="col">A Telnyx call, by part</th><th scope="col">A minute, billed</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">The conversation relay (speech recognition and the voice included)</th><td data-label="A minute, billed">$0.05</td></tr>
+              <tr><th scope="row">The call: call control $0.002 and the SIP leg $0.0032</th><td data-label="A minute, billed">$0.0052</td></tr>
+              <tr><th scope="row">Krisp noise suppression, an option</th><td data-label="A minute, billed">$0.005</td></tr>
+              <tr><th scope="row"><strong>All of it</strong></th><td data-label="A minute, billed"><strong>$0.060 with Krisp, $0.055 without</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Krisp is an option.</strong> It costs $0.005 a minute, about 8% of a Telnyx call: $0.015 to $0.02 on the
+          wheel shop's calls, billed by the call's whole minutes. It is one setting, <code>TELNYX_NOISE_SUPPRESSION=krisp</code>
+          (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>); leave it out to save it. What it bought is not yet measured alone:
+          the loud-room calls compared Telnyx with flux and Krisp against Twilio (10 speech events against 135, no reply cut off
+          against 7), and the same room has not yet been called on Telnyx without Krisp. So that result is the Telnyx path with
+          Krisp, not Krisp alone; that measurement is to come.
         </p>
         <p class="unverified">
           A few details of the Telnyx adapter that Telnyx's pages do not document (the handoff field, the call status a

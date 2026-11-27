@@ -107,6 +107,25 @@
           </tbody>
         </table>
       </div>
+      <div class="table-wrap">
+        <table class="stack">
+          <thead><tr><th scope="col">A Telnyx call, by part</th><th scope="col">A minute, billed</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">The conversation relay (speech recognition and the voice included)</th><td data-label="A minute, billed">$0.05</td></tr>
+            <tr><th scope="row">The call: call control $0.002 and the SIP leg $0.0032</th><td data-label="A minute, billed">$0.0052</td></tr>
+            <tr><th scope="row">Krisp noise suppression, an option</th><td data-label="A minute, billed">$0.005</td></tr>
+            <tr><th scope="row"><strong>All of it</strong></th><td data-label="A minute, billed"><strong>$0.060 with Krisp, $0.055 without</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Krisp is an option.</strong> It costs $0.005 a minute, about 8% of a Telnyx call: $0.015 to $0.02 on the
+        wheel shop's calls, billed by the call's whole minutes. It is one setting, <code>TELNYX_NOISE_SUPPRESSION=krisp</code>
+        (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>); leave it out to save it. What it bought is not yet measured alone:
+        the loud-room calls compared Telnyx with flux and Krisp against Twilio (10 speech events against 135, no reply cut off
+        against 7), and the same room has not yet been called on Telnyx without Krisp. So that result is the Telnyx path with
+        Krisp, not Krisp alone; that measurement is to come.
+      </p>
       <p class="note">
         Measured: the models' tokens and cost from the traces of 17 live agent-mode calls and one live scripted call, and
         what each carrier billed for the wheel shop's test calls, read from their own records on 2026-11-26 (on both, the
