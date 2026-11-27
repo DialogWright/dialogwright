@@ -1,5 +1,5 @@
 import { checkApp, formatProblem, type AnswerMap, type ConverseApp, type JevClient } from 'dialogwright';
-import { converseTestCall, fakeConverseModel, fakeTextProvider, withPendingApproved, type ConverseModelEvent } from 'dialogwright/testing';
+import { converseTestCall, fakeConverseModel, fakeTextProvider, type ConverseModelEvent } from 'dialogwright/testing';
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -585,9 +585,8 @@ describe('a caller who asks for a person (transfer_call, decided 2026-11-26)', (
 });
 
 /**
- * The shop's knowledge base (kb/): its five topics and their drafts wait in kb/pending for the owner to accept and approve
- * (pnpm kb:review), so nothing is looked up on the line yet. withPendingApproved builds, in memory only, the app as it
- * would run once they were all approved, to hold the lookup to the shop's own drafts: nothing is written or approved.
+ * The shop's knowledge base (kb/): five topics, each passage approved by the owner on 2026-11-27 (pnpm kb:review), so the
+ * line looks answers up in them.
  */
 describe('the shop\'s knowledge base', () => {
   /** A Monday, 10 a.m. at the shop, after the drafts' first day in force (2026-11-27). */
@@ -612,20 +611,19 @@ describe('the shop\'s knowledge base', () => {
     };
   }
 
-  it('is read with the app, its topics and drafts all pending, so look_up is offered nowhere and the line runs as before', async () => {
+  it('is read with the app, its five topics approved, so look_up is offered on a caller\'s question', async () => {
     const { app } = wheelshop({ now: () => KB_NOW });
-    expect(app.knowledge).toBeDefined();
-    expect(Object.keys(app.knowledge!.kb.topics)).toEqual([]);
-    expect(Object.keys(app.knowledge!.kb.passages)).toEqual([]);
+    expect(Object.keys(app.knowledge!.kb.topics).sort()).toEqual(['aftercare', 'cracked_bent', 'diamond_cut', 'refinish_guarantee', 'sensors_balancing']);
+    expect(Object.keys(app.knowledge!.kb.passages).sort()).toEqual(['aftercare-refinished', 'cracked-bent-wheels', 'diamond-cut-what', 'refinish-guarantee', 'sensors-balancing']);
     const model = fakeConverseModel([[text('We look after your wheels.'), done()]]);
     const c = converseTestCall(app, { model, jev: knowledgeJev('aftercare'), now: () => new Date(KB_NOW), env: { SHOP_PHONE } });
     await c.start();
     await c.say('Can I take my wheels through a car wash after the refinish?');
-    expect(toolNames(model as unknown as { requests: readonly unknown[] })).not.toContain('look_up');
+    expect(toolNames(model as unknown as { requests: readonly unknown[] })).toContain('look_up');
   });
 
-  it('with its drafts approved (in memory only), a caller\'s aftercare question is answered from its passage, worded freely (risk: low)', async () => {
-    const app = withPendingApproved(wheelshop({ now: () => KB_NOW }).app);
+  it('a caller\'s aftercare question is answered from its passage, worded freely (risk: low)', async () => {
+    const { app } = wheelshop({ now: () => KB_NOW });
     expect(Object.fromEntries(Object.values(app.knowledge!.kb.topics).map((t) => [t.id, t.risk]))).toEqual({ aftercare: 'low', diamond_cut: 'low', refinish_guarantee: 'regulated', sensors_balancing: 'regulated', cracked_bent: 'regulated' });
     const question = 'Can I take my wheels through a car wash after the refinish?';
     const model = fakeConverseModel([[call('k1', 'look_up', { question }), done('tool')], [text('Hand wash them for the first week.'), done()]]);
@@ -639,8 +637,8 @@ describe('the shop\'s knowledge base', () => {
     expect(result).toContain('You may put it in your own words');
   });
 
-  it('with its drafts approved (in memory only), a question none of them answers finds no approved answer', async () => {
-    const app = withPendingApproved(wheelshop({ now: () => KB_NOW }).app);
+  it('a question none of the topics answers finds no approved answer', async () => {
+    const { app } = wheelshop({ now: () => KB_NOW });
     const question = 'Can I pay by card, or is it cash only?';
     const model = fakeConverseModel([[call('k1', 'look_up', { question }), done('tool')], [text('I don\'t have that to hand.'), done()]]);
     const c = converseTestCall(app, { model, jev: knowledgeJev('unanswered'), now: () => new Date(KB_NOW), env: { SHOP_PHONE } });

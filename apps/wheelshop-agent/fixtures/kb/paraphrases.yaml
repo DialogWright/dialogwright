@@ -1,0 +1,32 @@
+# Paraphrases of the wheel shop's knowledge base topics (kb/topics.yaml): what callers say about each topic in
+# words other than its title, keywords and example questions, which retrieval never sees, and, under none, what
+# callers ask that no topic answers. pnpm kb:bakeoff reads it:
+#
+#   pnpm kb:bakeoff apps/wheelshop-agent --paraphrases apps/wheelshop-agent/fixtures/kb/paraphrases.yaml --sweep
+aftercare:
+  - Is there anything special I have to do with the rims once I get them back?
+  - How soon can I run it through the automatic wash at the gas station?
+  - What's safe to spray on them to get brake dust off?
+  - Do I need to baby the new finish for a while?
+diamond_cut:
+  - My dealer said my rims are machined. What does that mean?
+  - What's the process for getting that shiny cut look back?
+  - Why do some wheels have those fine lines on the face?
+refinish_guarantee:
+  - If the paint starts coming off in a few months, are you going to fix it?
+  - Is there a warranty on the work?
+  - How long will the new finish hold up?
+cracked_bent:
+  - I hit a pothole and the rim is wobbling now. Can you fix that?
+  - There's a hairline crack near the spoke, can that be welded?
+  - My wheel got bent on the highway, is that something you do?
+sensors_balancing:
+  - Will my tire pressure light come on after you work on the wheel?
+  - Do you rebalance the wheels after the repair?
+  - Do I need to go to a tire shop after you're done?
+none:
+  - Do you sell new tires?
+  - Can you do an oil change while you have the car?
+  - Do you do window tint?
+  - How much is a full set of new rims?
+  - Do you take credit cards?

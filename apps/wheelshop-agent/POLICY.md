@@ -64,11 +64,17 @@
 ## Knowledge base
 
 - `look_up` is the runtime's own lookup in the app's knowledge base (its `kb/` folder), offered to the agent model on every turn, at the root and in every journey, wherever a passage a person approved (`pnpm kb:approve`) is there to be found today; with none, it is not offered, and one called anyway is refused as not offered and audited. It is a lookup, open to every caller, with no rules and never confirmed, and it changes nothing. Its one param, `question`, the caller's question in their words, is recorded by its length only (`knowledge.audit`).
-- It finds at most 8 topics for the question by their keywords (kb.yaml names no embedder), and the decision model (not the agent model) is asked which of them the question asks about, sent the question and those topics' titles (the scripted topic slot's question); a topic read at 0.55 or above answers. Its passage is returned only where a person approved it and nothing it was approved over has changed since: a passage never approved, stale or edited is withheld, exactly as in the scripted mode. Otherwise the agent model is told the business has no approved answer to the question.
+- It finds at most 3 topics for the question by their keywords and their meaning (kb.yaml's embedder, `potion-base-8M`, floor 0.25), and the decision model (not the agent model) is asked which of them the question asks about, sent the question and those topics' titles (the scripted topic slot's question); a topic read at 0.55 or above answers. Its passage is returned only where a person approved it and nothing it was approved over has changed since: a passage never approved, stale or edited is withheld, exactly as in the scripted mode. Otherwise the agent model is told the business has no approved answer to the question.
 - The agent model is sent the passage's text, its topic's title and its wording rule, and words the answer in its own reply, streamed as every reply is: nothing checks or judges that reply before it is said (the maintainer's named exception, decided 2026-11-27). A topic marked `risk: low` may be worded for the caller's question; every other topic's passage is to be given as written, by the agent model's instructions only: this is not enforced.
 - The audit records the gate's decision, the result as the agent model was sent it, and the passage returned or withheld (`kb_answer`: its id, version and short hashes). The trace records each lookup's candidates and their scores, the decision model's reading, and the passage returned or why none was.
 
-`kb/topics.yaml` has no topics yet: a proposed topic and its draft passage wait in `kb/pending`, never read, until a person accepts the topic and approves the draft (`pnpm kb:review`).
+| Topic | Title | How the agent model may give its passage |
+| --- | --- | --- |
+| `aftercare` | Caring for a refinished wheel | worded for the caller's question (`risk: low`) |
+| `diamond_cut` | What diamond cutting is | worded for the caller's question (`risk: low`) |
+| `refinish_guarantee` | How long a refinish lasts | as written (by instruction only) |
+| `sensors_balancing` | Tyre pressure sensors and balancing | as written (by instruction only) |
+| `cracked_bent` | Cracked or bent wheels | as written (by instruction only) |
 
 ## Actions
 

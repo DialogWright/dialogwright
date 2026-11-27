@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-pending.schema.json
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
 # A draft passage of the demo's own text, waiting for review (pnpm kb:review): never read at run time or said. Its topic
 # is proposed in kb/pending/topics.yaml. # assumption: the owner corrects these
 id: aftercare-refinished
@@ -10,7 +10,9 @@ source:
   document: shop-notes
   section: aftercare
 answer: "For the first week after a refinish, wash the wheels by hand with plain soapy water and a soft brush. After that, stay away from acid or strong wheel cleaners and from car washes with brushes; a pH-neutral wheel cleaner keeps the finish looking new."
-drafted:
-  by: claude-opus-5-5, an assistant writing the wheel shop demo's own text
+approval:
+  owner: DialogWright Team
+  approvedBy: Jason
   on: 2026-11-27
-  excerpt: "For the first week after a refinish, wash the wheels by hand with plain soapy water and a soft brush. After that, stay away from acid or strong wheel cleaners and from car washes with brushes; a pH-neutral wheel cleaner keeps the finish looking new."
+  sourceHash: dce346d2a75038afdd27ea04f8fc77ff100accba07990cd77f057250abc98356
+  hash: f91e3a4038b7db7da21c64e483fe22e695ecded490b8be02c60b8d789e893554

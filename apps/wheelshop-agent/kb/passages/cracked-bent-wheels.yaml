@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-pending.schema.json
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
 # A draft passage of the demo's own text, waiting for review (pnpm kb:review): never read at run time or said. Its topic
 # is proposed in kb/pending/topics.yaml. # assumption: the owner corrects these
 id: cracked-bent-wheels
@@ -10,7 +10,9 @@ source:
   document: shop-notes
   section: cracked-bent
 answer: "We don't repair cracked or bent wheels: a crack or a bend can weaken a wheel, and we won't put back on a car a wheel that may not be safe. A specialist who straightens wheels, or a replacement wheel, is the way to go, and we're happy to refinish a replacement to match the others."
-drafted:
-  by: claude-opus-5-5, an assistant writing the wheel shop demo's own text
+approval:
+  owner: DialogWright Team
+  approvedBy: Jason
   on: 2026-11-27
-  excerpt: "We don't repair cracked or bent wheels: a crack or a bend can weaken a wheel, and we won't put back on a car a wheel that may not be safe. A specialist who straightens wheels, or a replacement wheel, is the way to go, and we're happy to refinish a replacement to match the others."
+  sourceHash: 96d1fc8251dc39c2cb643137bc7b3777edfd098c9146d647fc7e8aa79804d2d1
+  hash: b8dd45d37eef2e239e42848ddab1ecc46a0dfb5353bbb3d69526527205d444c5

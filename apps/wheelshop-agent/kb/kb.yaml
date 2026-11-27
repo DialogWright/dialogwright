@@ -6,3 +6,10 @@
 # kb/pending/topics.yaml, until the owner accepts each topic and approves each draft (pnpm kb:review). Topics are found
 # by their keywords and example questions alone (no embedder, so no index to keep).
 action: look_up
+# The floor and cap chosen on fixtures/kb/paraphrases.yaml (pnpm kb:bakeoff --sweep, 2026-11-27): hybrid at floor 0.25 and
+# cap 3 found every paraphrase among its candidates, with 2.0 candidates on questions no topic answers. The decision
+# model then reads which candidate, if any, answers the caller (the lookup).
+retrieval:
+  embedder: potion-base-8M
+  floor: 0.25
+  cap: 3

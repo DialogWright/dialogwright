@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-pending.schema.json
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
 # A draft passage of the demo's own text, waiting for review (pnpm kb:review): never read at run time or said. Its topic
 # is proposed in kb/pending/topics.yaml. # assumption: the owner corrects these
 id: refinish-guarantee
@@ -10,7 +10,9 @@ source:
   document: shop-notes
   section: guarantee
 answer: "Our refinishing work comes with a 12 month guarantee against the finish peeling, flaking or lifting. It doesn't cover new damage, such as fresh curb rash, or damage from harsh cleaners."
-drafted:
-  by: claude-opus-5-5, an assistant writing the wheel shop demo's own text
+approval:
+  owner: DialogWright Team
+  approvedBy: Jason
   on: 2026-11-27
-  excerpt: "Our refinishing work comes with a 12 month guarantee against the finish peeling, flaking or lifting. It doesn't cover new damage, such as fresh curb rash, or damage from harsh cleaners."
+  sourceHash: 21ab5e6fc7a1469953d9c0daf2899ec066c783ac98c8d2348bf7b78edfb0525b
+  hash: c7ae8a32deaf22edcf10738e9ce42e63314c11395fc87aad79661a693122b496
