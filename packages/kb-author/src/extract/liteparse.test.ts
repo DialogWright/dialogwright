@@ -96,6 +96,22 @@ describe('LiteParse as the PDF reader', () => {
     expect(doc.sections.find((s) => s.id === 'visit-costs')!.text).not.toContain('In network: $20');
   });
 
+  it('does not note a table only ours found that our checker calls weak: prose in a box, not a table', async () => {
+    // Two sentences in a ruled box whose middle rule runs through their words: our borders reader takes it for
+    // a table, and our checker scores it weak (text across a column's edge, rows run together).
+    const text = [item('A card that is lost is replaced', 50, 82.5), item('at any branch desk for free.', 50, 102.5), item('A late item is charged', 50, 122.5), item('a fee for each day.', 50, 142.5)];
+    const line = (x1: number, y1: number, x2: number, y2: number) => ({ x1, y1, x2, y2, stroke: true });
+    const page: LpPage = {
+      pageNum: 1,
+      width: 612,
+      height: 792,
+      textItems: [item('Card rules', 72, 40, 14, { bold: true }), ...text],
+      vectorGraphics: { shapes: [], lines: [line(40, 77, 300, 77), line(40, 120, 300, 120), line(40, 162, 300, 162), line(40, 77, 40, 162), line(120, 77, 120, 162), line(300, 77, 300, 162)] },
+    };
+    const doc = await extractPdfLiteParse(bytes('rights-notice.pdf'), { open: fakeLiteParse(() => [page]).open });
+    expect(doc.notes).toBeUndefined();
+  });
+
   it('reads a page with no text layer by OCR (Tesseract), marks its sections, notes it, and says once that OCR may download its language data', async () => {
     const fake = fakeLiteParse(scannedPages, 2);
     const said: string[] = [];
