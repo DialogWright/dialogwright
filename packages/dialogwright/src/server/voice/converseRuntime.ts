@@ -29,8 +29,8 @@ import type { ConverseCallEntry } from '../sessions';
  *   `last: false` (with a space after it, as the carrier joins the pieces), the reply's last piece with
  *   `last: true`, every one interruptible by speech (the converse line always is: plan ruling 2). The bridge
  *   (lines.bridge) goes whole, not interruptible. The call's end follows the turn that ended it: the closing
- *   end, or the handoff's transfer end where agent.yaml names a transfer number (the completed end where it
- *   names none), held for the lines before it where the carrier needs it (VoiceIo.sendEnd), never awaited
+ *   end, the handoff's transfer end where agent.yaml names a transfer number (the completed end where it
+ *   names none), or the transfer end of the model's transfer_call (its reason `transfer`), held for the lines before it where the carrier needs it (VoiceIo.sendEnd), never awaited
  *   in the call's queue (a carrier's playback report must reach the wait meanwhile).
  * - One turn at a time, on the call's queue. A final prompt while a turn runs stops it (converseTurn's
  *   `signal`) and is the next turn, so a recognizer that ended the caller's words early is one turn on both
@@ -399,9 +399,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
   };
 
   /** The call's end in its app's audit (call_ended), as a converse chat's is. */
-  const audited = (app: ConverseApp, callId: string, reason: string): void => {
+  const audited = (app: ConverseApp, callId: string, reason: string, more: Record<string, string> = {}): void => {
     try {
-      const r = deps.converseDeps(app, callId).audit.append(callId, 'voice', { type: 'call_ended', detail: { reason } });
+      const r = deps.converseDeps(app, callId).audit.append(callId, 'voice', { type: 'call_ended', detail: { reason, ...more } });
       if (r instanceof Promise) r.catch((err: unknown) => log(`${callId}: the end's audit entry failed: ${describe(err)}`));
     } catch (err) {
       log(`${callId}: the end's audit entry failed: ${describe(err)}`);
@@ -873,7 +873,7 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
       delete e.turnWords;
       delete e.turnHeard;
       const ended = state.ended;
-      if (ended === 'closing' || ended === 'handoff') {
+      if (ended === 'closing' || ended === 'handoff' || ended === 'transfer') {
         endCall(e, app, ended, sent.map((s) => s.frame), io, input.kind === 'silence' && input.end === true ? 'silence' : undefined);
         return;
       }
@@ -890,11 +890,17 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     }
   };
 
-  /** The call ended by its turn: the audit's row, the console told, the `end` sent once the lines before it have played (or kept for the next socket). */
-  const endCall = (e: ConverseCallEntry, app: ConverseApp, ended: 'closing' | 'handoff', lines: readonly OutboundFrame[], io: VoiceIo, why?: 'silence'): void => {
+  /**
+   * The call ended by its turn: the audit's row, the console told, the `end` sent once the lines before it have played (or
+   * kept for the next socket). A call put through to agent.yaml's transfer number is audited as a transfer, with by whom:
+   * the model on the caller's request (transfer_call), or the handoff after the model failed (decided 2026-11-26).
+   */
+  const endCall = (e: ConverseCallEntry, app: ConverseApp, ended: 'closing' | 'handoff' | 'transfer', lines: readonly OutboundFrame[], io: VoiceIo, why?: 'silence'): void => {
     const reason = ended === 'closing' ? 'completed' : 'handoff';
+    const transferred = ended === 'transfer' ? 'request' : ended === 'handoff' && app.business.transfer !== undefined ? 'handoff' : null;
     // An end on silence is the line's own: said so in the audit and the frame log (the console's Live list counts it completed).
-    audited(app, e.callSid, why ?? reason);
+    if (transferred !== null) audited(app, e.callSid, 'transfer', { by: transferred });
+    else audited(app, e.callSid, why ?? reason);
     // How the call ended, in the frame log as a converse chat's (the console's Calls page reads it: view.js converseRow).
     io.record('log', { ended: why ?? ended });
     io.publish({ type: 'ended', callSid: e.callSid, at: now(), reason });
@@ -902,8 +908,9 @@ export function converseVoiceRuntime(deps: ConverseVoiceDeps): ConverseVoiceRunt
     if (gone !== undefined) clearSilence(gone);
     lives.delete(e.callSid);
     const completed = (e.session.done ?? []).map((d) => d.action);
-    // A handoff goes to the business's transfer number where it names one (http.ts dials it); else the call ends as a goodbye does.
-    const end: EndFrame = ended === 'handoff' && app.business.transfer !== undefined ? endFrame('handoff', completed) : endFrame('completed', completed);
+    // A handoff goes to the business's transfer number where it names one (http.ts dials it); else the call ends as a goodbye
+    // does. A transfer_call is offered only where it names one, and its end says so (its reason `transfer`), dialed the same.
+    const end: EndFrame = ended === 'transfer' ? endFrame('transfer', completed) : ended === 'handoff' && app.business.transfer !== undefined ? endFrame('handoff', completed) : endFrame('completed', completed);
     // No socket to take them: kept for the next one, where the store outlives this server.
     if (e.socket === null && io.keepUndelivered([...lines, end])) return;
     // Not awaited: the carrier's playback report must reach the held end's wait (VoiceIo.sendEnd).

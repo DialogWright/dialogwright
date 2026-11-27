@@ -73,8 +73,11 @@ export interface ConverseState {
    * state saved before it was kept): none.
    */
   unheardReadBacks?: Record<string, UnheardReadBack>;
-  /** How the call ended: the closing line, a handoff to a person, or the caller left. Absent while it goes on. */
-  ended?: 'closing' | 'handoff' | 'left';
+  /**
+   * How the call ended: the closing line, a handoff to a person (the model failed past limits.failuresPerCall), put
+   * through to a person on the caller's request (the runtime's transfer_call), or the caller left. Absent while it goes on.
+   */
+  ended?: 'closing' | 'handoff' | 'transfer' | 'left';
 }
 
 /** Where a call is among the journeys: the one the turn is in (null: the root), its phase, the one set aside and those done. */

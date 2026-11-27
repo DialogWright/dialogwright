@@ -4222,3 +4222,187 @@ describe('engine vocabulary', () => {
     }
   });
 });
+
+describe('converseTurn: putting the call through (transfer_call, decided 2026-11-26)', () => {
+  const TRANSFER = '+15555550177';
+  const OPEN = '  open:\n    weekly: { mon-fri: ["08:00-17:00"] }\n';
+  const NIGHT = new Date('2026-11-12T04:00:00Z'); // Wednesday, 11 p.m. in the business's zone
+  const withTransfer = (more = '') => (t: string): string => `${t}transfer: { number: "${TRANSFER}"${more} }\n`;
+  const withHours = (more = '') => (t: string): string => withTransfer(more)(t.replace('  timezone: America/New_York\n', `  timezone: America/New_York\n${OPEN}`));
+  const toolNames = (h: Harness, i = 0): string[] => (h.model as unknown as { requests: { tools: { name: string }[] }[] }).requests[i]!.tools.map((x) => x.name);
+  const chat = (): ConverseState => newConverseState({ appId: 'menders', callId: 'chat-1', channel: 'chat' });
+  const PUT = 'Of course, one moment while I put you through.';
+  const putThrough = (id: string, words = true): ModelEvent[] => [...(words ? [text(PUT)] : []), call(id, 'transfer_call', {}), done('tool')];
+
+  it('on a call with transfer.number: offered, the model\'s words said, the call put through, audited and traced as a transfer', async () => {
+    const h = harness([putThrough('c1')], { edit: withTransfer() });
+    const s = await h.run(fresh(), { kind: 'text', text: 'can I talk to a person, please?' });
+    expect(toolNames(h)).toContain('transfer_call');
+    // The model's words alone: the closing line is never said, and the call never ends as closing.
+    expect(h.said).toEqual([[PUT, true]]);
+    expect(h.ended).toEqual(['transfer']);
+    expect(s.ended).toBe('transfer');
+    expect(h.rows).toEqual([{ type: 'converse_end', detail: { by: 'transfer_call' } }]);
+    expect(h.traces.at(-1)!.tools).toEqual([{ name: 'transfer_call', args: {}, outcome: 'ran' }]);
+    expect(h.traces.at(-1)!.ended).toBe('transfer');
+    // The words said are the line's in the conversation, with the call and its result.
+    expect(JSON.stringify(s.messages)).toContain(PUT);
+    // An ended call takes no more turns.
+    expect(await h.run(s, { kind: 'text', text: 'hello?' })).toBe(s);
+  });
+
+  it('with no words of the model\'s: lines.transfer where the business gives it, else the runtime\'s own line', async () => {
+    const LINE = 'Putting you through to the counter now.';
+    const own = harness([putThrough('c1', false)], { edit: (t) => withTransfer()(t.replace('lines:\n', `lines:\n  transfer: { en: "${LINE}" }\n`)) });
+    await own.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(own.said).toEqual([[LINE, true]]);
+    expect(own.ended).toEqual(['transfer']);
+    const none = harness([putThrough('c1', false)], { edit: withTransfer() });
+    const s = await none.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(none.said).toEqual([["One moment, I'll put you through.", true]]);
+    expect(s.messages.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: "One moment, I'll put you through." }] });
+  });
+
+  it('after the model\'s words where the round ran a lookup as well: the line for it follows them', async () => {
+    const h = harness([[text('Let me look.'), call('c1', 'check_availability', { day: FRIDAY }), call('c2', 'transfer_call', {}), done('tool')]], { edit: withTransfer() });
+    await h.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(h.said).toEqual([['Let me look.', false], ["One moment, I'll put you through.", true]]);
+    expect(h.ended).toEqual(['transfer']);
+  });
+
+  it('is not offered in a chat, with no transfer.number, or while the business is closed (transfer.whenClosed callback, the default)', async () => {
+    const inChat = harness([[text('Sure.'), done()]], { edit: withTransfer() });
+    await inChat.run(chat(), { kind: 'text', text: 'a person, please' });
+    expect(toolNames(inChat)).not.toContain('transfer_call');
+    const noNumber = harness([[text('Sure.'), done()]]);
+    await noNumber.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(toolNames(noNumber)).not.toContain('transfer_call');
+    const closed = harness([[text('Sure.'), done()]], { edit: withHours(), now: NIGHT });
+    await closed.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(toolNames(closed)).not.toContain('transfer_call');
+    // By day, the same business offers it.
+    const byDay = harness([[text('Sure.'), done()]], { edit: withHours() });
+    await byDay.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(toolNames(byDay)).toContain('transfer_call');
+  });
+
+  it('is offered while closed with transfer.whenClosed: transfer', async () => {
+    const h = harness([putThrough('c1')], { edit: withHours(', whenClosed: transfer'), now: NIGHT });
+    const s = await h.run(fresh(), { kind: 'text', text: 'a person, please' });
+    expect(toolNames(h)).toContain('transfer_call');
+    expect(s.ended).toBe('transfer');
+  });
+
+  it('called where it is not offered: refused as not offered, audited, counting no refusal, and the call goes on', async () => {
+    for (const [what, edit, st, now] of [['a chat', withTransfer(), chat(), NOW], ['no number', undefined, fresh(), NOW], ['closed', withHours(), fresh(), NIGHT]] as const) {
+      const h = harness([putThrough('c1'), [text('Someone can call you back.'), done()]], { ...(edit !== undefined ? { edit } : {}), now });
+      const s = await h.run(st, { kind: 'text', text: 'a person, please' });
+      expect(h.ended, what).toEqual([]);
+      expect(s.ended, what).toBeUndefined();
+      expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail), what).toEqual([{ action: 'transfer_call', reason: 'not-offered' }]);
+      expect(h.traces.at(-1)!.tools.map((x) => `${x.name}:${x.outcome}`), what).toEqual(['transfer_call:refused']);
+      expect(h.said.at(-1), what).toEqual(['Someone can call you back.', true]);
+      expect(s.refusals, what).toEqual({});
+    }
+  });
+
+  it('a change kept unsent: the first transfer_call is refused and the model asks; the next puts the call through', async () => {
+    const ASKED = 'Before I put you through, would you still like that visit booked?';
+    const h = harness([
+      ...lookupThenBook,
+      [text('Sure. Anything else?'), done()],
+      putThrough('c3'),
+      [text(ASKED), done()],
+      putThrough('c4'),
+    ], { edit: withTransfer(), reading: { yes: 0.05, no: 0.9, wrappingUp: 0.1 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'hmm, not right now' });
+    expect(s.unsent).toEqual({ action: 'book' });
+    const before = h.said.length;
+    s = await h.run(s, { kind: 'text', text: 'actually, can I talk to someone?' });
+    expect(h.ended).toEqual([]);
+    expect(s.ended).toBeUndefined();
+    // Not read as wrapping up: the words streamed and were said, never as the turn's last piece.
+    expect(h.said.slice(before)).toEqual([[PUT, false], [ASKED, true]]);
+    const WHY = 'Not run: you have said you are putting them through, but "book" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before putting them through, ask the caller whether they still want it sent, as a person would, unless they have said they no longer want it; if they do, call "book" again and it is read back to them. Otherwise, call "transfer_call" again.';
+    expect(h.traces.at(-1)!.tools).toEqual([{ name: 'transfer_call', args: {}, outcome: 'refused', reason: WHY }]);
+    expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'transfer_call', reason: 'unsent-change', unsent: 'book' }]);
+    expect(h.rows.some((r) => r.type === 'converse_end')).toBe(false);
+    s = await h.run(s, { kind: 'text', text: 'no, just put me through' });
+    expect(h.ended).toEqual(['transfer']);
+    expect(s.ended).toBe('transfer');
+  });
+
+  it('a change kept unsent with the caller read as wrapping up: the words held with the refused transfer_call are never said', async () => {
+    const ASKED = 'Before I put you through, would you still like that visit booked?';
+    const h = harness([
+      ...lookupThenBook,
+      [text('Sure. Anything else?'), done()],
+      putThrough('c3'),
+      [text(ASKED), done()],
+    ], { edit: (t) => `${withTransfer()(t)}checks:\n  claims: { mode: off }\n`, reading: { yes: 0.05, no: 0.9, wrappingUp: 0.9 } });
+    let s = await upToReadBack(h);
+    s = await h.run(s, { kind: 'text', text: 'hmm, not right now' });
+    const before = h.said.length;
+    s = await h.run(s, { kind: 'text', text: 'that\'s all, just put me through to someone' });
+    expect(h.said.slice(before)).toEqual([[ASKED, true]]);
+    expect(h.ended).toEqual([]);
+    const r = h.traces.at(-1)!;
+    expect(r.wrapUp).toEqual({ reading: 0.9, held: true, dropped: { chars: PUT.length } });
+    expect(r.tools[0]!.reason).toMatch(/^Not run: what you wrote with it was not said to the caller, and "book" was read back/);
+    expect(JSON.stringify(s.messages)).not.toContain(PUT);
+  });
+
+  it('refused while a read-back waits for the caller\'s answer (one confirmation at a time)', async () => {
+    const h = harness([
+      [call('c1', 'check_availability', { day: FRIDAY }), done('tool')],
+      [call('c2', 'book', { slot: SLOT, item: 'lamp' }), call('c3', 'transfer_call', {}), done('tool')],
+    ], { edit: withTransfer() });
+    const s = await upToReadBack(h);
+    expect(s.pending).toMatchObject({ action: 'book' });
+    expect(h.ended).toEqual([]);
+    expect(h.traces.at(-1)!.tools.map((x) => `${x.name}:${x.outcome}`)).toEqual(['check_availability:ran', 'book:readBack', 'transfer_call:refused']);
+    expect(h.traces.at(-1)!.tools[2]!.reason).toBe('Not run: one confirmation at a time. The caller is answering the read-back of "book"; put the call through after their answer.');
+  });
+
+  it('the honesty line: a person can take the call over only where transfer_call is offered on this turn; else one can call them back', () => {
+    const over = 'Asked whether you are a real person, you say you are an automated assistant and that a person at the business can take the call over.';
+    const back = 'Asked whether you are a real person, you say you are an automated assistant and that a person at the business can call them back.';
+    expect(systemPrompt(business(withTransfer()), fresh(), NOW)).toContain(over);
+    expect(systemPrompt(business(withTransfer()), chat(), NOW)).toContain(back);
+    expect(systemPrompt(business(), fresh(), NOW)).toContain(back);
+    expect(systemPrompt(business(withHours()), fresh(), NIGHT)).toContain(back);
+    expect(systemPrompt(business(withHours()), fresh(), NOW)).toContain(over);
+    expect(systemPrompt(business(withHours(', whenClosed: transfer')), fresh(), NIGHT)).toContain(over);
+  });
+
+  it('its description is context: what it does and when a caller would want it, and that its words are said before they are put through', () => {
+    const tool = toolsOf(business(withTransfer()), undefined, 'voice', true).find((x) => x.name === 'transfer_call')!;
+    expect(tool.description).toBe('Put the caller through to a person at the business, on this call: for when the caller asks to speak with someone, or wants something you cannot do for them and would rather talk it over with a person. What you write in the same reply as this call is said to the caller just before they are put through, as you would say it to them: like everything you write, it speaks as the business, never of how the line works. If you write nothing with it, the business\'s own line for it is said. Once they are put through, the call with you is over.');
+    expect(tool.parameters).toEqual({ type: 'object', properties: {}, required: [], additionalProperties: false });
+    expect(toolsOf(business(withTransfer())).map((x) => x.name)).not.toContain('transfer_call');
+  });
+});
+
+describe('agent.yaml: transfer.whenClosed and lines.transfer', () => {
+  const yaml = (t: string): ReturnType<typeof agentBusinessProblems> => agentBusinessProblems(`${BUSINESS}${t}`);
+  it('takes callback or transfer, callback by default, and refuses anything else', () => {
+    expect(yaml('transfer: { number: "+15555550177" }\n').value!.transfer).toEqual({ number: '+15555550177', whenClosed: 'callback' });
+    expect(yaml('transfer: { number: "+15555550177", whenClosed: transfer }\n').value!.transfer).toEqual({ number: '+15555550177', whenClosed: 'transfer' });
+    const bad = yaml('transfer: { number: "+15555550177", whenClosed: always }\n');
+    expect(bad.value).toBeUndefined();
+    expect(bad.problems.map((p) => p.path)).toContain('transfer.whenClosed');
+  });
+  it('lines.transfer is per language, with a chat wording like every line', () => {
+    const b = yaml('').value!;
+    expect(b.lines.transfer).toBeUndefined();
+    const t = agentBusinessProblems(BUSINESS.replace('lines:\n', 'lines:\n  transfer: { en: "Putting you through." }\n')).value!;
+    expect(t.lines.transfer).toEqual({ en: 'Putting you through.' });
+    expect(agentBusinessProblems(BUSINESS.replace('lines:\n', 'lines:\n  transfer: "Putting you through."\n')).value).toBeUndefined();
+  });
+  it('refuses an action named transfer_call: it is the runtime\'s own', () => {
+    const r = agentBusinessProblems(BUSINESS.replace('actions:\n', 'actions:\n  transfer_call:\n    about: Something else.\n    kind: lookup\n    params: {}\n'));
+    expect(r.value).toBeUndefined();
+    expect(r.problems.map((p) => p.message)).toContain('"transfer_call" is the runtime\'s own action');
+  });
+});

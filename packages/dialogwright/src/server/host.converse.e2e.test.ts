@@ -60,7 +60,7 @@ function hostEnv(dir: string, extra: Record<string, string> = {}): Env {
 /** The converse fixture with the business's voices and, unless `transfer` is false, a transfer number. */
 function converseWith(transfer = true, twilio: string | { voice: string; provider: 'Google' | 'Amazon' | 'ElevenLabs' } = VOICES.twilio): ConverseApp {
   const { app } = converseFixture();
-  return { ...app, business: { ...app.business, persona: { ...app.business.persona, voices: { ...VOICES, twilio } }, ...(transfer ? { transfer: { number: TRANSFER } } : {}) } };
+  return { ...app, business: { ...app.business, persona: { ...app.business.persona, voices: { ...VOICES, twilio } }, ...(transfer ? { transfer: { number: TRANSFER, whenClosed: 'callback' as const } } : {}) } };
 }
 
 /** A host of the callback app (the default) and, with `converse`, an agent app on VISIT_LINE. */

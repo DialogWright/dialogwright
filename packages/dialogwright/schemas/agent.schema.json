@@ -627,6 +627,36 @@
           ],
           "additionalProperties": false,
           "description": "The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given), per language."
+        },
+        "transfer": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The line said on a call before it is put through to transfer.number (the runtime's own transfer_call), where the model writes no words of its own with it. Absent: \"One moment, I'll put you through.\", in English."
+            },
+            "chat": {
+              "description": "The line said on a call before it is put through to transfer.number (the runtime's own transfer_call), where the model writes no words of its own with it. Absent: \"One moment, I'll put you through.\" in the web chat, per language, where it is worded differently from the call (for example \"Thanks for messaging\" for \"Thanks for calling\"). Absent: the chat says the same words as the call.",
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The line said on a call before it is put through to transfer.number (the runtime's own transfer_call), where the model writes no words of its own with it. Absent: \"One moment, I'll put you through.\" in the web chat, in English."
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": false,
+          "description": "The line said on a call before it is put through to transfer.number (the runtime's own transfer_call), where the model writes no words of its own with it. Absent: \"One moment, I'll put you through.\", per language."
         }
       },
       "required": [
@@ -1732,13 +1762,22 @@
       }
     },
     "transfer": {
-      "description": "Where a call goes when it is handed to a person.",
+      "description": "Where a call goes when it is handed to a person: on a call, the runtime's own transfer_call puts the caller through on their request (while the business is open, by default), and a call the model has failed past limits.failuresPerCall is handed there after the handoff line. Nothing of the call is passed to the person.",
       "type": "object",
       "properties": {
         "number": {
           "type": "string",
           "pattern": "(?:^\\+\\d{8,15}$)|(?:^env\\.([A-Z][A-Z0-9_]*)$)",
           "description": "The number to hand a call to: E.164, or env.<NAME>."
+        },
+        "whenClosed": {
+          "default": "callback",
+          "description": "Where business.open is given, what a caller who asks for a person gets while the business is closed. callback: the runtime's transfer_call is not offered then, so the agent offers what the business information says (such as a callback note); transfer: it is offered whatever the hours. Default: callback (decided 2026-11-26).",
+          "type": "string",
+          "enum": [
+            "callback",
+            "transfer"
+          ]
         }
       },
       "required": [

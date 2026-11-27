@@ -1523,6 +1523,48 @@ describe('the converse voice runtime: the end and a restart', () => {
     expect(h.fio.finished()).toBe(1);
   });
 
+  it('transfer_call (decided 2026-11-26): the model\'s words, then the transfer end to agent.yaml\'s number, audited as a transfer on the caller\'s request', async () => {
+    const PUT = 'Sure, one moment while I put you through.';
+    const model = gatedModel([[text(PUT), { type: 'tool_call', id: 'c1', name: 'transfer_call', args: {} }, done('tool')]]);
+    const h = harness({ model, business: (b) => ({ ...b, transfer: { number: '+15555550177', whenClosed: 'callback' } }) });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    await h.prompt('can I talk to a person?');
+    await h.settle();
+    expect(model.requests[0]!.tools.map((t) => t.name)).toContain('transfer_call');
+    expect(h.said().at(-1)!.token).toBe(PUT);
+    expect(h.fio.sent.at(-1)).toMatchObject({ type: 'end' });
+    expect(JSON.parse((h.fio.sent.at(-1) as { handoffData: string }).handoffData)).toEqual({ reasonCode: 'transfer' });
+    expect(h.rows.filter((r) => r.type === 'converse_end' || r.type === 'call_ended')).toEqual([{ type: 'converse_end', detail: { by: 'transfer_call' } }, { type: 'call_ended', detail: { reason: 'transfer', by: 'request' } }]);
+    expect(h.fio.records).toContainEqual({ dir: 'log', msg: { ended: 'transfer' } });
+    expect((h.fio.published as { type: string }[]).filter((e) => e.type === 'ended')).toMatchObject([{ reason: 'handoff' }]);
+    expect(h.fio.finished()).toBe(1);
+  });
+
+  it('the handoff after the model failed past limits.failuresPerCall: the handoff end to the transfer number, audited as a transfer by the handoff', async () => {
+    const failing = { type: 'error', kind: 'timeout', detail: 'no answer in time' } as const;
+    const model = gatedModel([[failing], [failing]]);
+    const h = harness({ model, business: (b) => ({ ...b, limits: { ...b.limits, failuresPerCall: 1 }, transfer: { number: '+15555550177', whenClosed: 'callback' } }) });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    await h.prompt('hello');
+    await h.settle();
+    expect(h.said().at(-1)!.token).toBe('Let me get a person to call you back.');
+    expect(JSON.parse((h.fio.sent.at(-1) as { handoffData: string }).handoffData)).toEqual({ reasonCode: 'handoff' });
+    expect(h.rows.at(-1)).toEqual({ type: 'call_ended', detail: { reason: 'transfer', by: 'handoff' } });
+    expect(h.fio.records).toContainEqual({ dir: 'log', msg: { ended: 'handoff' } });
+  });
+
+  it('with no transfer number the handoff ends as a goodbye does, audited as a handoff, and transfer_call is never offered', async () => {
+    const failing = { type: 'error', kind: 'timeout', detail: 'no answer in time' } as const;
+    const model = gatedModel([[failing], [failing]]);
+    const h = harness({ model, business: (b) => ({ ...b, limits: { ...b.limits, failuresPerCall: 1 } }) });
+    await h.rt.open(h.entry, { callerNumber: null, provider: 'twilio' }, h.io);
+    await h.prompt('hello');
+    await h.settle();
+    expect(model.requests[0]!.tools.map((t) => t.name)).not.toContain('transfer_call');
+    expect(JSON.parse((h.fio.sent.at(-1) as { handoffData: string }).handoffData)).toEqual({ reasonCode: 'completed' });
+    expect(h.rows.at(-1)).toEqual({ type: 'call_ended', detail: { reason: 'handoff' } });
+  });
+
   it('a turn cut by the socket closing is asked again when the carrier reconnects', async () => {
     const model = gatedModel([['hang'], [text('Tuesday works.'), done()]]);
     const h = harness({ model });

@@ -76,6 +76,19 @@ const bar = (what: string, d: number) => z.number().gt(0).max(1).default(d).desc
 /** The runtime's own action, offered to every model: it ends the call, on the model's own goodbye or the closing line. No business action takes its name. */
 export const END_CALL = 'end_call';
 
+/**
+ * The runtime's own action that puts a call through to a person at agent.yaml's transfer.number: offered on a call only,
+ * where the business names a transfer number, and while it is open by default (transfer.whenClosed). No business action
+ * takes its name.
+ */
+export const TRANSFER_CALL = 'transfer_call';
+
+/** What the line does with a caller who asks for a person while the business is closed (agent.yaml transfer.whenClosed). */
+export const TRANSFER_WHEN_CLOSED = ['callback', 'transfer'] as const;
+
+/** The line said before a call is put through where the model writes no words of its own and the business gives no lines.transfer. */
+export const TRANSFER_LINE = "One moment, I'll put you through.";
+
 /** The silence wait on a call by default (agent.yaml `silence`): nine seconds, then one re-prompt (the maintainer's decision, 2026-11-26). */
 export const SILENCE_DEFAULTS = { afterMs: 9000, reprompts: 1 } as const;
 
@@ -287,6 +300,7 @@ function crossChecks(value: unknown, ctx: z.core.$RefinementCtx): void {
   for (const [name, a] of Object.entries(actions)) if (isMap(a) && Array.isArray(a.then)) for (const t of a.then) if (typeof t === 'string' && t !== name) followed.add(t);
   for (const [name, a] of Object.entries(actions)) {
     if (name === END_CALL) issue(ctx, ['actions', name], `"${END_CALL}" is the runtime's own action`, `name the action something else: the runtime always offers "${END_CALL}", which ends the call`);
+    if (name === TRANSFER_CALL) issue(ctx, ['actions', name], `"${TRANSFER_CALL}" is the runtime's own action`, `name the action something else: the runtime offers "${TRANSFER_CALL}", which puts a call through to transfer.number`);
     if (!isMap(a)) continue;
     const params = isMap(a.params) ? a.params : {};
     if (a.kind === 'change' && a.readBack === undefined) {
@@ -468,6 +482,7 @@ export const agentBusinessSchema = z
         bridge: said('The short line said on a call when the model is slow to begin').default({ en: 'One sec.' }),
         silence: said('The line said on a call when the caller has said nothing for silence.afterMs and the model fails to answer the silence (it asks whether they are still there)').optional(),
         silenceEnd: said('The line said, and the call ended, after silence.reprompts re-prompts in a row and one more silence (the closing line where it is not given)').optional(),
+        transfer: said(`The line said on a call before it is put through to transfer.number (the runtime's own transfer_call), where the model writes no words of its own with it. Absent: "${TRANSFER_LINE}"`).optional(),
       })
       .describe('The lines said word for word.'),
     model: z
@@ -538,7 +553,16 @@ export const agentBusinessSchema = z
       .default({ ...ROUTING_DEFAULTS })
       .describe('How each caller turn is routed to a journey.'),
     journeys: z.record(identifier(), journey).optional().describe('The tasks the line can take on, by id. Absent: one conversation with every action, as before.'),
-    transfer: z.strictObject({ number: numberOrEnv().describe('The number to hand a call to: E.164, or env.<NAME>.') }).optional().describe('Where a call goes when it is handed to a person.'),
+    transfer: z
+      .strictObject({
+        number: numberOrEnv().describe('The number to hand a call to: E.164, or env.<NAME>.'),
+        whenClosed: z
+          .enum(TRANSFER_WHEN_CLOSED)
+          .default('callback')
+          .describe('Where business.open is given, what a caller who asks for a person gets while the business is closed. callback: the runtime\'s transfer_call is not offered then, so the agent offers what the business information says (such as a callback note); transfer: it is offered whatever the hours. Default: callback (decided 2026-11-26).'),
+      })
+      .optional()
+      .describe('Where a call goes when it is handed to a person: on a call, the runtime\'s own transfer_call puts the caller through on their request (while the business is open, by default), and a call the model has failed past limits.failuresPerCall is handed there after the handoff line. Nothing of the call is passed to the person.'),
   })
   .check(checkAlways(crossChecks))
   .describe('agent.yaml: the business the converse runtime speaks for.');

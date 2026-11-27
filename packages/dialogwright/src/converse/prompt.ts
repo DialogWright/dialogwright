@@ -1,12 +1,12 @@
 import { closesAt, isOpen, localTime, nextOpening } from '../core/hours';
 import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
-import { END_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
+import { END_CALL, TRANSFER_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText, journeyText } from './business/text';
 import { offeredActions } from './journeys';
 import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
 import type { ModelTool } from './model/types';
-import { businessZone, openSchedule, type ConverseState } from './state';
+import { businessZone, openAt, openSchedule, type ConverseState } from './state';
 
 /**
  * What the agent model is told (docs/designs/2026-11-11-agent-runtime.md, "The conversation loop" and
@@ -190,7 +190,8 @@ function unclearWords(b: AgentBusiness, s: ConverseState, u: UnclearTurn): strin
 export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, unclear?: UnclearTurn): string {
   const zone = businessZone(b);
   const where = s.channel === 'voice' ? `the phone line of ${b.business.name}: everything you write is spoken aloud to the caller, as it is written` : `the web chat of ${b.business.name}`;
-  const person = b.transfer ? 'a person at the business can take the call over' : 'a person at the business can call them back';
+  // A person takes the call over only where the line can put it through now (transferOffered); else one calls them back.
+  const person = transferOffered(b, s.channel, now) ? 'a person at the business can take the call over' : 'a person at the business can call them back';
   const journey = s.journey === undefined ? '' : journeyText(b, s.journey, s.caller);
   const open = openWords(b, now);
   return [
@@ -273,6 +274,27 @@ const END_CALL_TOOL: ModelTool = {
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
 };
 
+/**
+ * Whether the runtime's transfer_call is offered on this turn (decided 2026-11-26): on a call only (a chat has no line to
+ * put through), where agent.yaml names a transfer number, and, where it gives its opening hours (business.open), only
+ * while the business is open unless transfer.whenClosed says `transfer`.
+ */
+export function transferOffered(b: AgentBusiness, channel: ConverseState['channel'], now: Date): boolean {
+  if (channel !== 'voice' || b.transfer === undefined) return false;
+  return b.transfer.whenClosed === 'transfer' || openAt(b, now.getTime()) !== false;
+}
+
+/**
+ * The runtime's own action that puts the call through to a person (transfer.number), offered only where transferOffered
+ * says. Its description is context: what it does and when a caller would want it, and that its words are said to the
+ * caller before they are put through, as end_call's are its goodbye; never words for them.
+ */
+const TRANSFER_CALL_TOOL: ModelTool = {
+  name: TRANSFER_CALL,
+  description: 'Put the caller through to a person at the business, on this call: for when the caller asks to speak with someone, or wants something you cannot do for them and would rather talk it over with a person. What you write in the same reply as this call is said to the caller just before they are put through, as you would say it to them: like everything you write, it speaks as the business, never of how the line works. If you write nothing with it, the business\'s own line for it is said. Once they are put through, the call with you is over.',
+  parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+};
+
 /** The actions that follow another (named in its `then`), each with the first action it follows: the runtime runs them, never the model. */
 export function followOnsOf(b: AgentBusiness): Map<string, string> {
   const out = new Map<string, string>();
@@ -285,10 +307,10 @@ export function followOnsOf(b: AgentBusiness): Map<string, string> {
  * A follow-on is not offered: it runs only after the action it follows. `offered` (the journey's actions, from
  * `offeredActions`) narrows them; absent, every action is offered. `channel`: on a call (`voice`) with
  * readBacks.holdAfterCut on, a change says its read-back is said again held after the caller spoke over it; absent
- * or a chat, it says nothing of it.
+ * or a chat, it says nothing of it. `transfer`: the runtime's transfer_call is offered too (transferOffered says when).
  */
-export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel']): ModelTool[] {
+export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel'], transfer = false): ModelTool[] {
   const followOns = followOnsOf(b);
   const held = channel === 'voice' && b.readBacks.holdAfterCut;
-  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec, held)), END_CALL_TOOL];
+  return [...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec, held)), END_CALL_TOOL, ...(transfer ? [TRANSFER_CALL_TOOL] : [])];
 }

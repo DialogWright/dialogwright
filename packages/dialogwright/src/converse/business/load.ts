@@ -100,7 +100,7 @@ export function resolveAgentSettings(value: AgentBusiness, env: Record<string, s
     if (number === undefined) {
       throw new AgentBusinessError([{ file: AGENT_FILE, line: 1, column: 1, path: 'transfer.number', message: `${transfer.number} names a setting that is not set`, fix: `set ${envVariableOf(transfer.number)} to the number in the app's settings (.env)` }]);
     }
-    transfer = { number };
+    transfer = { ...transfer, number };
   }
   let calendar = value.sources.calendar;
   if (calendar?.calendarId !== undefined) {

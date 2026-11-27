@@ -9,14 +9,14 @@ import type { Texts } from '../texts/types';
 import { scrubberOfValues } from '../audit/recording';
 import { speakableOn } from './speakable';
 import { checkArgs, idempotencyKey } from './actions';
-import { END_CALL, lineOn, type ActionSpec, type AgentBusiness } from './business/schema';
+import { END_CALL, lineOn, TRANSFER_CALL, TRANSFER_LINE, type ActionSpec, type AgentBusiness } from './business/schema';
 import { CHECK_NOTE_MARK, checkNote, claimsState, neutralised, readClaims, type ClaimsReading } from './claims';
 import { askWithin, askWithinWhy, changedParams, dayInWords, isConfirmed, isDeclinedWithoutChange, isWithdrawn, NO_LONGER_WANTS, probabilityOf, readBackBriefText, readBackText, readYesNo, shortReadBackText, shownParams, WITHDRAWN_AT, WRAPPING_UP, WRAPPING_UP_AT, type PendingReadBack, type ReadBackReading } from './confirm';
 import { completeJourney, decideRoute, hasJourneys, initialJourney, isUnclear, offeredActions, openJourneys, readRoute, routeQuestions, routeState } from './journeys';
 import type { ConverseModel, ModelContent, ModelEvent, ModelMessage, ModelRequest } from './model/types';
 import { costUsd } from './model/price';
 import { CALLER, confirmedFields, NO_LOOKUPS } from './policy';
-import { followOnsOf, systemPrompt, toolsOf, type UnclearTurn } from './prompt';
+import { followOnsOf, systemPrompt, toolsOf, transferOffered, type UnclearTurn } from './prompt';
 import { SentenceBuffer } from './sentences';
 import { businessZone, openAt, type ConverseState, type JourneyState, type UnheardReadBack } from './state';
 import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type ConverseTraceRecord } from './trace';
@@ -51,6 +51,11 @@ import { recordedArgs, saidPairs, scrubOf, type ConverseToolOutcome, type Conver
  *   round's words are held to its end while the change could still be left unsent (holdsWords): a refused end_call's
  *   goodbye is then never said, and any other held round's words are said whole at its end (the maintainer's decision,
  *   2026-11-26);
+ * - on a call where agent.yaml names a transfer number (and, by default, while the business is open: transfer.whenClosed),
+ *   the model may put the caller through with the runtime's own transfer_call: its own words written with it are said,
+ *   lines.transfer (else TRANSFER_LINE) where it wrote none, and the call goes to the number (decided 2026-11-26). The
+ *   unsent rule and the wrap-up hold treat it as they treat end_call: the first while a change is kept unsent is refused,
+ *   and words held with a refused one are never said. Where it is not offered, a call to it is refused as not offered;
  * - a model that errs or says nothing is asked once more while half its time is left, and one that has
  *   not begun to answer within half its time is stopped and asked once more; else the line says the
  *   recovery line (the done line instead, where an action the caller confirmed has just run), and once
@@ -159,7 +164,8 @@ export interface Out {
    * plays ignored by the channel. Always the turn's final piece.
    */
   say(text: string, final: boolean, held?: true): void;
-  end(how: 'closing' | 'handoff'): void;
+  /** The call ends: on the closing line, handed to a person after the model failed (`handoff`), or put through to a person on the caller's request (`transfer`). */
+  end(how: 'closing' | 'handoff' | 'transfer'): void;
   scrubbed?(scrub: (text: string) => string): void;
   /** A bridge line, on a call only: said whole, never interruptible, never part of the reply. */
   bridge?(text: string): void;
@@ -271,8 +277,10 @@ interface Turn {
   masked: [string, string][];
   /** An action the caller confirmed ran this turn, and the caller has not yet heard a reply after it. */
   confirmedRan: boolean;
-  /** The model called end_call this round. */
+  /** The model called end_call (or transfer_call) this round. */
   ending: boolean;
+  /** The model's transfer_call ran this round: the call ends put through to a person. */
+  transferring: boolean;
   /** The model's own words said this turn, each round's whole (never a fixed line or a read-back): what the check after speaking reads. */
   own: string[];
   /** The check after speaking's reading of the turn's reply, where it was read. */
@@ -328,6 +336,12 @@ interface Turn {
   /** How many end_calls the unsent rule has refused this turn (unsent-change and unsent-asked). */
   unsentEnds: number;
 }
+
+/** Whether a call is one of the runtime's own that end the call (end_call, transfer_call), which the unsent rule refuses alike. */
+const endsCall = (name: string): boolean => name === END_CALL || name === TRANSFER_CALL;
+
+/** Whether the turn offers the runtime's transfer_call (prompt.ts transferOffered), at the turn's clock. */
+const transferNow = (t: Turn): boolean => transferOffered(t.deps.business, t.st.channel, t.deps.now());
 
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
 const cut = (t: Turn): boolean => t.signal?.aborted === true;
@@ -627,27 +641,38 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       error(c.id, why);
       continue;
     }
+    if (c.name === TRANSFER_CALL && !transferNow(t)) {
+      // Not offered on this turn (a chat, no transfer number, or the business closed with transfer.whenClosed callback): a
+      // model's slip, or a caller's words naming it. Refused as an action the turn did not offer is, counted toward no refusal.
+      const why = `Not run: "${TRANSFER_CALL}" is not available now: the caller cannot be put through to a person on this ${t.st.channel === 'voice' ? 'call' : 'chat'}.`;
+      await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'not-offered', ...(t.st.journey !== undefined ? { journey: t.st.journey.active ?? 'root' } : {}) } });
+      traceTool(t, undefined, c.name, {}, 'refused', why);
+      error(c.id, why);
+      continue;
+    }
     if (t.st.pending !== null) {
       // One confirmation at a time: nothing else runs while the caller answers a read-back, and the call is
       // not ended under it. It counts toward no action's refusals: the action was only held, so calls made
       // together never steer the caller to a person.
-      const why = `Not run: one confirmation at a time. The caller is answering the read-back of "${t.st.pending.action}"; ${c.name === END_CALL ? 'end the call after their answer' : 'call this again after their answer'}.`;
+      const why = `Not run: one confirmation at a time. The caller is answering the read-back of "${t.st.pending.action}"; ${c.name === END_CALL ? 'end the call after their answer' : c.name === TRANSFER_CALL ? 'put the call through after their answer' : 'call this again after their answer'}.`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'one-confirmation-at-a-time', pending: t.st.pending.action } });
       traceTool(t, spec, c.name, c.args, 'refused', why);
       error(c.id, why);
       continue;
     }
-    if (c.name === END_CALL && t.unsentRefused !== undefined) {
-      // One ask per refusal: the caller's next turn says whether they still want it, so no end_call of this turn ends the call.
+    if (endsCall(c.name) && t.unsentRefused !== undefined) {
+      // One ask per refusal: the caller's next turn says whether they still want it, so no end_call (nor transfer_call) of
+      // this turn ends the call.
       const action = t.unsentRefused;
       t.unsentEnds += 1;
-      const why = `Not run: ${t.roundHeld ? `${NOT_SAID}, and ` : ''}the caller has not yet answered whether they still want "${action}": ask them if you have not, wait for their answer, and end the call after it if they do not want it.${unheardDone(t)}`;
+      const after = c.name === END_CALL ? 'end the call after it' : 'put them through after it';
+      const why = `Not run: ${t.roundHeld ? `${NOT_SAID}, and ` : ''}the caller has not yet answered whether they still want "${action}": ask them if you have not, wait for their answer, and ${after} if they do not want it.${unheardDone(t)}`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-asked', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
       continue;
     }
-    if (c.name === END_CALL && t.st.unsent !== undefined) {
+    if (endsCall(c.name) && t.st.unsent !== undefined) {
       // A change the caller turned down or cut into was never sent: the first end_call after it is refused, so the model
       // asks whether they still want it; the change is let go here, so the next end_call ends the call. Counted toward
       // no refusal: nothing about ending the call was wrong. A goodbye written with it that streamed as it came has been
@@ -657,8 +682,12 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       delete t.st.unsent;
       t.unsentRefused = action;
       t.unsentEnds += 1;
-      const lead = t.roundSpoke ? 'Not run: you have said goodbye, but ' : t.roundHeld ? `Not run: ${NOT_SAID}, and ` : 'Not run: ';
-      const why = `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, end the call.${unheardDone(t)}`;
+      // transfer_call alike (decided 2026-11-26): a caller put through must not leave a change unsent unasked either.
+      const ending = c.name === END_CALL;
+      const lead = t.roundSpoke ? (ending ? 'Not run: you have said goodbye, but ' : 'Not run: you have said you are putting them through, but ') : t.roundHeld ? `Not run: ${NOT_SAID}, and ` : 'Not run: ';
+      const why = ending
+        ? `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before ending it, ask the caller whether they still want it sent, as a person would (such as "Before you go, did you still want me to send that request?"), unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, end the call.${unheardDone(t)}`
+        : `${lead}"${action}" was read back to the caller and not confirmed, so it was never done or sent, and the call goes on. Before putting them through, ask the caller whether they still want it sent, as a person would, unless they have said they no longer want it; if they do, call "${action}" again and it is read back to them. Otherwise, call "${TRANSFER_CALL}" again.${unheardDone(t)}`;
       await record(t, { type: 'converse_refused', detail: { action: c.name, reason: 'unsent-change', unsent: action } });
       traceTool(t, undefined, c.name, {}, 'refused', why);
       error(c.id, why);
@@ -671,6 +700,17 @@ async function runCalls(t: Turn, calls: Extract<ModelEvent, { type: 'tool_call' 
       traceTool(t, undefined, c.name, {}, 'ran');
       t.ending = true;
       results.push({ type: 'tool_result', id: c.id, content: 'The call is ending.' });
+      continue;
+    }
+    if (c.name === TRANSFER_CALL) {
+      // The runtime's own action too: no params (nothing the model wrote goes to the carrier), no confirmation, recorded;
+      // once the round's calls are done the model's own words are said, lines.transfer where it wrote none, and the call
+      // goes to transfer.number.
+      await record(t, { type: 'converse_end', detail: { by: TRANSFER_CALL } });
+      traceTool(t, undefined, c.name, {}, 'ran');
+      t.ending = true;
+      t.transferring = true;
+      results.push({ type: 'tool_result', id: c.id, content: 'The caller is being put through to a person.' });
       continue;
     }
     const follows = followOnsOf(b).get(c.name);
@@ -909,7 +949,7 @@ async function round(t: Turn, sp: Speaker, emptyOk = false, routeStop?: AbortSig
 async function roundAsked(t: Turn, sp: Speaker, emptyOk: boolean, routeStop: AbortSignal | undefined): Promise<Round> {
   const stop = routeStop !== undefined && t.signal !== undefined ? AbortSignal.any([routeStop, t.signal]) : routeStop ?? t.signal;
   const b = t.deps.business;
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t)), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;
@@ -1123,8 +1163,9 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     // A round that only ends the call (nothing waits on a read-back) ends on its own words, where it wrote any: they are the goodbye.
     // Not while a change is kept unsent (or one refused an end_call this turn): that end_call is refused, the call goes on,
     // and the next round's words end the turn. Whether the caller withdrew it is read first, where it is being read.
-    if (t.st.unsent !== undefined && r.calls.some((c) => c.name === END_CALL)) await settleWithdrawal(t);
-    const goodbye = !final && t.st.pending === null && t.st.unsent === undefined && t.unsentRefused === undefined && r.calls.every((c) => c.name === END_CALL);
+    if (t.st.unsent !== undefined && r.calls.some((c) => endsCall(c.name))) await settleWithdrawal(t);
+    // A round that only puts the call through (transfer_call) ends on its own words in the same way: they are said before it.
+    const goodbye = !final && t.st.pending === null && t.st.unsent === undefined && t.unsentRefused === undefined && r.calls.length > 0 && r.calls.every((c) => c.name === r.calls[0]!.name && endsCall(c.name));
     // Words held to the round's end (holdsWords). Where the round calls end_call they wait for its calls, as the unsent rule
     // may refuse it: refused, they are never said, nor kept in the conversation as said (only their length is traced);
     // otherwise (and in every round with no end_call) they are said now, whole, before what the calls bring.
@@ -1132,7 +1173,7 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
     const wrote = r.text.trim();
     let ran: Awaited<ReturnType<typeof runCalls>> | undefined;
     let dropped = false;
-    if (held && r.calls.some((c) => c.name === END_CALL)) {
+    if (held && r.calls.some((c) => endsCall(c.name))) {
       const refusedBefore = t.unsentEnds;
       t.roundSpoke = false;
       t.roundHeld = wrote !== '';
@@ -1176,6 +1217,19 @@ async function converse(t: Turn, sp: Speaker, silent = false, carried?: string, 
       const u = unheardOf(t, action);
       if (held && u !== undefined) t.st.unheardReadBacks = { ...t.st.unheardReadBacks, [action]: { ...u, held: true } };
       t.readBackSaid = true;
+      return { ok: true };
+    }
+    if (t.transferring) {
+      // The model's own words written with transfer_call alone are what the caller hears before they are put through;
+      // lines.transfer (the runtime's TRANSFER_LINE where the business has none) is said where it wrote none.
+      if (!goodbye || said === '') {
+        const line = lineFor(t, t.deps.business.lines.transfer ?? { en: TRANSFER_LINE });
+        sp.line(line);
+        add(t.st, 'assistant', [{ type: 'text', text: line }]);
+      }
+      t.ended = 'transfer';
+      t.st.ended = 'transfer';
+      t.out.end('transfer');
       return { ok: true };
     }
     if (t.ending) {
@@ -1719,6 +1773,7 @@ export async function converseTurn(s: ConverseState, input: Input, deps: Convers
     masked: [],
     confirmedRan: false,
     ending: false,
+    transferring: false,
     own: [],
     correcting: false,
     carriedNote: false,

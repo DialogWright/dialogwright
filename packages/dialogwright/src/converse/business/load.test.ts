@@ -23,7 +23,7 @@ describe('loadAgentBusiness', () => {
     expect(Object.keys(b.actions)).toEqual(['availability', 'book', 'notify']);
     expect(b.actions.book!.then).toEqual(['notify']);
     expect(b.sources.accounts![0]!.numbers).toEqual(['+15555550101', '+15555550102']);
-    expect(b.transfer).toEqual({ number: '+15555550199' });
+    expect(b.transfer).toEqual({ number: '+15555550199', whenClosed: 'callback' });
   });
 
   it('defaults the model and limits', () => {

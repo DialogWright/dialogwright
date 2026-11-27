@@ -116,9 +116,11 @@ export interface ConverseTraceRecord {
   route?: { from: string | null; to: string | null; outcome: RouteOutcome; task: Record<string, number> | null; drops?: number; again?: number; fits?: number; answers?: number; ms: number; timedOut?: true; droppedPaused?: string; restarted?: true; unclear?: number };
   /**
    * The runtime ended the call on this turn of its own accord: `unclear`, the third unclear turn in a row, on which
-   * the line said lines.unclear and the call ended as end_call ends it (the state's `ended` is `closing`).
+   * the line said lines.unclear and the call ended as end_call ends it (the state's `ended` is `closing`). `transfer`:
+   * the model called the runtime's transfer_call, and the call was put through to agent.yaml's transfer.number after
+   * the model's words (lines.transfer where it wrote none; the state's `ended` is `transfer`).
    */
-  ended?: 'unclear' | 'silence';
+  ended?: 'unclear' | 'silence' | 'transfer';
   /** On a call, the turn answered a silence of the caller's (agent.yaml's `silence`): its count in a row, and how long it was (`silenceMs`). It has no words of the caller's (`said` null). */
   silence?: number;
   silenceMs?: number;
