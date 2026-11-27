@@ -208,7 +208,7 @@
         <h2 id="measured-title">Speed and cost, measured</h2>
         <p>
           A decision model writes no text, only a few probabilities, so a turn pays almost only for reading it. From
-          the maintainer's recordings on 2026-10-14:
+          our recordings on 2026-10-14:
         </p>
         <ul class="stats">
           <li><b>90–150 ms</b><span>a turn's ~20 questions answered, at the median (p50)</span></li>
@@ -228,8 +228,8 @@
         <p>
           The decision model also judges generated wording: asked whether a generated summary, heard in its sentence,
           is faithful to what the caller said. <code>pnpm render:judge-eval</code> measures a judge on labelled cases,
-          each a caller's message and a summary marked faithful or unfaithful by a person. On 2026-10-14 the
-          maintainer compared two decision models on the same 180 cases, both through OpenRouter:
+          each a caller's message and a summary marked faithful or unfaithful by a person. On 2026-10-14 we
+          compared two decision models on the same 180 cases, both through OpenRouter:
         </p>
         <div class="table-wrap">
           <table class="stack">
@@ -268,7 +268,7 @@
         </p>
         <h3>Judging answers from documents</h3>
         <p>
-          An answer worded from approved documents is judged against them. On 2026-10-21 the maintainer measured the
+          An answer worded from approved documents is judged against them. On 2026-10-21 we measured the
           documents judge on 134 labelled answers from a 123-page benefit booklet, and a large reasoning model asked the same question:
         </p>
         <div class="table-wrap">

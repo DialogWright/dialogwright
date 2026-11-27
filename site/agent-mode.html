@@ -244,14 +244,14 @@ questions: # assumption: the owner corrects these
         <ul class="minis">
           <li><strong>Talk over any reply</strong>Each sentence goes to the carrier as it is written. A caller who speaks stops the turn, and their words are the next one, with what they heard.</li>
           <li><strong>A read-back heard</strong>The caller's confirmation counts only if they heard at least 85% of the read-back.</li>
-          <li><strong>Said again, held</strong>Once a caller has talked over the read-back of a booking or request, every later read-back of it is said whole and cannot be talked over (the maintainer's decision, 2026-11-26).</li>
+          <li><strong>Said again, held</strong>Once a caller has talked over the read-back of a booking or request, every later read-back of it is said whole and cannot be talked over (since 2026-11-26).</li>
           <li><strong>Silence</strong>Nine seconds after a reply has played with no word from the caller, the model helps them go on. After one more silence, the line says goodbye politely and ends the call.</li>
           <li><strong>After hours</strong>Given the business's opening hours, the model knows whether it is open. A call that starts while it is closed hears the after-hours greeting, and no callback time is promised that the business does not give.</li>
           <li><strong>A bridge, only when it helps</strong>"One sec." is said once, only when a reply has said nothing after 2.5 seconds.</li>
         </ul>
         <blockquote class="said-by">
           <p>It's a fine line between time to think and "did it hang up on me?"</p>
-          <footer>The maintainer, on the nine seconds</footer>
+          <footer>Jason Stiles, on how long the line waits in silence</footer>
         </blockquote>
         <figure class="wrapped">
           <figcaption>The wheel shop example's lines for a silence (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt), each said word for word</figcaption>
@@ -339,7 +339,7 @@ questions: # assumption: the owner corrects these
         </p>
         <h3>Live calls</h3>
         <ul class="stats">
-          <li><b>17</b><span>live calls to the wheel shop line, 6 on Twilio and 11 on Telnyx, placed by the maintainer to test it</span></li>
+          <li><b>17</b><span>live calls to the wheel shop line, 6 on Twilio and 11 on Telnyx, test calls we placed</span></li>
           <li><b>3 min 0 s</b><span>a call at the median, 11 decision-model requests</span></li>
           <li><b>$0.0063</b><span>the agent model's cost a call, the mean, measured from the traces</span></li>
         </ul>
@@ -397,7 +397,7 @@ questions: # assumption: the owner corrects these
         </p>
         <blockquote class="said-by">
           <p>The mode and the model for a line are chosen by what the job needs, not by their price.</p>
-          <footer>The maintainer's reading of the cost report, 2026-11-26. The larger saving is in the carrier path.</footer>
+          <footer>Jason Stiles, reading the cost report, 2026-11-26. The larger saving is in the carrier path.</footer>
         </blockquote>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">The cost of a call in each mode</a>

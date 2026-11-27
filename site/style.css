@@ -462,7 +462,7 @@ h3.sub { margin: 2.25rem 0 0.75rem; }
 @media (min-width: 860px) { .five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1040px) { .five { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 
-/* A quotation of the maintainer's, set apart. */
+/* A quotation, set apart. */
 .said-by { margin: 0 0 1.75rem; padding: 0.3rem 0 0.3rem 1.25rem; border-left: 4px solid var(--accent); max-width: 46rem; }
 .said-by p { margin: 0 0 0.4rem; font-size: 1.15rem; line-height: 1.45; color: var(--text); }
 .said-by footer { color: var(--muted); font-size: 0.9rem; }
