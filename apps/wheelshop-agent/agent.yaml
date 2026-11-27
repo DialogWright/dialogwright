@@ -387,6 +387,11 @@ actions:
     readBack:
       en: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}.[ A note for the shop: {notes}.] Is that right?"
     audit: { name: mask, callbackNumber: last4, about: keep, notes: keep }
+# A question the shop's information and its knowledge base could not answer is noted by the agent with the runtime's own
+# note_gap, for the owner to review (pnpm kb:gaps). Its question is recorded whole: the summary is the line the owner
+# reviews, and the caller's own words are in the trace already.
+gaps:
+  audit: { question: keep }
 # A caller on the phone who asks for a person is put through to the shop's phone (the setting SHOP_PHONE, the same number
 # the shop's summaries are texted to, never in this file), while the shop is open (business.open); closed, the line offers
 # a callback note (transfer.whenClosed: callback, the default). A call the model has failed four times goes there too

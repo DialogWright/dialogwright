@@ -198,7 +198,7 @@ describe('send_request', () => {
     const c = converseTestCall(app, { model, jev: routingJev(), now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     await c.say('I curbed my Civic');
-    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'note_gap', 'end_call']);
   });
 
   it('texts the caller nothing without their yes to texts: the gate refuses the photo request (no-consent), and the shop still gets its summary', async () => {
@@ -339,7 +339,7 @@ describe('journeys', () => {
     await c.start();
     expect(c.state.journey).toMatchObject({ active: 'dealer_booking', phase: 'working' });
     await c.say('three trade-ins for tomorrow');
-    expect(toolNames(model)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'leave_callback', 'end_call']);
+    expect(toolNames(model)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'leave_callback', 'note_gap', 'end_call']);
     // The request is closed to an account, so it is not among the options the decision model is asked.
     expect(Object.keys((routeAsks(jev)[0]!.questions.task as { criteria: object }).criteria)).toEqual(['dealer_booking', 'question', 'none']);
   });
@@ -386,7 +386,7 @@ describe('journeys', () => {
     const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     expect(await c.say('mumble mumble')).toEqual(['We can price a wheel repair or take a callback note.']);
-    expect(toolNames(model)).toEqual(['end_call']);
+    expect(toolNames(model)).toEqual(['note_gap', 'end_call']);
     expect(await c.say('hmm hm')).toEqual(['We can price a wheel repair or take a callback note.']);
     const said = await c.say('uh huh');
     expect(said).toEqual(['Sorry, this chat can only help with a wheel repair or a callback. Get in touch any time.']);
@@ -413,7 +413,7 @@ describe('journeys', () => {
     expect(await c.say('and can someone call me about an older wheel?')).toEqual(['We\'ll have someone from the shop call Dana Example back on 555 555 0111 about an older wheel left last month. Is that right?']);
     // The same journey all along: no switch, and both changes offered in it.
     expect(c.traces.map((t) => t.route?.outcome)).not.toContain('switch');
-    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'note_gap', 'end_call']);
     await c.say('yes');
     expect(sys.callbacks).toMatchObject([{ ref: 'C101', name: 'Dana Example', about: 'an older wheel left last month' }]);
     expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working', paused: null });
@@ -426,11 +426,11 @@ describe('journeys', () => {
     await c.start();
     await c.say('I would rather someone call me back');
     expect(c.state.journey).toMatchObject({ active: 'request', phase: 'working' });
-    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'note_gap', 'end_call']);
     await c.say('it is about curb rash on my Civic');
     expect(c.state.journey).toMatchObject({ active: 'request', paused: null });
     expect(c.traces.at(-1)!.route).toMatchObject({ outcome: 'carry' });
-    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'end_call']);
+    expect(toolNames(model)).toEqual(['check_availability', 'send_request', 'leave_callback', 'note_gap', 'end_call']);
   });
 
   it('offers a dealership book_dealer and leave_callback, and a callback note leaves the booking open', async () => {
@@ -443,7 +443,7 @@ describe('journeys', () => {
     const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: DEALER, now: () => new Date(NOW), texts: provider, env: { SHOP_PHONE } });
     await c.start();
     await c.say('can someone call me back about an invoice?');
-    expect(toolNames(model, 0)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'leave_callback', 'end_call']);
+    expect(toolNames(model, 0)).toEqual(['recognise_caller', 'check_availability', 'book_dealer', 'leave_callback', 'note_gap', 'end_call']);
     await c.say('yes');
     expect(sys.callbacks).toMatchObject([{ ref: 'C101', about: 'the invoice for last week' }]);
     expect(c.state.journey).toMatchObject({ active: 'dealer_booking', phase: 'working' });
@@ -635,6 +635,27 @@ describe('the shop\'s knowledge base', () => {
     const result = JSON.stringify((model as unknown as { requests: { messages: unknown[] }[] }).requests.at(-1)!.messages);
     expect(result).toContain('wash the wheels by hand');
     expect(result).toContain('You may put it in your own words');
+  });
+
+  it('a question the aftercare passage does not answer is noted for the shop beside the reply, its question whole, with no second round for it (note_gap, decided 2026-11-27)', async () => {
+    const { app } = wheelshop({ now: () => KB_NOW });
+    const question = 'Is a touchless car wash all right after the refinish?';
+    const noted = 'Whether a touchless car wash is all right after a refinish';
+    const model = fakeConverseModel([
+      [call('k1', 'look_up', { question }), done('tool')],
+      [text('Our aftercare notes say to hand wash for the first week, and they don\'t cover touchless washes, so I won\'t guess. I can have someone from the shop call you back about it.'), call('g1', 'note_gap', { question: noted }), done('tool')],
+    ]);
+    const c = converseTestCall(app, { model, jev: knowledgeJev('aftercare'), now: () => new Date(KB_NOW), env: { SHOP_PHONE } });
+    await c.start();
+    await c.say(question);
+    const requests = (model as unknown as { requests: readonly unknown[] }).requests;
+    expect(toolNames(model as unknown as { requests: readonly unknown[] })).toContain('note_gap');
+    // The lookup's round, then the reply with the note beside it: no third round for the note.
+    expect(requests).toHaveLength(2);
+    const turn = c.traces.at(-1)!;
+    expect(turn.gapNotes).toEqual([{ question: noted, lookUps: [{ outcome: 'answered', topic: 'aftercare' }], journey: 'root' }]);
+    expect(c.audit.find((r) => r.type === 'gate' && r.detail.tool === 'note_gap')!.detail).toMatchObject({ verdict: 'ALLOW', call: `note_gap(question=${noted})` });
+    expect(c.audit.find((r) => r.type === 'converse_gap_note')!.detail).toEqual({ question: noted, lookUps: ['answered: aftercare'], journey: 'root' });
   });
 
   it('a question none of the topics answers finds no approved answer', async () => {
