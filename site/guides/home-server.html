@@ -137,8 +137,8 @@ pnpm start --app utility</code></pre>
           A real call needs three things you do not have yet, and only two of them are accounts:
         </p>
         <ol>
-          <li><strong>A carrier and a number.</strong> Telnyx or Twilio: a number with voice, and the account's public key
-            (Telnyx) or auth token (Twilio).</li>
+          <li><strong>A carrier and a number.</strong> Telnyx (recommended: <a href="#which-carrier">why</a>) or Twilio: a
+            number with voice, and the account's public key (Telnyx) or auth token (Twilio).</li>
           <li><strong>A decision model key.</strong> TypeSafe's, or OpenRouter's or the Vercel AI Gateway's; or none, with a
             compatible model on your own machine (<a href="#accounts">section 4</a>).</li>
           <li><strong><code>cloudflared</code></strong>, Cloudflare's tunnel client, so the carrier can reach your laptop. Its quick
@@ -314,7 +314,7 @@ pnpm start --app utility</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td data-label="What"><strong>A carrier</strong>: Telnyx, or Twilio</td>
+                <td data-label="What"><strong>A carrier</strong>: Telnyx (recommended), or Twilio</td>
                 <td data-label="Needed?"><strong>Required</strong> for a phone line (not for chat)</td>
                 <td data-label="What it is for, and what you take from it">The number, speech recognition and the voice. Telnyx: a TeXML application whose voice URL is your server,
                   and the account's public key. Twilio: a number whose voice webhook is your server, and the auth token.</td>
@@ -360,6 +360,13 @@ pnpm start --app utility</code></pre>
                 <td data-label="Where it goes"><code>ANTHROPIC_API_KEY</code>; <code>HANDOFF_SUMMARY</code> (default <code>on</code>)</td>
               </tr>
               <tr>
+                <td data-label="What"><strong>Texts</strong></td>
+                <td data-label="Needed?">Optional</td>
+                <td data-label="What it is for, and what you take from it">Sending and receiving texts for an app's code, through Twilio or Telnyx: a number that can text, and the carrier's credentials (<a href="#texts">below</a>).</td>
+                <td data-label="Where it goes"><code>TEXT_FROM</code>, <code>TEXT_PROVIDER=telnyx</code> with <code>TELNYX_API_KEY</code>,
+                  or <code>TEXT_PROVIDER=twilio</code> with <code>TWILIO_ACCOUNT_SID</code> and <code>TWILIO_AUTH_TOKEN</code></td>
+              </tr>
+              <tr>
                 <td data-label="What"><strong>An identity provider</strong></td>
                 <td data-label="Needed?">Optional</td>
                 <td data-label="What it is for, and what you take from it">Signed-in web chat on your site: its JWKS URL, its issuer, and your application's client id.</td>
@@ -368,12 +375,49 @@ pnpm start --app utility</code></pre>
             </tbody>
           </table>
         </div>
+        <h3 id="which-carrier">Which carrier: Telnyx, with flux and Krisp</h3>
+        <p>
+          Telnyx is the recommended carrier, with Deepgram's flux recognizer and Krisp noise suppression. Twilio stays fully
+          supported, and the same app answers on both. The reason is a measurement: the maintainer's live calls of 2026-11-26
+          to the wheel shop agent on both carriers, in the same room, with a loud television and two people talking nearby.
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th scope="col">Carrier</th><th scope="col">Speech events that reached the line</th><th scope="col">Replies cut off</th><th scope="col">Outcome</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Telnyx, flux and Krisp</th><td data-label="Speech events that reached the line">10</td><td data-label="Replies cut off">0</td><td data-label="Outcome">The line heard only the caller; the request was sent in nine turns</td></tr>
+              <tr><th scope="row">Twilio, flux, low interrupt sensitivity, backchannel ignored</th><td data-label="Speech events that reached the line">135</td><td data-label="Replies cut off">7</td><td data-label="Outcome">The room's voices were transcribed as the caller's words; the call could not go on</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Twilio's ConversationRelay has no noise suppression of its own, and the server never gets the call's raw audio, so
+          there is nothing to filter on Twilio's side. Telnyx denoises the caller's audio before its recognizer hears it, and
+          it is the cheaper carrier per call (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">the cost report</a>). For an English app, set
+          these three; <code>pnpm configure</code> writes them when you choose Telnyx for an English app:
+        </p>
+<pre data-copy><code>TELNYX_TRANSCRIPTION_PROVIDER=deepgram
+TELNYX_SPEECH_MODEL=flux
+TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
+        <p>
+          Krisp is billed by Telnyx per call. Flux is for English only: an app whose default language is another leaves the
+          first two out and keeps the noise suppression.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#132-serving-voice-twilio-telnyx-or-both">The guide's 13.2</a>
+          has the decision and the measurement.
+        </p>
         <p class="unverified">
-          Telnyx or Twilio: either works, and the same app answers on both. The Telnyx adapter is built from Telnyx's
-          documentation and checked against its documented frames, but a few of its details (the webhook's encoding, the
-          handoff field, whether a callback is posted when the socket drops) are assumptions until a live call settles
-          them: <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md#2-telnyx">live check 2</a>
-          is the call to make first. If anything there fails, Twilio is the fallback.
+          A few details of the Telnyx adapter that Telnyx's pages do not document (the handoff field, the call status a
+          relay's callback carries) stay assumptions until a live call settles them:
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md#2-telnyx">live check 2</a>.
+        </p>
+        <h3 id="texts">Texts</h3>
+        <p>
+          An app can send and receive texts (SMS and MMS) through Twilio or Telnyx, whichever <code>TEXT_PROVIDER</code> names,
+          from the number <code>TEXT_FROM</code> gives. A text to a caller is an action like any other: the gate holds it to
+          the app's policy, so consent is a rule, never a check in code. Texts through Twilio have been tested on live calls.
+          Texts through Telnyx are built and tested in the test suite; their live check waits on the carrier's registration
+          of the number. <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#1317-texts-sending-and-receiving">The guide's 13.17</a>
+          has the settings and each carrier's webhook.
         </p>
       </section>
 
@@ -971,6 +1015,10 @@ PORT=3000
 VOICE_PROVIDERS=telnyx
 # Telnyx: the account's public key, base64, from Keys &amp; Credentials.
 TELNYX_PUBLIC_KEY=Zm9yLWV4YW1wbGUtb25seS1ub3QtYS1yZWFsLWtleSE=
+# Telnyx, recommended for an English app: Deepgram's flux and Krisp noise suppression.
+TELNYX_TRANSCRIPTION_PROVIDER=deepgram
+TELNYX_SPEECH_MODEL=flux
+TELNYX_NOISE_SUPPRESSION=krisp
 # Twilio instead (or as well): the account's auth token.
 # TWILIO_AUTH_TOKEN=0123456789abcdef0123456789abcdef
 # Check every webhook's signature. Default on; leave it on.
