@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright: agent mode</title>
-  <meta name="description" content="Agent mode in DialogWright: a model holds the conversation from the business's own file, while every change is read back in the business's words, runs only when the caller confirms it, and goes through the policy gate into the audit. Measured on simulated and live calls.">
+  <meta name="description" content="Agent mode in DialogWright: a model holds the conversation from the business's own file, while anything booked or sent is first read back in the business's words, runs only when the caller confirms it, and goes through the policy gate into the audit log. Measured on simulated and live calls.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -17,7 +17,7 @@
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://dialogwright.com/agent-mode.html">
   <meta property="og:title" content="DialogWright agent mode">
-  <meta property="og:description" content="The model talks, and the runtime decides. Every change is read back and runs only when the caller confirms it, through the gate and into the audit.">
+  <meta property="og:description" content="The model talks, and the runtime decides. Anything booked or sent is read back first and runs only when the caller confirms it, through the gate and into the audit log.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="style.css">
   <script src="copy.js" defer></script>
@@ -71,9 +71,10 @@
       <p class="crumbs"><a href="./">DialogWright</a> / Agent mode</p>
       <h1>Agent mode</h1>
       <p class="lede">
-        A model holds the conversation, on a call and in a chat, from the business's own file. What is done stays
-        fixed: every change is read back in the business's words and runs only when the caller confirms it, through
-        the policy gate and into the audit. The model talks, and the runtime decides.
+        A model holds the conversation, on a call and in a chat, from a file that describes the business. What gets
+        done stays fixed. Before anything is booked, sent or changed, the line reads the details back in the business's
+        own words, and it runs only when the caller confirms. Every action goes through the policy gate (the business's
+        rules, checked in code) and into the audit log. The model talks, and the runtime decides.
       </p>
       <nav class="toc" aria-label="On this page">
         <h2>On this page</h2>
@@ -93,38 +94,40 @@
       <section id="what" aria-labelledby="what-title">
         <h2 id="what-title">What it is</h2>
         <p>
-          A runtime of its own beside the scripted engine. It shares the carriers, the chat, the gate, the audit, the
-          traces, the console and the texts, and never imports the scripted turn (a test holds that). An app whose
-          <code>app.yaml</code> does not say <code>mode: agent</code> never meets it.
+          Agent mode is a runtime of its own (the part that runs each call), beside the scripted one. It shares the
+          rest of DialogWright: the phone carriers and the web chat, the policy gate and the audit log, the call records
+          and the console, and texts. An app chooses it with <code>mode: agent</code> in its <code>app.yaml</code>, and
+          a scripted app never meets it.
         </p>
         <ol class="cards steps">
           <li>
             <h3><span class="num" aria-hidden="true">1</span> The business is a file</h3>
             <p>
-              <code>agent.yaml</code> holds who the business is, its services and ballpark prices with the caveat said
-              beside any of them, its hours, the questions callers ask with its answers, the lines said word for word,
-              and its actions. A little code runs each action. No intents, forms, slots or prompts.
+              A file, <code>agent.yaml</code>, holds who the business is, its services and ballpark prices (with a
+              caveat said beside any price), its hours, the questions callers ask with the business's answers, the few
+              lines said word for word (such as the greeting), and its actions. A little code runs each action. There is
+              no call flow to design.
             </p>
           </li>
           <li>
             <h3><span class="num" aria-hidden="true">2</span> The model talks</h3>
             <p>
               It words each reply its own way, answers what the caller asks within the business's world, and takes
-              what the caller gives in whatever order it comes. Its replies are streamed a sentence at a time.
+              what the caller gives in whatever order it comes. Its replies are sent a sentence at a time, as they are written.
             </p>
           </li>
           <li>
             <h3><span class="num" aria-hidden="true">3</span> The runtime decides</h3>
             <p>
-              The model acts only by calling the business's actions. Each call's values are checked by type, put to
-              the policy gate and audited. A change is read back by the line, not the model, and runs only when the
-              caller confirms it.
+              The model acts only by calling the business's actions (look up free times, send a request). Each
+              call's details are checked by type, put to the policy gate and logged. Before anything is booked or sent,
+              the line, not the model, reads the details back, and it runs only when the caller confirms.
             </p>
           </li>
         </ol>
         <div class="code-grid even">
           <figure class="wrapped">
-            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">apps/wheelshop-agent/agent.yaml</a> (excerpt): the business</figcaption>
+            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">apps/wheelshop-agent/agent.yaml</a> (excerpt): the business, in the wheel shop example</figcaption>
 <pre data-from="apps/wheelshop-agent/agent.yaml"><code>business:
   name: Example Wheel Works
   hours: Monday to Friday, 7:30 am to 5:30 pm, with two drop-off windows a day; closed Saturday and Sunday. # assumption: the owner corrects these
@@ -140,7 +143,7 @@ questions: # assumption: the owner corrects these
     a: Just the car and its keys; there's no paperwork.</code></pre>
           </figure>
           <figure class="wrapped">
-            <figcaption>The same file (excerpt): an action, its read-back, its follow-ons, and a consent rule</figcaption>
+            <figcaption>The same file (excerpt): an action that sends the shop a repair request, the words it is read back in, the actions that follow it, and a rule that texts only a caller who agreed</figcaption>
 <pre data-from="apps/wheelshop-agent/agent.yaml"><code>  send_request:
     kind: change
     readBack:
@@ -153,26 +156,26 @@ questions: # assumption: the owner corrects these
           </figure>
         </div>
         <p>
-          Each assumption the demo had to make is marked in the file for the shop's owner to correct. A correction is
-          an edit to the file, never to code
+          The wheel shop is a demo, so each answer only its owner could give is marked in the file as an assumption to
+          correct. A correction is an edit to the file, never to code
           (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/DESIGN.md">the demo's assumptions</a>).
         </p>
       </section>
 
       <section id="fixed" aria-labelledby="fixed-title">
         <h2 id="fixed-title">What stays fixed</h2>
-        <p>What a change goes through, every time, whatever the model wrote:</p>
+        <p>What every booking, request or other change goes through, whatever the model wrote:</p>
         <ol class="flow">
-          <li><strong>The model calls it</strong><span>With its values as arguments: the only way a value reaches the runtime.</span></li>
-          <li><strong>Checked by type</strong><span>A real date, a drop-off window only one a lookup returned on this call, and a choice one of its options.</span></li>
-          <li><strong>The gate decides</strong><span>The business's rules for the action. Allowed or refused, the decision goes to the audit.</span></li>
-          <li><strong>Read back</strong><span>The line says the business's own words with exactly the call's values. The model cannot change them.</span></li>
-          <li><strong>Confirmed</strong><span>The decision model reads whether the caller confirmed it: confirming read at 0.7 or more, and declining under 0.3. Anything else runs nothing.</span></li>
-          <li class="last"><strong>Run, with its follow-ons</strong><span>The follow-ons run with the same confirmation, each through the gate with its own hash: the photo text only where the caller agreed to texts.</span></li>
+          <li><strong>The model calls the action</strong><span>With the details as arguments, the only way a value reaches the runtime.</span></li>
+          <li><strong>Checked by type</strong><span>A real date, a time slot only one a lookup returned on this call, and a choice one of its options.</span></li>
+          <li><strong>The gate decides</strong><span>The business's rules for the action. Allowed or refused, the decision goes to the audit log.</span></li>
+          <li><strong>Read back</strong><span>The line says the details in the business's own words, with exactly the values that will be sent. The model cannot change them.</span></li>
+          <li><strong>Confirmed</strong><span>The decision model reads whether the caller confirmed. It must read confirming at 0.7 or more and declining under 0.3, or nothing runs.</span></li>
+          <li class="last"><strong>Then it runs</strong><span>Actions that follow it run with the same confirmation, each through the gate. In the wheel shop example, a text asking for a photo goes only to a caller who agreed to texts.</span></li>
         </ol>
         <ul class="minis">
-          <li><strong>Never left unsent, unasked</strong>A change the caller has not confirmed is kept. The model's first goodbye is refused, so it asks whether they still want it.</li>
-          <li><strong>A goodbye held</strong>Where the caller sounds like they are wrapping up while a change could be left unsent, the model's words are held, and a goodbye that would leave it unsent is never said.</li>
+          <li><strong>Never left unsent, unasked</strong>A request the caller has not confirmed is kept. When the model first tries to end the call, it is stopped, so it asks whether they still want it.</li>
+          <li><strong>A goodbye held</strong>Where the caller sounds like they are wrapping up while a request could be left unsent, the model's words wait, and a goodbye that would leave it unsent is never said.</li>
           <li><strong>Honest about what it is</strong>Asked whether it is a person, it says it is the business's automated assistant. A business cannot turn this off.</li>
           <li><strong>The line keeps the record</strong>What was done on the call goes with every request to the model, so it never has to work it out.</li>
         </ul>
@@ -187,7 +190,7 @@ questions: # assumption: the owner corrects these
         <p class="note">
           No check holds a reply before it is said. Unsupported claims are kept out by these rules and the actions, and
           measured by simulated callers (<a href="#measured">below</a>). The model is sent the conversation and what each
-          action returned, and the caller's number goes to it by its last four only. The policy card says all of it.
+          action returned, and the caller's number goes to it by its last four digits only. The app's policy card (a generated page in plain English) says all of it.
         </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/POLICY.md">The wheel shop's policy card</a>
@@ -198,12 +201,13 @@ questions: # assumption: the owner corrects these
       <section id="journeys" aria-labelledby="journeys-title">
         <h2 id="journeys-title">Journeys: the model sees only the task the caller is on</h2>
         <p>
-          A line that does more than one thing gives each task its own journey: its goal, instructions, information and
-          actions. Each caller turn, the decision model reads which one the caller wants, and the agent model is shown
-          that journey alone. An action of another journey is refused before the gate.
+          A line that does more than one thing (take a repair request, book a dealership's cars) gives each task its own
+          journey: its goal, instructions, information and actions. Each time the caller speaks, the decision model reads
+          which task they want, and the agent model is shown that task alone. An action from another task is refused
+          before it reaches the gate.
         </p>
         <figure class="wrapped">
-          <figcaption>The wheel shop's two journeys (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt): a dealership is recognized by the number it calls from</figcaption>
+          <figcaption>The wheel shop example's two journeys (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt): a dealership is recognized by the number it calls from</figcaption>
 <pre data-from="apps/wheelshop-agent/agent.yaml"><code>journeys:
   request:
     for: { account: none }
@@ -214,14 +218,14 @@ questions: # assumption: the owner corrects these
     actions: [recognise_caller, check_availability, book_dealer, leave_callback]</code></pre>
         </figure>
         <p>
-          <strong>Guide, don't guess.</strong> A turn the line cannot follow is unclear, never guessed at: the model
-          guides the caller to what the line needs, only lookups are offered on that turn, and the third unclear turn in a
-          row ends the call politely.
+          <strong>Guide, don't guess.</strong> When the line cannot follow what the caller said, it does not guess. The
+          model guides the caller to what the line needs, only lookups are allowed on that turn, and after the third such
+          turn in a row the line ends the call politely.
         </p>
-        <h3>Measured on 300 simulated calls</h3>
+        <h3>Measured on the wheel shop example, 300 simulated calls</h3>
         <ul class="stats four wide">
           <li><b>83%</b><span>got what they came for (150 of 180), against 80% without journeys (72 of 90)</span></li>
-          <li><b>4.6</b><span>gaps per 100 calls, from 14.2: each task's own facts answer more of what callers ask</span></li>
+          <li><b>4.6</b><span>gaps per 100 calls (questions the business information left unanswered), from 14.2</span></li>
           <li><b>0.68 to 0.71 s</b><span>to the first sentence at the median, from 0.74 to 0.76 s</span></li>
           <li><b>$0.0032 to $0.0033</b><span>for the line's model a call, from $0.0038 to $0.0040</span></li>
         </ul>
@@ -236,13 +240,13 @@ questions: # assumption: the owner corrects these
 
       <section id="phone" aria-labelledby="phone-title">
         <h2 id="phone-title">On the phone</h2>
-        <p>An agent app takes calls on Telnyx and Twilio as it takes chats. On a call:</p>
+        <p>An agent app takes calls on Telnyx and Twilio as well as chats. On a call:</p>
         <ul class="minis">
           <li><strong>Talk over any reply</strong>Each sentence goes to the carrier as it is written. A caller who speaks stops the turn, and their words are the next one, with what they heard.</li>
-          <li><strong>A read-back heard</strong>Confirming counts only where the caller heard at least 85% of the read-back.</li>
-          <li><strong>Said again, held</strong>Once a caller has talked over a change's read-back, every later read-back of it is said whole, and cannot be talked over (the maintainer's decision, 2026-11-26).</li>
-          <li><strong>Silence</strong>Nine seconds after the reply has played, the model helps the caller go on. After one more silence, a polite goodbye, and the call ends.</li>
-          <li><strong>After hours</strong>The model knows whether the business is open. A call that starts while it is closed hears the after-hours greeting, and no callback time is promised that the business does not give.</li>
+          <li><strong>A read-back heard</strong>The caller's confirmation counts only if they heard at least 85% of the read-back.</li>
+          <li><strong>Said again, held</strong>Once a caller has talked over the read-back of a booking or request, every later read-back of it is said whole and cannot be talked over (the maintainer's decision, 2026-11-26).</li>
+          <li><strong>Silence</strong>Nine seconds after a reply has played with no word from the caller, the model helps them go on. After one more silence, the line says goodbye politely and ends the call.</li>
+          <li><strong>After hours</strong>Given the business's opening hours, the model knows whether it is open. A call that starts while it is closed hears the after-hours greeting, and no callback time is promised that the business does not give.</li>
           <li><strong>A bridge, only when it helps</strong>"One sec." is said once, only when a reply has said nothing after 2.5 seconds.</li>
         </ul>
         <blockquote class="said-by">
@@ -250,7 +254,7 @@ questions: # assumption: the owner corrects these
           <footer>The maintainer, on the nine seconds</footer>
         </blockquote>
         <figure class="wrapped">
-          <figcaption>The wheel shop's lines for a silence (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt), each said word for word</figcaption>
+          <figcaption>The wheel shop example's lines for a silence (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/agent.yaml">agent.yaml</a>, excerpt), each said word for word</figcaption>
 <pre data-from="apps/wheelshop-agent/agent.yaml"><code>  silence: { en: "Are you still there? Take your time, we can carry on whenever you're ready." }
   silenceEnd: { en: "It sounds like now isn't a good time, so we'll let you go. Call us back any time." }</code></pre>
         </figure>
@@ -263,14 +267,14 @@ questions: # assumption: the owner corrects these
       <section id="measured" aria-labelledby="measured-title">
         <h2 id="measured-title">Measured</h2>
         <p>
-          A line in agent mode is measured by simulated callers: a model plays each caller against the app's own server,
-          and each reply is labelled or judged against the business information and the actions the gate decided. All the
-          figures below are the wheel shop's. Its model is Muse Ember 1.0.
+          Agent mode is measured with simulated callers: a model plays each caller against the app's own server, and
+          each reply is labelled or judged against the business information and the actions the gate decided. Every
+          figure below comes from the wheel shop example, whose model is Muse Ember 1.0.
         </p>
         <h3>On the voice path</h3>
         <p>
-          60 simulated calls over the voice path, the carrier played in text and replies at speaking pace, then the same
-          60 over the chat (2026-11-25). No speech recognition, speech or real carrier.
+          60 simulated calls over the voice path (the carrier played in text, replies at speaking pace), then the same 60
+          over the chat, on 2026-11-25. No speech recognition, speech or real carrier.
         </p>
         <div class="table-wrap">
           <table class="stack">
@@ -280,20 +284,20 @@ questions: # assumption: the owner corrects these
               <tr><th scope="row">First sentence, p95, 2.5 s at most</th><td data-label="Voice">1,204 ms heard</td><td data-label="Chat">1,247 ms</td><td data-label="Met?">Yes</td></tr>
               <tr><th scope="row">Timeouts, 1% of turns at most</th><td data-label="Voice">0.0% of 622</td><td data-label="Chat">0.3% of 336</td><td data-label="Met?">Yes</td></tr>
               <tr><th scope="row">Cooperative calls done correctly, 95% at least</th><td data-label="Voice">67% of 39</td><td data-label="Chat">88% of 40</td><td data-label="Met?">No</td></tr>
-              <tr><th scope="row">Contradicted material claims, none</th><td data-label="Voice">4</td><td data-label="Chat">6</td><td data-label="Met?">No</td></tr>
+              <tr><th scope="row">Claims that contradict the business (a price, time, policy or thing done), none</th><td data-label="Voice">4</td><td data-label="Chat">6</td><td data-label="Met?">No</td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          Callers who neither interrupt nor break their turns were done 20 of 20 on voice. The gap was callers who cut in
-          on every long reply, the read-back too, so their confirmation never counted: 8 of 20 done. The held read-back
-          (<a href="#phone">above</a>) came from that finding.
+          Callers who neither interrupted nor broke off mid-sentence got it done every time, 20 of 20 on voice. The
+          shortfall was callers who cut in on every long reply, the read-back too, so their confirmation never counted:
+          8 of 20 got it done. Holding the read-back (<a href="#phone">above</a>) came from that finding.
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-voice.md">The voice run</a>.
         </p>
         <h3>Wrong replies, kept from being said</h3>
         <p>
-          Every reply of 120 simulated calls a set, labelled against the business information, the call's actions and what
-          the caller said. What the runtime and the lookup know, told to the model plainly, halved the wrong replies.
+          Each set is 120 simulated calls, every reply labelled against the business information, the call's actions and
+          what the caller said. Telling the model plainly what the runtime and the lookup know halved the wrong replies.
         </p>
         <figure class="chart">
           <svg viewBox="0 0 420 186" role="img" aria-labelledby="wrong-title wrong-desc">
@@ -312,9 +316,9 @@ questions: # assumption: the owner corrects these
         </figure>
         <h3>The model, chosen by measurement</h3>
         <p>
-          Eight models ran on the same simulated callers, five calls each, against the same bars, judged again under the
-          material-claims rubric. No model cleared every bar. Three were fast enough, and of those Muse Ember 1.0 did best on
-          both quality bars, and it is the wheel shop's.
+          Eight models ran on the same simulated callers, five calls each, against the same bars, judged again counting
+          only claims that matter (a price, a time, a policy, something said to be done). No model cleared every bar.
+          Three were fast enough, and of those Muse Ember 1.0 did best on both quality bars, so the wheel shop uses it.
         </p>
         <div class="table-wrap">
           <table class="stack">
@@ -349,8 +353,9 @@ questions: # assumption: the owner corrects these
         <p>
           The model's share of a call's cost is small in both modes, so the difference between them is a few percent of a
           call's total. Model costs are measured from the calls' tokens at the models' list prices. The carriers' are what
-          each billed for the wheel shop's test calls, read from their own records on 2026-11-26. On both, the conversation
-          relay's price includes speech recognition and the voice.
+          each billed for the wheel shop example's test calls, read from their own records on 2026-11-26. On both, the
+          conversation relay (the carrier's service that hears the caller and speaks the line's words) includes speech
+          recognition and the voice in its price.
         </p>
         <ul class="stats four wide">
           <li><b>$0.0084</b><span>a call for agent mode's models, at most: the agent model measured, the decision model an upper bound</span></li>
@@ -376,7 +381,7 @@ questions: # assumption: the owner corrects these
             <thead><tr><th scope="col">A Telnyx call, by part</th><th scope="col">A minute, billed</th></tr></thead>
             <tbody>
               <tr><th scope="row">The conversation relay (speech recognition and the voice included)</th><td data-label="A minute, billed">$0.05</td></tr>
-              <tr><th scope="row">The call: call control $0.002 and the SIP leg $0.0032</th><td data-label="A minute, billed">$0.0052</td></tr>
+              <tr><th scope="row">The phone call itself: call control $0.002 and the SIP connection $0.0032</th><td data-label="A minute, billed">$0.0052</td></tr>
               <tr><th scope="row">Krisp noise suppression, an option</th><td data-label="A minute, billed">$0.005</td></tr>
               <tr><th scope="row"><strong>All of it</strong></th><td data-label="A minute, billed"><strong>$0.060 with Krisp, $0.055 without</strong></td></tr>
             </tbody>
@@ -386,7 +391,7 @@ questions: # assumption: the owner corrects these
           <strong>Krisp is an option.</strong> It costs $0.005 a minute, about 8% of a Telnyx call: $0.015 to $0.02 on the
           wheel shop's calls, billed by the call's whole minutes. It is one setting, <code>TELNYX_NOISE_SUPPRESSION=krisp</code>
           (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>), and leaving it out saves it. What it bought is not yet measured alone:
-          the loud-room calls compared Telnyx with flux and Krisp against Twilio (10 speech events against 135, no reply cut off
+          the loud-room calls compared Telnyx, with Deepgram's flux recognizer and Krisp, against Twilio (10 speech events against 135, no reply cut off
           against 7), and the same room has not yet been called on Telnyx without Krisp. So that result is the Telnyx path with
           Krisp, not Krisp alone. That measurement is to come.
         </p>
@@ -403,17 +408,18 @@ questions: # assumption: the owner corrects these
       <section id="start" aria-labelledby="start-title">
         <h2 id="start-title">Start</h2>
         <p>
-          The wheel shop is the example: a repair request with a drop-off window, a dealership booking recognized by caller
-          ID, and a callback note. Its tests run with no key, on a scripted model:
+          The wheel shop example takes a repair request with a drop-off window, books a dealership's cars (recognizing
+          the dealership by the number it calls from) and leaves callback notes. Its tests run with no key, on a scripted
+          stand-in for the model:
         </p>
 <pre data-copy><code>pnpm --filter @dialogwright/example-wheelshop-agent test</code></pre>
         <p>
-          Not every line suits it: keep a line scripted where every word must be its own, where callers prove who they are,
-          or where it needs a knowledge base or more than one language (<a href="./#ways">how to choose</a>).
+          Not every line suits it. Keep a line scripted where every word must be its own, where callers must prove who
+          they are, or where it needs a knowledge base or more than one language (<a href="./#ways">how to choose</a>).
         </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/18-agent-mode.md">Guide, chapter 18: agent mode</a>
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop agent</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop example</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/2026-11-11-agent-runtime.md">The design</a>
         </p>
       </section>
