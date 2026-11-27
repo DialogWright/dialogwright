@@ -1,0 +1,176 @@
+<!doctype html>
+<!-- draft: for Jason to edit -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright blog: what a call costs, and why it should not decide your design</title>
+  <meta name="description" content="Jev and Muse Ember are both cheap: the model's share of a call is a rounding error beside the carrier, recognition and speech, so the mode and the model are chosen by the job. The carrier path is the bigger saving.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/blog/2026-11-26-what-a-call-costs.html">
+  <link rel="icon" href="../brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="../brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="../brand/favicon-180.png">
+  <link rel="alternate" type="application/atom+xml" title="DialogWright blog" href="feed.xml">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/blog/2026-11-26-what-a-call-costs.html">
+  <meta property="og:title" content="What a call costs, and why it should not decide your design">
+  <meta property="og:description" content="The models are a rounding error beside the telephony; choose the mode and the model by the job.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="../" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-mark-dark.svg">
+          <img src="../brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+        <span class="word">DialogWright</span>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="../#why">Why</a></li>
+          <li><a href="../how-it-works.html">How it works</a></li>
+          <li><a href="../agent-mode.html">Agent mode</a></li>
+          <li><a href="../decision-models.html">Decision models</a></li>
+          <li><a href="../#guides">Guides</a></li>
+          <li><a href="../#examples">Examples</a></li>
+          <li><a href="../#start">Quick start</a></li>
+          <li><a href="../blog/">Blog</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+      <details class="menu">
+        <summary>Menu</summary>
+        <nav aria-label="Site menu">
+          <ul>
+            <li><a href="../#why">Why</a></li>
+            <li><a href="../how-it-works.html">How it works</a></li>
+            <li><a href="../agent-mode.html">Agent mode</a></li>
+            <li><a href="../decision-models.html">Decision models</a></li>
+            <li><a href="../#guides">Guides</a></li>
+            <li><a href="../#examples">Examples</a></li>
+            <li><a href="../#start">Quick start</a></li>
+            <li><a href="../blog/">Blog</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+          </ul>
+        </nav>
+      </details>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="../">DialogWright</a> / <a href="./">Blog</a></p>
+      <h1>What a call costs, and why it should not decide your design</h1>
+      <p class="byline">By Jason Stiles, <time datetime="2026-11-26">November 26, 2026</time></p>
+    </div>
+
+    <div class="wrap guide post">
+      <p>
+        We've got two cheap but effective models: Jev, the decision model, and Muse Ember, the model that holds the
+        conversation in agent mode. Ember costs more, but it's a rounding error on the telephony costs.
+      </p>
+      <p>
+        That means the right approach is using the model and the call type that's best for the job, not one dictated by
+        price. Telnyx as the carrier, and the work we did so it could handle barge-in, is a bigger money saver against
+        Twilio's fees than decision model against agent mode ever could be.
+      </p>
+
+      <h2>The numbers</h2>
+      <ul class="stats four">
+        <li><b>$0.0084</b><span>a call for agent mode's models, at most: Ember measured, the decision model an upper bound</span></li>
+        <li><b>$0.002</b><span>a call for scripted mode's decision model, measured on one call</span></li>
+        <li><b>$0.10 to $0.26</b><span>a call for the carrier, recognition and speech, at list prices, the same in both modes</span></li>
+        <li><b>2.3% to 5.9%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
+      </ul>
+      <p>
+        At 2,000 calls a month the difference is about $12. It takes about 16,000 calls a month to reach $100. One billed
+        minute on the Twilio path, $0.0785, costs 12.5 times the whole difference in model cost per call.
+      </p>
+      <div class="table-wrap">
+        <table class="stack">
+          <thead><tr><th scope="col">Carrier path</th><th scope="col">Carrier, recognition and speech, a call</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="Carrier, recognition and speech, a call">$0.262</td></tr>
+            <tr><th scope="row">Telnyx from parts, Deepgram recognition</th><td data-label="Carrier, recognition and speech, a call">$0.099</td></tr>
+            <tr><th scope="row">Telnyx from parts, Telnyx recognition</th><td data-label="Carrier, recognition and speech, a call">$0.135</td></tr>
+            <tr><th scope="row">Telnyx with its Conversation Relay add-on</th><td data-label="Carrier, recognition and speech, a call">$0.196</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        Measured: the models' tokens and cost from the traces of 17 live agent-mode calls and one live scripted call, the
+        call lengths and the characters spoken. List prices: every model, carrier, recognition and speech price, read on
+        2026-11-25. Twilio's pages do not say whether ConversationRelay's price includes recognition and speech, so its
+        figure may be low.
+      </p>
+      <p class="links">
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">The cost of a call in each mode, in full</a>
+        <a href="../agent-mode.html#cost">Agent mode's cost</a>
+      </p>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="../brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+          <p>Made by <a href="https://stiles.one">Jason Stiles</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="../how-it-works.html">How it works</a></li>
+            <li><a href="../agent-mode.html">Agent mode</a></li>
+            <li><a href="../decision-models.html">Decision models</a></li>
+            <li><a href="../guides/home-server.html">A machine you own</a></li>
+            <li><a href="../guides/scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="../blog/">Blog</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+            <li><a href="../privacy.html">Privacy</a></li>
+            <li><a href="../terms.html">Text message terms</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

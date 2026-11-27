@@ -1,0 +1,178 @@
+<!doctype html>
+<!-- draft: for Jason to edit -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright blog: Telnyx crushed it in a loud room</title>
+  <meta name="description" content="A live call with a loud football game and side conversations nearby: Telnyx with Deepgram's flux and Krisp noise suppression heard only the caller, and Twilio in the same room could not go on.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/blog/2026-11-26-telnyx-in-a-loud-room.html">
+  <link rel="icon" href="../brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="../brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="../brand/favicon-180.png">
+  <link rel="alternate" type="application/atom+xml" title="DialogWright blog" href="feed.xml">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/blog/2026-11-26-telnyx-in-a-loud-room.html">
+  <meta property="og:title" content="Telnyx crushed it in a loud room">
+  <meta property="og:description" content="Telnyx with flux and Krisp heard only the caller in a loud room; Twilio could not go on.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="../" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-mark-dark.svg">
+          <img src="../brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+        <span class="word">DialogWright</span>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="../#why">Why</a></li>
+          <li><a href="../how-it-works.html">How it works</a></li>
+          <li><a href="../agent-mode.html">Agent mode</a></li>
+          <li><a href="../decision-models.html">Decision models</a></li>
+          <li><a href="../#guides">Guides</a></li>
+          <li><a href="../#examples">Examples</a></li>
+          <li><a href="../#start">Quick start</a></li>
+          <li><a href="../blog/">Blog</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+      <details class="menu">
+        <summary>Menu</summary>
+        <nav aria-label="Site menu">
+          <ul>
+            <li><a href="../#why">Why</a></li>
+            <li><a href="../how-it-works.html">How it works</a></li>
+            <li><a href="../agent-mode.html">Agent mode</a></li>
+            <li><a href="../decision-models.html">Decision models</a></li>
+            <li><a href="../#guides">Guides</a></li>
+            <li><a href="../#examples">Examples</a></li>
+            <li><a href="../#start">Quick start</a></li>
+            <li><a href="../blog/">Blog</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+          </ul>
+        </nav>
+      </details>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="../">DialogWright</a> / <a href="./">Blog</a></p>
+      <h1>Telnyx crushed it in a loud room</h1>
+      <p class="byline">By Jason Stiles, <time datetime="2026-11-26">November 26, 2026</time></p>
+    </div>
+
+    <div class="wrap guide post">
+      <p>
+        Holy cow. Telnyx just crushed it. I had a loud football game going on, as well as side conversations between my
+        wife and son, and I called the wheel shop agent on Telnyx. It heard only me. Twilio was unusable in the same
+        environment.
+      </p>
+      <p>
+        Flux and Krisp have completely switched my carrier preference. I was frustrated with Telnyx at first, for not being
+        as good as Twilio, but switching to Deepgram's flux recognizer corrected that complaint about instant barge-in
+        audio, and Krisp is a game changer for background noise.
+      </p>
+
+      <h2>What the two calls showed</h2>
+      <p>The same room, the same app, one call on each carrier:</p>
+      <div class="table-wrap">
+        <table class="stack">
+          <thead><tr><th scope="col">Carrier</th><th scope="col">Speech events that reached the line</th><th scope="col">Replies cut off</th><th scope="col">Outcome</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Telnyx, flux and Krisp</th><td data-label="Speech events that reached the line">10</td><td data-label="Replies cut off">0</td><td data-label="Outcome">The line heard only me; the request was sent in nine turns</td></tr>
+            <tr><th scope="row">Twilio, flux, low interrupt sensitivity, backchannel ignored</th><td data-label="Speech events that reached the line">135</td><td data-label="Replies cut off">7</td><td data-label="Outcome">The room's voices were transcribed as my words; the call could not go on</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        On Twilio I had on everything its own guidance offers for noise. Nothing else could be set to fix it:
+        ConversationRelay has no noise suppression of its own, and DialogWright's server never gets the call's raw audio,
+        so there is nothing on the server to filter. Telnyx denoises the caller's audio before its recognizer hears it.
+      </p>
+
+      <h2>What changed</h2>
+      <p>
+        Telnyx is now the recommended carrier, and Twilio stays fully supported. For an English app,
+        <code>pnpm configure</code> writes these three when you choose Telnyx:
+      </p>
+<pre data-copy><code>TELNYX_TRANSCRIPTION_PROVIDER=deepgram
+TELNYX_SPEECH_MODEL=flux
+TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
+      <p>
+        Krisp is billed by Telnyx per call, and flux is for English only. Telnyx is also the cheaper carrier per call,
+        which is <a href="2026-11-26-what-a-call-costs.html">a post of its own</a>.
+      </p>
+      <p class="links">
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#132-serving-voice-twilio-telnyx-or-both">The decision and the measurement, in the guide's 13.2</a>
+        <a href="../guides/home-server.html#which-carrier">Which carrier, in the guide to a machine you own</a>
+      </p>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="../brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+          <p>Made by <a href="https://stiles.one">Jason Stiles</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="../how-it-works.html">How it works</a></li>
+            <li><a href="../agent-mode.html">Agent mode</a></li>
+            <li><a href="../decision-models.html">Decision models</a></li>
+            <li><a href="../guides/home-server.html">A machine you own</a></li>
+            <li><a href="../guides/scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="../blog/">Blog</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+            <li><a href="../privacy.html">Privacy</a></li>
+            <li><a href="../terms.html">Text message terms</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

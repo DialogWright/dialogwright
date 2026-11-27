@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>DialogWright blog</title>
+  <subtitle>Notes from building DialogWright: what was measured, what changed, and why.</subtitle>
+  <id>https://dialogwright.com/blog/</id>
+  <link rel="alternate" type="text/html" href="https://dialogwright.com/blog/"/>
+  <link rel="self" type="application/atom+xml" href="https://dialogwright.com/blog/feed.xml"/>
+  <updated>2026-11-26T12:00:00Z</updated>
+  <author>
+    <name>Jason Stiles</name>
+    <uri>https://stiles.one</uri>
+  </author>
+  <icon>https://dialogwright.com/brand/favicon-180.png</icon>
+  <entry>
+    <title>Two ways to build a phone line</title>
+    <id>https://dialogwright.com/blog/2026-11-26-two-ways-to-build-a-line.html</id>
+    <link rel="alternate" type="text/html" href="https://dialogwright.com/blog/2026-11-26-two-ways-to-build-a-line.html"/>
+    <published>2026-11-26T12:00:00Z</published>
+    <updated>2026-11-26T12:00:00Z</updated>
+    <summary>Agent mode beside the scripted line: a model holds the conversation, and what gets done stays fixed.</summary>
+  </entry>
+  <entry>
+    <title>What a call costs, and why it should not decide your design</title>
+    <id>https://dialogwright.com/blog/2026-11-26-what-a-call-costs.html</id>
+    <link rel="alternate" type="text/html" href="https://dialogwright.com/blog/2026-11-26-what-a-call-costs.html"/>
+    <published>2026-11-26T12:00:00Z</published>
+    <updated>2026-11-26T12:00:00Z</updated>
+    <summary>Both models are a rounding error beside the telephony; the carrier path is the bigger saving.</summary>
+  </entry>
+  <entry>
+    <title>Telnyx crushed it in a loud room</title>
+    <id>https://dialogwright.com/blog/2026-11-26-telnyx-in-a-loud-room.html</id>
+    <link rel="alternate" type="text/html" href="https://dialogwright.com/blog/2026-11-26-telnyx-in-a-loud-room.html"/>
+    <published>2026-11-26T12:00:00Z</published>
+    <updated>2026-11-26T12:00:00Z</updated>
+    <summary>A football game and people talking nearby: Telnyx with flux and Krisp heard only the caller, and Twilio could not go on.</summary>
+  </entry>
+</feed>

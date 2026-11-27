@@ -467,7 +467,23 @@ h3.sub { margin: 2.25rem 0 0.75rem; }
 .said-by p { margin: 0 0 0.4rem; font-size: 1.15rem; line-height: 1.45; color: var(--text); }
 .said-by footer { color: var(--muted); font-size: 0.9rem; }
 
+/* The blog (site/blog/). */
+.posts { list-style: none; padding: 0; margin: 0 0 2rem; max-width: 46rem; }
+.posts li { padding: 1.1rem 0; border-top: 1px solid var(--line); }
+.posts li:first-child { border-top: 0; padding-top: 0; }
+.posts time { display: block; color: var(--muted); font-size: 0.9rem; }
+.posts h2 { font-size: 1.3rem; margin: 0.15rem 0 0.35rem; }
+.posts h2 a { text-decoration: none; }
+.posts h2 a:hover { text-decoration: underline; }
+.posts p { margin: 0; color: var(--muted); }
+.byline { color: var(--muted); font-size: 0.95rem; margin: 0 0 1.5rem; }
+.post { padding-bottom: 48px; }
+.post > p, .post > ul, .post > ol { max-width: 42rem; }
+.post h2 { font-size: 1.35rem; margin: 2rem 0 0.75rem; }
+.feed-link { font-size: 0.95rem; }
 /* Tiles that take the page's full width, where a figure is a range. */
 .guide .stats.wide { max-width: none; }
 /* A chart keeps its own width inside a page of its own (.guide figure would otherwise stretch it to the page's, its words at twice their size). */
 .guide figure.chart { max-width: 36rem; }
+/* In a post, four figures stay two by two beside the text's width. */
+@media (min-width: 1040px) { .post .stats.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

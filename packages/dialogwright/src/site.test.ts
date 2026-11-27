@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * The site (site/, published to GitHub Pages by .github/workflows/pages.yml): the landing page, the
- * guides under site/guides/. On every page, every link and asset it names exists, every link into the
+ * guides under site/guides/ and the blog under site/blog/ (its posts, its index and its Atom feed). On every page, every link and asset it names exists, every link into the
  * repository on GitHub points at a path the repository has, a link to another page's section finds that
  * section, the excerpts it quotes are still in the files they come from, and the page keeps its basics
  * (a language, a title, a description, a canonical URL, a favicon, the content security policy, no script
@@ -91,7 +91,7 @@ describe('the site', () => {
   });
 
   it('has the landing page and the guides', () => {
-    expect(PAGES).toEqual(expect.arrayContaining(['index.html', 'agent-mode.html', 'guides/home-server.html', 'guides/scaling.html']));
+    expect(PAGES).toEqual(expect.arrayContaining(['index.html', 'agent-mode.html', 'guides/home-server.html', 'guides/scaling.html', 'blog/index.html']));
   });
 
   it('has its own title and canonical URL on every page', () => {
@@ -232,3 +232,63 @@ describe('the site', () => {
   });
 });
 
+describe('the blog', () => {
+  /** A post is site/blog/<yyyy-mm-dd>-<slug>.html; the blog's index and its feed list every one. */
+  const POST = /^blog\/(\d{4}-\d{2}-\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*\.html$/;
+  const posts = PAGES.filter((page) => page.startsWith('blog/') && page !== 'blog/index.html');
+  const index = htmlOf('blog/index.html');
+  const feed = readFileSync(join(SITE, 'blog/feed.xml'), 'utf8');
+  const titleOf = (page: string): string => decode(/<h1>([^<]+)<\/h1>/.exec(htmlOf(page))?.[1]?.trim() ?? '');
+  const fileOf = (page: string): string => page.slice('blog/'.length);
+
+  it('has posts, each named by its date and a slug', () => {
+    expect(posts.length).toBeGreaterThan(0);
+    for (const page of posts) expect(page, page).toMatch(POST);
+  });
+
+  it('gives each post its title, its author and its date', () => {
+    for (const page of posts) {
+      const html = htmlOf(page);
+      expect(titleOf(page), page).not.toBe('');
+      const byline = /<p class="byline">([\s\S]*?)<\/p>/.exec(html)?.[1] ?? '';
+      expect(byline, page).toContain('Jason Stiles');
+      expect(byline, page).toContain(`<time datetime="${POST.exec(page)![1]}">`);
+    }
+  });
+
+  it('lists every post on its index, with its date and title, newest first', () => {
+    const items = [...index.matchAll(/<li>\s*<time datetime="([^"]+)">[\s\S]*?<a href="([^"]+)">([^<]+)<\/a>[\s\S]*?<\/li>/g)].map((m) => ({ date: m[1]!, file: m[2]!, title: decode(m[3]!) }));
+    expect(items.map((i) => i.file).sort()).toEqual(posts.map(fileOf).sort());
+    for (const item of items) {
+      const page = `blog/${item.file}`;
+      expect(item.date, page).toBe(POST.exec(page)![1]);
+      expect(item.title, page).toBe(titleOf(page));
+    }
+    const dates = items.map((i) => i.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+  });
+
+  it('has every post in its feed, and nothing else', () => {
+    expect(feed).toMatch(/^<\?xml version="1.0" encoding="utf-8"\?>\n<feed xmlns="http:\/\/www.w3.org\/2005\/Atom">/);
+    for (const field of ['<title>', '<id>', '<updated>', '<name>Jason Stiles</name>']) expect(feed).toContain(field);
+    const entries = [...feed.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((m) => ({
+      title: decode(/<title>([^<]+)<\/title>/.exec(m[1]!)?.[1] ?? ''),
+      link: /<link rel="alternate" type="text\/html" href="([^"]+)"\/>/.exec(m[1]!)?.[1] ?? '',
+      id: /<id>([^<]+)<\/id>/.exec(m[1]!)?.[1] ?? '',
+      updated: /<updated>([^<]+)<\/updated>/.exec(m[1]!)?.[1] ?? '',
+    }));
+    expect(entries.map((e) => e.link).sort()).toEqual(posts.map((p) => `https://${DOMAIN}/${p}`).sort());
+    for (const entry of entries) {
+      const page = entry.link.slice(`https://${DOMAIN}/`.length);
+      expect(entry.title, page).toBe(titleOf(page));
+      expect(entry.id, page).toBe(entry.link);
+      expect(entry.updated.slice(0, 10), page).toBe(POST.exec(page)![1]);
+    }
+  });
+
+  it('points every page of the blog at its feed', () => {
+    for (const page of ['blog/index.html', ...posts]) {
+      expect(htmlOf(page), page).toContain('<link rel="alternate" type="application/atom+xml" title="DialogWright blog" href="feed.xml">');
+    }
+  });
+});
