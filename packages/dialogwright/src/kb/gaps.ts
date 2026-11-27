@@ -519,7 +519,8 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
  * The gaps of an agent app's turn: each question its model noted the business could not answer (the runtime's note_gap,
  * `noted`), by the topic a lookup of the turn read (`passage`), else the one it nominated first, else the nearest by
  * keywords to the note or the caller's words, its note where the trace kept it whole and the caller's words of the turn;
- * where the turn has none, each lookup in the knowledge base that returned no passage (the runtime's look_up). One
+ * and each lookup in the knowledge base that returned no passage (the runtime's look_up), but for one that found none on a
+ * turn with a note, which is the note's own question. One
  * nothing was nominated for is `unmatched` (its nearest topic by keywords, where any is near); one whose candidates the
  * decision model read none of at its bar is `none` (the first candidate its topic); one whose topic's passage was withheld
  * is `unavailable`, with why. A lookup that could not be made (`unread`) is no gap: it is counted with the retrievals that
@@ -531,8 +532,9 @@ function lookUpGaps(t: Turn, nearest: (words: string, locale: string | null) => 
   let unread = 0;
   const base = { sessionId: t.sessionId, turnIndex: t.turnIndex, ts: t.ts, locale: t.locale };
   const kept = (q: string): boolean => q !== '' && !MASKED_VALUE.test(q) && !RECORDED_MASK.test(q);
-  // A turn whose model noted what the business could not answer: each note is the gap, and its unanswered lookups are the
-  // same question, so they are not counted again (one that could not be made still is, with the retrievals that failed).
+  // A turn whose model noted what the business could not answer: each note is the gap, and its lookups that found nothing
+  // are the same question, so they are not counted again (one that could not be made still is, with the retrievals that
+  // failed); a passage withheld is still a gap of its own beside the note, as its fix differs (a person approves it again).
   const notes = t.gapNotes ?? [];
   for (const n of notes) {
     const note = kept(n.question) ? n.question : undefined;
@@ -551,8 +553,8 @@ function lookUpGaps(t: Turn, nearest: (words: string, locale: string | null) => 
       unread += 1;
       continue;
     }
-    if (notes.length > 0) continue;
     if (l.outcome !== 'none' && l.outcome !== 'withheld') continue;
+    if (notes.length > 0 && l.outcome === 'none') continue;
     const words = kept(l.question) ? l.question : t.words;
     if (l.outcome === 'withheld') {
       const reason = (UNAVAILABLE as readonly string[]).includes(l.withheld?.why ?? '') ? (l.withheld!.why as Unavailable) : 'no-answer';

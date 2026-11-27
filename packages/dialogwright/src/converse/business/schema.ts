@@ -94,7 +94,8 @@ export const LOOK_UP = 'look_up';
 export const LOOK_UP_AUDIT_DEFAULT = 'length';
 
 /**
- * The runtime's own note of a question the business could not answer (decided 2026-11-27): offered on every turn unless
+ * The runtime's own note of a question the business could not answer (decided 2026-11-27): offered on every turn but an
+ * unclear one, unless
  * agent.yaml's `gaps.note` is off, its one param the question in general terms (converse/gaps.ts). It records the
  * question for the business to review (kb:gaps), and does nothing else. No business action takes its name.
  */
@@ -594,7 +595,7 @@ export const agentBusinessSchema = z
       .describe(`The knowledge base, where the app has a kb/ folder beside agent.yaml (chapter 18 of the guide): the runtime's own lookup "${LOOK_UP}" is offered to the agent model wherever a passage a person approved is there to be found, and it returns the passage that answers the caller's question, or that the business has no approved answer to it. Absent: offered on every turn.`),
     gaps: z
       .strictObject({
-        note: z.enum(['on', 'off']).default('on').describe(`on: the runtime's own "${NOTE_GAP}" is offered to the agent model on every turn, to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).`),
+        note: z.enum(['on', 'off']).default('on').describe(`on: the runtime's own "${NOTE_GAP}" is offered to the agent model on every turn (never on an unclear one), to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).`),
         audit: z.strictObject({ question: z.enum(AUDIT_MASKS).describe('How the question is recorded: last4, mask, length, secret or keep.') }).optional().describe(`How "${NOTE_GAP}"'s one param, the question in general terms, is recorded in the trace and the audit. Default: by its length (${NOTE_GAP_AUDIT_DEFAULT}).`),
       })
       .default({ note: 'on' })

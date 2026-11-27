@@ -2926,6 +2926,19 @@ describe('journeys', () => {
     const OFF = { visit: 0.9, note: 0.05, none: 0.05 };
     const root = { active: null, phase: 'working', paused: null, done: [] };
 
+    it('does not offer note_gap on an unclear turn: its words are no question the business could not answer; one called anyway is refused as not offered and nothing is noted', async () => {
+      const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), call('g1', 'note_gap', { question: 'Something garbled' }), done('tool')], [text('We can book a visit or arrange a call back.'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }]) });
+      let s = await h.run(fresh(), { kind: 'start' });
+      s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
+      // The first round, asked before the route was known, offered it; the unclear turn's round does not.
+      expect(toolNames(h, 0)).toEqual(['note_gap', 'end_call']);
+      expect(toolNames(h, 1)).toEqual(['end_call']);
+      expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'note_gap', outcome: 'refused' })]);
+      expect(h.rows.some((r) => r.type === 'converse_refused' && r.detail.action === 'note_gap' && r.detail.reason === 'not-offered')).toBe(true);
+      expect(h.rows.some((r) => r.type === 'converse_gap_note')).toBe(false);
+      expect(h.traces.at(-1)!.gapNotes).toBeUndefined();
+    });
+
     it('at the root: the first round, asked before the route was known, is asked again with the guidance goal, and nothing of it is said', async () => {
       const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }]) });
       let s = await h.run(fresh(), { kind: 'start' });
@@ -2939,7 +2952,7 @@ describe('journeys', () => {
       expect(system).toMatch(/what this line can help with/);
       // The business's reason is for the second unclear turn, not the first.
       expect(system).not.toContain(LINE);
-      expect(toolNames(h)).toEqual(['note_gap', 'end_call']);
+      expect(toolNames(h)).toEqual(['end_call']);
       expect(h.model.requests[1]!.messages).toEqual(h.model.requests[0]!.messages);
       expect(h.traces.at(-1)!.route).toMatchObject({ from: null, to: null, outcome: 'root', unclear: 1, restarted: true });
       expect(s.journey).toEqual({ ...root, unclear: 1 });
@@ -2967,7 +2980,7 @@ describe('journeys', () => {
       expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', unclear: 1, restarted: true, fits: 0.1, drops: 0.05 });
       expect(toolNames(h, 2)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
       for (const i of [3, 4]) {
-        expect(toolNames(h, i)).toEqual(['check_availability', 'note_gap', 'end_call']);
+        expect(toolNames(h, i)).toEqual(['check_availability', 'end_call']);
         expect(h.model.requests[i]!.system).toMatch(/what you need from them now/);
       }
       expect(h.rows.filter((r) => r.type === 'converse_refused').map((r) => r.detail)).toEqual([{ action: 'book', reason: 'not-offered', journey: 'visit' }]);

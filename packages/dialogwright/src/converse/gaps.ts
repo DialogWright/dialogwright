@@ -3,7 +3,7 @@ import type { LookUpRecord } from './knowledge';
 
 /**
  * The runtime's own note of a question the business could not answer (decided 2026-11-27): `note_gap`, offered to the
- * agent model on every turn unless agent.yaml's `gaps.note` is off. Only the model knows that what it had to answer from
+ * agent model on every turn unless agent.yaml's `gaps.note` is off, but never on an unclear turn (turn.ts noteGapNow). Only the model knows that what it had to answer from
  * did not answer the caller (a lookup that returned a passage that does not say, or a question the business information
  * does not cover with no knowledge base at all), so it says so with this. It records the question for the business to
  * review (`kb:gaps`, the console's Knowledge page), with what the turn's lookups found and the journey the call is in,
@@ -26,7 +26,7 @@ export const GAP_QUESTION_ABOUT = 'The question the business could not answer, w
 /** What the model is told once a note is recorded: one short fact. */
 export const NOTED = 'Recorded for the business to review.';
 
-/** Whether the runtime offers note_gap: on unless agent.yaml's `gaps.note` is off. The same on every turn. */
+/** Whether the app has note_gap: on unless agent.yaml's `gaps.note` is off (in the gate; offered on every turn but an unclear one). */
 export function noteGapOffered(b: AgentBusiness): boolean {
   return b.gaps?.note !== 'off';
 }

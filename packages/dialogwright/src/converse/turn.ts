@@ -354,6 +354,12 @@ const transferNow = (t: Turn): boolean => transferOffered(t.deps.business, t.st.
 /** Whether the turn offers the runtime's lookup in the knowledge base (knowledge.ts lookUpOffered), in the journey it is in. */
 const lookUpNow = (t: Turn): boolean => lookUpOffered(t.deps.business, t.deps.knowledge, t.st.journey, t.todayIso);
 
+/**
+ * Whether the turn offers the runtime's note_gap (gaps.ts): wherever agent.yaml has it on, but never on an unclear turn,
+ * whose words are no question the business could not answer (it is answered with guidance; decided 2026-11-27).
+ */
+const noteGapNow = (t: Turn): boolean => noteGapOffered(t.deps.business) && t.unclear === undefined;
+
 /** Whether the turn has been stopped from outside: what it has not said is never said, and no model round starts. */
 const cut = (t: Turn): boolean => t.signal?.aborted === true;
 
@@ -849,7 +855,7 @@ async function runLookUp(t: Turn, c: Extract<ModelEvent, { type: 'tool_call' }>,
 
 /**
  * The runtime's note of a question the business could not answer (gaps.ts): offered unless agent.yaml's gaps.note is
- * off, else refused as an action the turn did not offer is, counted toward no refusal; its question checked as a text
+ * off or the turn is unclear (noteGapNow), else refused as an action the turn did not offer is, counted toward no refusal; its question checked as a text
  * param; put to the gate as a lookup (audited with the question as agent.yaml's gaps.audit records it); then recorded,
  * with what the turn's lookups found so far and the journey the call is in (the audit's converse_gap_note, the trace's
  * Turn.gapNotes), and the model told only that it was recorded. Nothing is said by it.
@@ -859,8 +865,8 @@ async function runNoteGap(t: Turn, c: Extract<ModelEvent, { type: 'tool_call' }>
   const spec = noteGapSpec(b);
   const error = (content: string): void => void results.push({ type: 'tool_result', id: c.id, content, isError: true });
   const journey = t.st.journey !== undefined ? t.st.journey.active ?? 'root' : undefined;
-  if (!noteGapOffered(b)) {
-    const why = `Not run: "${NOTE_GAP}" is not available on this line.`;
+  if (!noteGapNow(t)) {
+    const why = noteGapOffered(b) ? `Not run: "${NOTE_GAP}" is not available now: the line could not follow what the caller said.` : `Not run: "${NOTE_GAP}" is not available on this line.`;
     await record(t, { type: 'converse_refused', detail: { action: NOTE_GAP, reason: 'not-offered', ...(journey !== undefined ? { journey } : {}) } });
     traceTool(t, spec, NOTE_GAP, c.args, 'refused', why);
     return error(why);
@@ -1049,7 +1055,7 @@ async function roundAsked(t: Turn, sp: Speaker, emptyOk: boolean, routeStop: Abo
   const stop = routeStop !== undefined && t.signal !== undefined ? AbortSignal.any([routeStop, t.signal]) : routeStop ?? t.signal;
   const b = t.deps.business;
   const looks = lookUpNow(t);
-  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear, looks), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t), looks ? lookUpSpec(b) : undefined, noteGapOffered(b) ? noteGapSpec(b) : undefined), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
+  const req: ModelRequest = { system: systemPrompt(b, t.st, t.deps.now(), t.unclear, looks), messages: requestMessages(t.st), tools: toolsOf(b, offeredNow(t), t.st.channel, transferNow(t), looks ? lookUpSpec(b) : undefined, noteGapNow(t) ? noteGapSpec(b) : undefined), maxTokens: b.model.maxTokens, ...(b.model.effort !== undefined ? { effort: b.model.effort } : {}) };
   const budget = b.model.timeoutMs;
   const start = Date.now();
   const deadline = start + budget;

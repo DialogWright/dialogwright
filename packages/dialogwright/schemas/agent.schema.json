@@ -1806,7 +1806,7 @@
       "properties": {
         "note": {
           "default": "on",
-          "description": "on: the runtime's own \"note_gap\" is offered to the agent model on every turn, to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).",
+          "description": "on: the runtime's own \"note_gap\" is offered to the agent model on every turn (never on an unclear one), to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).",
           "type": "string",
           "enum": [
             "on",

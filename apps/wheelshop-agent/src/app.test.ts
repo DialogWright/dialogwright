@@ -386,7 +386,7 @@ describe('journeys', () => {
     const c = converseTestCall(app, { model, jev: routingJev(), callerNumber: RETAIL, now: () => new Date(NOW), env: { SHOP_PHONE } });
     await c.start();
     expect(await c.say('mumble mumble')).toEqual(['We can price a wheel repair or take a callback note.']);
-    expect(toolNames(model)).toEqual(['note_gap', 'end_call']);
+    expect(toolNames(model)).toEqual(['end_call']);
     expect(await c.say('hmm hm')).toEqual(['We can price a wheel repair or take a callback note.']);
     const said = await c.say('uh huh');
     expect(said).toEqual(['Sorry, this chat can only help with a wheel repair or a callback. Get in touch any time.']);

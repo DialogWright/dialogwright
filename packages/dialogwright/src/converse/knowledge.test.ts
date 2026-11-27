@@ -320,7 +320,7 @@ describe('what the lookup adds around it', () => {
     ]);
   });
 
-  it('kb:gaps reads a gap note as a gap, by the topic the turn\'s lookup found, its note where kept and the caller\'s words; the turn\'s unanswered lookup is not counted again', () => {
+  it('kb:gaps reads a gap note as a gap, by the topic the turn\'s lookup found, its note where kept and the caller\'s words; the turn\'s unanswered lookup is not counted again, a withheld passage is', () => {
     const base = { v: 3, kind: 'converse', ts: `${TODAY}T15:00:00.000Z`, replies: [], tools: [], model: { id: 'm', ms: 0, firstTextMs: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null } };
     const records = [
       { ...base, sessionId: 'c-1', turnIndex: 1, said: 'Is steam all right on it?', lookUps: [{ question: '<25 chars>', retriever: 'keyword', candidates: [{ topic: 'care', score: 1 }], outcome: 'answered', topic: 'care', title: 'Caring', passage: { id: 'care-1' }, ms: 3 }],
@@ -337,6 +337,15 @@ describe('what the lookup adds around it', () => {
       expect.objectContaining({ kind: 'noted', topic: 'returns', near: 'keyword', words: 'Do you open on holidays?', sessionId: 'c-3' }),
     ]);
     expect(gaps[1]!.note).toBeUndefined();
+    // A passage withheld on a turn with a note is still a gap of its own, with its own fix (a person approves it again), beside the note.
+    const withheld = { ...base, sessionId: 'c-4', turnIndex: 1, said: 'Can I return it?', lookUps: [{ question: '<16 chars>', retriever: 'keyword', candidates: [{ topic: 'returns', score: 1 }], outcome: 'withheld', topic: 'returns', withheld: { why: 'stale', id: 'returns-1' }, ms: 3 }],
+      gapNotes: [{ question: '<26 chars>', lookUps: [{ outcome: 'withheld', topic: 'returns' }] }] };
+    const both = collectGaps(turnsOfLines([JSON.stringify(withheld)], 'trace.jsonl').turns, { topicSlots: new Set(), informational: new Set(), nearest: () => null }).gaps;
+    expect(both).toEqual([
+      expect.objectContaining({ kind: 'noted', topic: 'returns', near: 'passage', lookedUp: 'withheld', words: 'Can I return it?' }),
+      expect.objectContaining({ kind: 'unavailable', topic: 'returns', reason: 'stale', passage: { id: 'returns-1', document: null, section: null } }),
+    ]);
+    expect(converseFacts([withheld]).gaps).toEqual({ noted: 1, unavailable: 1 });
     // The console counts them where it counts unanswered lookups.
     expect(converseFacts([records[0]!]).gaps).toEqual({ noted: 1 });
     expect(converseFacts([records[2]!]).gapTopics).toEqual({ '~': expect.objectContaining({ n: 1 }) });
