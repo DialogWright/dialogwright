@@ -340,3 +340,19 @@ An agent app's answers to questions its `agent.yaml` does not answer can come fr
 # kb/kb.yaml (apps/wheelshop-agent)
 action: look_up
 ```
+
+## 18.16 Gap notes: what the business could not answer
+
+Only the agent model knows when what it had to answer from did not answer the caller: a lookup returned a passage that does not say ("is a touchless car wash all right after a refinish?" against an aftercare passage that speaks of hand washing), or the business information does not cover the question at all, with or without a knowledge base ("do you refinish brake calipers?"). So the runtime offers it a way to say so, for the business to review (decided 2026-11-27).
+
+- **The note.** `note_gap` is the runtime's own action, as `end_call`, `transfer_call` and `look_up` are (no business action takes the name). It is offered on every turn of every agent app, on a call and in a chat, at the root and in every journey, with or without `kb/`. Its one param, `question`, is the question the business could not answer, in general terms, without the caller's name or details. It is a lookup: through the gate with no rules, never read back or confirmed, audited and traced. Its description tells the model what it is for and what it is not: it is said to no one and passed on to no one during the call, so it is no callback, and a caller who wants an answer still needs a callback note or a person where the line can offer them. The prompt says nothing more of it.
+- **No extra round, nothing said.** The model calls it beside its reply. Where a round's only calls are `note_gap` and the round has words, the note is recorded and the turn ends as a round with no calls does: the model is not asked again for it (its result, "Recorded for the business to review.", is kept in the conversation for the next turn). With any other call beside it, or with no words, the round goes on as every round with calls does. Beside `end_call`, the model's words are the goodbye, as they are with `end_call` alone.
+- **What is recorded.** The question, as agent.yaml's `gaps.audit.question` says (one of the audit masks, by its length by default), what each of the turn's lookups before it found (its outcome, and the topic it read or the one nominated first), and the journey the call is in: the audit's gate row, its result and a `converse_gap_note` row, and the trace's `gapNotes`. The console's call view says it on the turn: "noted a gap: <the question as recorded>". The policy card lists it with the runtime's own actions.
+- **Turning it off.** `gaps: { note: off }` in agent.yaml: it is not offered, and one called anyway is refused as not offered and audited.
+- **kb:gaps.** `pnpm kb:gaps` ranks each note as a gap of its own kind (`noted`, "noted by the line"), grouped by the topic its turn's lookup read (or nominated first, or the nearest by keywords), with the note where it was recorded whole and the caller's words of the turn, and the fix: the passage of the topic that came near, a new topic and passage, or a line in agent.yaml's business information. A turn with a note does not count its unanswered lookups again. It reads an agent app with no `kb/` too. The console's Insights and Knowledge pages count them where they count unanswered lookups.
+
+```yaml
+# agent.yaml (apps/wheelshop-agent): the owner reviews the summary, and the caller's own words are in the trace already
+gaps:
+  audit: { question: keep }
+```
