@@ -353,7 +353,7 @@ describe('the model\'s request', () => {
     expect(req.messages[0]!.content).toEqual([{ type: 'text', text: '[The call is connected.]' }]);
     expect(s.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant']);
     // notify only follows book (its `then`): the model is never offered it.
-    expect(req.tools.map((t) => t.name)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'note_gap', 'end_call']);
+    expect(req.tools.map((t) => t.name)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'unanswered_question', 'end_call']);
     expect(req.maxTokens).toBe(400);
   });
 });
@@ -2330,7 +2330,7 @@ describe('journeys', () => {
     expect(h.traces[1]!.route!.ms).toBeGreaterThanOrEqual(0);
     expect(h.traces[1]!.route!.timedOut).toBeUndefined();
     // The model's request: only the visit's actions, and the visit's goal in its prompt.
-    expect(toolNames(h)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
     expect(h.model.requests.at(-1)!.system).toContain(h.deps.business.journeys!.visit!.goal);
     expect(h.said.at(-1)).toEqual(['Which day suits you?', true]);
     expect(neverSaid(h)).toBe(true);
@@ -2360,7 +2360,7 @@ describe('journeys', () => {
     expect(h.traces.at(-1)!.route).toBeUndefined();
     expect(h.traces.at(-1)!.journeyEnded).toEqual({ journey: 'visit', how: 'done' });
     // The reply after the yes is asked in the finished journey: its lookups only, no change.
-    expect(toolNames(h)).toEqual(['check_availability', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['check_availability', 'unanswered_question', 'end_call']);
     expect(h.said.at(-1)).toEqual(['You are booked.', true]);
     // The next turn is routed again, and the finished journey asks `again`.
     s = await h.run(s, { kind: 'text', text: 'when should I come by?' });
@@ -2483,7 +2483,7 @@ describe('journeys', () => {
     expect(asks[1]!.state).toMatchObject({ said: 'no, actually, just have someone call me', lastReply: READ_BACK, active: h.deps.business.journeys!.visit!.when });
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'note', outcome: 'switch', task: NOTE, drops: 0.2 });
     expect(s.journey).toEqual({ active: 'note', phase: 'working', paused: 'visit', done: [] });
-    expect(toolNames(h)).toEqual(['callback', 'leave_note', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['callback', 'leave_note', 'unanswered_question', 'end_call']);
     expect(lastMessage(h)).toContain(`Read back to the caller: \\"${READ_BACK}\\"`);
     expect(lastMessage(h)).toContain('The caller did not confirm');
     expect(h.said.at(-1)).toEqual(['I can leave a note for a call back.', true]);
@@ -2558,12 +2558,12 @@ describe('journeys', () => {
     s = await h.run(s, { kind: 'text', text: 'I would like to bring my kettle in' });
     s = await h.run(s, { kind: 'text', text: 'actually, can someone call me back first?' });
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'note', outcome: 'switch' });
-    expect(toolNames(h)).toEqual(['callback', 'leave_note', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['callback', 'leave_note', 'unanswered_question', 'end_call']);
     expect(h.model.requests.at(-1)!.system).toContain(`Set aside earlier on this call: ${h.deps.business.journeys!.visit!.when}`);
     s = await h.run(s, { kind: 'text', text: 'never mind that, back to the visit' });
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'note', to: 'visit', outcome: 'return' });
     expect(s.journey).toEqual({ active: 'visit', phase: 'working', paused: 'note', done: [] });
-    expect(toolNames(h)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
     // The whole conversation goes with the resumed journey: what the caller gave for it is still there.
     expect(JSON.stringify(h.model.requests.at(-1)!.messages)).toContain('I would like to bring my kettle in');
     expect(h.said.at(-1)).toEqual(['Back to your kettle: which day suits you?', true]);
@@ -2577,7 +2577,7 @@ describe('journeys', () => {
     expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', task: null });
     expect(h.traces.at(-1)!.route!.timedOut).toBeUndefined();
     expect(s.journey?.active).toBe('visit');
-    expect(toolNames(h)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
     expect(h.said.at(-1)).toEqual(['Friday is open.', true]);
     expect(s.failures).toBe(0);
   });
@@ -2589,7 +2589,7 @@ describe('journeys', () => {
     expect(h.traces.at(-1)!.route).toMatchObject({ from: null, to: null, outcome: 'carry', task: null, timedOut: true });
     expect(s.journey).toEqual({ active: null, phase: 'working', paused: null, done: [] });
     // At the root: no action but end_call.
-    expect(toolNames(h)).toEqual(['note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['unanswered_question', 'end_call']);
     expect(h.said.at(-1)).toEqual(['We mend lamps, kettles and clocks.', true]);
   });
 
@@ -2740,7 +2740,7 @@ describe('journeys', () => {
       await pause(20);
       // The model has begun, with the journey as it stands, and nothing of it is said while the route is not known.
       expect(model.requests).toHaveLength(3);
-      expect(toolNames(h)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+      expect(toolNames(h)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
       expect(h.said.length).toBe(before);
       route.open();
       await pause(5);
@@ -2777,8 +2777,8 @@ describe('journeys', () => {
       expect(h.said.slice(1)).toEqual([['Which day suits you?', true]]);
       expect(model.requests).toHaveLength(2);
       expect(model.aborted).toBe(1);
-      expect(toolNames(h, 0)).toEqual(['note_gap', 'end_call']);
-      expect(toolNames(h, 1)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+      expect(toolNames(h, 0)).toEqual(['unanswered_question', 'end_call']);
+      expect(toolNames(h, 1)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
       expect(model.requests[1]!.system).toContain(h.deps.business.journeys!.visit!.goal);
       expect(model.requests[1]!.messages).toEqual(model.requests[0]!.messages);
       const r = h.traces.at(-1)!;
@@ -2868,7 +2868,7 @@ describe('journeys', () => {
       const r = h.traces.at(-1)!;
       expect(r.tools).toEqual([]);
       expect(r.route).toMatchObject({ from: 'visit', to: 'note', outcome: 'switch', restarted: true });
-      expect(toolNames(h)).toEqual(['callback', 'leave_note', 'note_gap', 'end_call']);
+      expect(toolNames(h)).toEqual(['callback', 'leave_note', 'unanswered_question', 'end_call']);
       expect(JSON.stringify(s.messages)).not.toContain('check_availability');
       expect(s.seen).toEqual({});
       expect(h.said.at(-1)).toEqual(['What number should we call?', true]);
@@ -2926,15 +2926,15 @@ describe('journeys', () => {
     const OFF = { visit: 0.9, note: 0.05, none: 0.05 };
     const root = { active: null, phase: 'working', paused: null, done: [] };
 
-    it('does not offer note_gap on an unclear turn: its words are no question the business could not answer; one called anyway is refused as not offered and nothing is noted', async () => {
-      const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), call('g1', 'note_gap', { question: 'Something garbled' }), done('tool')], [text('We can book a visit or arrange a call back.'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }]) });
+    it('does not offer unanswered_question on an unclear turn: its words are no question the business could not answer; one called anyway is refused as not offered and nothing is noted', async () => {
+      const h = harness([DROPPED, [text('We can book a visit or arrange a call back.'), call('g1', 'unanswered_question', { question: 'Something garbled' }), done('tool')], [text('We can book a visit or arrange a call back.'), done()]], { edit: withLine, jev: routeJev([{ task: NONE }]) });
       let s = await h.run(fresh(), { kind: 'start' });
       s = await h.run(s, { kind: 'text', text: '555 0112, Thursday' });
       // The first round, asked before the route was known, offered it; the unclear turn's round does not.
-      expect(toolNames(h, 0)).toEqual(['note_gap', 'end_call']);
+      expect(toolNames(h, 0)).toEqual(['unanswered_question', 'end_call']);
       expect(toolNames(h, 1)).toEqual(['end_call']);
-      expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'note_gap', outcome: 'refused' })]);
-      expect(h.rows.some((r) => r.type === 'converse_refused' && r.detail.action === 'note_gap' && r.detail.reason === 'not-offered')).toBe(true);
+      expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'unanswered_question', outcome: 'refused' })]);
+      expect(h.rows.some((r) => r.type === 'converse_refused' && r.detail.action === 'unanswered_question' && r.detail.reason === 'not-offered')).toBe(true);
       expect(h.rows.some((r) => r.type === 'converse_gap_note')).toBe(false);
       expect(h.traces.at(-1)!.gapNotes).toBeUndefined();
     });
@@ -2978,7 +2978,7 @@ describe('journeys', () => {
       expect(h.model.requests.at(-1)!.system).toContain(`Other things this line can help with:\n- ${h.deps.business.journeys!.note!.when}`);
       s = await h.run(s, { kind: 'text', text: 'my brother had one of those, he lives out past the lake now' });
       expect(h.traces.at(-1)!.route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', unclear: 1, restarted: true, fits: 0.1, drops: 0.05 });
-      expect(toolNames(h, 2)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+      expect(toolNames(h, 2)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
       for (const i of [3, 4]) {
         expect(toolNames(h, i)).toEqual(['check_availability', 'end_call']);
         expect(h.model.requests[i]!.system).toMatch(/what you need from them now/);
@@ -3058,7 +3058,7 @@ describe('journeys', () => {
       expect(h.rows.filter((r) => r.type === 'converse_refused')).toEqual([]);
       expect(s.pending).toMatchObject({ action: 'book', id: 'c3', params: { slot: SLOT, item: 'kettle' } });
       expect(h.said.slice(-2)).toEqual([['Sorry about that.', false], [KETTLE, true]]);
-      expect(toolNames(h)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+      expect(toolNames(h)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
       const route = h.traces.at(-1)!.route!;
       expect(route).toMatchObject({ from: 'visit', to: 'visit', outcome: 'carry', fits: 0.1 });
       expect(route.unclear).toBeUndefined();
@@ -3143,16 +3143,16 @@ describe('journeys', () => {
     expect(h.jev.asked.map((r) => Object.keys(r.questions).join(',')).sort()).toEqual(['confirmsYes,confirmsNo,saysChange,withdraws', 'wrappingUp']);
     expect(h.traces.every((r) => r.route === undefined && r.journeyEnded === undefined)).toBe(true);
     expect(s.journey).toBeUndefined();
-    expect(toolNames(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'note_gap', 'end_call']);
+    expect(toolNames(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'unanswered_question', 'end_call']);
   });
 
-  it('note_gap is offered at the root and in a journey, its note recording the journey the call is in', async () => {
-    const h = harness([DROPPED, [text('We do not mend brass, I am afraid.'), call('g1', 'note_gap', { question: 'Whether brass is mended' }), done('tool')]], { edit: withJourneys, jev: routeJev([{ task: VISIT }]) });
+  it('unanswered_question is offered at the root and in a journey, its note recording the journey the call is in', async () => {
+    const h = harness([DROPPED, [text('We do not mend brass, I am afraid.'), call('g1', 'unanswered_question', { question: 'Whether brass is mended' }), done('tool')]], { edit: withJourneys, jev: routeJev([{ task: VISIT }]) });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'I want to bring a brass lamp in, do you mend brass?' });
     // The first round, asked at the root before the route was known, and the round in the visit.
-    expect(toolNames(h, 0)).toContain('note_gap');
-    expect(toolNames(h)).toEqual(['check_availability', 'book', 'note_gap', 'end_call']);
+    expect(toolNames(h, 0)).toContain('unanswered_question');
+    expect(toolNames(h)).toEqual(['check_availability', 'book', 'unanswered_question', 'end_call']);
     expect(h.model.requests).toHaveLength(2);
     expect(h.traces.at(-1)!.gapNotes).toEqual([{ question: '<23 chars>', lookUps: [], journey: 'visit' }]);
     expect(h.rows.find((r) => r.type === 'converse_gap_note')!.detail).toEqual({ question: '<23 chars>', lookUps: [], journey: 'visit' });
@@ -4491,11 +4491,11 @@ describe('agent.yaml: transfer.whenClosed and lines.transfer', () => {
 });
 
 /**
- * The runtime's own note of a question the business could not answer (note_gap, decided 2026-11-27): offered on every
+ * The runtime's own note of a question the business could not answer (unanswered_question, decided 2026-11-27): offered on every
  * turn unless agent.yaml turns it off, put to the gate and recorded, its question by its length by default, and, written
  * beside a reply with nothing else called, no second round of the model for it.
  */
-describe('note_gap', () => {
+describe('unanswered_question', () => {
   const OFF = 'checks:\n  claims: { mode: off }\n';
   const plain = (t: string): string => `${t}${OFF}`;
   const QUESTION = 'Whether brass items are mended';
@@ -4507,42 +4507,42 @@ describe('note_gap', () => {
     const h = harness([[text('Sure.'), done()], [text('Sure.'), done()]], { edit: plain });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'hi' });
-    expect(names(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'note_gap', 'end_call']);
+    expect(names(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'unanswered_question', 'end_call']);
     let c = await h.run(chat(), { kind: 'start' });
     c = await h.run(c, { kind: 'text', text: 'hi' });
-    expect(names(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'note_gap', 'end_call']);
-    expect(policyOf(h.deps.business).source.actions).toHaveProperty('note_gap');
+    expect(names(h)).toEqual(['check_availability', 'book', 'callback', 'leave_note', 'unanswered_question', 'end_call']);
+    expect(policyOf(h.deps.business).source.actions).toHaveProperty('unanswered_question');
   });
 
   it('is not offered, nor in the gate, where agent.yaml says gaps: { note: off }; one called anyway is refused as not offered', async () => {
-    const h = harness([[text(REPLY), call('g1', 'note_gap', { question: QUESTION }), done('tool')], [text(REPLY), done()]], { edit: (t) => `${plain(t)}gaps:\n  note: off\n` });
+    const h = harness([[text(REPLY), call('g1', 'unanswered_question', { question: QUESTION }), done('tool')], [text(REPLY), done()]], { edit: (t) => `${plain(t)}gaps:\n  note: off\n` });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'Do you mend brass?' });
-    expect(names(h, 0)).not.toContain('note_gap');
-    expect(policyOf(h.deps.business).source.actions).not.toHaveProperty('note_gap');
-    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'note_gap', outcome: 'refused' })]);
-    expect(h.rows.some((r) => r.type === 'converse_refused' && r.detail.action === 'note_gap' && r.detail.reason === 'not-offered')).toBe(true);
+    expect(names(h, 0)).not.toContain('unanswered_question');
+    expect(policyOf(h.deps.business).source.actions).not.toHaveProperty('unanswered_question');
+    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'unanswered_question', outcome: 'refused' })]);
+    expect(h.rows.some((r) => r.type === 'converse_refused' && r.detail.action === 'unanswered_question' && r.detail.reason === 'not-offered')).toBe(true);
     expect(h.traces.at(-1)!.gapNotes).toBeUndefined();
   });
 
   it('written beside a reply and nothing else: recorded, audited and traced, the reply said as written, and no second round', async () => {
-    const h = harness([[text(REPLY), call('g1', 'note_gap', { question: QUESTION }), done('tool')], [text('You are welcome.'), done()]], { edit: plain });
+    const h = harness([[text(REPLY), call('g1', 'unanswered_question', { question: QUESTION }), done('tool')], [text('You are welcome.'), done()]], { edit: plain });
     let s = await h.run(fresh(), { kind: 'start' });
     s = await h.run(s, { kind: 'text', text: 'Do you mend brass candlesticks? Mine is from my aunt.' });
     expect(h.model.requests).toHaveLength(1);
     expect(h.said.slice(-2)).toEqual([['I am not sure we mend brass. ', false], ['I can have someone call you back about it.', true]]);
     const masked = `<${QUESTION.length} chars>`;
-    expect(h.rows.find((r) => r.type === 'gate' && r.detail.tool === 'note_gap')!.detail).toMatchObject({ verdict: 'ALLOW', call: `note_gap(question=${masked})` });
-    expect(h.rows.find((r) => r.type === 'tool_result' && r.detail.tool === 'note_gap')!.detail).toMatchObject({ ok: true });
+    expect(h.rows.find((r) => r.type === 'gate' && r.detail.tool === 'unanswered_question')!.detail).toMatchObject({ verdict: 'ALLOW', call: `unanswered_question(question=${masked})` });
+    expect(h.rows.find((r) => r.type === 'tool_result' && r.detail.tool === 'unanswered_question')!.detail).toMatchObject({ ok: true });
     expect(h.rows.find((r) => r.type === 'converse_gap_note')!.detail).toEqual({ question: masked, lookUps: [] });
     expect(JSON.stringify(h.rows)).not.toContain(QUESTION);
     const turn = h.traces.at(-1)!;
-    expect(turn.tools).toEqual([{ name: 'note_gap', args: { question: masked }, outcome: 'ran' }]);
+    expect(turn.tools).toEqual([{ name: 'unanswered_question', args: { question: masked }, outcome: 'ran' }]);
     expect(turn.gapNotes).toEqual([{ question: masked, lookUps: [] }]);
     expect(turn.replies).toEqual([REPLY]);
     // The call and its result are in the conversation, so the next request is whole: the caller's words follow the result.
     expect(s.messages.slice(-2)).toEqual([
-      { role: 'assistant', content: [{ type: 'text', text: REPLY }, { type: 'tool_call', id: 'g1', name: 'note_gap', args: { question: QUESTION } }] },
+      { role: 'assistant', content: [{ type: 'text', text: REPLY }, { type: 'tool_call', id: 'g1', name: 'unanswered_question', args: { question: QUESTION } }] },
       { role: 'user', content: [{ type: 'tool_result', id: 'g1', content: 'Recorded for the business to review.' }] },
     ]);
     s = await h.run(s, { kind: 'text', text: 'OK, thanks.' });
@@ -4551,25 +4551,25 @@ describe('note_gap', () => {
   });
 
   it('records the question whole where agent.yaml says gaps.audit.question: keep', async () => {
-    const h = harness([[text(REPLY), call('g1', 'note_gap', { question: QUESTION }), done('tool')]], { edit: (t) => `${plain(t)}gaps:\n  audit: { question: keep }\n` });
+    const h = harness([[text(REPLY), call('g1', 'unanswered_question', { question: QUESTION }), done('tool')]], { edit: (t) => `${plain(t)}gaps:\n  audit: { question: keep }\n` });
     const s = await h.run(fresh(), { kind: 'start' });
     await h.run(s, { kind: 'text', text: 'Do you mend brass?' });
     expect(h.traces.at(-1)!.gapNotes).toEqual([{ question: QUESTION, lookUps: [] }]);
-    expect(h.rows.find((r) => r.type === 'gate' && r.detail.tool === 'note_gap')!.detail.call).toBe(`note_gap(question=${QUESTION})`);
+    expect(h.rows.find((r) => r.type === 'gate' && r.detail.tool === 'unanswered_question')!.detail.call).toBe(`unanswered_question(question=${QUESTION})`);
   });
 
   it('beside another call, the round goes on: the model is asked again with the results', async () => {
-    const h = harness([[text('Let me check.'), call('c1', 'check_availability', { day: FRIDAY }), call('g1', 'note_gap', { question: QUESTION }), done('tool')], [text('Friday morning is free.'), done()]], { edit: plain });
+    const h = harness([[text('Let me check.'), call('c1', 'check_availability', { day: FRIDAY }), call('g1', 'unanswered_question', { question: QUESTION }), done('tool')], [text('Friday morning is free.'), done()]], { edit: plain });
     const s = await h.run(fresh(), { kind: 'start' });
     await h.run(s, { kind: 'text', text: 'Can I come Friday, and do you mend brass?' });
     expect(h.model.requests).toHaveLength(2);
-    expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['check_availability:ran', 'note_gap:ran']);
+    expect(h.traces.at(-1)!.tools.map((t) => `${t.name}:${t.outcome}`)).toEqual(['check_availability:ran', 'unanswered_question:ran']);
     expect(h.traces.at(-1)!.gapNotes).toHaveLength(1);
     expect(h.said.at(-1)).toEqual(['Friday morning is free.', true]);
   });
 
   it('with no words beside it, the round goes on: the model is asked again for its reply', async () => {
-    const h = harness([[call('g1', 'note_gap', { question: QUESTION }), done('tool')], [text(REPLY), done()]], { edit: plain });
+    const h = harness([[call('g1', 'unanswered_question', { question: QUESTION }), done('tool')], [text(REPLY), done()]], { edit: plain });
     const s = await h.run(fresh(), { kind: 'start' });
     await h.run(s, { kind: 'text', text: 'Do you mend brass?' });
     expect(h.model.requests).toHaveLength(2);
@@ -4579,7 +4579,7 @@ describe('note_gap', () => {
 
   it('beside end_call, after it or before it, the model\'s words are the goodbye and the note is recorded', async () => {
     for (const order of [['e', 'g'], ['g', 'e']] as const) {
-      const calls = order.map((x) => (x === 'e' ? call('e1', 'end_call', {}) : call('g1', 'note_gap', { question: QUESTION })));
+      const calls = order.map((x) => (x === 'e' ? call('e1', 'end_call', {}) : call('g1', 'unanswered_question', { question: QUESTION })));
       const h = harness([[text('We cannot say, sorry. Goodbye.'), ...calls, done('tool')]], { edit: plain });
       const s = await h.run(fresh(), { kind: 'start' });
       const after = await h.run(s, { kind: 'text', text: 'Do you mend brass? That is all.' });
@@ -4592,10 +4592,10 @@ describe('note_gap', () => {
   });
 
   it('refuses a question that is no text, or too long, as any action\'s param is', async () => {
-    const h = harness([[text(REPLY), call('g1', 'note_gap', { question: 'x'.repeat(301) }), done('tool')], [text(REPLY), done()]], { edit: plain });
+    const h = harness([[text(REPLY), call('g1', 'unanswered_question', { question: 'x'.repeat(301) }), done('tool')], [text(REPLY), done()]], { edit: plain });
     const s = await h.run(fresh(), { kind: 'start' });
     await h.run(s, { kind: 'text', text: 'Do you mend brass?' });
-    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'note_gap', outcome: 'invalid' })]);
+    expect(h.traces.at(-1)!.tools).toEqual([expect.objectContaining({ name: 'unanswered_question', outcome: 'invalid' })]);
     expect(h.traces.at(-1)!.gapNotes).toBeUndefined();
   });
 });
@@ -4609,9 +4609,9 @@ describe('agent.yaml: gaps', () => {
     expect(yaml('gaps: { note: maybe }\n').problems.map((p) => p.path)).toContain('gaps.note');
     expect(yaml('gaps: { audit: { question: whole } }\n').problems.map((p) => p.path)).toContain('gaps.audit.question');
   });
-  it('refuses an action named note_gap: it is the runtime\'s own', () => {
-    const r = agentBusinessProblems(BUSINESS.replace('actions:\n', 'actions:\n  note_gap:\n    about: Something else.\n    kind: lookup\n    params: {}\n'));
+  it('refuses an action named unanswered_question: it is the runtime\'s own', () => {
+    const r = agentBusinessProblems(BUSINESS.replace('actions:\n', 'actions:\n  unanswered_question:\n    about: Something else.\n    kind: lookup\n    params: {}\n'));
     expect(r.value).toBeUndefined();
-    expect(r.problems.map((p) => p.message)).toContain('"note_gap" is the runtime\'s own action');
+    expect(r.problems.map((p) => p.message)).toContain('"unanswered_question" is the runtime\'s own action');
   });
 });

@@ -135,7 +135,7 @@ export interface ConverseTraceRecord {
    */
   lookUps?: LookUpRecord[];
   /**
-   * Each question the business could not answer that the agent model noted this turn (the runtime's note_gap,
+   * Each question the business could not answer that the agent model noted this turn (the runtime's unanswered_question,
    * converse/gaps.ts): the question as agent.yaml's gaps.audit records it (by its length by default), what each of the
    * turn's lookups before it found (its outcome and topic), and the journey the call was in. Absent: none.
    */

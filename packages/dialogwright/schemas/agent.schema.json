@@ -1801,12 +1801,12 @@
       "default": {
         "note": "on"
       },
-      "description": "The questions the business could not answer, noted by the agent model with the runtime's own \"note_gap\" for the business to review (chapter 18 of the guide). Absent: offered on every turn, the question recorded by its length.",
+      "description": "The questions the business could not answer, noted by the agent model with the runtime's own \"unanswered_question\" for the business to review (chapter 18 of the guide). Absent: offered on every turn, the question recorded by its length.",
       "type": "object",
       "properties": {
         "note": {
           "default": "on",
-          "description": "on: the runtime's own \"note_gap\" is offered to the agent model on every turn (never on an unclear one), to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).",
+          "description": "on: the runtime's own \"unanswered_question\" is offered to the agent model on every turn (never on an unclear one), to record a question the caller asked that neither the business information nor a lookup on the call answered, for the business to review (kb:gaps); it is said to no one and passed on to no one. off: it is not offered. Default: on (decided 2026-11-27).",
           "type": "string",
           "enum": [
             "on",
@@ -1814,7 +1814,7 @@
           ]
         },
         "audit": {
-          "description": "How \"note_gap\"'s one param, the question in general terms, is recorded in the trace and the audit. Default: by its length (length).",
+          "description": "How \"unanswered_question\"'s one param, the question in general terms, is recorded in the trace and the audit. Default: by its length (length).",
           "type": "object",
           "properties": {
             "question": {

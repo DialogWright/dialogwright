@@ -5,8 +5,8 @@ import type { RuleEntryYaml } from '../define/schema/policy';
 import { compileGate, TABLE_RULE_ID, type CompiledPolicy, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import type { Anonymous, GateLookups } from '../gate/types';
 import { AGENT_FILE, AgentBusinessError } from './business/load';
-import { LOOK_UP, NOTE_GAP, type ActionSpec, type AgentBusiness } from './business/schema';
-import { noteGapOffered, noteGapSpec } from './gaps';
+import { LOOK_UP, UNANSWERED_QUESTION, type ActionSpec, type AgentBusiness } from './business/schema';
+import { unansweredQuestionOffered, unansweredQuestionSpec } from './gaps';
 import { lookUpSpec } from './knowledge';
 
 /**
@@ -83,7 +83,7 @@ function problemsOf(b: AgentBusiness): Problem[] {
  * action does not have, a confirmed or custom rule written in the file, a choice param with no options
  * and options on a param that is no choice. `o.lookUp`: the app has a knowledge base (a kb/ folder), so the
  * runtime's own lookup (look_up, converse/knowledge.ts) is in the gate too, as a lookup with no rules; and the runtime's
- * note_gap (converse/gaps.ts) is, as one, unless agent.yaml's gaps.note is off.
+ * unanswered_question (converse/gaps.ts) is, as one, unless agent.yaml's gaps.note is off.
  */
 export function policyOf(b: AgentBusiness, o: { lookUp?: boolean } = {}): CompiledPolicy {
   const problems = problemsOf(b);
@@ -93,10 +93,10 @@ export function policyOf(b: AgentBusiness, o: { lookUp?: boolean } = {}): Compil
 
 /**
  * The business's actions, with the lookup where the app has a knowledge base, and the runtime's note of a question the
- * business could not answer (note_gap) unless agent.yaml's gaps.note is off: what the gate is compiled from.
+ * business could not answer (unanswered_question) unless agent.yaml's gaps.note is off: what the gate is compiled from.
  */
 export function gatedActions(b: AgentBusiness, o: { lookUp?: boolean } = {}): Record<string, ActionSpec> {
-  return { ...b.actions, ...(o.lookUp === true ? { [LOOK_UP]: lookUpSpec(b) } : {}), ...(noteGapOffered(b) ? { [NOTE_GAP]: noteGapSpec(b) } : {}) };
+  return { ...b.actions, ...(o.lookUp === true ? { [LOOK_UP]: lookUpSpec(b) } : {}), ...(unansweredQuestionOffered(b) ? { [UNANSWERED_QUESTION]: unansweredQuestionSpec(b) } : {}) };
 }
 
 function compiledOf(all: Record<string, ActionSpec>): CompiledPolicy {

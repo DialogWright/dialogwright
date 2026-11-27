@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { ConverseModel, ModelTool } from '../converse/model/types';
 import type { ModelRequestTime } from '../converse/trace';
 import type { AuditEntry } from '../audit/types';
-import { LOOK_UP, NOTE_GAP } from '../converse/business/schema';
+import { LOOK_UP, UNANSWERED_QUESTION } from '../converse/business/schema';
 import type { KnowledgeBase } from '../kb/types';
 import type { Budget } from './budget';
 import type { SimCall } from './chatDriver';
@@ -228,10 +228,12 @@ export function judgeInput(businessText: string, p: Persona, call: SimCall, acti
   const truth = Object.entries(p.truth).map(([k, v]) => `- ${k}: ${v}`).join('\n');
   // A line turn the caller cut in on (the voice path) ends where they spoke over it: marked, its unheard words never shown.
   const transcript = call.turns.map((t) => `${t.who === 'caller' ? 'Caller' : 'Line'}: ${t.text}${t.cut === true ? CUT_IN_MARK : ''}`).join('\n');
-  // A note of a question the business could not answer (an agent app's note_gap) is what the line recorded for the
+  // A note of a question the business could not answer (an agent app's unanswered_question) is what the line recorded for the
   // business, said to no one: listed apart, as no action the caller was told of.
-  const notes = actions.filter((a) => a.tool === NOTE_GAP);
-  const gated = actions.filter((a) => a.tool !== NOTE_GAP);
+  // (Calls recorded before the rename of 2026-11-27 name it note_gap.)
+  const isNote = (a: AuditedAction): boolean => a.tool === UNANSWERED_QUESTION || a.tool === 'note_gap';
+  const notes = actions.filter(isNote);
+  const gated = actions.filter((a) => !isNote(a));
   const acts = gated.length === 0 ? '(none)' : gated.map((a) => `- ${a.tool}(${Object.entries(a.params).map(([k, v]) => `${k}=${v}`).join(', ')}): ${a.verdict}${a.reason ? ` (${a.reason})` : ''}${a.result !== undefined ? `; result: ${a.result}` : a.verdict === 'ALLOW' ? '; no result recorded' : ''}`).join('\n');
   const how = call.callerEnded;
   const ending = how === undefined ? [] : how.how === 'empty' ? ["The caller's model gave no reply twice; the call ended there (a fault of the simulation, not of the line)."] : [`The caller hung up${how.goodbye !== undefined ? `, saying: '${how.goodbye}' (the goodbye was not sent to the line)` : ''}.`];

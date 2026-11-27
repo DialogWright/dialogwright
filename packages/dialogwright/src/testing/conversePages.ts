@@ -1,7 +1,7 @@
 import { converseAppPolicy, type ConverseApp } from '../converse/app';
 import type { ActionSpec, AgentBusiness } from '../converse/business/schema';
-import { END_CALL, LOOK_UP, NOTE_GAP, TEXT_MAX, TRANSFER_CALL, TRANSFER_LINE } from '../converse/business/schema';
-import { GAP_QUESTION_PARAM, noteGapOffered, noteGapSpec } from '../converse/gaps';
+import { END_CALL, LOOK_UP, UNANSWERED_QUESTION, TEXT_MAX, TRANSFER_CALL, TRANSFER_LINE } from '../converse/business/schema';
+import { GAP_QUESTION_PARAM, unansweredQuestionOffered, unansweredQuestionSpec } from '../converse/gaps';
 import { LOOK_UP_AT, lookUpSpec, QUESTION_PARAM } from '../converse/knowledge';
 import { hasJourneys } from '../converse/journeys';
 import { confirmedFields, CALLER, gatedActions, NO_LOOKUPS } from '../converse/policy';
@@ -289,12 +289,12 @@ function knowledgeCardLines(app: ConverseApp): string[] {
 }
 
 /**
- * What the card says of the runtime's note_gap (decided 2026-11-27): offered on every turn but an unclear one, what it records and how its
+ * What the card says of the runtime's unanswered_question (decided 2026-11-27): offered on every turn but an unclear one, what it records and how its
  * question is recorded, that nothing is said or passed on by it, and that it takes no round of its own; or that it is off.
  */
-function noteGapCardLine(b: AgentBusiness): string {
-  if (!noteGapOffered(b)) return `- ${code(NOTE_GAP)}, the runtime's note of a question the business could not answer, is off (\`gaps.note\`: off): it is not offered, and one called anyway is refused as not offered and audited.`;
-  return `- ${code(NOTE_GAP)} is the runtime's own action, offered to the agent model on every turn, on a call and in a chat, in every journey and at the root (\`gaps.note\`: on)${hasJourneys(b) ? ', but never on an unclear turn, whose words are no question the business could not answer' : ''}: it records a question the caller asked that neither the business information nor a lookup on the call answered in full, for the business to review (\`pnpm kb:gaps\` and the console), and changes nothing. It is a lookup, open to every caller, with no rules and never confirmed. Its one param, ${code(GAP_QUESTION_PARAM)}, the question in general terms, is recorded ${recordedWords(noteGapSpec(b), GAP_QUESTION_PARAM)} (\`gaps.audit\`), with what each of the turn's lookups found (its outcome and topic) and the journey the call is in (audited as \`converse_gap_note\`, and in the trace). Nothing is said by it and nothing of it is passed on during the call: it is no callback. Written beside a reply with nothing else called, the agent model is not asked again for it; the agent model is told only that it was recorded.`;
+function unansweredQuestionCardLine(b: AgentBusiness): string {
+  if (!unansweredQuestionOffered(b)) return `- ${code(UNANSWERED_QUESTION)}, the runtime's note of a question the business could not answer, is off (\`gaps.note\`: off): it is not offered, and one called anyway is refused as not offered and audited.`;
+  return `- ${code(UNANSWERED_QUESTION)} is the runtime's own action, offered to the agent model on every turn, on a call and in a chat, in every journey and at the root (\`gaps.note\`: on)${hasJourneys(b) ? ', but never on an unclear turn, whose words are no question the business could not answer' : ''}: it records a question the caller asked that neither the business information nor a lookup on the call answered in full, for the business to review (\`pnpm kb:gaps\` and the console), and changes nothing. It is a lookup, open to every caller, with no rules and never confirmed. Its one param, ${code(GAP_QUESTION_PARAM)}, the question in general terms, is recorded ${recordedWords(unansweredQuestionSpec(b), GAP_QUESTION_PARAM)} (\`gaps.audit\`), with what each of the turn's lookups found (its outcome and topic) and the journey the call is in (audited as \`converse_gap_note\`, and in the trace). Nothing is said by it and nothing of it is passed on during the call: it is no callback. Written beside a reply with nothing else called, the agent model is not asked again for it; the agent model is told only that it was recorded.`;
 }
 
 /** A line's own words in the web chat, where it has them (agent.yaml's `chat` on a line), after its words on a call. */
@@ -398,7 +398,7 @@ export function conversePolicyCardText(app: ConverseApp): string {
     silenceCardLine(b),
     `- ${code(END_CALL)} is the runtime's own action, offered to the model on every call: it ends the call on the model's own goodbye (the closing line where the model writes none), and changes nothing. The first ${code(END_CALL)} after a read-back the caller did not confirm (turned down, spoken over or not read) is refused and audited, and the call goes on: a goodbye written with it has been said, and the agent model is told the change was never done and to ask whether the caller still wants it, unless they have said they do not. Any later ${code(END_CALL)} in that turn is refused too, and the caller's next turn decides: there, the next ${code(END_CALL)} ends the call. No change is kept where the decision model reads that the caller withdrew it (in their answer to the read-back, or on a later turn), or once the journey no longer offers its action.`,
     ...transferCardLines(b),
-    noteGapCardLine(b),
+    unansweredQuestionCardLine(b),
     '',
     '## What a model is sent and what is recorded',
     '',
@@ -490,7 +490,7 @@ export function converseAppMapText(app: ConverseApp): string {
   lines.push(`  ${nodeId('a', END_CALL)}(${mermaidLabel(END_CALL, 'ends the call')})`);
   if (b.transfer !== undefined) lines.push(`  ${nodeId('a', TRANSFER_CALL)}(${mermaidLabel(TRANSFER_CALL, 'puts the call through to a person')})`);
   if (app.knowledge !== undefined) lines.push(`  ${nodeId('a', LOOK_UP)}(${mermaidLabel(LOOK_UP, 'looks a question up in the knowledge base')})`);
-  if (noteGapOffered(b)) lines.push(`  ${nodeId('a', NOTE_GAP)}(${mermaidLabel(NOTE_GAP, 'records a question the business could not answer')})`);
+  if (unansweredQuestionOffered(b)) lines.push(`  ${nodeId('a', UNANSWERED_QUESTION)}(${mermaidLabel(UNANSWERED_QUESTION, 'records a question the business could not answer')})`);
   for (const [name, spec] of Object.entries(b.actions)) {
     for (const [p, s] of Object.entries(spec.params)) if (s.type === 'slot' && s.from !== undefined && names.includes(s.from)) lines.push(`  ${nodeId('a', s.from)} -->|${mermaidLabel(p).slice(1, -1)}| ${nodeId('a', name)}`);
     for (const t of spec.then ?? []) lines.push(`  ${nodeId('a', name)} ==>|"then, after the yes"| ${nodeId('a', t)}`);

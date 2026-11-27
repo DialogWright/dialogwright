@@ -1,9 +1,9 @@
-import { NOTE_GAP, NOTE_GAP_AUDIT_DEFAULT, type ActionSpec, type AgentBusiness } from './business/schema';
+import { UNANSWERED_QUESTION, UNANSWERED_QUESTION_AUDIT_DEFAULT, type ActionSpec, type AgentBusiness } from './business/schema';
 import type { LookUpRecord } from './knowledge';
 
 /**
- * The runtime's own note of a question the business could not answer (decided 2026-11-27): `note_gap`, offered to the
- * agent model on every turn unless agent.yaml's `gaps.note` is off, but never on an unclear turn (turn.ts noteGapNow). Only the model knows that what it had to answer from
+ * The runtime's own note of a question the business could not answer (decided 2026-11-27): `unanswered_question`, offered to the
+ * agent model on every turn unless agent.yaml's `gaps.note` is off, but never on an unclear turn (turn.ts unansweredQuestionNow). Only the model knows that what it had to answer from
  * did not answer the caller (a lookup that returned a passage that does not say, or a question the business information
  * does not cover with no knowledge base at all), so it says so with this. It records the question for the business to
  * review (`kb:gaps`, the console's Knowledge page), with what the turn's lookups found and the journey the call is in,
@@ -18,7 +18,7 @@ export const GAP_QUESTION_PARAM = 'question';
 export const GAP_QUESTION_MAX = 300;
 
 /** What the note is, for the model: what it is for, and what it is not (no callback). Context, never words for a reply. */
-export const NOTE_GAP_ABOUT = 'An internal record the line keeps for the business to review later: a question the caller asked that the business information and the lookups on this call do not answer, or answer only in part. Call it whenever you tell the caller you do not have that answer, in the same reply. It is part of how the line works, so never mention it to the caller: it reaches no one during the call and does nothing for the caller, so a caller who wants an answer still needs a callback note or a person, where the line can offer them.';
+export const UNANSWERED_QUESTION_ABOUT = 'An internal record the line keeps for the business to review later: a question the caller asked that the business information and the lookups on this call do not answer, or answer only in part. Call it whenever you tell the caller you do not have that answer, in the same reply. It is part of how the line works, so never mention it to the caller: it reaches no one during the call and does nothing for the caller, so a caller who wants an answer still needs a callback note or a person, where the line can offer them.';
 
 /** What the question is, for the model. */
 export const GAP_QUESTION_ABOUT = 'The question the business could not answer, written as the question in general terms, without the caller\'s name or any of their details.';
@@ -26,18 +26,18 @@ export const GAP_QUESTION_ABOUT = 'The question the business could not answer, w
 /** What the model is told once a note is recorded: one short fact. */
 export const NOTED = 'Recorded for the business to review.';
 
-/** Whether the app has note_gap: on unless agent.yaml's `gaps.note` is off (in the gate; offered on every turn but an unclear one). */
-export function noteGapOffered(b: AgentBusiness): boolean {
+/** Whether the app has unanswered_question: on unless agent.yaml's `gaps.note` is off (in the gate; offered on every turn but an unclear one). */
+export function unansweredQuestionOffered(b: AgentBusiness): boolean {
   return b.gaps?.note !== 'off';
 }
 
 /** The note as an action, for the gate, the audit and the trace: a lookup with one text param, recorded as agent.yaml's `gaps.audit` says. */
-export function noteGapSpec(b: AgentBusiness): ActionSpec {
+export function unansweredQuestionSpec(b: AgentBusiness): ActionSpec {
   return {
-    about: NOTE_GAP_ABOUT,
+    about: UNANSWERED_QUESTION_ABOUT,
     kind: 'lookup',
     params: { [GAP_QUESTION_PARAM]: { type: 'text', about: GAP_QUESTION_ABOUT, max: GAP_QUESTION_MAX } },
-    audit: { [GAP_QUESTION_PARAM]: b.gaps?.audit?.question ?? NOTE_GAP_AUDIT_DEFAULT },
+    audit: { [GAP_QUESTION_PARAM]: b.gaps?.audit?.question ?? UNANSWERED_QUESTION_AUDIT_DEFAULT },
   } as ActionSpec;
 }
 
@@ -77,4 +77,4 @@ export function gapLookUpText(l: GapLookUp): string {
   return l.topic !== undefined ? `${l.outcome}: ${l.topic}` : l.nearest !== undefined ? `${l.outcome}: nearest ${l.nearest}` : l.outcome;
 }
 
-export { NOTE_GAP };
+export { UNANSWERED_QUESTION };

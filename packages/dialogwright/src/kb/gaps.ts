@@ -68,7 +68,7 @@ export interface Turn {
    */
   lookUps?: { question: string; candidates: string[]; outcome: string; topic: string | null; withheld: { why: string; id: string | null } | null }[];
   /**
-   * An agent app's turn: each question the business could not answer that its agent model noted (the runtime's note_gap),
+   * An agent app's turn: each question the business could not answer that its agent model noted (the runtime's unanswered_question),
    * as its trace records it: the question as recorded, and what each of the turn's lookups before it found (its outcome,
    * the topic it read, or where it read none the topic nominated first). Absent on a scripted app's turn.
    */
@@ -281,7 +281,7 @@ export function turnsOfLines(lines: readonly string[], file: string): { turns: T
  * - `close`: the topic slot asked the caller which of two topics they meant (a `disambiguate_<slot>`
  *   prompt with the topic question asked): the two were within the margin of each other.
  * - `noted`: an agent app's model noted that the business could not answer a question (the runtime's
- *   note_gap): one a lookup found a passage for that does not say, or one the business information does
+ *   unanswered_question): one a lookup found a passage for that does not say, or one the business information does
  *   not cover (lookUpGaps).
  *
  * A turn is at most one gap. A quarantined turn (the injection screen) is never one and its words are
@@ -516,7 +516,7 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
 }
 
 /**
- * The gaps of an agent app's turn: each question its model noted the business could not answer (the runtime's note_gap,
+ * The gaps of an agent app's turn: each question its model noted the business could not answer (the runtime's unanswered_question,
  * `noted`), by the topic a lookup of the turn read (`passage`), else the one it nominated first, else the nearest by
  * keywords to the note or the caller's words, its note where the trace kept it whole and the caller's words of the turn;
  * and each lookup in the knowledge base that returned no passage (the runtime's look_up), but for one that found none on a

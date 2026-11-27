@@ -388,7 +388,7 @@ actions:
       en: "We'll have someone from the shop call {name} back on {callbackNumber} about {about}.[ A note for the shop: {notes}.] Is that right?"
     audit: { name: mask, callbackNumber: last4, about: keep, notes: keep }
 # A question the shop's information and its knowledge base could not answer is noted by the agent with the runtime's own
-# note_gap, for the owner to review (pnpm kb:gaps). Its question is recorded whole: the summary is the line the owner
+# unanswered_question, for the owner to review (pnpm kb:gaps). Its question is recorded whole: the summary is the line the owner
 # reviews, and the caller's own words are in the trace already.
 gaps:
   audit: { question: keep }

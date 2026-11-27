@@ -1,7 +1,7 @@
 import { closesAt, isOpen, localTime, nextOpening } from '../core/hours';
 import { localDateIso } from '../core/localDate';
 import { CALLER_TOKEN } from './actions';
-import { END_CALL, LOOK_UP, NOTE_GAP, TRANSFER_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
+import { END_CALL, LOOK_UP, UNANSWERED_QUESTION, TRANSFER_CALL, type ActionSpec, type AgentBusiness, type ParamSpec } from './business/schema';
 import { businessText, journeyText } from './business/text';
 import { offeredActions } from './journeys';
 import { CHECK_NOTE_MARK, CORRECTION_GOAL } from './claims';
@@ -319,15 +319,15 @@ export function followOnsOf(b: AgentBusiness): Map<string, string> {
  * readBacks.holdAfterCut on, a change says its read-back is said again held after the caller spoke over it; absent
  * or a chat, it says nothing of it. `transfer`: the runtime's transfer_call is offered too (transferOffered says when).
  * `lookUp`: the runtime's lookup in the knowledge base, as its action (knowledge.ts lookUpSpec), where the turn offers it.
- * `noteGap`: the runtime's note of a question the business could not answer (gaps.ts noteGapSpec), where it is offered.
+ * `unansweredQuestion`: the runtime's note of a question the business could not answer (gaps.ts unansweredQuestionSpec), where it is offered.
  */
-export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel'], transfer = false, lookUp?: ActionSpec, noteGap?: ActionSpec): ModelTool[] {
+export function toolsOf(b: AgentBusiness, offered?: readonly string[], channel?: ConverseState['channel'], transfer = false, lookUp?: ActionSpec, unansweredQuestion?: ActionSpec): ModelTool[] {
   const followOns = followOnsOf(b);
   const held = channel === 'voice' && b.readBacks.holdAfterCut;
   return [
     ...Object.entries(b.actions).filter(([name]) => !followOns.has(name) && (offered === undefined || offered.includes(name))).map(([name, spec]) => toolOf(name, spec, held)),
     ...(lookUp !== undefined ? [toolOf(LOOK_UP, lookUp, false)] : []),
-    ...(noteGap !== undefined ? [toolOf(NOTE_GAP, noteGap, false)] : []),
+    ...(unansweredQuestion !== undefined ? [toolOf(UNANSWERED_QUESTION, unansweredQuestion, false)] : []),
     END_CALL_TOOL,
     ...(transfer ? [TRANSFER_CALL_TOOL] : []),
   ];
