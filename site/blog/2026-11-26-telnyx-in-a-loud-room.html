@@ -93,8 +93,8 @@
         <table class="stack">
           <thead><tr><th scope="col">Carrier</th><th scope="col">Speech events that reached the line</th><th scope="col">Replies cut off</th><th scope="col">Outcome</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Telnyx, flux and Krisp</th><td data-label="Speech events that reached the line">10</td><td data-label="Replies cut off">0</td><td data-label="Outcome">The line heard only me, and the request was sent in nine turns</td></tr>
-            <tr><th scope="row">Twilio, flux, low interrupt sensitivity, backchannel ignored</th><td data-label="Speech events that reached the line">135</td><td data-label="Replies cut off">7</td><td data-label="Outcome">The room's voices were transcribed as my words, and the call could not go on</td></tr>
+            <tr><th scope="row">Telnyx, with Deepgram's flux recognizer and Krisp noise suppression</th><td data-label="Speech events that reached the line">10</td><td data-label="Replies cut off">0</td><td data-label="Outcome">The line heard only me, and the request was sent in nine turns</td></tr>
+            <tr><th scope="row">Twilio, with flux, low interrupt sensitivity and backchannel ignored</th><td data-label="Speech events that reached the line">135</td><td data-label="Replies cut off">7</td><td data-label="Outcome">The room's voices were transcribed as my words, and the call could not go on</td></tr>
           </tbody>
         </table>
       </div>

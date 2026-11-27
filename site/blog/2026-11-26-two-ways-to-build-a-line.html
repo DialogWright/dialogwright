@@ -77,21 +77,22 @@
 
     <div class="wrap guide post">
       <p>
-        DialogWright now has two ways to build a line. Both understand callers in their own words, and both hold what is
-        done to the same policy gate and the same hash-chained audit. They differ in who words the replies.
+        DialogWright now has two ways to build a line. Both understand callers in their own words. Both put every action
+        through the same policy gate (the business's rules, checked in code) and into the same audit log, where each entry
+        is sealed with a hash of the one before. They differ in who chooses the words the caller hears.
       </p>
       <ul class="minis">
-        <li><strong>Scripted</strong>A decision model reads what the caller means through typed questions, code decides what happens, and every line is said word for word, generated only where the app opts in, and checked. For a business that needs every word predictable: regulated lines, high volume, identity checks.</li>
-        <li><strong>Agent mode</strong>A model holds the conversation from the business's own file, <code>agent.yaml</code>: its services, prices, hours, questions and actions. For a small business that wants a natural conversation, with what gets done still fixed. The example is the wheel shop agent.</li>
+        <li><strong>Scripted</strong>A decision model (a fast model that answers questions and never writes text) reads what the caller means. Code decides what happens, and every line is said word for word. A model rewords a line only where the app allows it, and the result is checked. For a business that needs every word predictable: regulated lines, high volume, identity checks.</li>
+        <li><strong>Agent mode</strong>A model holds the conversation from the business's own file, <code>agent.yaml</code>: its services, prices, hours, common questions and actions. For a small business that wants a natural conversation, with what gets done still fixed. The example app is a wheel repair shop.</li>
       </ul>
 
       <h2>What stays fixed in agent mode</h2>
       <ul>
-        <li>Every change is read back in the business's own words, with exactly the values it will carry.</li>
-        <li>It runs only when the caller confirms it, which the decision model reads.</li>
-        <li>Every action goes through the policy gate and into the audit, allowed or refused.</li>
-        <li>Follow-on actions run with the same confirmation, each through the gate.</li>
-        <li>A change the caller has not confirmed is never left unsent at the end of a call without asking.</li>
+        <li>Before anything is booked, sent or changed, the line reads the details back in the business's own words, with exactly the values that will be sent.</li>
+        <li>It runs only when the caller confirms, as read by the decision model.</li>
+        <li>Every action goes through the policy gate and into the audit log, allowed or refused.</li>
+        <li>Actions that follow it (such as a text asking for a photo) run with the same confirmation, each through the gate.</li>
+        <li>A request the caller has not confirmed is never dropped at the end of a call without asking whether they still want it.</li>
       </ul>
 
       <h2>How long to wait</h2>
@@ -100,8 +101,9 @@
         fine line between time to think and "did it hang up on me?" So we can't go too long.
       </p>
       <p>
-        So once its reply has played, the line waits nine seconds. Then the model helps the caller go on, and after one more
-        silence the line says a polite goodbye and the call ends. A business can change the wait, or turn it off.
+        Once a reply has played, the line waits nine seconds for the caller. Then it checks they are still there and helps
+        them go on, and after one more silence it says a polite goodbye and the call ends. A business can change the wait,
+        or turn it off.
       </p>
       <p class="links">
         <a href="../agent-mode.html">Agent mode in depth</a>
