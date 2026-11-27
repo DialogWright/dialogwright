@@ -88,55 +88,32 @@
 
       <h2>The numbers</h2>
       <ul class="stats four">
-        <li><b>$0.0084</b><span>a call for agent mode's models, at most: Ember measured, the decision model an upper bound</span></li>
-        <li><b>$0.002</b><span>a call for scripted mode's decision model, measured on one call</span></li>
-        <li><b>$0.19 and $0.24</b><span>a call for the carrier, recognition and speech, as billed on Telnyx (the median) and on Twilio, the same in both modes</span></li>
-        <li><b>2.6% to 3.2%</b><span>of a call's total is the difference between the modes, about $0.006</span></li>
+        <li><b>Under 1&#162;</b><span>a call for the models, in either mode</span></li>
+        <li><b>$0.19</b><span>a call on Telnyx for the phone line, recognition and voice, as billed</span></li>
+        <li><b>$0.24</b><span>a call on Twilio, as billed</span></li>
+        <li><b>About 3%</b><span>of a call's cost is the difference between agent mode and scripted</span></li>
       </ul>
       <p>
-        At 2,000 calls a month the difference is about $12. It takes about 16,000 calls a month to reach $100. Telnyx with
-        Krisp is billed $0.060 a minute against Twilio's $0.0785, about 24% less: on a call of three and a half minutes, about
-        $0.065, about ten times the whole difference in model cost per call.
-      </p>
-      <p>
-        Both carriers carry the call through a conversation relay, their service that turns the caller's speech into text
-        and the line's words into speech. Its price includes both.
+        The phone line is most of the bill. Choosing Telnyx over Twilio saves about six cents on a typical call, ten times
+        what separates the two modes.
       </p>
       <div class="table-wrap">
         <table class="stack">
-          <thead><tr><th scope="col">Carrier</th><th scope="col">A minute, billed</th><th scope="col">A call, billed</th></tr></thead>
+          <thead><tr><th scope="col">A Telnyx call, by part</th><th scope="col">A minute</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Twilio and ConversationRelay</th><td data-label="A minute, billed">$0.0785</td><td data-label="A call, billed">$0.236 (9 calls: a median of 147 seconds, billed as 3 minutes)</td></tr>
-            <tr><th scope="row">Telnyx's conversation relay, with Krisp</th><td data-label="A minute, billed">$0.060</td><td data-label="A call, billed">$0.19 at the median, $0.15 to $0.24 (12 calls)</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="table-wrap">
-        <table class="stack">
-          <thead><tr><th scope="col">A Telnyx call, by part</th><th scope="col">A minute, billed</th></tr></thead>
-          <tbody>
-            <tr><th scope="row">The conversation relay (speech recognition and the voice included)</th><td data-label="A minute, billed">$0.05</td></tr>
-            <tr><th scope="row">The phone call itself: call control $0.002 and the SIP connection $0.0032</th><td data-label="A minute, billed">$0.0052</td></tr>
-            <tr><th scope="row">Krisp noise suppression, an option</th><td data-label="A minute, billed">$0.005</td></tr>
-            <tr><th scope="row"><strong>All of it</strong></th><td data-label="A minute, billed"><strong>$0.060 with Krisp, $0.055 without</strong></td></tr>
+            <tr><th scope="row">Conversation relay (hears the caller and speaks the replies)</th><td data-label="A minute">$0.050</td></tr>
+            <tr><th scope="row">The phone call itself</th><td data-label="A minute">$0.005</td></tr>
+            <tr><th scope="row">Krisp noise suppression, optional</th><td data-label="A minute">$0.005</td></tr>
+            <tr><th scope="row"><strong>Total</strong></th><td data-label="A minute"><strong>$0.060 with Krisp, $0.055 without</strong></td></tr>
           </tbody>
         </table>
       </div>
       <p>
-        <strong>Krisp is an option.</strong> It costs $0.005 a minute, about 8% of a Telnyx call: $0.015 to $0.02 on the
-        wheel shop example's calls, billed by the call's whole minutes. It is one setting, <code>TELNYX_NOISE_SUPPRESSION=krisp</code>
-        (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>), and you can leave it out. What it bought is not yet measured alone:
-        the loud-room calls compared Telnyx, with Deepgram's flux recognizer and Krisp, against Twilio (10 speech events against 135, no reply cut off
-        against 7), and the same room has not yet been called on Telnyx without Krisp. So that result is the Telnyx path with
-        Krisp, not Krisp alone. That measurement is to come.
-      </p>
-      <p class="note">
-        Measured: the models' tokens and cost from the records (traces) of 17 live agent-mode calls and one live scripted call, and
-        what each carrier billed for the wheel shop example's test calls, read from their own records on 2026-11-26 (on both, the
-        conversation relay's price includes recognition and the voice). The models' costs use their list prices.
+        Krisp is the one part you choose. It costs about two cents on a typical call, and in <a href="2026-11-26-telnyx-in-a-loud-room.html">my loud-room test</a> it was part
+        of what let the line hear only me. I haven't yet measured it on its own, and will.
       </p>
       <p class="links">
-        <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">The cost of a call in each mode, in full</a>
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">The full cost report</a>
         <a href="../agent-mode.html#cost">Agent mode's cost</a>
       </p>
     </div>
