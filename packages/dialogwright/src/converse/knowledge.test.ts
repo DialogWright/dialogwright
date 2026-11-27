@@ -279,7 +279,9 @@ describe('what the lookup adds around it', () => {
     const app = appOf(folder(), ['care-1']);
     const s = newConverseState({ appId: 'converse', callId: 'c', channel: 'chat' });
     expect(systemPrompt(app.business, s, NOW, undefined, true)).toContain(`the business has approved answers to further questions callers ask: ${LOOK_UP} finds the one for a question`);
+    expect(systemPrompt(app.business, s, NOW, undefined, true)).toContain('When the caller says back what an answer said, or asks you to confirm their reading of it, compare their version with the answer\'s own words: where it matches, agree; where it differs from the answer or goes beyond it, tell them what the answer does say, as a helpful person would.');
     expect(systemPrompt(app.business, s, NOW)).not.toContain(LOOK_UP);
+    expect(systemPrompt(app.business, s, NOW)).not.toContain('says back what an answer said');
   });
 
   it('the policy card lists the knowledge base, its wording rule as instruction only, and which topics are which; the matrix the lookup', () => {

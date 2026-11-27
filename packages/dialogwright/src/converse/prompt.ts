@@ -185,11 +185,12 @@ function unclearWords(b: AgentBusiness, s: ConverseState, u: UnclearTurn): strin
 
 /**
  * Where the turn offers the runtime's lookup in the knowledge base (converse/knowledge.ts), the business information
- * says so: its approved answers to further questions are found with it, and are the business's own. Rule 1 (claims only
- * from the business information and lookups made on the call) covers what a lookup returns; how a passage may be given
- * rides on its result, never here.
+ * says so: its approved answers to further questions are found with it, and are the business's own, and a caller's
+ * restatement of one is held to its words (decided 2026-11-27: in the simulated calls the model agreed with a caller who
+ * said an answer back wider than it was). Rule 1 (claims only from the business information and lookups made on the
+ * call) covers what a lookup returns; how a passage may be given rides on its result, never here.
  */
-const LOOK_UP_WORDS = `Beyond this information, the business has approved answers to further questions callers ask: ${LOOK_UP} finds the one for a question, and what it returns is the business's own answer, as this information is.`;
+const LOOK_UP_WORDS = `Beyond this information, the business has approved answers to further questions callers ask: ${LOOK_UP} finds the one for a question, and what it returns is the business's own answer, as this information is. When the caller says back what an answer said, or asks you to confirm their reading of it, compare their version with the answer's own words: where it matches, agree; where it differs from the answer or goes beyond it, tell them what the answer does say, as a helpful person would.`;
 
 /**
  * The model's instructions for a request. `unclear`: the turn is one the line could not follow, and the block for it
