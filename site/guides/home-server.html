@@ -81,7 +81,7 @@
           many servers is built for its first scope, and one machine is the right answer for most lines
           (<a href="scaling.html">scaling out</a>).</p>
         <p>A personal line (answering your own number, screening, taking a message, sending urgent calls to your mobile)
-          is something you can build on it; the front desk example takes a message for one of three people. The steps are the same for any app; the utility
+          is something you can build on it. The front desk example takes a message for one of three people. The steps are the same for any app, and the utility
           example stands in for yours below. Every name, number, key and host name here is made up.</p>
       </div>
       <nav class="toc" aria-label="On this page">
@@ -144,10 +144,10 @@ pnpm start --app utility</code></pre>
         <ol>
           <li><strong>A carrier and a number.</strong> Telnyx (recommended: <a href="#which-carrier">why</a>) or Twilio: a
             number with voice, and the account's public key (Telnyx) or auth token (Twilio).</li>
-          <li><strong>A decision model key.</strong> TypeSafe's, or OpenRouter's or the Vercel AI Gateway's; or none, with a
+          <li><strong>A decision model key.</strong> TypeSafe's, OpenRouter's or the Vercel AI Gateway's. Or none, with a
             compatible model on your own machine (<a href="#accounts">section 4</a>).</li>
           <li><strong><code>cloudflared</code></strong>, Cloudflare's tunnel client, so the carrier can reach your laptop. Its quick
-            tunnel needs no account: <code>brew install cloudflared</code> on a Mac; on Linux, Cloudflare's package repository or
+            tunnel needs no account: <code>brew install cloudflared</code> on a Mac, and on Linux, Cloudflare's package repository or
             a release from its
             <a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/">downloads page</a>.</li>
         </ol>
@@ -158,7 +158,7 @@ pnpm start --app utility</code></pre>
             <p>
               This time choose a phone line. It asks for the carrier and its key, the model and its key, and the number a call goes
               to when the caller wants a person (your mobile, say). A key is read with the echo off, or taken from the environment
-              variable of its own name; a key is never a flag, which would stay in your shell's history. It is written only to the
+              variable of its own name. A key is never a flag, which would stay in your shell's history. It is written only to the
               app's <code>.env</code>, readable by you alone, and the command prints its length, never the key, and sends it nowhere.
               It then checks the file (<code>pnpm diagnose --offline</code>).
             </p>
@@ -192,8 +192,8 @@ pnpm start --app utility</code></pre>
           a named tunnel, a service that starts it at boot, and calls that survive a restart.
         </p>
         <p class="unverified">
-          Cloudflare's quick tunnel page does not mention WebSockets, which the call's relay runs on. Named tunnels document them;
-          for a quick tunnel, your first call is the check
+          Cloudflare's quick tunnel page does not mention WebSockets, which the call's audio-as-text connection runs on. Named
+          tunnels document them. For a quick tunnel, your first call is the check
           (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md#7-a-carrier-through-a-quick-tunnel">live check 7</a>).
           If it fails there, use a named tunnel (<a href="#tunnel">section 7</a>) or ngrok.
         </p>
@@ -203,7 +203,7 @@ pnpm start --app utility</code></pre>
         <h2 id="architecture-title">3. How it fits together</h2>
         <p>
           A caller dials your number. The carrier asks your server what to do (an HTTPS webhook), then opens a
-          WebSocket to it and streams the call as text: the carrier recognises speech and speaks the lines, and
+          WebSocket to it and streams the call as text, through its conversation relay: the carrier recognises speech and speaks the lines, and
           DialogWright understands and decides. Both reach your machine through a tunnel, so nothing on your router is
           opened. On each turn the server asks the decision model a few short typed questions.
         </p>
@@ -286,8 +286,8 @@ pnpm start --app utility</code></pre>
             <text class="dg-text" x="200" y="630" text-anchor="middle">TypeSafe Jev, a gateway, or a model on your machine</text>
           </svg>
           <figcaption>
-            The machine is yours: a laptop, a Mac, a Linux mini PC. Everything public goes through one hostname;
-            the console and the files stay on the machine (the console reaches your phone only behind a sign-in), and the router opens no port.
+            The machine is yours: a laptop, a Mac, a Linux mini PC. Everything public goes through one hostname.
+            The console and the files stay on the machine (the console reaches your phone only behind a sign-in), and the router opens no port.
           </figcaption>
         </figure>
         <ul>
@@ -323,15 +323,15 @@ pnpm start --app utility</code></pre>
                 <td data-label="Needed?"><strong>Required</strong> for a phone line (not for chat)</td>
                 <td data-label="What it is for, and what you take from it">The number, speech recognition and the voice. Telnyx: a TeXML application whose voice URL is your server,
                   and the account's public key. Twilio: a number whose voice webhook is your server, and the auth token.</td>
-                <td data-label="Where it goes"><code>VOICE_PROVIDERS=telnyx</code> with <code>TELNYX_PUBLIC_KEY</code>; or <code>VOICE_PROVIDERS=twilio</code>
-                  (the default) with <code>TWILIO_AUTH_TOKEN</code>; or <code>twilio,telnyx</code> with both</td>
+                <td data-label="Where it goes"><code>VOICE_PROVIDERS=telnyx</code> with <code>TELNYX_PUBLIC_KEY</code>, or <code>VOICE_PROVIDERS=twilio</code>
+                  (the default) with <code>TWILIO_AUTH_TOKEN</code>, or <code>twilio,telnyx</code> with both</td>
               </tr>
               <tr>
                 <td data-label="What"><strong>A decision model key</strong></td>
                 <td data-label="Needed?"><strong>Required</strong> for real understanding, unless you run a compatible model yourself</td>
                 <td data-label="What it is for, and what you take from it">Jev, TypeSafe's decision model, from TypeSafe, or through OpenRouter or the Vercel AI Gateway.</td>
-                <td data-label="Where it goes"><code>JEV_CLIENT=jev</code>, and <code>TYPESAFE_API_KEY</code> (the default provider);
-                  or <code>JEV_PROVIDER=openrouter</code> with <code>OPENROUTER_API_KEY</code>;
+                <td data-label="Where it goes"><code>JEV_CLIENT=jev</code>, and <code>TYPESAFE_API_KEY</code> (the default provider),
+                  or <code>JEV_PROVIDER=openrouter</code> with <code>OPENROUTER_API_KEY</code>,
                   or <code>JEV_PROVIDER=vercel</code> with <code>AI_GATEWAY_API_KEY</code></td>
               </tr>
               <tr>
@@ -339,30 +339,30 @@ pnpm start --app utility</code></pre>
                 <td data-label="Needed?">Optional, instead of a key</td>
                 <td data-label="What it is for, and what you take from it">Any endpoint that serves Jev's API (<code>POST /v1/systemone</code>), such as an open-weight model.
                   No account, no key. Its probabilities are not Jev's: every confidence threshold was measured on Jev, so the
-                  server warns at startup, and you should record a cassette with it and compare with <code>regress</code>.
+                  server warns at startup. Record its answers to your app's test calls and compare them with Jev's (<code>regress</code>).
                   The repository does not ship or name one.</td>
                 <td data-label="Where it goes"><code>JEV_CLIENT=jev</code>, <code>JEV_PROVIDER=custom</code>, <code>JEV_BASE_URL=http://localhost:8000</code>
-                  (plain http only to this machine), <code>JEV_MODEL</code>; <code>JEV_API_KEY</code> only if it asks for one</td>
+                  (plain http only to this machine) and <code>JEV_MODEL</code>, with <code>JEV_API_KEY</code> only if it asks for one</td>
               </tr>
               <tr>
                 <td data-label="What"><strong>A tunnel</strong></td>
-                <td data-label="Needed?">Required for a phone line; <strong>no account</strong> to try it</td>
-                <td data-label="What it is for, and what you take from it">An HTTPS address the carrier can reach. A Cloudflare quick tunnel needs no account; a permanent one needs a
+                <td data-label="Needed?">Required for a phone line, with <strong>no account</strong> needed to try it</td>
+                <td data-label="What it is for, and what you take from it">An HTTPS address the carrier can reach. A Cloudflare quick tunnel needs no account. A permanent one needs a
                   domain on Cloudflare, or Tailscale, or ngrok (<a href="#hour">section 2</a>, <a href="#tunnel">section 7</a>).</td>
                 <td data-label="Where it goes"><code>PUBLIC_HOST</code>: the bare hostname, no <code>https://</code>, no path</td>
               </tr>
               <tr>
                 <td data-label="What"><strong>A number to hand calls to</strong></td>
-                <td data-label="Needed?">Required setting; no account</td>
-                <td data-label="What it is for, and what you take from it">Where a call goes when the caller asks for a person, or the agent cannot help: your mobile, say.</td>
+                <td data-label="Needed?">A required setting, with no account</td>
+                <td data-label="What it is for, and what you take from it">Where a call goes when the caller asks for a person, or the line cannot help: your mobile, say.</td>
                 <td data-label="Where it goes"><code>HANDOFF_NUMBER=+15555550123</code> (E.164)</td>
               </tr>
               <tr>
                 <td data-label="What"><strong>An Anthropic key</strong></td>
                 <td data-label="Needed?">Optional</td>
                 <td data-label="What it is for, and what you take from it">A three-line note (what the caller wanted, what was done, what to do next), shown in the console when a
-                  call goes to a person, written by Claude Haiku from the call's audit entries.</td>
-                <td data-label="Where it goes"><code>ANTHROPIC_API_KEY</code>; <code>HANDOFF_SUMMARY</code> (default <code>on</code>)</td>
+                  call goes to a person, written by Claude Haiku from the call's audit log entries.</td>
+                <td data-label="Where it goes"><code>ANTHROPIC_API_KEY</code>, and <code>HANDOFF_SUMMARY</code> (default <code>on</code>)</td>
               </tr>
               <tr>
                 <td data-label="What"><strong>Texts</strong></td>
@@ -383,7 +383,7 @@ pnpm start --app utility</code></pre>
         <h3 id="which-carrier">Which carrier: Telnyx, with flux and Krisp</h3>
         <p>
           Telnyx is the recommended carrier, with Deepgram's flux recognizer and Krisp noise suppression. Twilio stays fully
-          supported, and the same app answers on both. The reason is a measurement: the maintainer's live calls of 2026-11-26
+          supported, and the same app answers on both. The reason is a measurement: our live calls of 2026-11-26
           to the wheel shop agent on both carriers, in the same room, with a loud television and two people talking nearby.
         </p>
         <div class="table-wrap">
@@ -469,7 +469,7 @@ TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
             call still reaches you when the machine is off.</li>
         </ol>
         <p class="unverified">
-          Portal labels move. These are the ones Telnyx's TeXML pages use as of this writing; if yours differ, the fields are the
+          Portal labels move. These are the ones Telnyx's TeXML pages use as of this writing. If yours differ, the fields are the
           application's voice URL, its method and its Webhook Failover URL.
         </p>
         <h3>Twilio</h3>
@@ -496,7 +496,7 @@ TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
 <pre data-copy><code>curl -s http://localhost:3000/health
 curl -s https://ivr.example.com/health</code></pre>
             <p>Both print <code>{"ok":true,"sessions":0,"retained":0}</code>: the calls live now, and the ended ones still held for a
-              minute. <code>/health</code> says the process is up; <code>/ready</code> says whether it takes new calls
+              minute. <code>/health</code> says the process is up, and <code>/ready</code> says whether it takes new calls
               (<code>{"ready":true}</code>, or 503 while it drains before a stop).</p>
           </li>
           <li>
@@ -521,7 +521,7 @@ ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline                     # on a 
           <li>
             <p>Each call leaves two files in the traces folder: <code>&lt;call&gt;.jsonl</code>, its turns (what was heard, what the
               model answered, what the gate decided, how long each step took), and <code>&lt;call&gt;.frames.jsonl</code>, every frame in
-              and out. The audit folder has one hash-chained file per UTC day; check the chains. Both folders are inside the app's
+              and out. The audit folder has one file per UTC day, each entry sealed with a hash of the one before. Check the chains. Both folders are inside the app's
               folder until <code>TRACE_DIR</code> and <code>AUDIT_DIR</code> say otherwise (<a href="#machine">section 7</a>):</p>
 <pre data-copy><code>ls -lt apps/utility/traces | head
 pnpm audit:verify apps/utility/audit</code></pre>
@@ -538,7 +538,7 @@ pnpm audit:verify apps/utility/audit</code></pre>
         <h2 id="machine-title">7. A machine that stays on</h2>
         <p>
           Your laptop is fine for trying a real call. For a line that stays up, use anything that stays on: a Mac, a Linux
-          mini PC, a spare desktop. It needs little: one Node process and a tunnel. The same commands run there; what changes is
+          mini PC, a spare desktop. It needs little: one Node process and a tunnel. The same commands run there. What changes is
           where the settings live, a tunnel whose hostname stays, and a service manager that keeps the server up
           (<a href="#running">section 8</a>).
         </p>
@@ -570,7 +570,7 @@ which node pnpm    # pnpm service puts these folders on the service's PATH</code
 
         <h3>The settings, outside the repository</h3>
         <p>
-          This guide calls your app <code>myline</code> (<code>pnpm create-app myline</code> makes <code>apps/myline</code>); to
+          This guide calls your app <code>myline</code> (<code>pnpm create-app myline</code> makes <code>apps/myline</code>). To
           follow along with a finished app, use <code>utility</code> in its place. Keep what is yours apart from the repository:
           the settings, the logs and the call data. Move the file <code>pnpm configure</code> wrote, and name it with
           <code>ENV_FILE</code> in front of each command from now on:
@@ -604,14 +604,14 @@ TIMEZONE=America/Chicago</code></pre>
           The server checks every variable at startup and refuses to start, naming the one that is missing or malformed. The full
           list, with each default and when to change it, is the
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/14-running-it.md#1412-the-options">options table</a>
-          (and <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the channels'</a>);
-          the commented <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/.env.example"><code>.env.example</code></a>
+          (and <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the channels'</a>).
+          The commented <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/.env.example"><code>.env.example</code></a>
           lists them too. <a href="#by-hand">Section 12</a> has a whole settings file written by hand.
         </p>
 
         <h3 id="tunnel">A tunnel whose hostname stays</h3>
         <p>
-          A tunnel is an outbound connection from your machine to someone's edge; requests for its hostname come back down
+          A tunnel is an outbound connection from your machine to a provider's servers. Requests for its hostname come back down
           it, so your router needs no open port. The quick tunnel's hostname changes every run. For one that stays:
         </p>
 
@@ -621,7 +621,7 @@ TIMEZONE=America/Chicago</code></pre>
         </p>
         <ol class="commands">
           <li>
-            <p>Log in (it opens a browser; choose your domain) and create the tunnel. It prints the tunnel's id and writes its
+            <p>Log in (it opens a browser, where you choose your domain) and create the tunnel. It prints the tunnel's id and writes its
               credentials to <code>~/.cloudflared/&lt;id&gt;.json</code>.</p>
 <pre data-copy><code>cloudflared tunnel login
 cloudflared tunnel create myline</code></pre>
@@ -647,7 +647,7 @@ ingress:
 cloudflared tunnel run myline</code></pre>
           </li>
           <li>
-            <p>Run it as a service. <code>cloudflared service install</code> starts it at login from <code>~/.cloudflared/</code>;
+            <p>Run it as a service. <code>cloudflared service install</code> starts it at login from <code>~/.cloudflared/</code>, and
               <code>sudo cloudflared service install</code> starts it at boot and reads <code>/etc/cloudflared/</code> (copy the
               config and the credentials file there, and fix <code>credentials-file</code>). On Linux,
               <code>sudo cloudflared service install</code> makes a systemd service.</p>
@@ -685,9 +685,9 @@ cloudflared tunnel run myline</code></pre>
               </tr>
               <tr>
                 <th scope="row">Worth knowing</th>
-                <td data-label="Cloudflare quick tunnel">No uptime guarantee; 200 requests in flight</td>
+                <td data-label="Cloudflare quick tunnel">No uptime guarantee, and 200 requests in flight</td>
                 <td data-label="Cloudflare named tunnel">Cloudflare closes an idle WebSocket, and sockets when it restarts its servers: a live call reconnects</td>
-                <td data-label="Tailscale Funnel">Public ports 443, 8443 and 10000 only; bandwidth limits you cannot change</td>
+                <td data-label="Tailscale Funnel">Public ports 443, 8443 and 10000 only, and bandwidth limits you cannot change</td>
                 <td data-label="ngrok">The free plan shows a warning page to browsers (not to the carrier's webhooks)</td>
               </tr>
               <tr>
@@ -721,7 +721,7 @@ ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline               # in another 
         <p>
           Hand the line to the system's service manager: it starts the server at login or boot, restarts it when it exits, and
           keeps its output. <code>pnpm service</code> writes the service file for this machine, with the absolute paths of the
-          repository, pnpm, node and the settings file, and prints the commands that install it; it runs none of them. The service
+          repository, pnpm, node and the settings file, and prints the commands that install it. It runs none of them. The service
           runs <code>pnpm --filter &lt;your app&gt; serve</code> from the repository with <code>ENV_FILE</code> naming
           <code>~/ivr/myline.env</code>, so the server reads the same file <code>pnpm start</code> and <code>pnpm diagnose</code>
           read. Nothing from the file goes into the service file but its path, and it warns when others can read the file.
@@ -839,7 +839,7 @@ WantedBy=default.target</code></pre>
           and prints the commands below. A systemd user service runs only while you are logged in: systemd starts it at your
           first login and stops it when your last session ends, an ssh session too. For a line that starts at boot and stays
           up with no one logged in, turn on lingering for your user once, with <code>loginctl enable-linger</code> (some systems
-          ask for sudo; <code>loginctl show-user "$USER" --property=Linger</code> says <code>yes</code> when it is on).
+          ask for sudo, and <code>loginctl show-user "$USER" --property=Linger</code> says <code>yes</code> when it is on).
         </p>
 <pre data-copy><code>systemctl --user daemon-reload
 systemctl --user enable --now myline   # start now, and at every login
@@ -870,10 +870,10 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
         </p>
         <dl>
           <dt>What is saved</dt>
-          <dd>Each live call (what the caller has said so far, where they are in the form), each web chat, and the carrier's one-time
+          <dd>Each live call (what the caller has said so far, and where they are in the call), each web chat, and the carrier's one-time
             relay tokens, kept only as hashes, in a folder only you can read (mode 700, each file 600, every save written whole and
             renamed into place). It holds what callers said, like the traces: keep it on this machine, on a disk that outlives a
-            reboot (not <code>/tmp</code>; <code>pnpm diagnose</code> checks). One server per folder.</dd>
+            reboot (not <code>/tmp</code>, which <code>pnpm diagnose</code> checks). One server per folder.</dd>
           <dt>What the caller hears</dt>
           <dd>When the carrier calls back for the call, the restarted server loads it, and the caller hears "Sorry, I lost you for
             a moment." (an app can say it its own way: the <code>resumed</code> line) and the question they were on, with what they
@@ -882,14 +882,14 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           <dt>A planned restart</dt>
           <dd>An update or a <code>launchctl kickstart -k</code> / <code>systemctl --user restart</code>. A call still going after
             <code>DRAIN_MS</code> is handed over: the server closes its socket, answers the carrier's callback with "wait
-            <code>RESTART_PAUSE_S</code> seconds, then connect again" (5 by default), stops listening and exits; the service starts
+            <code>RESTART_PAUSE_S</code> seconds, then connect again" (5 by default), stops listening and exits. The service starts
             the server again, and the carrier's connection, a few seconds later, reaches it. The caller hears a few seconds of
             silence, then the resumed line. Set <code>RESTART_PAUSE_S</code> a little above how long your server takes to stop and
             start (the log's <code>listening on</code> line says when it is back).</dd>
           <dt>A crash, a reboot, a power cut</dt>
           <dd>Nothing is handed over. The carrier calls back the moment the socket drops, usually before a server is listening again,
             and then turns to the number's fallback (below), which puts the caller through to you. A callback that comes after the
-            restarted server is up resumes the call. A save is renamed into place whole, so a crash loses nothing; a power cut may
+            restarted server is up resumes the call. A save is renamed into place whole, so a crash loses nothing. A power cut may
             lose the last few seconds, unless <code>SESSION_FSYNC=on</code> flushes every save to the disk (for a machine with no
             battery or UPS).</dd>
           <dt>A write is never done twice</dt>
@@ -904,8 +904,8 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           A carrier turns to a number's fallback when it cannot reach your server at all: a call that comes in while it is down, or a
           live call's callback that comes before a restarted server is listening. <code>pnpm fallback</code> writes the document: an
           apology and a dial to <code>HANDOFF_NUMBER</code>. Host the file anywhere that stays up when your machine does not (a static
-          page on GitHub Pages or Cloudflare Pages, object storage) and paste its URL where the command says. Set it once per number:
-          with it, a caller reaches a person whenever the server cannot answer; without it, they hear the carrier's own error.
+          page on GitHub Pages or Cloudflare Pages, object storage) and paste its URL where the command says. Set it once per number.
+          With it, a caller reaches a person whenever the server cannot answer. Without it, they hear the carrier's own error.
         </p>
 <pre data-copy><code>pnpm fallback --provider telnyx --number +15555550123 --out fallback.xml
 # Telnyx: the TeXML application's Webhook Failover URL. Twilio (--provider twilio): the number's "Primary handler fails" URL.</code></pre>
@@ -920,11 +920,11 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
         <h2 id="phone-title">10. Looking at calls from your phone</h2>
         <p>
           The console shows each call as it happens, with what the caller said, so by default it answers only on the machine
-          (<code>http://localhost:3000/dashboard</code>; from another computer, forward the port:
+          (<code>http://localhost:3000/dashboard</code>, and from another computer, forward the port:
           <code>ssh -L 3000:localhost:3000 alex@homebox.local</code>). To watch from your phone through the tunnel, add
           <code>CONSOLE_AUTH=token</code> to the settings file and restart the server. The console then asks for a sign-in: a link
           that works once, for ten minutes. The server writes one when it starts, to a file only you can read (its log names the
-          file, never the link); for a new one, on the machine:
+          file, never the link). For a new one, on the machine:
         </p>
 <pre data-copy><code>cd ~/dialogwright &amp;&amp; ENV_FILE=~/ivr/myline.env pnpm console:link --app myline</code></pre>
         <p>
@@ -932,7 +932,7 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           open it, and press <strong>Sign in</strong> (a link preview only fetches the page, so it never uses the link up). The
           phone stays signed in for twelve hours (<code>CONSOLE_SESSION_HOURS</code>), or until you press <strong>Sign out</strong>
           in the console's header, and the console fits the phone's screen. Each new link retires the one before it. A restart signs
-          everyone out unless <code>CONSOLE_SESSION_KEY</code> is set (32 random bytes or more: <code>openssl rand -hex 32</code>);
+          everyone out unless <code>CONSOLE_SESSION_KEY</code> is set (32 random bytes or more: <code>openssl rand -hex 32</code>).
           with it, a sign-out is kept on disk and still holds after a restart. Without a sign-in,
           <code>https://ivr.example.com/dashboard</code> shows only the sign-in page, and <code>pnpm diagnose</code> checks that it does.
         </p>
@@ -941,7 +941,7 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           as <code>console_access</code> entries naming the session by a hash and never the link: the record of who looked at
           which call. Failed attempts are limited per address and in all. The address is the one your tunnel reports: with
           Cloudflare's tunnel, as here, <code>CONSOLE_CLIENT_ADDRESS=cf-connecting-ip</code> reads only Cloudflare's header (the
-          default, <code>auto</code>, reads it first too); behind ngrok or another proxy, set <code>x-forwarded-for</code>. Your app's
+          default, <code>auto</code>, reads it first too). Behind ngrok or another proxy, set <code>x-forwarded-for</code>. Your app's
           own pages that are local only (its chats) stay local only. Treat a sign-in link like a key: it opens every call for whoever
           uses it first.
         </p>
@@ -953,7 +953,7 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
         <p>
           DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
           (<code>git rev-parse --short HEAD</code>) so you can go back. The restart drains and, with the file store, hands each call
-          still going over to the restarted server (<a href="#restart">section 9</a>); with the memory store, check
+          still going over to the restarted server (<a href="#restart">section 9</a>). With the memory store, check
           <code>/health</code> says <code>"sessions":0</code> first.
         </p>
 <pre data-copy><code>cd ~/dialogwright
@@ -970,7 +970,7 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
         <p>
           Unless you say otherwise, nothing deletes old traces: two files per call, kept until you remove them.
           <code>TRACE_RETENTION_DAYS=90</code> removes traces and frame logs last written more than 90 days ago, swept at startup and
-          once an hour, never a live call's; <code>/health</code> then reports <code>disk</code> (<code>traceBytes</code>,
+          once an hour, never a live call's. <code>/health</code> then reports <code>disk</code> (<code>traceBytes</code>,
           <code>auditBytes</code>) for a monitor. <code>AUDIT_RETENTION_DAYS</code> does the same for audit days, which ends the
           record for those days (never today's): keep them as long as you must keep the record. The traces are what
           <code>pnpm kb:gaps</code> reads to find the questions your knowledge base did not answer, so archive them before they go.
@@ -982,7 +982,7 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
           (<code>TRACE_MAX_GB</code>: past it, the calls written least recently go first, whole), a warning on <code>/health</code> and in
           the log under 2 GB free (<code>DISK_WARN_FREE_GB</code>), and the server's own log, which <code>pnpm service</code> writes to
           <code>server.log</code> on a Mac, rolled at 10 MB with 5 kept (<code>LOG_MAX_MB</code>, <code>LOG_KEEP</code>). The audit is left to
-          you. A trace that cannot be written (a full disk) is counted on <code>/health</code> and never fails a call; an audit that
+          you. A trace that cannot be written (a full disk) is counted on <code>/health</code> and never fails a call. An audit entry that
           cannot be written still does, as the audit is the record.
         </p>
 
@@ -1030,7 +1030,7 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
           their defaults and their checks are the server's own (<code>packages/dialogwright/src/server/config.ts</code>).
         </p>
         <figure>
-          <figcaption><code>~/ivr/myline.env</code>, written by hand (paths for a Mac user called <code>alex</code>; on Linux, <code>/home/alex</code>)</figcaption>
+          <figcaption><code>~/ivr/myline.env</code>, written by hand (paths for a Mac user called <code>alex</code>, and on Linux, <code>/home/alex</code>)</figcaption>
 <pre data-copy><code># Where the carrier reaches this server: the tunnel's hostname, bare (no https://, no path).
 PUBLIC_HOST=ivr.example.com
 # The port the server listens on, and the tunnel points at (default 3000).
@@ -1159,7 +1159,7 @@ TIMEZONE=America/Chicago
             variable is required (for <code>custom</code>, <code>JEV_BASE_URL</code> and <code>JEV_MODEL</code> are).</dd>
           <dt><code>WIDGET_FILE</code></dt>
           <dd>The default is the widget in your app's own <code>node_modules</code>, which a new app does not have (the utility
-            does); name the built file instead.</dd>
+            does). Name the built file instead.</dd>
         </dl>
 
         <h3>A quick tunnel, and the server</h3>
@@ -1178,7 +1178,7 @@ PUBLIC_HOST=&lt;words&gt;.trycloudflare.com ENV_FILE=~/ivr/myline.env pnpm --fil
 
         <h3>Checking by hand</h3>
         <p>
-          <code>pnpm diagnose</code> runs these and more; by hand, the server answers on the machine and through the tunnel, and
+          <code>pnpm diagnose</code> runs these and more. By hand, the server answers on the machine and through the tunnel, and
           the console is not public:
         </p>
 <pre data-copy><code>curl -s http://localhost:3000/health
@@ -1193,7 +1193,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://ivr.example.com/dashboard   # 4
           When one machine is no longer enough (a deploy that must never drop a call, more calls than one machine answers), the
           same app folder runs on many servers: the session stores this page uses sit behind interfaces with one contract suite,
           and a Postgres store many servers share is a drop-in, beside the audit in Postgres, traces on S3-compatible storage and
-          one console across the servers. That is built (Phase 8b); the scaling guide tells it step by step.
+          one console across the servers. That is built, and the scaling guide tells it step by step.
         </p>
         <p>
           One machine can also answer several lines, each its own app: a <code>host.yaml</code> beside the apps points each number
