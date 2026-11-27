@@ -13,7 +13,7 @@ import { conversePolicyCardText, conversePolicyMatrixText } from '../testing/con
 import { converseTestCall } from '../testing/converseCall';
 import { judgeInput, type AuditedAction } from '../eval/judge';
 import { defineConverseApp, type ConverseApp } from './app';
-import { LOOK_UP, NOTE_GAP } from './business/schema';
+import { LOOK_UP, UNANSWERED_QUESTION } from './business/schema';
 import { converseFacts } from '../server/dashboard/figures';
 import { hasApprovedAnswer, LOOK_UP_AT, LOOK_UP_QUESTION_ID, lookUp, NOT_FOUND, WORDING_AS_WRITTEN, WORDING_LOW, type ConverseKnowledge } from './knowledge';
 import { fakeModel } from './model/fake';
@@ -251,7 +251,7 @@ describe('the lookup on a call', () => {
     const noted = 'Whether a steam cleaner is all right on a mended item';
     const model = fakeModel([
       [call('k1', LOOK_UP, { question }), done('tool')],
-      [text('Our care notes say a dry cloth, and say nothing of steam, so I would not want to guess.'), call('g1', NOTE_GAP, { question: noted }), done('tool')],
+      [text('Our care notes say a dry cloth, and say nothing of steam, so I would not want to guess.'), call('g1', UNANSWERED_QUESTION, { question: noted }), done('tool')],
     ]);
     const c = converseTestCall(app, { model, jev: jevReading('care', 0.9), now: () => NOW });
     await c.start();
@@ -292,17 +292,17 @@ describe('what the lookup adds around it', () => {
     expect(conversePolicyMatrixText(app)).toContain(`${LOOK_UP} · level 0 · no rules\n  every caller  ALLOW`);
   });
 
-  it('the policy pages list note_gap with the runtime\'s own actions, saying how its question is recorded; off, that it is off', async () => {
+  it('the policy pages list unanswered_question with the runtime\'s own actions, saying how its question is recorded; off, that it is off', async () => {
     const app = appOf(folder());
     const card = conversePolicyCardText(app);
-    expect(card).toContain(`- \`${NOTE_GAP}\` is the runtime's own action, offered to the agent model on every turn`);
+    expect(card).toContain(`- \`${UNANSWERED_QUESTION}\` is the runtime's own action, offered to the agent model on every turn`);
     expect(card).toContain('is recorded by its length only (`gaps.audit`)');
-    expect(conversePolicyMatrixText(app)).toContain(`${NOTE_GAP} · level 0 · no rules\n  every caller  ALLOW`);
+    expect(conversePolicyMatrixText(app)).toContain(`${UNANSWERED_QUESTION} · level 0 · no rules\n  every caller  ALLOW`);
     const d = folder();
     writeFileSync(join(d, 'agent.yaml'), `${(await import('node:fs')).readFileSync(join(d, 'agent.yaml'), 'utf8')}gaps:\n  note: off\n`);
     const off = appOf(d);
-    expect(conversePolicyCardText(off)).toContain(`- \`${NOTE_GAP}\`, the runtime's note of a question the business could not answer, is off (\`gaps.note\`: off)`);
-    expect(conversePolicyMatrixText(off)).not.toContain(NOTE_GAP);
+    expect(conversePolicyCardText(off)).toContain(`- \`${UNANSWERED_QUESTION}\`, the runtime's note of a question the business could not answer, is off (\`gaps.note\`: off)`);
+    expect(conversePolicyMatrixText(off)).not.toContain(UNANSWERED_QUESTION);
   });
 
   it('kb:gaps reads a lookup that found no approved answer from an agent app\'s trace', () => {
@@ -359,9 +359,9 @@ describe('what the lookup adds around it', () => {
   });
 
   it('the judge is given each gap note as what the line recorded for the business, never a claim to the caller', () => {
-    const actions: AuditedAction[] = [{ tool: NOTE_GAP, params: { question: '<20 chars>' }, verdict: 'ALLOW', result: 'Recorded for the business to review.' }];
+    const actions: AuditedAction[] = [{ tool: UNANSWERED_QUESTION, params: { question: '<20 chars>' }, verdict: 'ALLOW', result: 'Recorded for the business to review.' }];
     const input = judgeInput('Example Visits: home visits.', { id: 'p', goal: 'Ask about brass', truth: {}, manner: 'brief', expects: 'answer' }, { persona: 'p', turns: [], ended: 'line', firstWordMs: [] }, actions);
     expect(input).toContain('## The actions the gate decided\n(none)');
-    expect(input).toContain('## What the line recorded for the business to review (said to no one on the call, so no claim to the caller)\n- note_gap(question=<20 chars>)');
+    expect(input).toContain('## What the line recorded for the business to review (said to no one on the call, so no claim to the caller)\n- unanswered_question(question=<20 chars>)');
   });
 });

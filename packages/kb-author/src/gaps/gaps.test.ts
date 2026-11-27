@@ -375,7 +375,7 @@ describe('the fix for each kind', () => {
   });
 });
 
-describe('an agent app\'s gap notes (the runtime\'s note_gap)', () => {
+describe('an agent app\'s gap notes (the runtime\'s unanswered_question)', () => {
   const converse = (sessionId: string, said: string, gapNotes: unknown[], lookUps: unknown[] = []): Turn =>
     turnOf({ v: 3, kind: 'converse', sessionId, turnIndex: 1, ts: '2026-10-03T15:00:00.000Z', said, replies: [], tools: [], lookUps, gapNotes }, 'trace.jsonl', 1)!;
   const turns = [
@@ -391,6 +391,13 @@ describe('an agent app\'s gap notes (the runtime\'s note_gap)', () => {
     expect(hours.kinds).toEqual({ noted: 1 });
     expect(hours.samples).toEqual([expect.objectContaining({ kind: 'noted', words: 'are you open on public holidays', note: 'Whether the library opens on public holidays' })]);
     expect(r.groups.find((g) => g.key === '~')!.samples).toEqual([expect.not.objectContaining({ note: expect.anything() })]);
+  });
+
+  it('reads a turn recorded under the action\'s old name (note_gap) as it reads one recorded under the new', () => {
+    const old = turnOf({ v: 3, kind: 'converse', sessionId: 'A03', turnIndex: 1, ts: '2026-10-03T15:00:00.000Z', said: 'can I bring my dog', replies: [], tools: [{ name: 'note_gap', args: { question: '<25 chars>' }, outcome: 'ran' }], lookUps: [], gapNotes: [{ question: '<25 chars>', lookUps: [] }] }, 'trace.jsonl', 1)!;
+    const r = buildReport({ kb, place, label: 'app', turns: [old] });
+    expect(r.byKind.noted).toBe(1);
+    expect(r.groups.find((g) => g.key === '~')!.samples).toEqual([expect.objectContaining({ kind: 'noted', words: 'can I bring my dog' })]);
   });
 
   it('gives the fix: the passage found does not answer it, or no topic is near; a passage, a topic or a line in agent.yaml\'s business information', () => {

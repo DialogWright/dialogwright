@@ -45,7 +45,7 @@ leave_callback · level 0 · confirmed(name, callbackNumber, about, notes)
 look_up · level 0 · no rules
   every caller  ALLOW
 
-note_gap · level 0 · no rules
+unanswered_question · level 0 · no rules
   every caller  ALLOW
 
 (unlisted) · an action agent.yaml does not list

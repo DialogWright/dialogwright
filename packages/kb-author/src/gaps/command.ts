@@ -21,7 +21,7 @@ export const GAPS_USAGE = [
   'usage: kb:gaps [dir] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]',
   '  ranks what callers asked the knowledge base that it did not answer, from the traces of real calls: a topic question answered none,',
   '  words that look like a question with no topic nominated, a passage that could not be said (stale, not in force, no translation, no facts),',
-  '  a close call between two topics, and the questions an agent app\'s model noted the business could not answer (note_gap; an agent app with no kb/ too);',
+  '  a close call between two topics, and the questions an agent app\'s model noted the business could not answer (unanswered_question; an agent app with no kb/ too);',
   '  grouped by the nearest topic, with samples of their words and the fix for each kind.',
   '  --traces: a trace file, a folder of them, a glob, or a trace store s3://<bucket>/<prefix> with the S3_ variables (default: $TRACE_STORE, else $TRACE_DIR, else <app>/traces, else ./traces); --since: from that day on;',
   '  --samples: callers\' words shown per group (default 3); --out writes the report to a file; --json prints JSON for tools.',
@@ -39,7 +39,7 @@ function isDay(day: string): boolean {
 
 /**
  * An agent app's folder with no kb/ (app.yaml's mode: agent), as a place with an empty knowledge base: kb:gaps ranks the
- * questions its model noted the business could not answer (note_gap), whose fix is a topic and a passage or a line in
+ * questions its model noted the business could not answer (unanswered_question), whose fix is a topic and a passage or a line in
  * agent.yaml's business information. Null for any other folder.
  */
 function agentAppWithoutKb(dir: string, label: string): { place: KbPlace; kb: KnowledgeBase } | null {
