@@ -1,5 +1,5 @@
 import { checkApp, formatProblem, type AnswerMap, type ConverseApp, type JevClient } from 'dialogwright';
-import { converseTestCall, fakeConverseModel, fakeTextProvider, type ConverseModelEvent } from 'dialogwright/testing';
+import { converseTestCall, fakeConverseModel, fakeTextProvider, withPendingApproved, type ConverseModelEvent } from 'dialogwright/testing';
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -581,5 +581,72 @@ describe('a caller who asks for a person (transfer_call, decided 2026-11-26)', (
       expect(toolNames(model), channel).toContain('leave_callback');
       expect(c.ended, channel).toBeUndefined();
     }
+  });
+});
+
+/**
+ * The shop's knowledge base (kb/): its five topics and their drafts wait in kb/pending for the owner to accept and approve
+ * (pnpm kb:review), so nothing is looked up on the line yet. withPendingApproved builds, in memory only, the app as it
+ * would run once they were all approved, to hold the lookup to the shop's own drafts: nothing is written or approved.
+ */
+describe('the shop\'s knowledge base', () => {
+  /** A Monday, 10 a.m. at the shop, after the drafts' first day in force (2026-11-27). */
+  const KB_NOW = Date.parse('2026-11-30T15:00:00Z');
+  /** A decision model that routes a turn as a question about the business and reads the lookup as `topic`, keeping what it was asked. */
+  function knowledgeJev(topic: string): JevClient & { asked: JevRequest[] } {
+    const asked: JevRequest[] = [];
+    return {
+      asked,
+      async ask(req) {
+        asked.push(req);
+        const answers: AnswerMap = {};
+        for (const [id, q] of Object.entries(req.questions)) {
+          if (id === 'task') {
+            const options = Object.keys((q as { criteria: Record<string, string | null> }).criteria);
+            answers.task = { type: 'choice', choice: 'question', probabilities: Object.fromEntries(options.map((k) => [k, k === 'question' ? 0.9 : 0.02])), confidence: 0.9 };
+          } else if (id === 'lookUpTopic') answers[id] = { type: 'choice', choice: topic, probabilities: { [topic]: 0.9 }, confidence: 0.9 };
+          else answers[id] = { type: 'noul', noul: 0.05 };
+        }
+        return { answers, model: 'fake', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 1, source: 'jev' };
+      },
+    };
+  }
+
+  it('is read with the app, its topics and drafts all pending, so look_up is offered nowhere and the line runs as before', async () => {
+    const { app } = wheelshop({ now: () => KB_NOW });
+    expect(app.knowledge).toBeDefined();
+    expect(Object.keys(app.knowledge!.kb.topics)).toEqual([]);
+    expect(Object.keys(app.knowledge!.kb.passages)).toEqual([]);
+    const model = fakeConverseModel([[text('We look after your wheels.'), done()]]);
+    const c = converseTestCall(app, { model, jev: knowledgeJev('aftercare'), now: () => new Date(KB_NOW), env: { SHOP_PHONE } });
+    await c.start();
+    await c.say('Can I take my wheels through a car wash after the refinish?');
+    expect(toolNames(model as unknown as { requests: readonly unknown[] })).not.toContain('look_up');
+  });
+
+  it('with its drafts approved (in memory only), a caller\'s aftercare question is answered from its passage, worded freely (risk: low)', async () => {
+    const app = withPendingApproved(wheelshop({ now: () => KB_NOW }).app);
+    expect(Object.fromEntries(Object.values(app.knowledge!.kb.topics).map((t) => [t.id, t.risk]))).toEqual({ aftercare: 'low', diamond_cut: 'low', refinish_guarantee: 'regulated', sensors_balancing: 'regulated', cracked_bent: 'regulated' });
+    const question = 'Can I take my wheels through a car wash after the refinish?';
+    const model = fakeConverseModel([[call('k1', 'look_up', { question }), done('tool')], [text('Hand wash them for the first week.'), done()]]);
+    const c = converseTestCall(app, { model, jev: knowledgeJev('aftercare'), now: () => new Date(KB_NOW), env: { SHOP_PHONE } });
+    await c.start();
+    await c.say(question);
+    expect(toolNames(model as unknown as { requests: readonly unknown[] }, 0)).toContain('look_up');
+    expect(c.traces.at(-1)!.lookUps).toEqual([expect.objectContaining({ outcome: 'answered', topic: 'aftercare', passage: expect.objectContaining({ id: 'aftercare-refinished' }) })]);
+    const result = JSON.stringify((model as unknown as { requests: { messages: unknown[] }[] }).requests.at(-1)!.messages);
+    expect(result).toContain('wash the wheels by hand');
+    expect(result).toContain('You may put it in your own words');
+  });
+
+  it('with its drafts approved (in memory only), a question none of them answers finds no approved answer', async () => {
+    const app = withPendingApproved(wheelshop({ now: () => KB_NOW }).app);
+    const question = 'Can I pay by card, or is it cash only?';
+    const model = fakeConverseModel([[call('k1', 'look_up', { question }), done('tool')], [text('I don\'t have that to hand.'), done()]]);
+    const c = converseTestCall(app, { model, jev: knowledgeJev('unanswered'), now: () => new Date(KB_NOW), env: { SHOP_PHONE } });
+    await c.start();
+    await c.say(question);
+    expect(c.traces.at(-1)!.lookUps).toEqual([expect.objectContaining({ outcome: 'none' })]);
+    expect(JSON.stringify((model as unknown as { requests: { messages: unknown[] }[] }).requests.at(-1)!.messages)).toContain('no approved answer to this question');
   });
 });

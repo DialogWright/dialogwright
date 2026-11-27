@@ -42,5 +42,8 @@ leave_callback · level 0 · confirmed(name, callbackNumber, about, notes)
   every caller  confirmed none|mismatch  BLOCK confirmation
                 confirmed match          ALLOW
 
+look_up · level 0 · no rules
+  every caller  ALLOW
+
 (unlisted) · an action agent.yaml does not list
   every caller  BLOCK unknown-tool

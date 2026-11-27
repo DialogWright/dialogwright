@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-settings.schema.json
+# Example Wheel Works' knowledge base: the shop's approved answers to questions its callers ask that agent.yaml's
+# questions do not answer. The agent model looks a question up with the runtime's own lookup (look_up) and words the
+# answer in its own reply: a risk: low topic's passage freely, any other as written (by its instructions only).
+# Nothing here is said until a person approves it: the demo's drafts wait in kb/pending, and their topics in
+# kb/pending/topics.yaml, until the owner accepts each topic and approves each draft (pnpm kb:review). Topics are found
+# by their keywords and example questions alone (no embedder, so no index to keep).
+action: look_up

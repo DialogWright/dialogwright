@@ -212,3 +212,43 @@ personas:
       ask: You open by asking whether the shop sells tyres, then what the weather will be on Friday, then whether it also washes cars. Only then do you ask what curb rash on one wheel would cost.
     manner: Chatty and unfocused, a person killing time. You will not book or leave details today; the price is what you want.
     expects: answer
+
+  # The knowledge base (kb/): questions agent.yaml's own questions do not answer, each one of its topics' (or none of
+  # them). Their answers are the shop's approved passages once the owner has approved them (pnpm kb:review); until
+  # then the line has no approved answer to give, and the judge holds it to that.
+  - id: kb-aftercare
+    goal: Find out how to look after your wheels once the shop has refinished them, before you decide to book.
+    truth:
+      name: Robin Example
+      car: 2021 Kia Sportage
+      question: You ask whether you can take the car through the car wash after the wheels are refinished, and what you should clean them with.
+    manner: Friendly and curious. Asks one thing, then a follow-up. You will not book today; you only want to know.
+    expects: answer
+
+  - id: kb-guarantee
+    goal: Find out how long a refinish lasts and whether the shop stands behind it if the finish starts peeling.
+    truth:
+      name: Casey Sample
+      car: 2018 Ford Focus
+      question: You ask how long a refinish lasts, and what happens if the finish peels after a few months.
+    manner: Careful with money. Wants a straight answer, and asks again if it sounds vague. You will not book today.
+    expects: answer
+
+  - id: kb-cracked
+    goal: Find out whether the shop can fix a cracked wheel, after you hit a pothole.
+    truth:
+      name: Morgan Nobody
+      car: 2017 Volkswagen Golf
+      damage: a crack on the inside of the rim of the front left wheel, from a pothole
+      question: You ask whether the shop can repair a cracked wheel, and what you should do if it cannot.
+    manner: A bit worried. Describes the pothole first, then asks. You will not book or leave details today.
+    expects: answer
+
+  - id: kb-unanswered
+    goal: Find out whether the shop takes card payments, before you send a request.
+    truth:
+      name: Jamie Example
+      car: 2020 Toyota Corolla
+      question: You ask whether you can pay by card at the shop, or whether it is cash only.
+    manner: Brisk. Asks once, and accepts whatever the line can tell you. You will not book, leave a callback note or be put through today.
+    expects: none

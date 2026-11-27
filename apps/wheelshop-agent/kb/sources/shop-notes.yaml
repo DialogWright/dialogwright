@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-source.schema.json
+# The demo's own text: written for this example shop, from no real business's documents, as the answers a wheel
+# repair shop would give. Every fact is an assumption for a real owner to correct, as agent.yaml's are; a passage
+# approved against a section is withheld again once the section changes, until it is approved again.
+document: Example Wheel Works shop notes (the demo's own text)
+summarize: false
+sections:
+  aftercare: # assumption: the owner corrects these
+    heading: Caring for a refinished wheel
+    text: >-
+      For the first week after a refinish, wash the wheels by hand with plain soapy water and a soft brush. After
+      that, stay away from acid or strong wheel cleaners and from car washes with brushes; a pH-neutral wheel
+      cleaner keeps the finish looking new.
+  diamond-cut: # assumption: the owner corrects these
+    heading: What diamond cutting is
+    text: >-
+      Diamond cutting is how we bring back a bright metal wheel face. The wheel goes on our lathe and a
+      diamond-tipped tool takes a very thin layer off the face, leaving the fine lines of a new finish, and then
+      a clear coat goes on to protect the bare metal.
+  guarantee: # assumption: the owner corrects these
+    heading: How long a refinish lasts
+    text: >-
+      Our refinishing work comes with a 12 month guarantee against the finish peeling, flaking or lifting. It
+      doesn't cover new damage, such as fresh curb rash, or damage from harsh cleaners.
+  sensors-balancing: # assumption: the owner corrects these
+    heading: Tyre pressure sensors and balancing
+    text: >-
+      Most repairs are done with the tyre left on, so the tyre pressure sensor isn't touched. When a job needs the
+      tyre off, we refit it, check the sensor and balance the wheel before it goes back on the car, at no extra
+      charge.
+  cracked-bent: # assumption: the owner corrects these
+    heading: Cracked or bent wheels
+    text: >-
+      We don't repair cracked or bent wheels: a crack or a bend can weaken a wheel, and we won't put back on a car
+      a wheel that may not be safe. A specialist who straightens wheels, or a replacement wheel, is the way to go,
+      and we're happy to refinish a replacement to match the others.

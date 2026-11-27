@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-pending.schema.json
+# A draft passage of the demo's own text, waiting for review (pnpm kb:review): never read at run time or said. Its topic
+# is proposed in kb/pending/topics.yaml. # assumption: the owner corrects these
+id: sensors-balancing
+topic: sensors_balancing
+version: "2026.1"
+effective:
+  from: 2026-11-27
+source:
+  document: shop-notes
+  section: sensors-balancing
+answer: "Most repairs are done with the tyre left on, so the tyre pressure sensor isn't touched. When a job needs the tyre off, we refit it, check the sensor and balance the wheel before it goes back on the car, at no extra charge."
+drafted:
+  by: claude-opus-5-5, an assistant writing the wheel shop demo's own text
+  on: 2026-11-27
+  excerpt: "Most repairs are done with the tyre left on, so the tyre pressure sensor isn't touched. When a job needs the tyre off, we refit it, check the sensor and balance the wheel before it goes back on the car, at no extra charge."

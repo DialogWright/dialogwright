@@ -1,0 +1,4 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-topics.schema.json
+# The topics the shop's callers ask about, accepted by a person from kb/pending/topics.yaml (pnpm kb:review). None yet:
+# the demo's proposed topics wait there.
+{}

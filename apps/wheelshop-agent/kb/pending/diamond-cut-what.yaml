@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-pending.schema.json
+# A draft passage of the demo's own text, waiting for review (pnpm kb:review): never read at run time or said. Its topic
+# is proposed in kb/pending/topics.yaml. # assumption: the owner corrects these
+id: diamond-cut-what
+topic: diamond_cut
+version: "2026.1"
+effective:
+  from: 2026-11-27
+source:
+  document: shop-notes
+  section: diamond-cut
+answer: "Diamond cutting is how we bring back a bright metal wheel face. The wheel goes on our lathe and a diamond-tipped tool takes a very thin layer off the face, leaving the fine lines of a new finish, and then a clear coat goes on to protect the bare metal."
+drafted:
+  by: claude-opus-5-5, an assistant writing the wheel shop demo's own text
+  on: 2026-11-27
+  excerpt: "Diamond cutting is how we bring back a bright metal wheel face. The wheel goes on our lathe and a diamond-tipped tool takes a very thin layer off the face, leaving the fine lines of a new finish, and then a clear coat goes on to protect the bare metal."
