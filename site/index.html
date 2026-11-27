@@ -75,9 +75,10 @@
         </picture>
         <h1 id="hero-title">Voice and chat agents that understand people like an LLM, and act like code.</h1>
         <p class="lede">
-          Callers say it their own way, and are understood. What is done is predictable: nothing runs unless the
-          policy gate allows it, and every decision is audited. Script every word, or let a model hold the
-          conversation in agent mode. Either way, replies are fast.
+          Callers say what they want in their own words, and are understood. What the line does is predictable:
+          before anything is booked, sent or changed, a policy gate (your rules, checked in code) decides whether it
+          may happen, and every decision is logged. Script every word, or let a model hold the conversation in agent
+          mode. Either way, replies are fast.
         </p>
         <p class="actions">
           <a class="button primary" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
@@ -91,8 +92,9 @@
       <div class="wrap">
         <h2 id="ways-title">Two ways to build a line</h2>
         <p class="intro">
-          Both understand callers in their own words, and both hold what is done to the same gate and the same audit.
-          They differ in who words the replies.
+          Both understand callers in their own words, and both put every action through the same policy gate and the
+          same audit log, where each entry is sealed with a hash of the one before, so a later edit shows. They differ
+          in who chooses the words the caller hears.
         </p>
         <div class="compare-wrap">
           <table class="compare two-ways">
@@ -106,23 +108,23 @@
             <tbody>
               <tr>
                 <th scope="row">Who talks</th>
-                <td>Code chooses every line, said word for word. Wording is generated only where the app opts in, and checked</td>
-                <td>A model words every reply, from the business's own file</td>
+                <td>Your app's code chooses every line, said word for word. A model rewords a line only where you allow it, and the result is checked</td>
+                <td>A model words every reply, working from a file of the business's information</td>
               </tr>
               <tr>
                 <th scope="row">Understanding</th>
-                <td>A decision model answers typed questions about what the caller said</td>
-                <td>The model follows the conversation. The decision model reads whether the caller confirmed and, where the line has tasks, picks the one the caller is on</td>
+                <td>A decision model (a fast model that answers questions and never writes text) reads what the caller meant</td>
+                <td>The model follows the conversation. The decision model reads whether the caller confirmed, and which task they are on where the line has several</td>
               </tr>
               <tr>
                 <th scope="row">What is done</th>
-                <td>Decided by code. Every action goes through the policy gate and into the hash-chained audit</td>
-                <td>Every change is read back in the business's words and runs only when the caller confirms it. Every action goes through the gate and into the audit</td>
+                <td>Your code decides each step. Every action goes through the policy gate and into the audit log</td>
+                <td>Before anything is booked, sent or changed, the line reads the details back in the business's words and waits for the caller to confirm. Every action goes through the gate and into the log</td>
               </tr>
               <tr>
                 <th scope="row">The app</th>
-                <td>A folder: intents, forms, slots, prompts and policy in YAML, tools in TypeScript</td>
-                <td><code>agent.yaml</code>: services, prices, hours, questions and actions, with a little code per action</td>
+                <td>A folder: what callers can ask for, the details to collect, the lines and the policy in YAML, and the actions in TypeScript</td>
+                <td>One file, <code>agent.yaml</code>: services, prices, hours, common questions and the actions callers can take, with a little code for each action</td>
               </tr>
               <tr>
                 <th scope="row">For</th>
@@ -131,8 +133,8 @@
               </tr>
               <tr>
                 <th scope="row">The example</th>
-                <td><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic</a></td>
-                <td><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop</a></td>
+                <td><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic example</a></td>
+                <td><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop example</a></td>
               </tr>
             </tbody>
           </table>
@@ -141,32 +143,32 @@
           <section class="ccard" aria-label="Scripted">
             <h3>Scripted</h3>
             <dl>
-              <dt>Who talks</dt><dd>Code chooses every line, said word for word. Wording is generated only where the app opts in, and checked</dd>
-              <dt>Understanding</dt><dd>A decision model answers typed questions about what the caller said</dd>
-              <dt>What is done</dt><dd>Decided by code. Every action goes through the policy gate and into the hash-chained audit</dd>
-              <dt>The app</dt><dd>A folder: intents, forms, slots, prompts and policy in YAML, tools in TypeScript</dd>
+              <dt>Who talks</dt><dd>Your app's code chooses every line, said word for word. A model rewords a line only where you allow it, and the result is checked</dd>
+              <dt>Understanding</dt><dd>A decision model (a fast model that answers questions and never writes text) reads what the caller meant</dd>
+              <dt>What is done</dt><dd>Your code decides each step. Every action goes through the policy gate and into the audit log</dd>
+              <dt>The app</dt><dd>A folder: what callers can ask for, the details to collect, the lines and the policy in YAML, and the actions in TypeScript</dd>
               <dt>For</dt><dd>Every word predictable: regulated lines, high volume, identity checks</dd>
-              <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic</a></dd>
+              <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic example</a></dd>
             </dl>
           </section>
           <section class="ccard" aria-label="Agent mode">
             <h3>Agent mode</h3>
             <dl>
-              <dt>Who talks</dt><dd>A model words every reply, from the business's own file</dd>
-              <dt>Understanding</dt><dd>The model follows the conversation. The decision model reads whether the caller confirmed and, where the line has tasks, picks the one the caller is on</dd>
-              <dt>What is done</dt><dd>Every change is read back in the business's words and runs only when the caller confirms it. Every action goes through the gate and into the audit</dd>
-              <dt>The app</dt><dd><code>agent.yaml</code>: services, prices, hours, questions and actions, with a little code per action</dd>
+              <dt>Who talks</dt><dd>A model words every reply, working from a file of the business's information</dd>
+              <dt>Understanding</dt><dd>The model follows the conversation. The decision model reads whether the caller confirmed, and which task they are on where the line has several</dd>
+              <dt>What is done</dt><dd>Before anything is booked, sent or changed, the line reads the details back in the business's words and waits for the caller to confirm. Every action goes through the gate and into the log</dd>
+              <dt>The app</dt><dd>One file, <code>agent.yaml</code>: services, prices, hours, common questions and the actions callers can take, with a little code for each action</dd>
               <dt>For</dt><dd>A small business that wants a natural conversation, with what gets done still fixed</dd>
-              <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop</a></dd>
+              <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop example</a></dd>
             </dl>
           </section>
         </div>
         <h3 class="sub">What both share</h3>
         <ul class="minis">
-          <li><strong>The gate and the audit</strong>Every action checked by the policy gate, and every decision, allowed or refused, in the hash-chained log.</li>
-          <li><strong>The carriers and the chat</strong>Telnyx and Twilio on the phone, the web chat and its widget, and texts.</li>
-          <li><strong>The console</strong>Every call and chat, turn by turn, with what was said and done.</li>
-          <li><strong>The policy pages</strong>What the gate decides, in plain English and as a matrix, generated and reviewed.</li>
+          <li><strong>The gate and the log</strong>Every action checked against your policy, and every decision, allowed or refused, written to the audit log.</li>
+          <li><strong>Phone and chat</strong>Telnyx and Twilio for calls, a web chat and its widget for sites, and texts.</li>
+          <li><strong>The console</strong>A web page with every call and chat, turn by turn, and what was said and done.</li>
+          <li><strong>Policy pages</strong>What the gate allows, written out in plain English and as a table, generated from the policy for review.</li>
         </ul>
         <h3 class="sub">How to choose</h3>
         <div class="choose">
@@ -175,15 +177,15 @@
             <ul>
               <li>the line should talk like a person at the counter: callers interrupt, wander, correct themselves and give things in any order,</li>
               <li>the business accepts that it cannot choose every word, and that the line will sometimes be a little odd in ways a scripted one never is,</li>
-              <li>it is one file of the business's information and actions, with no intents, forms, slots or prompts to write.</li>
+              <li>the business would rather fill in one file of its information and actions than design every step of the call.</li>
             </ul>
           </div>
           <div>
             <h4>Choose scripted when</h4>
             <ul>
               <li>every line must be the app's own words, such as a regulated disclosure,</li>
-              <li>callers prove who they are (agent mode has no identity levels yet),</li>
-              <li>it needs a knowledge base, more than one language, a keypad menu or routes, which agent mode does not have yet.</li>
+              <li>callers must prove who they are, with a date of birth or a one-time code (agent mode cannot check that yet),</li>
+              <li>it needs answers from approved documents, more than one language, a keypad menu or call routing, which agent mode does not have yet.</li>
             </ul>
           </div>
         </div>
@@ -283,14 +285,15 @@
       <div class="wrap">
         <h2 id="models-title">Decision models are the heart of it</h2>
         <p class="intro">
-          A decision model reads what the caller said and answers typed questions: yes or no (a noul), which
-          option (a choice), how much (a score), each with a probability. It never writes text. DialogWright asks
-          all of a turn's questions in one request, and code acts on the answers with thresholds the app sets.
+          A decision model reads what the caller said and answers questions your app asks about it: yes or no, which
+          of these options, how much. Each answer comes with a probability, and the model never writes text.
+          DialogWright asks all of a turn's questions in one request, and your code acts on the answers against
+          thresholds you set. Below, one turn in the front desk example.
         </p>
 
         <div class="turn">
           <figure>
-            <figcaption><span class="step"><span class="num" aria-hidden="true">1</span> The question, as the app writes it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/slots.yaml">apps/secretary/slots.yaml</a> (excerpt)</figcaption>
+            <figcaption><span class="step"><span class="num" aria-hidden="true">1</span> The question, as the example app writes it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/slots.yaml">apps/secretary/slots.yaml</a> (excerpt)</figcaption>
 <pre data-from="apps/secretary/slots.yaml"><code>recipient:
   type: choice
   options:
@@ -306,7 +309,7 @@
             <blockquote><p>It's not urgent, but could Sam call me back about the brochure?</p></blockquote>
           </figure>
           <figure>
-            <figcaption><span class="step"><span class="num" aria-hidden="true">3</span> What comes back</span> <strong>An illustration:</strong> four answers, in the model's shape</figcaption>
+            <figcaption><span class="step"><span class="num" aria-hidden="true">3</span> What comes back</span> <strong>An illustration:</strong> four answers, in the model's own format (a <code>noul</code> is its yes-or-no)</figcaption>
 <pre class="answers"><code><span class="q">intent</span>        {"type":"choice","choice":"take_message",
                "probabilities":{"take_message":0.99,
                  "agent":0.01,"urgent":0}}
@@ -324,7 +327,7 @@
     priority: { correctsForm: true, threshold: URGENT_SURE }</code></pre>
 <pre data-from="apps/secretary/app.yaml"><code>thresholds:
   URGENT_SURE: 0.4</code></pre>
-            <p class="after">Urgent reads 0, under 0.4: no transfer. The message form starts, Sam filled in, and asks the caller's name.</p>
+            <p class="after">Urgency reads 0, under the app's 0.4, so the call is not put through as urgent. The app starts taking a message, fills in Sam, and asks the caller's name.</p>
           </figure>
         </div>
 
@@ -332,8 +335,8 @@
           <div>
             <p>
               <strong>Jev is the default,</strong> TypeSafe's decision model (<code>jev-1.13</code>). Any model that
-              speaks the same System One API can replace it, measured on the app's own recorded calls, as
-              Microsoft-Decision-1 has been.
+              answers the same way (TypeSafe's System One API) can replace it, once measured on the app's own recorded
+              calls, as Microsoft-Decision-1 has been.
             </p>
             <p>
               <strong>Why it is cheap:</strong> it writes no text, only a few probabilities, so a turn pays almost
@@ -355,7 +358,7 @@
               <dd>309 requests to Jev for about $0.046, about $0.00015 a turn</dd>
             </div>
           </dl>
-          <p class="note source">The maintainer's recordings, 2026-10-14; the cost is the secretary's recording.</p>
+          <p class="note source">Measured on the maintainer's recorded calls, 2026-10-14. The cost is from the front desk example's recording.</p>
         </div>
       </div>
     </section>
@@ -364,17 +367,17 @@
       <div class="wrap">
         <h2 id="use-title">Why you would use it</h2>
         <ul class="reasons">
-          <li><a href="how-it-works.html#understands">Callers talk naturally.</a> Their own words, three answers at once.</li>
-          <li><a href="how-it-works.html#decides">What is done is predictable.</a> Steps decided by code and every action gated. Scripted, every line is approved too.</li>
-          <li><a href="agent-mode.html">Or a natural conversation, in agent mode.</a> A model talks from the business's own file. Every change is read back and runs only when the caller confirms it.</li>
-          <li><a href="decision-models.html#measured">Fast and cheap per turn.</a> A turn's answers in about 90 to 150 ms (p50).</li>
-          <li><a href="how-it-works.html#gate">Every decision is audited.</a> Allowed or refused, hash-chained.</li>
-          <li><a href="how-it-works.html#tested">Tested with recorded calls and an adversarial suite.</a></li>
-          <li>Runs on your own machine, scales to <a href="guides/scaling.html">High Availability</a>. Servers share one database; a call is taken over when its server stops.</li>
+          <li><a href="how-it-works.html#understands">Callers talk naturally.</a> They use their own words, and can give several answers at once.</li>
+          <li><a href="how-it-works.html#decides">What is done is predictable.</a> Your code decides each step, and the policy gate checks every action. In a scripted line, every word is yours too.</li>
+          <li><a href="agent-mode.html">Or a natural conversation, in agent mode.</a> A model talks from a file of the business's information. Before anything is booked or sent, the line reads it back and waits for the caller to confirm.</li>
+          <li><a href="decision-models.html#measured">Fast and cheap per turn.</a> The decision model answers in about 90 to 150 ms at the median.</li>
+          <li><a href="how-it-works.html#gate">Every decision is logged.</a> Allowed or refused, in a log where each entry seals the one before.</li>
+          <li><a href="how-it-works.html#tested">Tested before a call is taken.</a> Recorded calls replay offline, and generated hostile calls try to talk the line into what it must not do.</li>
+          <li>Runs on your own machine, or on <a href="guides/scaling.html">several servers for high availability</a>. They share one database, and when a server stops, another takes its calls over.</li>
           <li><a href="#skill">Built for AI coding assistants: Claude Code builds the app.</a></li>
-          <li><a href="how-it-works.html#knowledge">Answers from a knowledge base.</a> Passages and documents a person approved, found on your own machine; said word for word, worded for the question, or written from the documents with their own lines as the fallback, as you choose per topic. Follow-up questions are read with the earlier one.</li>
-          <li><a href="how-it-works.html#web">On the web, too.</a> The same app on a web chat: a branded chat page, formatted answers, answer buttons and where each answer comes from.</li>
-          <li><a href="how-it-works.html#wording">Generated wording only where you opt in.</a> The front desk's read-back: a fixed line, a checked summary, the caller's exact words if a check fails.</li>
+          <li><a href="how-it-works.html#knowledge">Answers from a knowledge base.</a> Answers come from passages and documents a person approved, searched on your own machine. Per topic, you choose whether they are said word for word, reworded for the question, or written from the documents (with the documents' own lines if a check fails). A follow-up question is read with the one before it.</li>
+          <li><a href="how-it-works.html#web">On the web, too.</a> The same app answers a web chat, with a branded page, formatted answers, answer buttons and where each answer comes from.</li>
+          <li><a href="how-it-works.html#wording">Generated wording only where you opt in.</a> In the front desk example, the line repeats a message back with a model's short summary in a fixed sentence. If the summary fails a check, the caller hears their own words instead.</li>
         </ul>
       </div>
     </section>
@@ -387,10 +390,11 @@
             DialogWright ships a Claude Code skill, <code>create-app</code>, in every project
             <code>npm create dialogwright</code> makes. Say what callers can ask for, who must verify, what must be
             confirmed and what goes to a person. Claude Code plans the app, scaffolds it, writes the YAML, the code,
-            the corpus and the scripted calls, and works until the checks, the type check, the tests and the stub
-            regression are green. Then it hands you the recording command, and triages the recording.
+            example caller phrases and scripted test calls, and keeps going until the checks, the type check and the
+            tests pass. Then it gives you the command to record a real model's answers, and reviews what the recording
+            changed.
           </p>
-          <p>The utility and the front desk were each built this way, from one paragraph.</p>
+          <p>The utility and front desk examples were each built this way, from one paragraph.</p>
           <p class="links">
             <a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">Read the skill</a>
             <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/first-app.md">Your first app, from a paragraph</a>
@@ -401,9 +405,9 @@
           <li>Your paragraph</li>
           <li>A worksheet</li>
           <li>The scaffold</li>
-          <li>YAML, code, corpus, scripted calls</li>
-          <li>Checks, types, tests, regression: green</li>
-          <li>Your recording, triaged</li>
+          <li>YAML, code, example phrases, test calls</li>
+          <li>Checks, types and tests pass</li>
+          <li>Your recording, reviewed</li>
         </ol>
       </div>
     </section>
@@ -411,7 +415,7 @@
     <section id="examples" class="alt" aria-labelledby="examples-title">
       <div class="wrap">
         <h2 id="examples-title">Examples</h2>
-        <p class="intro">Five fictional organizations. The four scripted ones run with no key; the wheel shop, in agent mode, runs its tests with none and needs its model's key to take a call.</p>
+        <p class="intro">Five fictional organizations. The four scripted ones run with no key. The wheel shop, in agent mode, runs its tests with no key and needs its model's key to take a call.</p>
         <div class="cards five">
           <article class="card">
             <h3>Example Family Practice</h3>
@@ -425,12 +429,12 @@
           </article>
           <article class="card">
             <h3>Example Front Desk</h3>
-            <p>Messages, read back in short. The app for generated wording.</p>
+            <p>Messages, repeated back to the caller in short. The app for generated wording.</p>
             <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/README.md">Read about the front desk</a></p>
           </article>
           <article class="card">
             <h3>Harbor Mutual</h3>
-            <p>Claims, and coverage questions answered from a knowledge base; brokers on the chat. The app for the knowledge base.</p>
+            <p>Claims, and coverage questions answered from a knowledge base. Brokers use the chat for their members. The app for the knowledge base.</p>
             <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/README.md">Read about Harbor Mutual</a></p>
           </article>
           <article class="card">
@@ -445,7 +449,7 @@
     <section id="start" aria-labelledby="start-title">
       <div class="wrap">
         <h2 id="start-title">Quick start</h2>
-        <p class="intro">Node 22.19 or later and pnpm. No keys: each app answers from its own labelled examples.</p>
+        <p class="intro">Node 22.19 or later and pnpm. No keys: without a model, each app understands callers from its own labelled example phrases.</p>
         <ol class="commands">
           <li>
             <p>Clone and install.</p>
@@ -463,8 +467,8 @@ pnpm install</code></pre>
           </li>
         </ol>
         <p>
-          A real phone line needs a carrier account and a decision model's key (and a render model's for generated
-          wording): <a href="guides/home-server.html">run it on a machine you own</a>.
+          A real phone line needs a carrier account and a decision model's key (and, for generated wording, a key for
+          the model that words it): <a href="guides/home-server.html">run it on a machine you own</a>.
         </p>
       </div>
     </section>
