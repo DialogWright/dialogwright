@@ -7,7 +7,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright blog: two ways to build a phone line</title>
-  <meta name="description" content="DialogWright now has agent mode beside the scripted line: a model holds the conversation from the business's own file, and what gets done stays fixed, read back and run only on the caller's yes.">
+  <meta name="description" content="DialogWright now has agent mode beside the scripted line: a model holds the conversation from the business's own file, and what gets done stays fixed, read back and run only when the caller confirms it.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -19,7 +19,7 @@
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://dialogwright.com/blog/2026-11-26-two-ways-to-build-a-line.html">
   <meta property="og:title" content="Two ways to build a phone line">
-  <meta property="og:description" content="Agent mode beside the scripted line: the model talks, the runtime decides.">
+  <meta property="og:description" content="Agent mode beside the scripted line: the model talks, and the runtime decides.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="../style.css">
   <script src="../copy.js" defer></script>
@@ -88,9 +88,9 @@
       <h2>What stays fixed in agent mode</h2>
       <ul>
         <li>Every change is read back in the business's own words, with exactly the values it will carry.</li>
-        <li>It runs only on the caller's clear yes, read by the decision model.</li>
+        <li>It runs only when the caller confirms it, which the decision model reads.</li>
         <li>Every action goes through the policy gate and into the audit, allowed or refused.</li>
-        <li>Follow-on actions run on the same yes, each through the gate.</li>
+        <li>Follow-on actions run with the same confirmation, each through the gate.</li>
         <li>A change the caller has not confirmed is never left unsent at the end of a call without asking.</li>
       </ul>
 

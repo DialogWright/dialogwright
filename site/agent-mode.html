@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright: agent mode</title>
-  <meta name="description" content="Agent mode in DialogWright: a model holds the conversation from the business's own file, while every change is read back in the business's words, runs only on the caller's clear yes, and goes through the policy gate into the audit. Measured on simulated and live calls.">
+  <meta name="description" content="Agent mode in DialogWright: a model holds the conversation from the business's own file, while every change is read back in the business's words, runs only when the caller confirms it, and goes through the policy gate into the audit. Measured on simulated and live calls.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -17,7 +17,7 @@
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://dialogwright.com/agent-mode.html">
   <meta property="og:title" content="DialogWright agent mode">
-  <meta property="og:description" content="The model talks; the runtime decides. Every change read back and run only on the caller's yes, through the gate and into the audit.">
+  <meta property="og:description" content="The model talks, and the runtime decides. Every change is read back and runs only when the caller confirms it, through the gate and into the audit.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="style.css">
   <script src="copy.js" defer></script>
@@ -72,8 +72,8 @@
       <h1>Agent mode</h1>
       <p class="lede">
         A model holds the conversation, on a call and in a chat, from the business's own file. What is done stays
-        fixed: every change is read back in the business's words and runs only on the caller's clear yes, through
-        the policy gate and into the audit. The model talks; the runtime decides.
+        fixed: every change is read back in the business's words and runs only when the caller confirms it, through
+        the policy gate and into the audit. The model talks, and the runtime decides.
       </p>
       <nav class="toc" aria-label="On this page">
         <h2>On this page</h2>
@@ -117,8 +117,8 @@
             <h3><span class="num" aria-hidden="true">3</span> The runtime decides</h3>
             <p>
               The model acts only by calling the business's actions. Each call's values are checked by type, put to
-              the policy gate and audited; a change is read back by the line, not the model, and runs only on the
-              caller's yes.
+              the policy gate and audited. A change is read back by the line, not the model, and runs only when the
+              caller confirms it.
             </p>
           </li>
         </ol>
@@ -153,7 +153,7 @@ questions: # assumption: the owner corrects these
           </figure>
         </div>
         <p>
-          Each assumption the demo had to make is marked in the file for the shop's owner to correct; a correction is
+          Each assumption the demo had to make is marked in the file for the shop's owner to correct. A correction is
           an edit to the file, never to code
           (<a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/DESIGN.md">the demo's assumptions</a>).
         </p>
@@ -164,11 +164,11 @@ questions: # assumption: the owner corrects these
         <p>What a change goes through, every time, whatever the model wrote:</p>
         <ol class="flow">
           <li><strong>The model calls it</strong><span>With its values as arguments: the only way a value reaches the runtime.</span></li>
-          <li><strong>Checked by type</strong><span>A real date; a drop-off window only one a lookup returned on this call; a choice one of its options.</span></li>
+          <li><strong>Checked by type</strong><span>A real date, a drop-off window only one a lookup returned on this call, and a choice one of its options.</span></li>
           <li><strong>The gate decides</strong><span>The business's rules for the action. Allowed or refused, the decision goes to the audit.</span></li>
           <li><strong>Read back</strong><span>The line says the business's own words with exactly the call's values. The model cannot change them.</span></li>
-          <li><strong>A clear yes</strong><span>Read by the decision model: a yes at 0.7 or more, a no under 0.3. Anything else runs nothing.</span></li>
-          <li class="last"><strong>Run, with its follow-ons</strong><span>On that yes, each through the gate with its own hash: the photo text only where the caller said yes to texts.</span></li>
+          <li><strong>Confirmed</strong><span>The decision model reads whether the caller confirmed it: confirming read at 0.7 or more, and declining under 0.3. Anything else runs nothing.</span></li>
+          <li class="last"><strong>Run, with its follow-ons</strong><span>The follow-ons run with the same confirmation, each through the gate with its own hash: the photo text only where the caller agreed to texts.</span></li>
         </ol>
         <ul class="minis">
           <li><strong>Never left unsent, unasked</strong>A change the caller has not confirmed is kept. The model's first goodbye is refused, so it asks whether they still want it.</li>
@@ -178,16 +178,16 @@ questions: # assumption: the owner corrects these
         </ul>
         <h3>Five rules, for every business</h3>
         <ol>
-          <li>Claim nothing the business information or a lookup on this call does not support: prices only from the information, with its caveat; times only from a lookup; no callback time it does not give.</li>
-          <li>Nothing changes without the caller's yes to the line's read-back.</li>
+          <li>Claim nothing the business information or a lookup on this call does not support. Prices come only from the information, with its caveat, times only from a lookup, and no callback time it does not give.</li>
+          <li>Nothing changes until the caller confirms the line's read-back.</li>
           <li>Nothing is said to be booked, sent or done unless an action's result on this call says so.</li>
           <li>Whatever the caller is told is noted or passed on must be carried by an action they confirm.</li>
           <li>What the caller says about themselves is said back as they gave it, nothing added.</li>
         </ol>
         <p class="note">
-          No check holds a reply before it is said; unsupported claims are kept out by these rules and the actions, and
+          No check holds a reply before it is said. Unsupported claims are kept out by these rules and the actions, and
           measured by simulated callers (<a href="#measured">below</a>). The model is sent the conversation and what each
-          action returned; the caller's number goes to it by its last four only. The policy card says all of it.
+          action returned, and the caller's number goes to it by its last four only. The policy card says all of it.
         </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/POLICY.md">The wheel shop's policy card</a>
@@ -227,10 +227,10 @@ questions: # assumption: the owner corrects these
         </ul>
         <p class="note">
           Wrong replies were 12.5 per 100 calls against 11.7 without journeys: the bar was "no worse", missed by 0.8, within
-          the noise of runs this size; serious ones were level, at 8.3. Later, with one journey for every request and the shop closed, 4% of 140
+          the noise of runs this size. Serious ones were level, at 8.3. Later, with one journey for every request and the shop closed, 4% of 140
           happy-path calls had a serious wrong reply.
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-journeys.md">Journeys, measured</a>;
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-after-hours.md">after hours, measured</a>.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-journeys.md">Journeys, measured</a>,
+          and <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-after-hours.md">after hours, measured</a>.
         </p>
       </section>
 
@@ -239,7 +239,7 @@ questions: # assumption: the owner corrects these
         <p>An agent app takes calls on Telnyx and Twilio as it takes chats. On a call:</p>
         <ul class="minis">
           <li><strong>Talk over any reply</strong>Each sentence goes to the carrier as it is written. A caller who speaks stops the turn, and their words are the next one, with what they heard.</li>
-          <li><strong>A read-back heard</strong>A yes confirms a read-back only where the caller heard at least 85% of it.</li>
+          <li><strong>A read-back heard</strong>Confirming counts only where the caller heard at least 85% of the read-back.</li>
           <li><strong>Said again, held</strong>Once a caller has talked over a change's read-back, every later read-back of it is said whole, and cannot be talked over (the maintainer's decision, 2026-11-26).</li>
           <li><strong>Silence</strong>Nine seconds after the reply has played, the model helps the caller go on. After one more silence, a polite goodbye, and the call ends.</li>
           <li><strong>After hours</strong>The model knows whether the business is open. A call that starts while it is closed hears the after-hours greeting, and no callback time is promised that the business does not give.</li>
@@ -265,7 +265,7 @@ questions: # assumption: the owner corrects these
         <p>
           A line in agent mode is measured by simulated callers: a model plays each caller against the app's own server,
           and each reply is labelled or judged against the business information and the actions the gate decided. All the
-          figures below are the wheel shop's; its model is Muse Ember 1.0.
+          figures below are the wheel shop's. Its model is Muse Ember 1.0.
         </p>
         <h3>On the voice path</h3>
         <p>
@@ -286,7 +286,7 @@ questions: # assumption: the owner corrects these
         </div>
         <p>
           Callers who neither interrupt nor break their turns were done 20 of 20 on voice. The gap was callers who cut in
-          on every long reply, the read-back too, so their yes never counted: 8 of 20 done. The held read-back
+          on every long reply, the read-back too, so their confirmation never counted: 8 of 20 done. The held read-back
           (<a href="#phone">above</a>) came from that finding.
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-voice.md">The voice run</a>.
         </p>
@@ -308,12 +308,12 @@ questions: # assumption: the owner corrects these
             <text class="ch-label" x="0" y="152">The same, on Muse Ember 1.0</text>
             <rect class="ch-after" x="0" y="160" width="127" height="14" rx="3"/><text class="ch-value" x="133" y="171">14 of 713</text>
           </svg>
-          <figcaption>Each set is 120 calls; a set has about 15 to 30 wrong replies, so a difference of a few is noise. The halving is not. <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-prevention.md">Prevention, measured</a>.</figcaption>
+          <figcaption>Each set is 120 calls with about 15 to 30 wrong replies, so a difference of a few is noise. The halving is not. <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-prevention.md">Prevention, measured</a>.</figcaption>
         </figure>
         <h3>The model, chosen by measurement</h3>
         <p>
           Eight models ran on the same simulated callers, five calls each, against the same bars, judged again under the
-          material-claims rubric. No model cleared every bar. Three were fast enough; of those, Muse Ember 1.0 did best on
+          material-claims rubric. No model cleared every bar. Three were fast enough, and of those Muse Ember 1.0 did best on
           both quality bars, and it is the wheel shop's.
         </p>
         <div class="table-wrap">
@@ -348,7 +348,7 @@ questions: # assumption: the owner corrects these
         <h2 id="cost-title">What a call costs</h2>
         <p>
           The model's share of a call's cost is small in both modes, so the difference between them is a few percent of a
-          call's total. Model costs are measured from the calls' tokens at the models' list prices; the carriers' are what
+          call's total. Model costs are measured from the calls' tokens at the models' list prices. The carriers' are what
           each billed for the wheel shop's test calls, read from their own records on 2026-11-26. On both, the conversation
           relay's price includes speech recognition and the voice.
         </p>
@@ -385,10 +385,10 @@ questions: # assumption: the owner corrects these
         <p>
           <strong>Krisp is an option.</strong> It costs $0.005 a minute, about 8% of a Telnyx call: $0.015 to $0.02 on the
           wheel shop's calls, billed by the call's whole minutes. It is one setting, <code>TELNYX_NOISE_SUPPRESSION=krisp</code>
-          (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>); leave it out to save it. What it bought is not yet measured alone:
+          (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>), and leaving it out saves it. What it bought is not yet measured alone:
           the loud-room calls compared Telnyx with flux and Krisp against Twilio (10 speech events against 135, no reply cut off
           against 7), and the same room has not yet been called on Telnyx without Krisp. So that result is the Telnyx path with
-          Krisp, not Krisp alone; that measurement is to come.
+          Krisp, not Krisp alone. That measurement is to come.
         </p>
         <blockquote class="said-by">
           <p>The mode and the model for a line are chosen by what the job needs, not by their price.</p>

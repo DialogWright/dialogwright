@@ -390,8 +390,8 @@ pnpm start --app utility</code></pre>
           <table class="stack">
             <thead><tr><th scope="col">Carrier</th><th scope="col">Speech events that reached the line</th><th scope="col">Replies cut off</th><th scope="col">Outcome</th></tr></thead>
             <tbody>
-              <tr><th scope="row">Telnyx, flux and Krisp</th><td data-label="Speech events that reached the line">10</td><td data-label="Replies cut off">0</td><td data-label="Outcome">The line heard only the caller; the request was sent in nine turns</td></tr>
-              <tr><th scope="row">Twilio, flux, low interrupt sensitivity, backchannel ignored</th><td data-label="Speech events that reached the line">135</td><td data-label="Replies cut off">7</td><td data-label="Outcome">The room's voices were transcribed as the caller's words; the call could not go on</td></tr>
+              <tr><th scope="row">Telnyx, flux and Krisp</th><td data-label="Speech events that reached the line">10</td><td data-label="Replies cut off">0</td><td data-label="Outcome">The line heard only the caller, and the request was sent in nine turns</td></tr>
+              <tr><th scope="row">Twilio, flux, low interrupt sensitivity, backchannel ignored</th><td data-label="Speech events that reached the line">135</td><td data-label="Replies cut off">7</td><td data-label="Outcome">The room's voices were transcribed as the caller's words, and the call could not go on</td></tr>
             </tbody>
           </table>
         </div>
@@ -399,7 +399,7 @@ pnpm start --app utility</code></pre>
           Twilio's ConversationRelay has no noise suppression of its own, and the server never gets the call's raw audio, so
           there is nothing to filter on Twilio's side. Telnyx denoises the caller's audio before its recognizer hears it, and
           it is the cheaper carrier per call (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/eval/2026-11-cost.md">the cost report</a>). For an English app, set
-          these three (the third, Krisp, is an option: its cost and what it bought are below); <code>pnpm configure</code>
+          these three (the third, Krisp, is an option, with its cost and what it bought below). <code>pnpm configure</code>
           writes them when you choose Telnyx for an English app:
         </p>
 <pre data-copy><code>TELNYX_TRANSCRIPTION_PROVIDER=deepgram
@@ -425,10 +425,10 @@ TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
         <p>
           <strong>Krisp is an option.</strong> It costs $0.005 a minute, about 8% of a Telnyx call: $0.015 to $0.02 on the
           wheel shop's calls, billed by the call's whole minutes. It is one setting, <code>TELNYX_NOISE_SUPPRESSION=krisp</code>
-          (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>); leave it out to save it. What it bought is not yet measured alone:
+          (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the guide's 13.1</a>), and leaving it out saves it. What it bought is not yet measured alone:
           the loud-room calls compared Telnyx with flux and Krisp against Twilio (10 speech events against 135, no reply cut off
           against 7), and the same room has not yet been called on Telnyx without Krisp. So that result is the Telnyx path with
-          Krisp, not Krisp alone; that measurement is to come.
+          Krisp, not Krisp alone. That measurement is to come.
         </p>
         <p class="unverified">
           A few details of the Telnyx adapter that Telnyx's pages do not document (the handoff field, the call status a
@@ -440,7 +440,7 @@ TELNYX_NOISE_SUPPRESSION=krisp</code></pre>
           An app can send and receive texts (SMS and MMS) through Twilio or Telnyx, whichever <code>TEXT_PROVIDER</code> names,
           from the number <code>TEXT_FROM</code> gives. A text to a caller is an action like any other: the gate holds it to
           the app's policy, so consent is a rule, never a check in code. Texts through Twilio have been tested on live calls.
-          Texts through Telnyx are built and tested in the test suite; their live check waits on the carrier's registration
+          Texts through Telnyx are built and tested in the test suite, and their live check waits on the carrier's registration
           of the number. <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#1317-texts-sending-and-receiving">The guide's 13.17</a>
           has the settings and each carrier's webhook.
         </p>

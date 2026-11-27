@@ -106,18 +106,18 @@
             <tbody>
               <tr>
                 <th scope="row">Who talks</th>
-                <td>Code chooses every line, said word for word; wording is generated only where the app opts in, and checked</td>
+                <td>Code chooses every line, said word for word. Wording is generated only where the app opts in, and checked</td>
                 <td>A model words every reply, from the business's own file</td>
               </tr>
               <tr>
                 <th scope="row">Understanding</th>
                 <td>A decision model answers typed questions about what the caller said</td>
-                <td>The model follows the conversation; the decision model reads the caller's yes and, where the line has tasks, picks the one the caller is on</td>
+                <td>The model follows the conversation. The decision model reads whether the caller confirmed and, where the line has tasks, picks the one the caller is on</td>
               </tr>
               <tr>
                 <th scope="row">What is done</th>
-                <td>Decided by code; every action through the policy gate and into the hash-chained audit</td>
-                <td>Every change read back in the business's words, run only on a clear yes; every action through the gate and into the audit</td>
+                <td>Decided by code. Every action goes through the policy gate and into the hash-chained audit</td>
+                <td>Every change is read back in the business's words and runs only when the caller confirms it. Every action goes through the gate and into the audit</td>
               </tr>
               <tr>
                 <th scope="row">The app</th>
@@ -141,9 +141,9 @@
           <section class="ccard" aria-label="Scripted">
             <h3>Scripted</h3>
             <dl>
-              <dt>Who talks</dt><dd>Code chooses every line, said word for word; wording is generated only where the app opts in, and checked</dd>
+              <dt>Who talks</dt><dd>Code chooses every line, said word for word. Wording is generated only where the app opts in, and checked</dd>
               <dt>Understanding</dt><dd>A decision model answers typed questions about what the caller said</dd>
-              <dt>What is done</dt><dd>Decided by code; every action through the policy gate and into the hash-chained audit</dd>
+              <dt>What is done</dt><dd>Decided by code. Every action goes through the policy gate and into the hash-chained audit</dd>
               <dt>The app</dt><dd>A folder: intents, forms, slots, prompts and policy in YAML, tools in TypeScript</dd>
               <dt>For</dt><dd>Every word predictable: regulated lines, high volume, identity checks</dd>
               <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic</a></dd>
@@ -153,8 +153,8 @@
             <h3>Agent mode</h3>
             <dl>
               <dt>Who talks</dt><dd>A model words every reply, from the business's own file</dd>
-              <dt>Understanding</dt><dd>The model follows the conversation; the decision model reads the caller's yes and, where the line has tasks, picks the one the caller is on</dd>
-              <dt>What is done</dt><dd>Every change read back in the business's words, run only on a clear yes; every action through the gate and into the audit</dd>
+              <dt>Understanding</dt><dd>The model follows the conversation. The decision model reads whether the caller confirmed and, where the line has tasks, picks the one the caller is on</dd>
+              <dt>What is done</dt><dd>Every change is read back in the business's words and runs only when the caller confirms it. Every action goes through the gate and into the audit</dd>
               <dt>The app</dt><dd><code>agent.yaml</code>: services, prices, hours, questions and actions, with a little code per action</dd>
               <dt>For</dt><dd>A small business that wants a natural conversation, with what gets done still fixed</dd>
               <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/wheelshop-agent/CLAUDE.md">The wheel shop</a></dd>
@@ -163,7 +163,7 @@
         </div>
         <h3 class="sub">What both share</h3>
         <ul class="minis">
-          <li><strong>The gate and the audit</strong>Every action checked by the policy gate; every decision, allowed or refused, in the hash-chained log.</li>
+          <li><strong>The gate and the audit</strong>Every action checked by the policy gate, and every decision, allowed or refused, in the hash-chained log.</li>
           <li><strong>The carriers and the chat</strong>Telnyx and Twilio on the phone, the web chat and its widget, and texts.</li>
           <li><strong>The console</strong>Every call and chat, turn by turn, with what was said and done.</li>
           <li><strong>The policy pages</strong>What the gate decides, in plain English and as a matrix, generated and reviewed.</li>
@@ -173,16 +173,16 @@
           <div>
             <h4>Choose agent mode when</h4>
             <ul>
-              <li>the line should talk like a person at the counter: callers interrupt, wander, correct themselves and give things in any order;</li>
-              <li>the business accepts that it cannot choose every word, and that the line will sometimes be a little odd in ways a scripted one never is;</li>
+              <li>the line should talk like a person at the counter: callers interrupt, wander, correct themselves and give things in any order,</li>
+              <li>the business accepts that it cannot choose every word, and that the line will sometimes be a little odd in ways a scripted one never is,</li>
               <li>it is one file of the business's information and actions, with no intents, forms, slots or prompts to write.</li>
             </ul>
           </div>
           <div>
             <h4>Choose scripted when</h4>
             <ul>
-              <li>every line must be the app's own words, such as a regulated disclosure;</li>
-              <li>callers prove who they are: agent mode has no identity levels yet;</li>
+              <li>every line must be the app's own words, such as a regulated disclosure,</li>
+              <li>callers prove who they are (agent mode has no identity levels yet),</li>
               <li>it needs a knowledge base, more than one language, a keypad menu or routes, which agent mode does not have yet.</li>
             </ul>
           </div>
@@ -220,7 +220,7 @@
                 <th scope="row">What callers hear</th>
                 <td>Recorded prompts</td>
                 <td>Generated, different every call</td>
-                <td class="ours">The lines you approved. In agent mode, the model's own words, with every change read back in yours</td>
+                <td class="ours">The lines you approved. In agent mode, the model talks, and before anything is booked or sent, the line reads the details back in your words</td>
               </tr>
               <tr>
                 <th scope="row">What it does</th>
@@ -231,7 +231,7 @@
               <tr>
                 <th scope="row">Each turn</th>
                 <td>Fast</td>
-                <td>Slower; pays for every word generated</td>
+                <td>Slower, and pays for every word generated</td>
                 <td class="ours">Fast, and a fraction of a cent</td>
               </tr>
               <tr>
@@ -260,7 +260,7 @@
               <dt>Understanding</dt><dd>Understands natural speech</dd>
               <dt>What callers hear</dt><dd>Generated, different every call</dd>
               <dt>What it does</dt><dd>Whatever the prompt leads to</dd>
-              <dt>Each turn</dt><dd>Slower; pays for every word generated</dd>
+              <dt>Each turn</dt><dd>Slower, and pays for every word generated</dd>
               <dt>Tuning</dt><dd>Editing the prompt</dd>
             </dl>
           </section>
@@ -268,7 +268,7 @@
             <h3>DialogWright</h3>
             <dl>
               <dt>Understanding</dt><dd>Understands natural speech</dd>
-              <dt>What callers hear</dt><dd>The lines you approved. In agent mode, the model's own words, with every change read back in yours</dd>
+              <dt>What callers hear</dt><dd>The lines you approved. In agent mode, the model talks, and before anything is booked or sent, the line reads the details back in your words</dd>
               <dt>What it does</dt><dd>Decided by code, or in agent mode run only when the caller confirms it. Every action checked and audited</dd>
               <dt>Each turn</dt><dd>Fast, and a fraction of a cent</dd>
               <dt>Tuning</dt><dd>Measured on recorded and simulated calls</dd>
@@ -365,8 +365,8 @@
         <h2 id="use-title">Why you would use it</h2>
         <ul class="reasons">
           <li><a href="how-it-works.html#understands">Callers talk naturally.</a> Their own words, three answers at once.</li>
-          <li><a href="how-it-works.html#decides">What is done is predictable.</a> Steps decided by code, every action gated; scripted, every line approved too.</li>
-          <li><a href="agent-mode.html">Or a natural conversation, in agent mode.</a> A model talks from the business's own file; every change is read back and run only on a clear yes.</li>
+          <li><a href="how-it-works.html#decides">What is done is predictable.</a> Steps decided by code and every action gated. Scripted, every line is approved too.</li>
+          <li><a href="agent-mode.html">Or a natural conversation, in agent mode.</a> A model talks from the business's own file. Every change is read back and runs only when the caller confirms it.</li>
           <li><a href="decision-models.html#measured">Fast and cheap per turn.</a> A turn's answers in about 90 to 150 ms (p50).</li>
           <li><a href="how-it-works.html#gate">Every decision is audited.</a> Allowed or refused, hash-chained.</li>
           <li><a href="how-it-works.html#tested">Tested with recorded calls and an adversarial suite.</a></li>
