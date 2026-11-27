@@ -18,7 +18,7 @@ export const GAP_QUESTION_PARAM = 'question';
 export const GAP_QUESTION_MAX = 300;
 
 /** What the note is, for the model: what it is for, and what it is not (no callback). Context, never words for a reply. */
-export const NOTE_GAP_ABOUT = 'Record, for the business to review later, a question the caller asked that neither the business information nor a lookup on this call answered in full. It can be called in the same reply as your words to the caller. It is not passed on to anyone during the call and nothing is said by it, so it is no callback: a caller who wants an answer still needs a callback note or a person, where the line can offer them.';
+export const NOTE_GAP_ABOUT = 'An internal record the line keeps for the business to review later: a question the caller asked that the business information and the lookups on this call do not answer, or answer only in part. Call it whenever you tell the caller you do not have that answer, in the same reply. It is part of how the line works, so never mention it to the caller: it reaches no one during the call and does nothing for the caller, so a caller who wants an answer still needs a callback note or a person, where the line can offer them.';
 
 /** What the question is, for the model. */
 export const GAP_QUESTION_ABOUT = 'The question the business could not answer, written as the question in general terms, without the caller\'s name or any of their details.';
