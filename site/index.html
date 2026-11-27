@@ -92,9 +92,8 @@
       <div class="wrap">
         <h2 id="ways-title">Two ways to build a line</h2>
         <p class="intro">
-          Both understand callers in their own words, and both put every action through the same policy gate and the
-          same audit log, where each entry is sealed with a hash of the one before, so a later edit shows. They differ
-          in who chooses the words the caller hears.
+          Both understand callers in their own words, and both check every action against your rules and log it. They
+          differ in who chooses the words the caller hears.
         </p>
         <div class="compare-wrap">
           <table class="compare two-ways">
@@ -108,13 +107,13 @@
             <tbody>
               <tr>
                 <th scope="row">Who talks</th>
-                <td>Your app's code chooses every line, said word for word. A model rewords a line only where you allow it, and the result is checked</td>
+                <td>Your app's code chooses every line, said word for word. A model rewords a line only where you allow it, and the result is checked first.</td>
                 <td>A model words every reply, working from a file of the business's information</td>
               </tr>
               <tr>
                 <th scope="row">Understanding</th>
                 <td>A decision model (a fast model that answers questions and never writes text) reads what the caller meant</td>
-                <td>The model follows the conversation. The decision model reads whether the caller confirmed, and which task they are on where the line has several</td>
+                <td>The model follows the conversation. A separate decision model checks whether the caller confirmed, and which task they want when the line handles several.</td>
               </tr>
               <tr>
                 <th scope="row">What is done</th>
@@ -128,7 +127,7 @@
               </tr>
               <tr>
                 <th scope="row">For</th>
-                <td>Every word predictable: regulated lines, high volume, identity checks</td>
+                <td>Lines where every word must be predictable: regulated industries, high volume, callers who must prove who they are</td>
                 <td>A small business that wants a natural conversation, with what gets done still fixed</td>
               </tr>
               <tr>
@@ -143,11 +142,11 @@
           <section class="ccard" aria-label="Scripted">
             <h3>Scripted</h3>
             <dl>
-              <dt>Who talks</dt><dd>Your app's code chooses every line, said word for word. A model rewords a line only where you allow it, and the result is checked</dd>
+              <dt>Who talks</dt><dd>Your app's code chooses every line, said word for word. A model rewords a line only where you allow it, and the result is checked first.</dd>
               <dt>Understanding</dt><dd>A decision model (a fast model that answers questions and never writes text) reads what the caller meant</dd>
               <dt>What is done</dt><dd>Your code decides each step. Every action goes through the policy gate and into the audit log</dd>
               <dt>The app</dt><dd>A folder: what callers can ask for, the details to collect, the lines and the policy in YAML, and the actions in TypeScript</dd>
-              <dt>For</dt><dd>Every word predictable: regulated lines, high volume, identity checks</dd>
+              <dt>For</dt><dd>Lines where every word must be predictable: regulated industries, high volume, callers who must prove who they are</dd>
               <dt>The example</dt><dd><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">The clinic example</a></dd>
             </dl>
           </section>
@@ -155,7 +154,7 @@
             <h3>Agent mode</h3>
             <dl>
               <dt>Who talks</dt><dd>A model words every reply, working from a file of the business's information</dd>
-              <dt>Understanding</dt><dd>The model follows the conversation. The decision model reads whether the caller confirmed, and which task they are on where the line has several</dd>
+              <dt>Understanding</dt><dd>The model follows the conversation. A separate decision model checks whether the caller confirmed, and which task they want when the line handles several.</dd>
               <dt>What is done</dt><dd>Before anything is booked, sent or changed, the line reads the details back in the business's words and waits for the caller to confirm. Every action goes through the gate and into the log</dd>
               <dt>The app</dt><dd>One file, <code>agent.yaml</code>: services, prices, hours, common questions and the actions callers can take, with a little code for each action</dd>
               <dt>For</dt><dd>A small business that wants a natural conversation, with what gets done still fixed</dd>
@@ -185,7 +184,7 @@
             <ul>
               <li>every line must be the app's own words, such as a regulated disclosure,</li>
               <li>callers must prove who they are, with a date of birth or a one-time code (agent mode cannot check that yet),</li>
-              <li>it needs answers from approved documents, more than one language, a keypad menu or call routing, which agent mode does not have yet.</li>
+              <li>the line needs answers from approved documents, more than one language, a keypad menu or call routing, which agent mode does not have yet.</li>
             </ul>
           </div>
         </div>

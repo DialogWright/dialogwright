@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright guide: scaling out (a design)</title>
-  <meta name="description" content="How DialogWright runs on many servers behind a load balancer: what one machine already has (store interfaces with a contract suite, a file store, resume, idempotent writes, drain, console sign-in), the shared Postgres store, audit, traces on object storage, console, container image and compose test built in Phase 8b, and what is left for later.">
+  <meta name="description" content="How DialogWright runs on several servers behind a load balancer, so a call survives a server stopping: a shared Postgres database for calls in progress and the audit log, call records on object storage, one console across servers, a container image, and what is left for later.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
