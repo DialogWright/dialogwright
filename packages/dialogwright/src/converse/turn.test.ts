@@ -2205,8 +2205,9 @@ describe('systemPrompt', () => {
     expect(prompt).toMatch(/You give only the values an action takes; the read-back's own words are the business's, and you cannot change them/);
   });
 
-  it('says the caller\'s own details are said back as they gave them, nothing added', () => {
+  it('says the caller\'s own details are said back as they gave them, nothing added, their name among them', () => {
     expect(prompt).toMatch(/5\. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give/);
+    expect(prompt).toMatch(/Their name is one of these: until they tell you it, you do not know it, so never call them by one/);
   });
 
   it('on the web chat, says there is no number the caller is calling from; on a call with no number, that it is not known', () => {
