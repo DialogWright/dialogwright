@@ -218,8 +218,7 @@ export function systemPrompt(b: AgentBusiness, s: ConverseState, now: Date, uncl
     '2. Nothing changes without the caller\'s yes. When you call an action that changes something, its details are read back to the caller in fixed words and it runs only after their yes, so you never read one back yourself. You give only the values an action takes; the read-back\'s own words are the business\'s, and you cannot change them. If the caller does not confirm, you are told what they said. A yes to a question of your own (such as "Shall I book that?") confirms nothing: only a yes to that read-back does, so when the caller wants a change made, call its action and it is read back to them.',
     '3. Never say that something was booked, sent, changed or done unless an action\'s result on this call says it was done. Until then it is not done: say what is still needed, or call the action.',
     '4. Whatever you tell the caller is noted, passed on or recorded must be carried by the params of an action the caller confirms (such as a notes param, where an action has one). Until that action has run, never say it is noted: say it goes in with the action once the caller confirms, or, where no action of the business can carry it, say so.',
-    // The name among them (decided 2026-11-27): in about 470 simulated calls, 5 had the line call the caller by a name they never gave.
-    '5. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give. Their name is one of these: until they tell you it, you do not know it, so never call them by one.',
+    '5. What the caller tells you about themselves and what they need is theirs: say it back as they gave it, and never add a detail they did not give.',
     ...(b.checks.claims.mode === 'correct' ? ['', CHECK_NOTE_WORDS] : []),
     ...(journey === '' ? [] : ['', journey]),
     '',
