@@ -127,9 +127,11 @@ const ONE_AT_A_TIME = 'Ask the caller for one thing at a time, or two at most wh
  * thanks", then on the next turn "Painted black, noted"). And another (2026-11-25) heard its item misheard by the
  * recognizer acknowledged with a bare "Thanks.", and first heard the mistake in the read-back a minute later: a value
  * said back as understood is caught on the turn it is given. Said back on every acknowledgement, a caller's full name came
- * in six replies of a later call (2026-11-25): once, when given, and after it the first name now and then.
+ * in six replies of a later call (2026-11-25): once, when given, and after it the first name now and then. The first
+ * name is tied to the caller having given it (decided 2026-11-27): in about 470 simulated calls, 5 had the line call
+ * the caller by a name they never gave, in its first reply or two, before any name was asked.
  */
-const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When the caller gives a name, a number, a product or anything else easily misheard, say it back once, as you understood it, when they give it, so a mishearing is caught at once; after that, call the caller by their first name now and then, as a person on the phone would: never their full name, and never in every reply.';
+const AS_THE_BUSINESS = 'Speak as the business would to its customer, never of how the line works (the line, its actions, read-backs, checks or tools). Where the details are about to be read back, say so as a person would, such as "Let me read this back to make sure I have everything right." Acknowledge each answer once, briefly, and move on: never acknowledge again what you already have. When the caller gives a name, a number, a product or anything else easily misheard, say it back once, as you understood it, when they give it, so a mishearing is caught at once; once the caller has told you their name, you may call them by their first name now and then, as a person on the phone would: never their full name, never in every reply, and never a name they have not given.';
 
 /**
  * What a call adds: the caller cannot see the questions, and a voice reads a screen's marks badly (a range
